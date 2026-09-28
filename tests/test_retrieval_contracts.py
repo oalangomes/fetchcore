@@ -156,3 +156,25 @@ def test_contract_modules_do_not_import_agentsorch() -> None:
     for relative in ("signals.py", "evidence.py", "search.py", "retrieval.py"):
         content = (root / relative).read_text(encoding="utf-8")
         assert "agentsorch" not in content
+
+
+def test_retrieval_config_round_trip_preserves_derived_mode() -> None:
+    config = RetrievalConfig.from_mapping(
+        {
+            "dense": {"enabled": True},
+            "hybrid": {"enabled": True, "strategy": "rrf"},
+        }
+    )
+
+    assert RetrievalConfig.from_mapping(config.to_mapping()) == config
+
+
+def test_retrieval_config_rejects_inconsistent_serialized_mode() -> None:
+    with pytest.raises(RetrievalConfigurationError, match="retrieval.mode"):
+        RetrievalConfig.from_mapping(
+            {
+                "dense": {"enabled": True},
+                "hybrid": {"enabled": False, "strategy": "rrf"},
+                "mode": "hybrid",
+            }
+        )
