@@ -62,7 +62,7 @@ def test_reranking_reorders_only_the_existing_candidate_set() -> None:
         candidates,
         scoring_query="fixture query",
         backend_id="fixture",
-        config=config,
+        config=config.reranking,
         scorer=ReverseFixtureScorer(),
     )
 
