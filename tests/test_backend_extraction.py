@@ -48,9 +48,9 @@ def test_solr_projection_remains_compatibility_facade_only() -> None:
 
 
 def test_backend_settings_parse_without_network_access() -> None:
-    assert SolrSettings.from_mapping({}).base_url
-    assert OpenSearchSettings.from_mapping({}).base_url
-    assert QdrantVectorSettings.from_mapping({}).base_url
+    assert SolrSettings.from_mapping({}).url
+    assert OpenSearchSettings.from_mapping({}).url
+    assert QdrantVectorSettings.from_mapping({}).url
 
 
 def test_qdrant_sparse_analyzer_is_deterministic() -> None:
