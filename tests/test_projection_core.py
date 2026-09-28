@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 from fetchcore.projection import (
@@ -113,4 +114,16 @@ def test_projection_ranking_core_has_no_agentsorch_imports() -> None:
         "reranking_query.py",
         "reranking_runtime.py",
     ):
-        assert "agentsorch." not in (root / relative).read_text(encoding="utf-8")
+        tree = ast.parse((root / relative).read_text(encoding="utf-8"))
+        imported_modules = {
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        }
+        imported_modules.update(
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        assert not any(name == "agentsorch" or name.startswith("agentsorch.") for name in imported_modules)
