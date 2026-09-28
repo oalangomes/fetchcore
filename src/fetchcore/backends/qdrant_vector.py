@@ -42,7 +42,7 @@ from fetchcore.projection_semantics import (
     match_projection_record,
     query_match_evidence,
 )
-from fetchcore.qdrant_sparse import (
+from fetchcore.backends.qdrant_sparse import (
     SPARSE_ANALYZER_FINGERPRINT,
     SPARSE_ANALYZER_VERSION,
     SPARSE_MODIFIER,
