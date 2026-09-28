@@ -258,7 +258,7 @@ class RetrievalConfig:
     def from_mapping(cls, value: Mapping[str, object] | None) -> RetrievalConfig:
         """Build the value from a mapping while validating its public contract."""
         data = dict(value or {})
-        allowed = {"dense", "hybrid", "reranking", "ltr"}
+        allowed = {"dense", "hybrid", "reranking", "ltr", "mode"}
         unknown = sorted(set(data) - allowed)
         if unknown:
             raise RetrievalConfigurationError(
@@ -281,6 +281,15 @@ class RetrievalConfig:
         )
         config = cls(dense=dense, hybrid=hybrid, reranking=reranking, ltr=ltr)
         config.validate_semantics()
+        serialized_mode = data.get("mode")
+        if serialized_mode is not None and str(serialized_mode) != config.mode:
+            raise RetrievalConfigurationError(
+                "retrieval.mode does not match effective retrieval configuration",
+                metadata={
+                    "serialized_mode": str(serialized_mode),
+                    "effective_mode": config.mode,
+                },
+            )
         return config
 
     @property
