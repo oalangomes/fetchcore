@@ -14,7 +14,6 @@ from pathlib import Path
 from fetchcore.retrieval import RetrievalBackendCapabilities
 from fetchcore.search import (
     KnowledgeSearchResponse,
-    LegacyLocalSemanticCodeProvider,
     SearchIntent,
     SearchCapabilitySource,
     SearchRequirement,
@@ -939,10 +938,6 @@ def _local_ordering_key(candidate: SearchResult) -> tuple[object, ...]:
         candidate.line_end or 0,
         candidate.id,
     )
-
-
-# Kept for source compatibility while configuration migrates to knowledge-search.
-LocalSemanticCodeProvider = LegacyLocalSemanticCodeProvider
 
 
 def _strings(value: object) -> list[str]:
