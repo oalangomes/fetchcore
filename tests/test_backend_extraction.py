@@ -17,12 +17,12 @@ from fetchcore.projection import (
     ProjectionV3CanonicalDocumentReader,
     ProjectionV3Compiler,
 )
-from fetchcore.qdrant_sparse import (
+from fetchcore.backends.qdrant_sparse import (
     SPARSE_ANALYZER_FINGERPRINT,
     intent_sparse_terms,
     sparse_vector_from_terms,
 )
-from fetchcore.search import SearchIntent
+from fetchcore.search import SearchIntent, SearchScope
 
 
 def test_backend_capabilities_are_explicit() -> None:
@@ -77,7 +77,7 @@ def test_backend_modules_have_no_agentsorch_imports() -> None:
         "backends/opensearch.py",
         "backends/qdrant_vector.py",
         "backends/solr_projection.py",
-        "qdrant_sparse.py",
+        "backends/qdrant_sparse.py",
     )
     for relative in relatives:
         tree = ast.parse((root / relative).read_text(encoding="utf-8"))
@@ -96,3 +96,30 @@ def test_backend_modules_have_no_agentsorch_imports() -> None:
             name == "agentsorch" or name.startswith("agentsorch.")
             for name in imported_modules
         )
+
+
+
+def test_local_backend_executes_standalone(tmp_path: Path) -> None:
+    (tmp_path / "needle.py").write_text(
+        "class MedicationHistoryService:\n"
+        "    def get_history(self):\n"
+        "        return True\n",
+        encoding="utf-8",
+    )
+    response = LocalSemanticBackend().search(
+        SearchIntent(exact_terms=("MedicationHistoryService",)),
+        SearchScope(
+            workspace=tmp_path,
+            revision="rev-a",
+            repository="example/repo",
+            knowledge_types=("code",),
+            max_results=10,
+            settings={"file_patterns": ["*.py"]},
+        ),
+        (),
+    )
+
+    assert response.backend == "local-semantic"
+    assert response.status == "success"
+    assert response.results
+    assert any("needle.py" in item.source_ref for item in response.results)
