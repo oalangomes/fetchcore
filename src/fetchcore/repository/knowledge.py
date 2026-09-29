@@ -342,10 +342,23 @@ def load_repository_knowledge(
     loaded: list[str] = []
     directories: list[Path] = []
     if include_global:
-        directories.append(
-            (global_config_dir or Path.home() / ".config" / "agentsorch").resolve()
+        if global_config_dir is not None:
+            directories.append(global_config_dir.resolve())
+        else:
+            directories.append(
+                _select_knowledge_directory(
+                    Path.home() / ".config" / "fetchcore",
+                    Path.home() / ".config" / "agentsorch",
+                    scope="global",
+                )
+            )
+    directories.append(
+        _select_knowledge_directory(
+            workspace / ".fetchcore",
+            workspace / ".agentsorch",
+            scope="repository",
         )
-    directories.append((workspace / ".agentsorch").resolve())
+    )
     for directory in directories:
         for filename in ("repository-knowledge.json", "repository-knowledge.yaml"):
             path = directory / filename
@@ -354,6 +367,27 @@ def load_repository_knowledge(
             merged = _deep_merge(merged, _read_mapping(path))
             loaded.append(str(path))
     return RepositoryKnowledgeManifest.from_mapping(merged, loaded_from=tuple(loaded))
+
+
+def _select_knowledge_directory(
+    primary: Path,
+    legacy: Path,
+    *,
+    scope: str,
+) -> Path:
+    """Prefer FetchCore config while rejecting ambiguous dual definitions."""
+
+    filenames = ("repository-knowledge.json", "repository-knowledge.yaml")
+    primary_has_manifest = any((primary / name).is_file() for name in filenames)
+    legacy_has_manifest = any((legacy / name).is_file() for name in filenames)
+    if primary_has_manifest and legacy_has_manifest:
+        raise ValueError(
+            f"both FetchCore and legacy {scope} repository knowledge manifests are "
+            "present; remove one to avoid ambiguous configuration"
+        )
+    if primary_has_manifest or not legacy_has_manifest:
+        return primary.resolve()
+    return legacy.resolve()
 
 
 def evaluate_artifact_freshness(
