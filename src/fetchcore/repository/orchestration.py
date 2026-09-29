@@ -162,7 +162,7 @@ def orchestrate_repository_indexes(
         }
         with ThreadPoolExecutor(
             max_workers=concurrency,
-            thread_name_prefix="agentsorch-index",
+            thread_name_prefix="fetchcore-index",
         ) as executor:
             futures: dict[Future[object], PreparedRepositoryTarget] = {
                 executor.submit(
