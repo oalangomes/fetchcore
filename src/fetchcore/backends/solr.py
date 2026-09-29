@@ -307,7 +307,7 @@ class SolrSettings:
     """Validated backend settings kept outside business and governance logic."""
 
     url: str = "http://localhost:8983/solr"
-    collection: str = "agentsorch-knowledge"
+    collection: str = "fetchcore-knowledge"
     timeout_seconds: float = 10.0
     projection_version: str = SOLR_PROJECTION_VERSION
     field_boosts: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_SOLR_FIELD_BOOSTS))
