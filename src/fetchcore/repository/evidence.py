@@ -547,10 +547,40 @@ def extract_source_structure(
         dynamic_binding_invalidations=dynamic_binding_invalidations,
         exports=structure.exports,
         symbols=structure.symbols,
-        chunk_symbols=structure.chunk_symbols,
+        chunk_symbols=_safe_rich_chunk_symbols(structure.chunk_symbols),
         documentation=documentation,
         manifest=manifest,
     )
+
+
+def _safe_rich_chunk_symbols(
+    values: tuple[_SymbolObservation, ...],
+) -> tuple[_SymbolObservation, ...]:
+    """Fall back to line chunking when a rich extractor emits overlapping spans."""
+
+    ordered = tuple(
+        sorted(
+            values,
+            key=lambda item: (
+                int(getattr(item, "line_start", 0)),
+                int(getattr(item, "line_end", 0)),
+            ),
+        )
+    )
+    cursor = 1
+    previous_span: tuple[int, int] | None = None
+    for item in ordered:
+        line_start = int(getattr(item, "line_start", 0))
+        line_end = int(getattr(item, "line_end", 0))
+        span = (line_start, line_end)
+        if span == previous_span:
+            continue
+        if line_start >= 1 and line_end >= line_start:
+            if line_start < cursor:
+                return ()
+            cursor = line_end + 1
+        previous_span = span
+    return ordered
 
 
 def build_knowledge_evidence(

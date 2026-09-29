@@ -40,7 +40,11 @@ from fetchcore.repository.index_policy import (
     RepositoryIndexPolicy,
     load_repository_index_policy,
 )
-from fetchcore.repository.indexing import RepositoryIndexResult, RepositoryIndexer
+from fetchcore.repository.indexing import (
+    RepositoryIndexConfig,
+    RepositoryIndexResult,
+    RepositoryIndexer,
+)
 from fetchcore.repository.knowledge_pack import (
     RepositoryKnowledgePack,
     configure_repository_knowledge_packs,
@@ -110,11 +114,12 @@ def prepare_repository_index_runtime(
     branch: str | None,
     revision: str | None,
     knowledge_packs: Iterable[RepositoryKnowledgePack] | None = None,
+    base_config: RepositoryIndexConfig | None = None,
 ) -> RepositoryIndexRuntime:
     """Resolve repository policy, active knowledge packs and canonical indexer."""
 
     root = workspace.resolve(strict=True)
-    policy = load_repository_index_policy(root)
+    policy = load_repository_index_policy(root, base_config=base_config)
     document_policy = load_repository_document_index_policy(root)
     registry = default_structural_symbol_extractors()
     registry["shell"] = ShellStructuralExtractor()
