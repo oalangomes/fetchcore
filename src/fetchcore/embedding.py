@@ -8,6 +8,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from time import sleep
 from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -21,6 +22,7 @@ from fetchcore.search import KnowledgeSearchError, SearchIntent
 
 
 VECTOR_EMBEDDING_SERIALIZATION_VERSION = "2"
+_OLLAMA_TRANSIENT_RETRY_DELAYS = (0.25, 1.0)
 
 
 class ProjectionEmbeddingMode(StrEnum):
@@ -193,31 +195,50 @@ class OllamaEmbeddingProvider:
             "max_input_chars": max((len(text) for text in texts), default=0),
             "total_input_chars": sum(len(text) for text in texts),
         }
-        try:
-            with urlopen(request, timeout=self.timeout_seconds) as response:
-                raw = response.read()
-        except HTTPError as exc:
-            metadata: dict[str, object] = {"http_status": exc.code, **diagnostics}
-            provider_error = _ollama_http_error_message(exc)
-            if provider_error is not None:
-                metadata["provider_error"] = provider_error
-            raise KnowledgeSearchError(
-                f"embedding request failed with HTTP {exc.code}",
-                category="embedding_failed",
-                metadata=metadata,
-            ) from exc
-        except TimeoutError as exc:
-            raise KnowledgeSearchError(
-                "embedding request timed out",
-                category="timeout",
-                metadata=diagnostics,
-            ) from exc
-        except URLError as exc:
-            raise KnowledgeSearchError(
-                "embedding provider is unavailable",
-                category="unavailable",
-                metadata=diagnostics,
-            ) from exc
+        raw: bytes | None = None
+        for attempt, retry_delay in enumerate(
+            (*_OLLAMA_TRANSIENT_RETRY_DELAYS, None),
+            start=1,
+        ):
+            try:
+                with urlopen(request, timeout=self.timeout_seconds) as response:
+                    raw = response.read()
+            except HTTPError as exc:
+                metadata: dict[str, object] = {
+                    "http_status": exc.code,
+                    "attempt": attempt,
+                    **diagnostics,
+                }
+                provider_error = _ollama_http_error_message(exc)
+                if provider_error is not None:
+                    metadata["provider_error"] = provider_error
+                if (
+                    retry_delay is not None
+                    and exc.code == 400
+                    and _ollama_transient_embedding_error(provider_error)
+                ):
+                    sleep(retry_delay)
+                    continue
+                detail = f": {provider_error}" if provider_error is not None else ""
+                raise KnowledgeSearchError(
+                    f"embedding request failed with HTTP {exc.code}{detail}",
+                    category="embedding_failed",
+                    metadata=metadata,
+                ) from exc
+            except TimeoutError as exc:
+                raise KnowledgeSearchError(
+                    "embedding request timed out",
+                    category="timeout",
+                    metadata=diagnostics,
+                ) from exc
+            except URLError as exc:
+                raise KnowledgeSearchError(
+                    "embedding provider is unavailable",
+                    category="unavailable",
+                    metadata=diagnostics,
+                ) from exc
+            break
+        assert raw is not None
 
         payload = _json_object(raw, source="embedding provider", operation="/api/embed")
         raw_embeddings = payload.get("embeddings")
@@ -264,6 +285,29 @@ def _ollama_http_error_message(exc: HTTPError) -> str | None:
         return None
     message = value.strip()
     return message[:512] if message else None
+
+
+def _ollama_transient_embedding_error(message: str | None) -> bool:
+    """Return whether an Ollama HTTP 400 describes a transient local transport failure."""
+
+    if message is None:
+        return False
+
+    normalized = message.casefold()
+
+    if "health resp:" in normalized:
+        return True
+
+    if "do embedding request:" in normalized and (
+        "eof" in normalized or "connect" in normalized
+    ):
+        return True
+
+    return (
+        "dial tcp 127.0.0.1:" in normalized
+        and "connectex:" in normalized
+        and "/tokenize" in normalized
+    )
 
 
 class ProjectionV3EmbeddingSerializer:
