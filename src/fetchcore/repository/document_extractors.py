@@ -2,7 +2,7 @@
 
 These adapters normalize observable document structure into deterministic units.
 They never execute macros, formulas, JavaScript, external links, or network calls.
-Optional third-party parsers are imported lazily so the AgentsOrch base install
+Optional third-party parsers are imported lazily so the FetchCore base install
 remains dependency-light.
 """
 
