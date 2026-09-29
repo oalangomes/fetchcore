@@ -31,10 +31,12 @@ class RetrievalConfigurationError(ValueError):
 
 @dataclass(frozen=True)
 class EmbeddingConfig:
-    """Backend-neutral embedding provider and model identity."""
+    """Backend-neutral embedding identity and optional transport execution envelope."""
 
     provider: str = "ollama"
     model: str = "embeddinggemma"
+    timeout_seconds: float | None = None
+    request_batch_size: int | None = None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object] | None) -> EmbeddingConfig:
@@ -42,6 +44,14 @@ class EmbeddingConfig:
         data = dict(value or {})
         provider = str(data.get("provider", cls.provider)).strip()
         model = str(data.get("model", cls.model)).strip()
+        timeout_seconds = _optional_positive_float(
+            data.get("timeout_seconds"),
+            "retrieval.dense.embedding.timeout_seconds",
+        )
+        request_batch_size = _optional_positive_int(
+            data.get("request_batch_size"),
+            "retrieval.dense.embedding.request_batch_size",
+        )
         if not provider:
             raise RetrievalConfigurationError(
                 "retrieval.dense.embedding.provider must not be empty"
@@ -50,11 +60,24 @@ class EmbeddingConfig:
             raise RetrievalConfigurationError(
                 "retrieval.dense.embedding.model must not be empty"
             )
-        return cls(provider=provider, model=model)
+        return cls(
+            provider=provider,
+            model=model,
+            timeout_seconds=timeout_seconds,
+            request_batch_size=request_batch_size,
+        )
 
     def to_mapping(self) -> dict[str, object]:
         """Return a stable mapping representation of this value."""
-        return {"provider": self.provider, "model": self.model}
+        result: dict[str, object] = {
+            "provider": self.provider,
+            "model": self.model,
+        }
+        if self.timeout_seconds is not None:
+            result["timeout_seconds"] = self.timeout_seconds
+        if self.request_batch_size is not None:
+            result["request_batch_size"] = self.request_batch_size
+        return result
 
 
 @dataclass(frozen=True)
@@ -406,6 +429,17 @@ def _optional_non_empty_string(value: object, path: str) -> str | None:
     if not isinstance(value, str) or not value.strip():
         raise RetrievalConfigurationError(f"{path} must be a non-empty string")
     return value.strip()
+
+
+def _optional_positive_float(value: object, path: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RetrievalConfigurationError(f"{path} must be a positive finite number")
+    result = float(value)
+    if result <= 0 or not isfinite(result):
+        raise RetrievalConfigurationError(f"{path} must be a positive finite number")
+    return result
 
 
 def _optional_positive_int(value: object, path: str) -> int | None:
