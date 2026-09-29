@@ -87,7 +87,7 @@ export FETCHCORE_MCP_REPOSITORY="oalangomes/NeuroTrack_MS"
 export FETCHCORE_MCP_BACKEND="solr"
 export FETCHCORE_MCP_BACKEND_SETTINGS='{
   "url": "http://localhost:8983/solr",
-  "collection": "agentsorch-knowledge",
+  "collection": "fetchcore-knowledge",
   "projection_version": "3"
 }'
 export FETCHCORE_MCP_RETRIEVAL='{
