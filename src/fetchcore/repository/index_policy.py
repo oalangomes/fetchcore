@@ -1,6 +1,6 @@
 """Declarative repository-local indexing policy.
 
-The policy lives at ``.agentsorch/indexing.yaml`` inside the materialized
+The policy lives at ``.fetchcore/indexing.yaml`` inside the materialized
 repository workspace. It configures canonical repository indexing without
 binding the indexer to repository names, transports, or persistence backends.
 """
@@ -28,7 +28,8 @@ from fetchcore.repository.indexing import (
 
 
 INDEXING_POLICY_VERSION = 1
-INDEXING_POLICY_PATH = Path(".agentsorch/indexing.yaml")
+INDEXING_POLICY_PATH = Path(".fetchcore/indexing.yaml")
+LEGACY_INDEXING_POLICY_PATH = Path(".agentsorch/indexing.yaml")
 _ALLOWED_TOP_LEVEL_KEYS = frozenset(
     {
         "version",
@@ -148,7 +149,7 @@ def load_repository_index_policy(
     *,
     base_config: RepositoryIndexConfig | None = None,
 ) -> RepositoryIndexPolicy:
-    """Load ``.agentsorch/indexing.yaml`` or return the canonical defaults."""
+    """Load FetchCore indexing policy with an explicit legacy compatibility path."""
 
     root = workspace.resolve(strict=True)
     if not root.is_dir():
@@ -157,8 +158,17 @@ def load_repository_index_policy(
         )
     config = base_config or RepositoryIndexConfig()
     policy_path = root / INDEXING_POLICY_PATH
+    legacy_policy_path = root / LEGACY_INDEXING_POLICY_PATH
+    if policy_path.is_file() and legacy_policy_path.is_file():
+        raise RepositoryIndexPolicyError(
+            "both FetchCore and legacy indexing policies are present; "
+            "remove one to avoid ambiguous configuration"
+        )
     if not policy_path.is_file():
-        return RepositoryIndexPolicy(config=config)
+        if legacy_policy_path.is_file():
+            policy_path = legacy_policy_path
+        else:
+            return RepositoryIndexPolicy(config=config)
 
     payload = _read_policy(policy_path)
     _reject_unknown_keys(payload, _ALLOWED_TOP_LEVEL_KEYS, context="indexing policy")
@@ -210,7 +220,8 @@ def load_repository_index_policy(
 
     configured_excludes = _string_tuple(selection.get("exclude"), "selection.exclude")
     # Safety exclusions are intentionally permanent. Repository policy can only
-    # add exclusions, never silently re-enable .git, .agentsorch, build output,
+    # add exclusions, never silently re-enable .git, .fetchcore, legacy
+    # .agentsorch, build output,
     # dependencies, or other canonical default exclusions.
     exclude_patterns = _dedupe((*config.exclude_patterns, *configured_excludes))
 
