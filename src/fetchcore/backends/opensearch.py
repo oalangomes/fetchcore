@@ -907,7 +907,9 @@ def opensearch_embedding_provider(retrieval: RetrievalConfig) -> EmbeddingProvid
         OllamaEmbeddingSettings(
             url=os.environ.get("OLLAMA_URL", "http://localhost:11434"),
             model=embedding.model,
-        )
+        ),
+        timeout_seconds=embedding.timeout_seconds,
+        request_batch_size=embedding.request_batch_size,
     )
 
 
