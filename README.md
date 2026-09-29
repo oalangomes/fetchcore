@@ -82,3 +82,28 @@ The first milestone is an extraction, not a rewrite.
 Behavior that is already proven in AgentsOrchNext should be transplanted with the smallest possible semantic change, then decoupled at the boundary and validated through equivalence benchmarks.
 
 New retrieval features should be implemented here after the extraction gate passes.
+
+
+## MCP serving
+
+FetchCore can expose retrieval through a thin MCP v2 adapter without coupling
+the transport to any specific retrieval backend.
+
+```text
+MCP -> RetrievalApplicationService -> KnowledgeSearchBackend
+```
+
+P0 exposes:
+
+- `search` for backend-neutral technical retrieval;
+- `get_source` for bounded, repository-scoped source access.
+
+Install the optional serving dependency and run over stdio:
+
+```bash
+python -m pip install -e ".[mcp]"
+fetchcore-mcp
+```
+
+See `docs/serving/mcp.md` for environment configuration, Solr hybrid setup and
+MCP Inspector usage.
