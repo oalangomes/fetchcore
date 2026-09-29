@@ -66,7 +66,9 @@ class BackendRegistry:
         self,
         factories: Mapping[str, BackendFactory] | None = None,
     ) -> None:
-        self._factories = dict(factories or builtin_backend_factories())
+        self._factories = dict(
+            builtin_backend_factories() if factories is None else factories
+        )
 
     def create(self, backend_id: str) -> KnowledgeSearchBackend:
         factory = self._factories.get(backend_id)
