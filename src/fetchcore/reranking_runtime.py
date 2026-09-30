@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from fetchcore.search import SearchResult
@@ -15,6 +17,7 @@ from fetchcore.reranking import (
     RerankingKernel,
 )
 from fetchcore.retrieval import RerankingConfig
+from fetchcore.telemetry import elapsed_ms
 
 
 class RerankScorerUnavailableError(LookupError):
@@ -125,13 +128,19 @@ def apply_reranking(
     backend_id: str,
     config: RerankingConfig,
     scorer: RerankScorer,
+    timer: Callable[[], float] = time.monotonic,
 ) -> RerankingApplication:
     """Rerank only the already bounded candidates while preserving their original scores."""
+    started = timer()
     if not config.enabled:
         return RerankingApplication(
             candidates=candidates,
             result=None,
-            metadata={"enabled": False, "applied": False},
+            metadata={
+                "enabled": False,
+                "applied": False,
+                "duration_ms": elapsed_ms(started, timer()),
+            },
         )
     if not candidates:
         return RerankingApplication(
@@ -143,6 +152,7 @@ def apply_reranking(
                 "reason": "empty_candidate_set",
                 "scorer_id": scorer.scorer_id,
                 "scorer_version": scorer.scorer_version,
+                "duration_ms": elapsed_ms(started, timer()),
             },
         )
 
@@ -181,6 +191,7 @@ def apply_reranking(
 
     by_id = {candidate.id: candidate for candidate in candidates}
     reordered = tuple(by_id[item.candidate_id] for item in result.candidates)
+    duration_ms = elapsed_ms(started, timer())
     return RerankingApplication(
         candidates=reordered,
         result=result,
@@ -194,6 +205,7 @@ def apply_reranking(
             "candidate_set_fingerprint": result.candidate_set_fingerprint,
             "input_fingerprint": result.input_fingerprint,
             "output_fingerprint": result.output_fingerprint,
+            "duration_ms": duration_ms,
             "ordering": [
                 {
                     "candidate_id": item.candidate_id,
