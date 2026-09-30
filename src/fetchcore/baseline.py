@@ -9,8 +9,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
-from typing import Literal, Mapping, Sequence
+from typing import Literal
 
 from fetchcore.retrieval import RetrievalBackendCapabilities
 from fetchcore.search import KnowledgeSearchResponse
@@ -296,8 +297,8 @@ def _canonical_mapping(value: Mapping[str, object]) -> dict[str, object]:
     return {str(key): item for key, item in loaded.items()}
 
 
-def _mean(values: Sequence[float] | object) -> float:
-    evaluated = tuple(float(item) for item in values)  # type: ignore[arg-type]
+def _mean(values: Iterable[float | int]) -> float:
+    evaluated = tuple(float(item) for item in values)
     if not evaluated:
         return 0.0
     return round(sum(evaluated) / len(evaluated), 6)
