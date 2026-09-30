@@ -235,3 +235,83 @@ A measurement is a frozen FetchCore baseline only when:
 5. failures are explicit rather than replaced with another backend/mode.
 
 Schema fixtures and unit-test artifacts are not performance baselines.
+
+
+## Frozen v1 corpus and executable suite
+
+The first promoted baseline uses the versioned suite under:
+
+```text
+benchmarks/baseline-v1/
+├── manifest.json
+├── ground-truth.json
+├── run.py
+└── artifacts/
+```
+
+The frozen corpus identity is:
+
+```text
+repository: oalangomes/NeuroTrack_MS
+revision: 74ce3244956a65baed61f1dae6f498cb2be4f3b7
+corpus_id: neurotrack-ms-74ce3244
+```
+
+The corpus repository is private. FetchCore stores only query intent, path-level
+Ground Truth and immutable repository identity. Source content is materialized
+locally and must not be copied into benchmark artifacts.
+
+The runner fails closed when:
+
+- the corpus checkout is not at the exact frozen revision;
+- the corpus checkout has uncommitted changes;
+- a requested backend service cannot be reached;
+- a requested backend capability is unsupported;
+- Solr does not expose the expected frozen schema/vector contract.
+
+Backend defaults are not relied on for corpus coverage. The manifest explicitly
+freezes local file patterns, scan bounds, knowledge-type rules, collection/index
+names, candidate window and embedding identity.
+
+Run every arm against an already prepared environment:
+
+```bash
+python benchmarks/baseline-v1/run.py \
+  --workspace /path/to/NeuroTrack_MS
+```
+
+To rebuild backend projections first:
+
+```bash
+python benchmarks/baseline-v1/run.py \
+  --workspace /path/to/NeuroTrack_MS \
+  --prepare-index
+```
+
+To measure one arm while diagnosing the environment:
+
+```bash
+python benchmarks/baseline-v1/run.py \
+  --workspace /path/to/NeuroTrack_MS \
+  --arm local-lexical
+```
+
+`--prepare-index` writes a separate `indexing.json` artifact so repository
+acquisition/indexing cost is not mixed into repeated retrieval latency.
+
+### Environment identity
+
+Every measured artifact records the logical profile
+`fetchcore-local-benchmark-v1` plus observed:
+
+- Python version;
+- OS/kernel release;
+- machine architecture;
+- CPU count;
+- Solr/OpenSearch/Qdrant versions used by the selected arm;
+- Ollama version for dense/hybrid arms;
+- embedding provider/model/dimensions.
+
+Quality metrics can be inspected across environments, but latency and throughput
+must only be compared as equivalent when the recorded environment profile and
+relevant service/runtime identities are compatible.
