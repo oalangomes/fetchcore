@@ -33,6 +33,7 @@ from fetchcore.fusion import (
 )
 from fetchcore.retrieval import RetrievalBackendCapabilities, RetrievalConfig
 from fetchcore.telemetry import (
+    IndexSyncTelemetry,
     RetrievalStageTelemetry,
     RetrievalTelemetry,
     elapsed_ms,
@@ -412,6 +413,7 @@ class OpenSearchIndexSyncResult:
     deleted: int
     unchanged: int
     duration_ms: int
+    telemetry: IndexSyncTelemetry | None = None
 
     def to_mapping(self) -> dict[str, object]:
         """Return a stable mapping representation of this value."""
@@ -423,6 +425,11 @@ class OpenSearchIndexSyncResult:
             "deleted": self.deleted,
             "unchanged": self.unchanged,
             "duration_ms": self.duration_ms,
+            **(
+                {"telemetry": self.telemetry.to_mapping()}
+                if self.telemetry is not None
+                else {}
+            ),
         }
 
 
@@ -621,7 +628,12 @@ class OpenSearchIndexStore:
             concrete,
             _index_mapping(include_vectors=self.embedding_provider is not None),
         )
-        projected = self._project_documents(result.documents)
+        (
+            projected,
+            embedding_requests,
+            embedding_vectors,
+            embedding_duration_ms,
+        ) = self._project_documents_with_telemetry(result.documents)
         self._bulk_upsert(concrete, (*projected, snapshot.to_mapping()))
         self.transport.request("POST", f"{concrete}/_refresh", {})
         self._validate_staged(concrete, snapshot)
@@ -646,6 +658,15 @@ class OpenSearchIndexStore:
             if old_index != concrete:
                 self._delete_index_if_present(old_index)
 
+        duration_ms = elapsed_ms(started, self.timer())
+        telemetry = IndexSyncTelemetry(
+            duration_ms=duration_ms,
+            backend_writes=len(result.documents),
+            backend_deletes=0,
+            embedding_requests=embedding_requests,
+            embedding_vectors=embedding_vectors,
+            embedding_duration_ms=embedding_duration_ms,
+        )
         return OpenSearchIndexSyncResult(
             mode="full_rebuild",
             snapshot=snapshot,
@@ -653,7 +674,8 @@ class OpenSearchIndexStore:
             updated=0,
             deleted=0,
             unchanged=0,
-            duration_ms=max(0, round((self.timer() - started) * 1_000)),
+            duration_ms=duration_ms,
+            telemetry=telemetry,
         )
 
     def reset(self, repository: str) -> None:
@@ -719,10 +741,20 @@ class OpenSearchIndexStore:
         self,
         documents: Iterable[KnowledgeDocument],
     ) -> tuple[dict[str, object], ...]:
+        projected, _, _, _ = self._project_documents_with_telemetry(documents)
+        return projected
+
+    def _project_documents_with_telemetry(
+        self,
+        documents: Iterable[KnowledgeDocument],
+    ) -> tuple[tuple[dict[str, object], ...], int, int, int]:
         source = tuple(documents)
         if not source:
-            return ()
+            return (), 0, 0, 0
         projected: list[dict[str, object]] = []
+        embedding_requests = 0
+        embedding_vectors = 0
+        embedding_duration_ms = 0
         for offset in range(0, len(source), self.settings.batch_size):
             batch = source[offset : offset + self.settings.batch_size]
             records = tuple(self.compiler.compile(document) for document in batch)
@@ -733,7 +765,11 @@ class OpenSearchIndexStore:
                     self.embedding_serializer.serialize_record(record)
                     for record in records
                 )
+                embedding_started = self.timer()
                 vectors = self.embedding_provider.embed(texts)
+                embedding_duration_ms += elapsed_ms(embedding_started, self.timer())
+                embedding_requests += 1
+                embedding_vectors += len(vectors)
                 if len(vectors) != len(records):
                     raise KnowledgeSearchError(
                         "embedding provider returned an incomplete OpenSearch vector batch",
@@ -753,7 +789,12 @@ class OpenSearchIndexStore:
                 for payload, vector in zip(payloads, vectors, strict=True):
                     payload[OPENSEARCH_VECTOR_FIELD] = list(vector)
             projected.extend(payloads)
-        return tuple(projected)
+        return (
+            tuple(projected),
+            embedding_requests,
+            embedding_vectors,
+            embedding_duration_ms,
+        )
 
     def _snapshot(
         self,
