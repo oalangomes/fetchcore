@@ -66,6 +66,7 @@ def main() -> int:
     environment_config = _object(manifest, "environment")
     endpoints = _object(environment_config, "service_endpoints")
     embedding_identity = _object(environment_config, "embedding")
+    backend_settings = _object(manifest, "backend_settings")
     os.environ["OLLAMA_URL"] = str(endpoints["ollama"])
 
     selected = _select_arms(args.arm)
@@ -92,6 +93,7 @@ def main() -> int:
             revision=expected_revision,
             endpoints=endpoints,
             embedding_identity=embedding_identity,
+            backend_settings=backend_settings,
             environment=environment,
             fetchcore_revision=fetchcore_revision,
         )
@@ -113,6 +115,7 @@ def main() -> int:
                 str(measurement["diagnostic_candidate_window"])
             ),
             embedding_identity=embedding_identity,
+            backend_settings=backend_settings,
         )
         scope = SearchScope(
             workspace=workspace,
@@ -138,7 +141,10 @@ def main() -> int:
         ).run(
             suite.cases,
             corpus=suite.corpus,
-            config_identity=config_identity,
+            config_identity={
+                **config_identity,
+                "backend_settings": settings,
+            },
             environment=environment,
         )
         destination = write_baseline_artifact(
@@ -220,6 +226,7 @@ def _prepare_indexes(
     revision: str,
     endpoints: Mapping[str, object],
     embedding_identity: Mapping[str, object],
+    backend_settings: Mapping[str, object],
     environment: Mapping[str, object],
     fetchcore_revision: str,
 ) -> dict[str, object]:
@@ -256,8 +263,8 @@ def _prepare_indexes(
     if ids & {"solr-lexical", "solr-hybrid"}:
         settings = SolrSettings.from_mapping(
             {
+                **_object(backend_settings, "solr"),
                 "url": endpoints["solr"],
-                "collection": "fetchcore-knowledge",
                 "diagnostic_candidate_window": 80,
             }
         )
@@ -274,8 +281,8 @@ def _prepare_indexes(
     if ids & {"opensearch-lexical", "opensearch-hybrid"}:
         settings = OpenSearchSettings.from_mapping(
             {
+                **_object(backend_settings, "opensearch"),
                 "url": endpoints["opensearch"],
-                "index": "fetchcore-knowledge",
                 "diagnostic_candidate_window": 80,
             }
         )
@@ -291,8 +298,8 @@ def _prepare_indexes(
     if ids & {"qdrant-dense", "qdrant-hybrid"}:
         settings = QdrantVectorSettings.from_mapping(
             {
+                **_object(backend_settings, "qdrant-vector"),
                 "url": endpoints["qdrant"],
-                "collection": "fetchcore-vector",
                 "embedding_url": endpoints["ollama"],
                 "embedding_model": embedding_identity["model"],
                 "diagnostic_candidate_window": 80,
@@ -354,25 +361,26 @@ def _backend_settings(
     endpoints: Mapping[str, object],
     diagnostic_candidate_window: int,
     embedding_identity: Mapping[str, object],
+    backend_settings: Mapping[str, object],
 ) -> dict[str, object]:
     if arm.backend == "local-semantic":
-        return {"diagnostic_candidate_window": diagnostic_candidate_window}
+        return dict(_object(backend_settings, "local-semantic"))
     if arm.backend == "solr":
         return {
+            **_object(backend_settings, "solr"),
             "url": endpoints["solr"],
-            "collection": "fetchcore-knowledge",
             "diagnostic_candidate_window": diagnostic_candidate_window,
         }
     if arm.backend == "opensearch":
         return {
+            **_object(backend_settings, "opensearch"),
             "url": endpoints["opensearch"],
-            "index": "fetchcore-knowledge",
             "diagnostic_candidate_window": diagnostic_candidate_window,
         }
     if arm.backend == "qdrant-vector":
         return {
+            **_object(backend_settings, "qdrant-vector"),
             "url": endpoints["qdrant"],
-            "collection": "fetchcore-vector",
             "embedding_url": endpoints["ollama"],
             "embedding_model": embedding_identity["model"],
             "diagnostic_candidate_window": diagnostic_candidate_window,
