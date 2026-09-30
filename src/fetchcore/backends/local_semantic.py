@@ -7,11 +7,17 @@ import hashlib
 import re
 import time
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from fetchcore.retrieval import RetrievalBackendCapabilities
+from fetchcore.telemetry import (
+    RetrievalStageTelemetry,
+    RetrievalTelemetry,
+    elapsed_ms,
+    returned_chars,
+)
 from fetchcore.search import (
     KnowledgeSearchResponse,
     SearchIntent,
@@ -128,6 +134,13 @@ class LocalSemanticBackend:
     backend_id = "local-semantic"
     retrieval_capabilities = RetrievalBackendCapabilities(lexical=True)
 
+    def __init__(
+        self,
+        *,
+        timer: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.timer = timer
+
     def search(
         self,
         intent: SearchIntent,
@@ -135,7 +148,7 @@ class LocalSemanticBackend:
         requirements: tuple[SearchRequirement, ...],
     ) -> KnowledgeSearchResponse:
         """Execute retrieval for the supplied intent, scope, and requirements."""
-        started = time.monotonic()
+        started = self.timer()
         settings = scope.settings
         query = _local_query(intent, settings)
         scan = scan_repository_text(
@@ -221,7 +234,29 @@ class LocalSemanticBackend:
         candidates.sort(key=_local_ordering_key)
         returned = tuple(candidates[:output_limit])
         diagnostics = _retrieval_diagnostics(candidates, returned)
-        duration_ms = int((time.monotonic() - started) * 1000)
+        duration_ms = elapsed_ms(started, self.timer())
+        telemetry = RetrievalTelemetry(
+            mode="lexical",
+            duration_ms=duration_ms,
+            candidates_examined=len(candidates),
+            candidates_returned=len(returned),
+            returned_chars=returned_chars(item.content for item in returned),
+            stages=(
+                RetrievalStageTelemetry(
+                    name="lexical",
+                    duration_ms=duration_ms,
+                    candidates_out=len(candidates),
+                    metadata={
+                        "files_scanned": len(scan.sources),
+                        "files_with_matches": files_with_matches,
+                    },
+                ),
+            ),
+            budget={
+                "max_results": output_limit,
+                "output_truncated": len(candidates) > output_limit,
+            },
+        )
         return KnowledgeSearchResponse(
             backend=self.backend_id,
             status="success",
@@ -253,6 +288,7 @@ class LocalSemanticBackend:
                 "requirements_received": [item.to_mapping() for item in requirements],
             },
             duration_ms=duration_ms,
+            telemetry=telemetry,
         )
 
 

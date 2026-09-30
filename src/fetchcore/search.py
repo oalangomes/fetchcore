@@ -9,6 +9,7 @@ from typing import Literal, Protocol
 from fetchcore.evidence import EvidenceObservation, QueryMatchEvidence
 from fetchcore.retrieval import RetrievalBackendCapabilities, RetrievalConfig
 from fetchcore.signals import QuerySignal
+from fetchcore.telemetry import RetrievalTelemetry
 
 
 SearchMode = Literal["repository_source", "discovery", "targeted"]
@@ -185,6 +186,7 @@ class KnowledgeSearchResponse:
     results: tuple[SearchResult, ...] = ()
     metadata: dict[str, object] = field(default_factory=dict)
     duration_ms: int = 0
+    telemetry: RetrievalTelemetry | None = None
 
     def to_mapping(self) -> dict[str, object]:
         return {
@@ -193,6 +195,11 @@ class KnowledgeSearchResponse:
             "results": [item.to_mapping() for item in self.results],
             "metadata": self.metadata,
             "duration_ms": self.duration_ms,
+            **(
+                {"telemetry": self.telemetry.to_mapping()}
+                if self.telemetry is not None
+                else {}
+            ),
         }
 
 

@@ -507,6 +507,7 @@ class RepositoryIndexTelemetry:
     files_eligible: int
     files_read: int
     files_indexed: int
+    files_changed: int
     files_skipped: int
     files_unvisited_due_to_truncation: int
     skip_reasons: dict[str, int]
@@ -532,6 +533,14 @@ class RepositoryIndexTelemetry:
 
         payload = asdict(self)
         payload["source_coverage"] = self.source_coverage.to_mapping()
+        payload["files_scanned"] = self.files_evaluated
+        payload["chunks_total"] = self.documents_produced
+        payload["chunks_changed"] = self.added + self.updated + self.removed
+        payload["indexing_throughput_chunks_per_second"] = (
+            None
+            if self.duration_ms <= 0
+            else round(self.documents_produced / (self.duration_ms / 1_000), 3)
+        )
         return payload
 
 
@@ -1206,6 +1215,13 @@ def _telemetry(
         files_eligible=scan.eligible_files,
         files_read=len(scan.sources),
         files_indexed=len({item.path for item in documents}),
+        files_changed=len(
+            {
+                *(item.path for item in changes.added),
+                *(item.document.path for item in changes.updated),
+                *(item.path for item in changes.removed),
+            }
+        ),
         files_skipped=max(0, scan.evaluated_files - len(scan.sources)),
         files_unvisited_due_to_truncation=scan.unvisited_files,
         skip_reasons=dict(sorted(scan.skipped.items())),

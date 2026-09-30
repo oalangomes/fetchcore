@@ -32,6 +32,13 @@ from fetchcore.fusion import (
     FusionRequest,
 )
 from fetchcore.retrieval import RetrievalBackendCapabilities, RetrievalConfig
+from fetchcore.telemetry import (
+    IndexSyncTelemetry,
+    RetrievalStageTelemetry,
+    RetrievalTelemetry,
+    elapsed_ms,
+    returned_chars,
+)
 from fetchcore.projection import (
     PROJECTION_VERSION,
     ProjectionV3CanonicalDocumentReader,
@@ -406,6 +413,7 @@ class OpenSearchIndexSyncResult:
     deleted: int
     unchanged: int
     duration_ms: int
+    telemetry: IndexSyncTelemetry | None = None
 
     def to_mapping(self) -> dict[str, object]:
         """Return a stable mapping representation of this value."""
@@ -417,6 +425,11 @@ class OpenSearchIndexSyncResult:
             "deleted": self.deleted,
             "unchanged": self.unchanged,
             "duration_ms": self.duration_ms,
+            **(
+                {"telemetry": self.telemetry.to_mapping()}
+                if self.telemetry is not None
+                else {}
+            ),
         }
 
 
@@ -615,7 +628,12 @@ class OpenSearchIndexStore:
             concrete,
             _index_mapping(include_vectors=self.embedding_provider is not None),
         )
-        projected = self._project_documents(result.documents)
+        (
+            projected,
+            embedding_requests,
+            embedding_vectors,
+            embedding_duration_ms,
+        ) = self._project_documents_with_telemetry(result.documents)
         self._bulk_upsert(concrete, (*projected, snapshot.to_mapping()))
         self.transport.request("POST", f"{concrete}/_refresh", {})
         self._validate_staged(concrete, snapshot)
@@ -640,6 +658,15 @@ class OpenSearchIndexStore:
             if old_index != concrete:
                 self._delete_index_if_present(old_index)
 
+        duration_ms = elapsed_ms(started, self.timer())
+        telemetry = IndexSyncTelemetry(
+            duration_ms=duration_ms,
+            backend_writes=len(result.documents),
+            backend_deletes=0,
+            embedding_requests=embedding_requests,
+            embedding_vectors=embedding_vectors,
+            embedding_duration_ms=embedding_duration_ms,
+        )
         return OpenSearchIndexSyncResult(
             mode="full_rebuild",
             snapshot=snapshot,
@@ -647,7 +674,8 @@ class OpenSearchIndexStore:
             updated=0,
             deleted=0,
             unchanged=0,
-            duration_ms=max(0, round((self.timer() - started) * 1_000)),
+            duration_ms=duration_ms,
+            telemetry=telemetry,
         )
 
     def reset(self, repository: str) -> None:
@@ -713,10 +741,20 @@ class OpenSearchIndexStore:
         self,
         documents: Iterable[KnowledgeDocument],
     ) -> tuple[dict[str, object], ...]:
+        projected, _, _, _ = self._project_documents_with_telemetry(documents)
+        return projected
+
+    def _project_documents_with_telemetry(
+        self,
+        documents: Iterable[KnowledgeDocument],
+    ) -> tuple[tuple[dict[str, object], ...], int, int, int]:
         source = tuple(documents)
         if not source:
-            return ()
+            return (), 0, 0, 0
         projected: list[dict[str, object]] = []
+        embedding_requests = 0
+        embedding_vectors = 0
+        embedding_duration_ms = 0
         for offset in range(0, len(source), self.settings.batch_size):
             batch = source[offset : offset + self.settings.batch_size]
             records = tuple(self.compiler.compile(document) for document in batch)
@@ -727,7 +765,11 @@ class OpenSearchIndexStore:
                     self.embedding_serializer.serialize_record(record)
                     for record in records
                 )
+                embedding_started = self.timer()
                 vectors = self.embedding_provider.embed(texts)
+                embedding_duration_ms += elapsed_ms(embedding_started, self.timer())
+                embedding_requests += 1
+                embedding_vectors += len(vectors)
                 if len(vectors) != len(records):
                     raise KnowledgeSearchError(
                         "embedding provider returned an incomplete OpenSearch vector batch",
@@ -747,7 +789,12 @@ class OpenSearchIndexStore:
                 for payload, vector in zip(payloads, vectors, strict=True):
                     payload[OPENSEARCH_VECTOR_FIELD] = list(vector)
             projected.extend(payloads)
-        return tuple(projected)
+        return (
+            tuple(projected),
+            embedding_requests,
+            embedding_vectors,
+            embedding_duration_ms,
+        )
 
     def _snapshot(
         self,
@@ -995,6 +1042,7 @@ class OpenSearchBackend:
                 retrieval=retrieval,
             )
 
+        lexical_started = self.timer()
         body = _search_body(intent, scope, snapshot, settings)
         alias = _repository_alias(settings, repository)
         payload = transport.request("POST", f"{alias}/_search", body)
@@ -1111,7 +1159,34 @@ class OpenSearchBackend:
                 )
             )
 
-        duration_ms = max(0, round((self.timer() - started) * 1_000))
+        ended = self.timer()
+        lexical_ms = elapsed_ms(lexical_started, ended)
+        duration_ms = elapsed_ms(started, ended)
+        telemetry = RetrievalTelemetry(
+            mode="lexical",
+            duration_ms=duration_ms,
+            candidates_examined=len(docs),
+            candidates_returned=len(results),
+            returned_chars=returned_chars(item.content for item in results),
+            stages=(
+                RetrievalStageTelemetry(
+                    name="lexical",
+                    duration_ms=lexical_ms,
+                    candidates_out=len(docs),
+                ),
+            ),
+            fingerprints={
+                **(
+                    {"projection": snapshot.projection_fingerprint}
+                    if snapshot.projection_fingerprint is not None
+                    else {}
+                ),
+            },
+            budget={
+                "max_results": scope.max_results,
+                "output_truncated": output_truncated,
+            },
+        )
         diagnostic = bounded_diagnostic_metadata(
             docs=docs,
             matches=matches,
@@ -1126,6 +1201,7 @@ class OpenSearchBackend:
             status="found" if results else "not_found",
             results=tuple(results),
             duration_ms=duration_ms,
+            telemetry=telemetry,
             metadata={
                 "backend": self.backend_id,
                 "repository": snapshot.repository,
@@ -1211,12 +1287,15 @@ def _dense_or_hybrid_search(
     snapshot: OpenSearchIndexSnapshot,
     retrieval: RetrievalConfig,
 ) -> KnowledgeSearchResponse:
+    embedding_started = backend.timer()
     embedder, serializer, vector, query_text = _prepare_dense_query(
         backend=backend,
         intent=intent,
         snapshot=snapshot,
         retrieval=retrieval,
     )
+    embedding_ms = elapsed_ms(embedding_started, backend.timer())
+    dense_started = backend.timer()
     dense_candidates, dense_num_found, dense_telemetry = _opensearch_dense_candidates(
         transport=transport,
         scope=scope,
@@ -1224,6 +1303,7 @@ def _dense_or_hybrid_search(
         settings=settings,
         vector=vector,
     )
+    dense_ms = elapsed_ms(dense_started, backend.timer())
     if retrieval.mode == "dense":
         results = tuple(
             _dense_search_result(
@@ -1233,11 +1313,46 @@ def _dense_or_hybrid_search(
             )
             for candidate in dense_candidates[: scope.max_results]
         )
+        output_truncated = len(dense_candidates) > scope.max_results
+        duration_ms = elapsed_ms(started, backend.timer())
+        telemetry = RetrievalTelemetry(
+            mode="dense",
+            duration_ms=duration_ms,
+            candidates_examined=len(dense_candidates),
+            candidates_returned=len(results),
+            returned_chars=returned_chars(item.content for item in results),
+            stages=(
+                RetrievalStageTelemetry(name="embedding", duration_ms=embedding_ms),
+                RetrievalStageTelemetry(
+                    name="dense",
+                    duration_ms=dense_ms,
+                    candidates_out=len(dense_candidates),
+                ),
+            ),
+            fingerprints={
+                **(
+                    {"projection": snapshot.projection_fingerprint}
+                    if snapshot.projection_fingerprint is not None
+                    else {}
+                ),
+                "embedding_serializer": serializer.serializer_fingerprint,
+            },
+            budget={
+                "max_results": scope.max_results,
+                "output_truncated": output_truncated,
+            },
+            metadata={
+                "embedding_provider": embedder.provider_id,
+                "embedding_model": embedder.model_id,
+                "vector_dimensions": len(vector),
+            },
+        )
         return KnowledgeSearchResponse(
             backend=backend.backend_id,
             status="found" if results else "not_found",
             results=results,
-            duration_ms=max(0, round((backend.timer() - started) * 1_000)),
+            duration_ms=duration_ms,
+            telemetry=telemetry,
             metadata={
                 "backend": backend.backend_id,
                 "repository": snapshot.repository,
@@ -1282,6 +1397,7 @@ def _dense_or_hybrid_search(
             },
         )
 
+    lexical_started = backend.timer()
     lexical_candidates, lexical_num_found, lexical_body = _opensearch_lexical_candidates(
         transport=transport,
         intent=intent,
@@ -1289,6 +1405,7 @@ def _dense_or_hybrid_search(
         snapshot=snapshot,
         settings=settings,
     )
+    lexical_ms = elapsed_ms(lexical_started, backend.timer())
     return _hybrid_response(
         backend=backend,
         started=started,
@@ -1304,6 +1421,9 @@ def _dense_or_hybrid_search(
         dense_num_found=dense_num_found,
         lexical_body=lexical_body,
         dense_telemetry=dense_telemetry,
+        embedding_ms=embedding_ms,
+        dense_ms=dense_ms,
+        lexical_ms=lexical_ms,
     )
 
 
@@ -1586,7 +1706,11 @@ def _hybrid_response(
     dense_num_found: int,
     lexical_body: Mapping[str, object],
     dense_telemetry: Mapping[str, object],
+    embedding_ms: int,
+    dense_ms: int,
+    lexical_ms: int,
 ) -> KnowledgeSearchResponse:
+    fusion_started = backend.timer()
     lexical_fusion_candidates = lexical_candidates[: scope.max_results]
     dense_fusion_candidates = dense_candidates[: scope.max_results]
     lexical_by_id = {
@@ -1631,6 +1755,7 @@ def _hybrid_response(
             parameters={"k": _RRF_K},
         )
     )
+    fusion_ms = elapsed_ms(fusion_started, backend.timer())
     results: list[SearchResult] = []
     candidate_order: list[dict[str, object]] = []
     for fused_candidate in fusion_result.candidates:
@@ -1808,11 +1933,59 @@ def _hybrid_response(
                 },
             )
         )
+    duration_ms = elapsed_ms(started, backend.timer())
+    telemetry = RetrievalTelemetry(
+        mode="hybrid",
+        duration_ms=duration_ms,
+        candidates_examined=len(fusion_result.candidates),
+        candidates_returned=len(results),
+        returned_chars=returned_chars(item.content for item in results),
+        stages=(
+            RetrievalStageTelemetry(name="embedding", duration_ms=embedding_ms),
+            RetrievalStageTelemetry(
+                name="lexical",
+                duration_ms=lexical_ms,
+                candidates_out=len(lexical_candidates),
+            ),
+            RetrievalStageTelemetry(
+                name="dense",
+                duration_ms=dense_ms,
+                candidates_out=len(dense_candidates),
+            ),
+            RetrievalStageTelemetry(
+                name="fusion",
+                duration_ms=fusion_ms,
+                candidates_in=len(fusion_candidates),
+                candidates_out=len(fusion_result.candidates),
+            ),
+        ),
+        fingerprints={
+            **(
+                {"projection": snapshot.projection_fingerprint}
+                if snapshot.projection_fingerprint is not None
+                else {}
+            ),
+            "embedding_serializer": serializer.serializer_fingerprint,
+            "fusion_input": fusion_result.input_fingerprint,
+            "fusion_output": fusion_result.output_fingerprint,
+        },
+        budget={
+            "max_results": scope.max_results,
+            "output_truncated": len(fusion_result.candidates) > scope.max_results,
+        },
+        metadata={
+            "embedding_provider": embedder.provider_id,
+            "embedding_model": embedder.model_id,
+            "vector_dimensions": snapshot.vector_dimensions,
+            "fusion_strategy": "rrf",
+        },
+    )
     return KnowledgeSearchResponse(
         backend=backend.backend_id,
         status="found" if results else "not_found",
         results=tuple(results),
-        duration_ms=max(0, round((backend.timer() - started) * 1_000)),
+        duration_ms=duration_ms,
+        telemetry=telemetry,
         metadata={
             "backend": backend.backend_id,
             "repository": snapshot.repository,
