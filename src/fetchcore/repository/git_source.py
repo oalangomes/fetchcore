@@ -25,7 +25,9 @@ from fetchcore.repository.sources import (
 )
 
 
-DEFAULT_REPOSITORY_CACHE = Path("~/.agentsorch/repositories").expanduser()
+DEFAULT_REPOSITORY_CACHE = Path("~/.cache/fetchcore/repositories").expanduser()
+FETCHCORE_REPOSITORY_CACHE_ENV = "FETCHCORE_REPOSITORY_CACHE"
+LEGACY_REPOSITORY_CACHE_ENV = "AGENTSORCH_REPOSITORY_CACHE"
 DEFAULT_GIT_TIMEOUT_SECONDS = 120.0
 
 
@@ -47,7 +49,10 @@ class GitRepositorySourceProvider:
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("Git timeout_seconds must be positive")
-        configured_root = os.environ.get("AGENTSORCH_REPOSITORY_CACHE")
+        configured_root = (
+            os.environ.get(FETCHCORE_REPOSITORY_CACHE_ENV)
+            or os.environ.get(LEGACY_REPOSITORY_CACHE_ENV)
+        )
         root = (
             cache_root
             if cache_root is not None

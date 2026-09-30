@@ -120,7 +120,7 @@ def _snapshot(
 
 
 def test_runtime_honors_explicit_extractor_selection(tmp_path: Path) -> None:
-    policy_path = tmp_path / ".agentsorch/indexing.yaml"
+    policy_path = tmp_path / ".fetchcore/indexing.yaml"
     policy_path.parent.mkdir(parents=True)
     policy_path.write_text(
         """

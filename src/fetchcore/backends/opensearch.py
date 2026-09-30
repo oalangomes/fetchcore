@@ -108,7 +108,7 @@ class OpenSearchSettings:
     """Validated OpenSearch settings with backend-neutral Projection v3 controls."""
 
     url: str = "http://localhost:9200"
-    index: str = "agentsorch-knowledge"
+    index: str = "fetchcore-knowledge"
     timeout_seconds: float = 10.0
     projection_version: str = PROJECTION_VERSION
     field_boosts: dict[str, float] = field(
@@ -469,7 +469,7 @@ def _index_mapping(*, include_vectors: bool = False) -> dict[str, object]:
         name: {"type": "keyword"} for name in sorted(keyword_fields)
     }
     for name in sorted(_EXACT_FIELDS):
-        properties[name] = {"type": "keyword", "normalizer": "agentsorch_identifier_ci"}
+        properties[name] = {"type": "keyword", "normalizer": "fetchcore_identifier_ci"}
     for name in sorted(_TEXT_FIELDS):
         properties[name] = {"type": "text"}
     properties["line_start"] = {"type": "integer"}
@@ -480,7 +480,7 @@ def _index_mapping(*, include_vectors: bool = False) -> dict[str, object]:
     settings: dict[str, object] = {
         "analysis": {
             "normalizer": {
-                "agentsorch_identifier_ci": {
+                "fetchcore_identifier_ci": {
                     "type": "custom",
                     "filter": ["lowercase"],
                 }

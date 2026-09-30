@@ -151,6 +151,7 @@ class LocalSemanticBackend:
                     "exclude_dirs",
                     [
                         ".git",
+                        ".fetchcore",
                         ".agentsorch",
                         ".venv",
                         "venv",

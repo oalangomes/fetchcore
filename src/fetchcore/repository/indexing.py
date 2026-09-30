@@ -267,6 +267,7 @@ DEFAULT_INCLUDE_PATTERNS = (
 
 DEFAULT_EXCLUDE_PATTERNS = (
     ".git",
+    ".fetchcore",
     ".agentsorch",
     ".venv",
     "venv",

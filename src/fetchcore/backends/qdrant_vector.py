@@ -87,7 +87,7 @@ class QdrantVectorSettings:
     """Qdrant and embedding endpoint settings for the vector-only benchmark."""
 
     url: str = "http://localhost:6333"
-    collection: str = "agentsorch-vector"
+    collection: str = "fetchcore-vector"
     timeout_seconds: float = 30.0
     projection_version: str = PROJECTION_VERSION
     embedding_serializer_mode: ProjectionEmbeddingMode = (
@@ -422,7 +422,7 @@ class QdrantVectorIndexStore:
     def health(self) -> dict[str, object]:
         """Return backend health information required by the lifecycle."""
         qdrant = self.transport.request("GET", "collections")
-        probe = self.embedder.embed(("agentsorch embedding probe",))
+        probe = self.embedder.embed(("fetchcore embedding probe",))
         dimensions = _validate_vector_dimensions(probe)
         return {
             "qdrant": qdrant,

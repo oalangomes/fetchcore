@@ -1,7 +1,7 @@
 """Repository-local policy for binary/document knowledge sources.
 
 Document-source policy is intentionally separate from text-source selection in
-``.agentsorch/indexing.yaml``. This prevents binary acquisition limits and
+``.fetchcore/indexing.yaml``. This prevents binary acquisition limits and
 format enablement from turning ``RepositoryIndexConfig`` into an unrelated
 configuration god object.
 """
@@ -17,7 +17,8 @@ from fetchcore.repository.index_policy import RepositoryIndexPolicyError
 
 
 DOCUMENT_INDEX_POLICY_VERSION = 1
-DOCUMENT_INDEX_POLICY_PATH = Path(".agentsorch/document-indexing.yaml")
+DOCUMENT_INDEX_POLICY_PATH = Path(".fetchcore/document-indexing.yaml")
+LEGACY_DOCUMENT_INDEX_POLICY_PATH = Path(".agentsorch/document-indexing.yaml")
 DEFAULT_DOCUMENT_INCLUDE_PATTERNS = ("*.pdf", "*.xlsx")
 DEFAULT_DOCUMENT_FORMATS = ("pdf", "xlsx")
 DEFAULT_MAX_DOCUMENT_FILES = 200
@@ -79,7 +80,7 @@ class RepositoryDocumentIndexPolicy:
 
 
 def load_repository_document_index_policy(workspace: Path) -> RepositoryDocumentIndexPolicy:
-    """Load optional ``.agentsorch/document-indexing.yaml`` or canonical defaults."""
+    """Load FetchCore document policy with an explicit legacy compatibility path."""
 
     root = workspace.resolve(strict=True)
     if not root.is_dir():
@@ -87,8 +88,17 @@ def load_repository_document_index_policy(workspace: Path) -> RepositoryDocument
             f"repository workspace is not a directory: {workspace}"
         )
     policy_path = root / DOCUMENT_INDEX_POLICY_PATH
+    legacy_policy_path = root / LEGACY_DOCUMENT_INDEX_POLICY_PATH
+    if policy_path.is_file() and legacy_policy_path.is_file():
+        raise RepositoryDocumentPolicyError(
+            "both FetchCore and legacy document indexing policies are present; "
+            "remove one to avoid ambiguous configuration"
+        )
     if not policy_path.is_file():
-        return RepositoryDocumentIndexPolicy()
+        if legacy_policy_path.is_file():
+            policy_path = legacy_policy_path
+        else:
+            return RepositoryDocumentIndexPolicy()
 
     try:
         raw = yaml.safe_load(policy_path.read_text(encoding="utf-8")) or {}

@@ -179,7 +179,7 @@ class DocumentRepositoryIndexer(HtmlRepositoryIndexer):
             include_patterns=(
                 self.document_policy.include_patterns
                 if self.document_policy.enabled
-                else (".agentsorch-document-sources-disabled",)
+                else (".fetchcore-document-sources-disabled",)
             ),
             exclude_patterns=self.config.exclude_patterns,
             max_files=self.document_policy.max_files,
