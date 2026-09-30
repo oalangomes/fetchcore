@@ -14,7 +14,13 @@ from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 from fetchcore.retrieval import RetrievalBackendCapabilities
-from fetchcore.search import KnowledgeSearchResponse
+from fetchcore.search import (
+    KnowledgeSearchBackend,
+    KnowledgeSearchResponse,
+    SearchIntent,
+    SearchRequirement,
+    SearchScope,
+)
 
 
 BaselineIdentityField = Literal["id", "source_ref"]
@@ -118,6 +124,108 @@ class BaselineArtifact:
             "observations": [item.to_mapping() for item in self.observations],
             "aggregate": dict(self.aggregate),
         }
+
+
+@dataclass(frozen=True)
+class BaselineQueryCase:
+    """One reproducible query plus explicit Ground Truth."""
+
+    query_id: str
+    intent: SearchIntent
+    relevant: tuple[str, ...]
+    identity_field: BaselineIdentityField = "id"
+
+    @property
+    def truth(self) -> BaselineGroundTruth:
+        return BaselineGroundTruth(
+            query_id=self.query_id,
+            relevant=self.relevant,
+            identity_field=self.identity_field,
+        )
+
+
+class BaselineRunner:
+    """Execute one frozen arm against a configured FetchCore backend."""
+
+    def __init__(
+        self,
+        *,
+        backend: KnowledgeSearchBackend,
+        arm: BaselineArm,
+        scope: SearchScope,
+        repetitions: int = 20,
+        warmups: int = 1,
+        k: int | None = None,
+    ) -> None:
+        if repetitions < 1:
+            raise BaselineConfigurationError("baseline repetitions must be positive")
+        if warmups < 0:
+            raise BaselineConfigurationError("baseline warmups must be non-negative")
+        if k is not None and k < 1:
+            raise BaselineConfigurationError("baseline k must be positive")
+        if backend.backend_id != arm.backend:
+            raise BaselineConfigurationError(
+                f"baseline arm {arm.id!r} declares backend {arm.backend!r} "
+                f"but runner received {backend.backend_id!r}"
+            )
+        validate_baseline_arm(arm, backend.retrieval_capabilities)
+        observed_mode = scope.retrieval.mode if scope.retrieval is not None else "lexical"
+        if observed_mode != arm.mode:
+            raise BaselineConfigurationError(
+                f"baseline arm {arm.id!r} requires mode {arm.mode!r} "
+                f"but SearchScope config resolves to {observed_mode!r}"
+            )
+        self.backend = backend
+        self.arm = arm
+        self.scope = scope
+        self.repetitions = repetitions
+        self.warmups = warmups
+        self.k = k or scope.max_results
+
+    def run(
+        self,
+        cases: Sequence[BaselineQueryCase],
+        *,
+        corpus: Mapping[str, object],
+        config_identity: Mapping[str, object] | None = None,
+        requirements: tuple[SearchRequirement, ...] = (),
+    ) -> BaselineArtifact:
+        """Run warmups + measured repetitions and build one v1 artifact."""
+
+        if not cases:
+            raise BaselineConfigurationError("baseline runner requires query cases")
+        for case in cases:
+            for _ in range(self.warmups):
+                self.backend.search(case.intent, self.scope, requirements)
+
+        observations: list[RetrievalQualityObservation] = []
+        for iteration in range(1, self.repetitions + 1):
+            for case in cases:
+                response = self.backend.search(case.intent, self.scope, requirements)
+                observations.append(
+                    evaluate_retrieval(
+                        response,
+                        case.truth,
+                        iteration=iteration,
+                        k=self.k,
+                    )
+                )
+
+        config: dict[str, object] = {
+            "scope": self.scope.to_mapping(),
+            "arm": self.arm.to_mapping(),
+            "repetitions": self.repetitions,
+            "warmups": self.warmups,
+            "k": self.k,
+        }
+        if config_identity:
+            config["identity"] = _canonical_mapping(config_identity)
+        return build_baseline_artifact(
+            arm=self.arm,
+            corpus=corpus,
+            config=config,
+            observations=observations,
+        )
 
 
 def validate_baseline_arm(
@@ -251,6 +359,7 @@ def build_baseline_artifact(
             item.candidates_returned for item in values
         ),
         "returned_chars_mean": _mean(item.returned_chars for item in values),
+        "fingerprints": _observed_fingerprints(values),
     }
 
     return BaselineArtifact(
@@ -263,6 +372,24 @@ def build_baseline_artifact(
         observations=values,
         aggregate=aggregate,
     )
+
+
+def _observed_fingerprints(
+    observations: Sequence[RetrievalQualityObservation],
+) -> dict[str, list[str]]:
+    observed: dict[str, set[str]] = {}
+    for observation in observations:
+        raw = observation.telemetry.get("fingerprints")
+        if not isinstance(raw, Mapping):
+            continue
+        for key, value in raw.items():
+            if value is None:
+                continue
+            observed.setdefault(str(key), set()).add(str(value))
+    return {
+        key: sorted(values)
+        for key, values in sorted(observed.items())
+    }
 
 
 def percentile(values: Sequence[int], quantile: float) -> int:
