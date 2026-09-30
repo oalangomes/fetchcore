@@ -27,7 +27,7 @@
       "solr": "http://localhost:8983/solr",
       "opensearch": "http://localhost:9200",
       "qdrant": "http://localhost:6333",
-      "ollama": "http://localhost:11434"
+      "ollama": "http://172.21.32.1:11434"
     },
     "note": "Service/runtime versions are observed at execution time and frozen into each artifact."
   },
