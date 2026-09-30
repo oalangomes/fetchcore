@@ -10,6 +10,7 @@ from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 
 from fetchcore.retrieval import RetrievalBackendCapabilities
 from fetchcore.telemetry import (
@@ -199,9 +200,11 @@ class LocalSemanticBackend:
         files_with_matches = 0
         consolidated_candidates = 0
         sources = _repository_sources(scan.sources, scope.repository_paths)
+        repository = scope.repository or scope.workspace.name
         for source in sources:
             found = _search_file(
                 source=source,
+                repository=repository,
                 query=query,
                 result_namespace=scope.result_namespace,
                 revision=scope.revision,
@@ -223,6 +226,7 @@ class LocalSemanticBackend:
             if scope.repository_paths and not eligible_candidates:
                 direct_candidate = _repository_source_candidate(
                     source=source,
+                    repository=repository,
                     result_namespace=scope.result_namespace,
                     revision=scope.revision,
                     settings=settings,
@@ -405,6 +409,7 @@ def _query_signal_match_counts(
 def _search_file(
     *,
     source: SafeSource,
+    repository: str,
     query: LocalSearchQuery,
     result_namespace: str,
     revision: str | None,
@@ -472,6 +477,7 @@ def _search_file(
             region=region,
             lines=lines,
             relative=relative,
+            repository=repository,
             document_checksum=source.checksum,
             result_namespace=result_namespace,
             revision=revision,
@@ -491,6 +497,7 @@ def _search_file(
 def _repository_source_candidate(
     *,
     source: SafeSource,
+    repository: str,
     result_namespace: str,
     revision: str | None,
     settings: dict[str, object],
@@ -503,7 +510,7 @@ def _repository_source_candidate(
     return SearchResult(
         id=f"candidate_{candidate_id}",
         source=source.relative,
-        source_ref=source.relative,
+        source_ref=_repository_source_ref(repository, source.relative),
         knowledge_type=_knowledge_type(source.relative, settings),
         content=content,
         score=0.0,
@@ -519,6 +526,12 @@ def _repository_source_candidate(
             "repository_source_exact": True,
         },
     )
+
+
+def _repository_source_ref(repository: str, relative: str) -> str:
+    encoded_repository = quote(repository, safe="/.:@")
+    normalized = relative.replace("\\", "/").lstrip("/")
+    return f"repository://{encoded_repository}/{quote(normalized, safe='/')}"
 
 
 def _repository_sources(
@@ -580,6 +593,7 @@ def _candidate_from_region(
     region: _Region,
     lines: list[str],
     relative: str,
+    repository: str,
     document_checksum: str,
     result_namespace: str,
     revision: str | None,
@@ -667,7 +681,7 @@ def _candidate_from_region(
     return SearchResult(
         id=f"candidate_{candidate_id}",
         source=relative,
-        source_ref=relative,
+        source_ref=_repository_source_ref(repository, relative),
         knowledge_type=knowledge_type,
         content=slice_content,
         score=score,
