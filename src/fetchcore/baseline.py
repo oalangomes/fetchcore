@@ -436,25 +436,25 @@ def evaluate_retrieval(
         for item in results
     )
     relevant = set(truth.relevant)
-    hits = tuple(identity for identity in identities if identity in relevant)
-    recovered = len(set(hits))
+    seen_relevant: set[str] = set()
+    relevant_ranks: list[int] = []
+    for rank, identity in enumerate(identities, start=1):
+        if identity not in relevant or identity in seen_relevant:
+            continue
+        seen_relevant.add(identity)
+        relevant_ranks.append(rank)
+
+    recovered = len(seen_relevant)
     recall = recovered / len(relevant)
 
-    first_rank = next(
-        (rank for rank, identity in enumerate(identities, start=1) if identity in relevant),
-        None,
-    )
+    first_rank = relevant_ranks[0] if relevant_ranks else None
     reciprocal_rank = 0.0 if first_rank is None else 1.0 / first_rank
 
-    dcg = sum(
-        1.0 / math.log2(rank + 1)
-        for rank, identity in enumerate(identities, start=1)
-        if identity in relevant
-    )
+    dcg = sum(1.0 / math.log2(rank + 1) for rank in relevant_ranks)
     ideal_hits = min(len(relevant), k)
     ideal_dcg = sum(1.0 / math.log2(rank + 1) for rank in range(1, ideal_hits + 1))
     ndcg = 0.0 if ideal_dcg == 0.0 else dcg / ideal_dcg
-    density = 0.0 if not identities else len(hits) / len(identities)
+    density = 0.0 if not identities else recovered / len(identities)
 
     telemetry = (
         {}
