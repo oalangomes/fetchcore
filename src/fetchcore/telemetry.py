@@ -101,6 +101,49 @@ class RetrievalTelemetry:
         }
 
 
+
+@dataclass(frozen=True)
+class IndexSyncTelemetry:
+    """Operational storage/embedding telemetry for one index synchronization."""
+
+    duration_ms: int
+    backend_writes: int
+    backend_deletes: int
+    embedding_requests: int = 0
+    embedding_vectors: int = 0
+    embedding_duration_ms: int = 0
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("duration_ms", self.duration_ms),
+            ("backend_writes", self.backend_writes),
+            ("backend_deletes", self.backend_deletes),
+            ("embedding_requests", self.embedding_requests),
+            ("embedding_vectors", self.embedding_vectors),
+            ("embedding_duration_ms", self.embedding_duration_ms),
+        ):
+            if value < 0:
+                raise ValueError(f"index sync telemetry {name} must be non-negative")
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "duration_ms": self.duration_ms,
+            "backend_writes": self.backend_writes,
+            "backend_deletes": self.backend_deletes,
+            "embedding_requests": self.embedding_requests,
+            "embedding_vectors": self.embedding_vectors,
+            "embedding_duration_ms": self.embedding_duration_ms,
+            "embedding_throughput_vectors_per_second": (
+                None
+                if self.embedding_duration_ms <= 0
+                else round(
+                    self.embedding_vectors / (self.embedding_duration_ms / 1_000),
+                    3,
+                )
+            ),
+        }
+
+
 def elapsed_ms(started: float, ended: float) -> int:
     """Convert a monotonic interval to a bounded integer millisecond value."""
 
