@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from pathlib import Path
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from typing import Literal
@@ -390,6 +391,21 @@ def _observed_fingerprints(
         key: sorted(values)
         for key, values in sorted(observed.items())
     }
+
+
+def write_baseline_artifact(path: Path, artifact: BaselineArtifact) -> Path:
+    """Write one deterministic JSON baseline artifact for external regression tooling."""
+
+    destination = path.resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    rendered = json.dumps(
+        artifact.to_mapping(),
+        sort_keys=True,
+        indent=2,
+        ensure_ascii=True,
+    )
+    destination.write_text(rendered + "\n", encoding="utf-8")
+    return destination
 
 
 def percentile(values: Sequence[int], quantile: float) -> int:
