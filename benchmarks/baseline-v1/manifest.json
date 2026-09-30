@@ -73,5 +73,111 @@
     "require_all_arms": true,
     "require_environment_identity": true,
     "artifacts_directory": "artifacts"
+  },
+  "backend_settings": {
+    "local-semantic": {
+      "file_patterns": [
+        "*.js",
+        "*.cjs",
+        "*.mjs",
+        "*.md",
+        "*.json",
+        "*.yaml",
+        "*.yml",
+        "*.toml",
+        "*.puml"
+      ],
+      "exclude_dirs": [
+        ".git",
+        ".fetchcore",
+        ".agentsorch",
+        ".venv",
+        "venv",
+        "node_modules",
+        "build",
+        "dist",
+        "coverage",
+        "__pycache__"
+      ],
+      "max_files_scanned": 10000,
+      "max_file_bytes": 2000000,
+      "max_total_bytes": 268435456,
+      "max_matches": 20,
+      "context_lines": 1,
+      "merge_adjacent_lines": 1,
+      "knowledge_type_rules": [
+        {
+          "pattern": "**/tests/**",
+          "knowledge_type": "tests"
+        },
+        {
+          "pattern": "**/*.test.js",
+          "knowledge_type": "tests"
+        },
+        {
+          "pattern": "docs/**",
+          "knowledge_type": "documentation"
+        },
+        {
+          "pattern": "*.md",
+          "knowledge_type": "documentation"
+        },
+        {
+          "pattern": "**/*.md",
+          "knowledge_type": "documentation"
+        },
+        {
+          "pattern": "*.puml",
+          "knowledge_type": "documentation"
+        },
+        {
+          "pattern": "**/*.puml",
+          "knowledge_type": "documentation"
+        },
+        {
+          "pattern": "*.json",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "**/*.json",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "*.yaml",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "**/*.yaml",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "*.yml",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "**/*.yml",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "*.toml",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "**/*.toml",
+          "knowledge_type": "configuration"
+        }
+      ],
+      "default_knowledge_type": "code"
+    },
+    "solr": {
+      "collection": "fetchcore-knowledge"
+    },
+    "opensearch": {
+      "index": "fetchcore-knowledge"
+    },
+    "qdrant-vector": {
+      "collection": "fetchcore-vector",
+      "batch_size": 32
+    }
   }
 }
