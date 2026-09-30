@@ -60,6 +60,7 @@ from fetchcore.projection import (
 from fetchcore.repository.indexing import RepositoryIndexResult, RepositoryIndexer
 from fetchcore.retrieval import RetrievalBackendCapabilities
 from fetchcore.telemetry import (
+    IndexSyncTelemetry,
     RetrievalStageTelemetry,
     RetrievalTelemetry,
     elapsed_ms,
@@ -340,6 +341,7 @@ class QdrantVectorIndexSyncResult:
     snapshot: QdrantVectorSnapshot
     added: int
     duration_ms: int
+    telemetry: IndexSyncTelemetry | None = None
 
     def to_mapping(self) -> dict[str, object]:
         """Return a stable mapping representation of this value."""
@@ -351,6 +353,11 @@ class QdrantVectorIndexSyncResult:
             "deleted": 0,
             "unchanged": 0,
             "duration_ms": self.duration_ms,
+            **(
+                {"telemetry": self.telemetry.to_mapping()}
+                if self.telemetry is not None
+                else {}
+            ),
         }
 
 
@@ -529,13 +536,20 @@ class QdrantVectorIndexStore:
 
         dimensions: int | None = None
         inserted = 0
+        embedding_requests = 0
+        embedding_vectors = 0
+        embedding_duration_ms = 0
         alias_switched = False
         try:
             for document_batch in _batches(result.documents, self.settings.batch_size):
                 records = tuple(self.compiler.compile(item) for item in document_batch)
+                embedding_started = self.timer()
                 vectors = self.embedder.embed(
                     tuple(self.serializer.serialize_record(item) for item in records)
                 )
+                embedding_duration_ms += elapsed_ms(embedding_started, self.timer())
+                embedding_requests += 1
+                embedding_vectors += len(vectors)
                 if len(vectors) != len(records):
                     raise KnowledgeSearchError(
                         "embedding provider returned an incomplete batch",
@@ -651,11 +665,21 @@ class QdrantVectorIndexStore:
 
         if prior is not None and prior != concrete:
             self._delete_collection_if_present(prior)
+        duration_ms = elapsed_ms(started, self.timer())
+        telemetry = IndexSyncTelemetry(
+            duration_ms=duration_ms,
+            backend_writes=inserted,
+            backend_deletes=0,
+            embedding_requests=embedding_requests,
+            embedding_vectors=embedding_vectors,
+            embedding_duration_ms=embedding_duration_ms,
+        )
         return QdrantVectorIndexSyncResult(
             mode="full_rebuild",
             snapshot=snapshot,
             added=inserted,
-            duration_ms=max(0, round((self.timer() - started) * 1_000)),
+            duration_ms=duration_ms,
+            telemetry=telemetry,
         )
 
     def reset(self, repository: str) -> None:
