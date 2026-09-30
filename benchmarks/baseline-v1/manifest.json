@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "baseline_id": "fetchcore-baseline-v1",
+  "protocol": "fetchcore.baseline-v1",
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "clone_url": "https://github.com/oalangomes/NeuroTrack_MS.git",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7",
+    "ground_truth": "ground-truth.json"
+  },
+  "measurement": {
+    "warmups": 1,
+    "repetitions": 20,
+    "k": 20,
+    "max_results": 20,
+    "diagnostic_candidate_window": 80
+  },
+  "environment": {
+    "profile_id": "fetchcore-local-benchmark-v1",
+    "embedding": {
+      "provider": "ollama",
+      "model": "embeddinggemma",
+      "dimensions": 768
+    },
+    "service_endpoints": {
+      "solr": "http://localhost:8983/solr",
+      "opensearch": "http://localhost:9200",
+      "qdrant": "http://localhost:6333",
+      "ollama": "http://172.21.32.1:11434"
+    },
+    "note": "Service/runtime versions are observed at execution time and frozen into each artifact."
+  },
+  "arms": [
+    {
+      "id": "local-lexical",
+      "backend": "local-semantic",
+      "mode": "lexical"
+    },
+    {
+      "id": "solr-lexical",
+      "backend": "solr",
+      "mode": "lexical"
+    },
+    {
+      "id": "solr-hybrid",
+      "backend": "solr",
+      "mode": "hybrid"
+    },
+    {
+      "id": "opensearch-lexical",
+      "backend": "opensearch",
+      "mode": "lexical"
+    },
+    {
+      "id": "opensearch-hybrid",
+      "backend": "opensearch",
+      "mode": "hybrid"
+    },
+    {
+      "id": "qdrant-dense",
+      "backend": "qdrant-vector",
+      "mode": "dense"
+    },
+    {
+      "id": "qdrant-hybrid",
+      "backend": "qdrant-vector",
+      "mode": "hybrid"
+    }
+  ],
+  "promotion": {
+    "require_exact_corpus_revision": true,
+    "require_all_arms": true,
+    "require_environment_identity": true,
+    "artifacts_directory": "artifacts"
+  },
+  "backend_settings": {
+    "local-semantic": {
+      "file_patterns": [
+        "*.js",
+        "*.cjs",
+        "*.mjs",
+        "*.md",
+        "*.json",
+        "*.yaml",
+        "*.yml",
+        "*.toml",
+        "*.puml"
+      ],
+      "exclude_dirs": [
+        ".git",
+        ".fetchcore",
+        ".agentsorch",
+        ".venv",
+        "venv",
+        "node_modules",
+        "build",
+        "dist",
+        "coverage",
+        "__pycache__"
+      ],
+      "max_files_scanned": 10000,
+      "max_file_bytes": 2000000,
+      "max_total_bytes": 268435456,
+      "max_matches": 20,
+      "context_lines": 1,
+      "merge_adjacent_lines": 1,
+      "knowledge_type_rules": [
+        {
+          "pattern": "**/tests/**",
+          "knowledge_type": "tests"
+        },
+        {
+          "pattern": "**/*.test.js",
+          "knowledge_type": "tests"
+        },
+        {
+          "pattern": "docs/**",
+          "knowledge_type": "documentation"
+        },
+        {
+          "pattern": "*.md",
+          "knowledge_type": "documentation"
+        },
+        {
+          "pattern": "**/*.md",
+          "knowledge_type": "documentation"
+        },
+        {
+          "pattern": "*.puml",
+          "knowledge_type": "documentation"
+        },
+        {
+          "pattern": "**/*.puml",
+          "knowledge_type": "documentation"
+        },
+        {
+          "pattern": "*.json",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "**/*.json",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "*.yaml",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "**/*.yaml",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "*.yml",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "**/*.yml",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "*.toml",
+          "knowledge_type": "configuration"
+        },
+        {
+          "pattern": "**/*.toml",
+          "knowledge_type": "configuration"
+        }
+      ],
+      "default_knowledge_type": "code"
+    },
+    "solr": {
+      "collection": "fetchcore-knowledge"
+    },
+    "opensearch": {
+      "index": "fetchcore-knowledge"
+    },
+    "qdrant-vector": {
+      "collection": "fetchcore-vector",
+      "batch_size": 32
+    }
+  }
+}

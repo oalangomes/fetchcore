@@ -122,4 +122,4 @@ def test_local_backend_executes_standalone(tmp_path: Path) -> None:
     assert response.backend == "local-semantic"
     assert response.status == "success"
     assert response.results
-    assert any("needle.py" in item.source_ref for item in response.results)
+    assert response.results[0].source_ref == "repository://example/repo/needle.py"
