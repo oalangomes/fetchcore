@@ -12,6 +12,8 @@ from fetchcore.baseline import (
     BaselineGroundTruth,
     BaselineQueryCase,
     BaselineRunner,
+    capture_baseline_environment,
+    load_baseline_suite,
     build_baseline_artifact,
     evaluate_retrieval,
     mapping_fingerprint,
@@ -186,3 +188,99 @@ def test_baseline_runner_excludes_warmups_and_records_measured_runs(
     assert artifact.aggregate["run_count"] == 3
     assert artifact.config["repetitions"] == 3
     assert artifact.config["warmups"] == 1
+
+
+
+def test_baseline_suite_loads_path_ground_truth_as_canonical_source_refs(
+    tmp_path: Path,
+) -> None:
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "corpus": {
+                    "repository": "owner/repo",
+                    "revision": "abc123",
+                },
+                "queries": [
+                    {
+                        "id": "q1",
+                        "intent": {
+                            "exact_terms": ["NeedleService"],
+                            "semantic_terms": ["needle implementation"],
+                            "hints": ["service"],
+                        },
+                        "relevant_paths": ["src/needle.py"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    suite = load_baseline_suite(suite_path)
+
+    assert suite.corpus == {"repository": "owner/repo", "revision": "abc123"}
+    assert suite.cases[0].query_id == "q1"
+    assert suite.cases[0].intent.exact_terms == ("NeedleService",)
+    assert suite.cases[0].relevant == (
+        "repository://owner/repo/src/needle.py",
+    )
+
+
+def test_baseline_suite_rejects_unsupported_schema(tmp_path: Path) -> None:
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "corpus": {"repository": "owner/repo", "revision": "abc123"},
+                "queries": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BaselineConfigurationError, match="schema_version"):
+        load_baseline_suite(suite_path)
+
+
+def test_baseline_environment_is_recorded_in_artifact() -> None:
+    environment = capture_baseline_environment(
+        "fixture-v1",
+        services={"solr": "9.x"},
+        embedding={
+            "provider": "ollama",
+            "model": "embeddinggemma",
+            "dimensions": 768,
+        },
+    )
+    observation = evaluate_retrieval(
+        _response((_result("a"),), duration_ms=10),
+        BaselineGroundTruth(query_id="q1", relevant=("a",)),
+        iteration=1,
+        k=1,
+    )
+
+    artifact = build_baseline_artifact(
+        arm=BaselineArm("fixture-lexical", "fixture", "lexical"),
+        corpus={"repository": "repo", "revision": "abc123"},
+        config={"max_results": 10},
+        observations=(observation,),
+        environment=environment.to_mapping(),
+    )
+
+    assert artifact.environment["profile_id"] == "fixture-v1"
+    assert artifact.environment["services"] == {"solr": "9.x"}
+
+
+def test_repository_baseline_v1_suite_is_frozen() -> None:
+    root = Path(__file__).resolve().parents[1]
+    suite = load_baseline_suite(root / "benchmarks/baseline-v1/ground-truth.json")
+
+    assert suite.schema_version == 1
+    assert suite.corpus["repository"] == "oalangomes/NeuroTrack_MS"
+    assert suite.corpus["revision"] == "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+    assert len(suite.cases) == 20
+    assert len({case.query_id for case in suite.cases}) == 20
