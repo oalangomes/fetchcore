@@ -547,6 +547,7 @@ def _delta_telemetry(
         files_eligible=0,
         files_read=0,
         files_indexed=0,
+        files_changed=0,
         files_skipped=0,
         files_unvisited_due_to_truncation=0,
         skip_reasons={},
@@ -593,6 +594,13 @@ def _delta_telemetry(
         documents_by_knowledge_type=dict(sorted(by_type.items())),
         documents_by_technical_role=dict(sorted(by_role.items())),
         documents_per_source=dict(sorted(per_source.items())),
+        files_changed=len(
+            {
+                *(item.path for item in changes.added),
+                *(item.document.path for item in changes.updated),
+                *(item.path for item in changes.removed),
+            }
+        ),
         added=len(changes.added),
         updated=len(changes.updated),
         removed=len(changes.removed),
