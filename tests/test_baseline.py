@@ -87,6 +87,30 @@ def test_evaluate_retrieval_computes_quality_and_efficiency_metrics() -> None:
     }
 
 
+def test_evaluate_retrieval_deduplicates_relevant_identity_gain() -> None:
+    shared_ref = "repository://repo/src/shared.py"
+    response = _response(
+        (
+            _result("chunk-a", source_ref=shared_ref),
+            _result("chunk-b", source_ref=shared_ref),
+            _result("other"),
+        )
+    )
+    truth = BaselineGroundTruth(
+        query_id="q1",
+        relevant=(shared_ref,),
+        identity_field="source_ref",
+    )
+
+    observed = evaluate_retrieval(response, truth, iteration=1, k=3)
+
+    assert observed.recall_at_k == 1.0
+    assert observed.ground_truth_recovered == 1
+    assert observed.reciprocal_rank == 1.0
+    assert observed.ndcg_at_k == 1.0
+    assert observed.useful_evidence_density == pytest.approx(0.333333, abs=1e-6)
+
+
 def test_baseline_artifact_aggregates_repeated_latency_and_fingerprints() -> None:
     truth = BaselineGroundTruth(query_id="q1", relevant=("a",))
     observations = tuple(
