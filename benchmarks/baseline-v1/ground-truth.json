@@ -1,0 +1,319 @@
+{
+  "schema_version": 1,
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+  },
+  "queries": [
+    {
+      "id": "medication-update-owner-service",
+      "intent": {
+        "exact_terms": [
+          "updateMedication"
+        ],
+        "semantic_terms": [
+          "update medication only for its owning user"
+        ],
+        "hints": [
+          "service"
+        ]
+      },
+      "relevant_paths": [
+        "src/modules/medication/services/medicationService.js"
+      ]
+    },
+    {
+      "id": "medication-create-controller-validation",
+      "intent": {
+        "exact_terms": [
+          "createMedication"
+        ],
+        "semantic_terms": [
+          "controller validates medication payload and authenticated user id"
+        ],
+        "hints": [
+          "controller"
+        ]
+      },
+      "relevant_paths": [
+        "src/modules/medication/controllers/medicationController.js"
+      ]
+    },
+    {
+      "id": "medication-controller-tests",
+      "intent": {
+        "semantic_terms": [
+          "tests for medication controller create update delete and service mocks"
+        ],
+        "hints": [
+          "tests"
+        ]
+      },
+      "relevant_paths": [
+        "src/modules/medication/tests/controllers/medicationController.test.js"
+      ]
+    },
+    {
+      "id": "mfa-totp-service",
+      "intent": {
+        "exact_terms": [
+          "MfaServiceError"
+        ],
+        "semantic_terms": [
+          "setup and verify authenticator MFA secret and one-time token"
+        ],
+        "hints": [
+          "service"
+        ]
+      },
+      "relevant_paths": [
+        "src/modules/mfa/services/mfaService.js"
+      ]
+    },
+    {
+      "id": "mfa-http-routes",
+      "intent": {
+        "exact_terms": [
+          "/auth/mfa/verify"
+        ],
+        "semantic_terms": [
+          "MFA setup verify disable HTTP routes"
+        ],
+        "hints": [
+          "route"
+        ]
+      },
+      "relevant_paths": [
+        "src/modules/mfa/routes/index.js"
+      ]
+    },
+    {
+      "id": "mfa-controller-errors",
+      "intent": {
+        "semantic_terms": [
+          "controller maps MFA service errors and validates token requests"
+        ],
+        "hints": [
+          "controller"
+        ]
+      },
+      "relevant_paths": [
+        "src/modules/mfa/controllers/mfaController.js"
+      ]
+    },
+    {
+      "id": "mfa-route-tests",
+      "intent": {
+        "semantic_terms": [
+          "integration tests for MFA setup verify disable endpoints"
+        ],
+        "hints": [
+          "tests"
+        ]
+      },
+      "relevant_paths": [
+        "src/modules/mfa/tests/mfaRoutes.test.js"
+      ]
+    },
+    {
+      "id": "health-resource-collection",
+      "intent": {
+        "exact_terms": [
+          "collectHealthMetrics"
+        ],
+        "semantic_terms": [
+          "collect memory disk CPU MongoDB Redis and crash risk health metrics"
+        ],
+        "hints": [
+          "service"
+        ]
+      },
+      "relevant_paths": [
+        "src/modules/health/services/healthService.js"
+      ]
+    },
+    {
+      "id": "health-controller",
+      "intent": {
+        "semantic_terms": [
+          "health endpoint controller returns collected infrastructure metrics"
+        ],
+        "hints": [
+          "controller"
+        ]
+      },
+      "relevant_paths": [
+        "src/modules/health/controllers/healthController.js"
+      ]
+    },
+    {
+      "id": "health-controller-tests",
+      "intent": {
+        "semantic_terms": [
+          "tests for health controller metrics and friendly health response"
+        ],
+        "hints": [
+          "tests"
+        ]
+      },
+      "relevant_paths": [
+        "src/modules/health/tests/healthController.test.js"
+      ]
+    },
+    {
+      "id": "home-active-subject-data",
+      "intent": {
+        "exact_terms": [
+          "getHomeData"
+        ],
+        "semantic_terms": [
+          "load home data for active holder or dependent subject with context window"
+        ],
+        "hints": [
+          "service"
+        ]
+      },
+      "relevant_paths": [
+        "src/modules/home/services/homeService.js"
+      ]
+    },
+    {
+      "id": "home-prompt-controller",
+      "intent": {
+        "semantic_terms": [
+          "home controller builds AI prompt and generates completion"
+        ],
+        "hints": [
+          "controller"
+        ]
+      },
+      "relevant_paths": [
+        "src/modules/home/controllers/homeController.js"
+      ]
+    },
+    {
+      "id": "ai-controller-queue",
+      "intent": {
+        "semantic_terms": [
+          "AI controller queues asynchronous generation jobs with BullMQ"
+        ],
+        "hints": [
+          "controller",
+          "queue"
+        ]
+      },
+      "relevant_paths": [
+        "src/modules/ai/controllers/aiController.js",
+        "src/queues/aiQueue.js"
+      ]
+    },
+    {
+      "id": "ai-queue-subject-context",
+      "intent": {
+        "exact_terms": [
+          "aiQueue"
+        ],
+        "semantic_terms": [
+          "BullMQ producer preserves subject metadata and context hash"
+        ],
+        "hints": [
+          "queue"
+        ]
+      },
+      "relevant_paths": [
+        "src/queues/aiQueue.js"
+      ]
+    },
+    {
+      "id": "ai-worker-processing",
+      "intent": {
+        "exact_terms": [
+          "aiWorker"
+        ],
+        "semantic_terms": [
+          "worker consumes AI queue jobs generates completion emits socket response and persists interaction"
+        ],
+        "hints": [
+          "worker"
+        ]
+      },
+      "relevant_paths": [
+        "src/workers/aiWorker.js"
+      ]
+    },
+    {
+      "id": "runtime-config-queue-concurrency",
+      "intent": {
+        "semantic_terms": [
+          "central environment configuration for queue retry timeout and worker concurrency"
+        ],
+        "hints": [
+          "configuration"
+        ]
+      },
+      "relevant_paths": [
+        "src/shared/config/config.js"
+      ]
+    },
+    {
+      "id": "docker-local-runtime",
+      "intent": {
+        "semantic_terms": [
+          "local Docker topology for API Mongo Redis workers and queue configuration"
+        ],
+        "hints": [
+          "configuration"
+        ]
+      },
+      "relevant_paths": [
+        "docker-compose.yml"
+      ]
+    },
+    {
+      "id": "architecture-overview",
+      "intent": {
+        "semantic_terms": [
+          "backend architecture modules shared services queues workers MongoDB Redis"
+        ],
+        "hints": [
+          "documentation",
+          "architecture"
+        ]
+      },
+      "relevant_paths": [
+        "docs/architecture/overview.md"
+      ]
+    },
+    {
+      "id": "ai-component-architecture",
+      "intent": {
+        "semantic_terms": [
+          "C4 AI flow controller queue worker LLM provider socket and database"
+        ],
+        "hints": [
+          "documentation",
+          "architecture"
+        ]
+      },
+      "relevant_paths": [
+        "docs/architecture/c4/component-ai.puml"
+      ]
+    },
+    {
+      "id": "agent-development-rules",
+      "intent": {
+        "semantic_terms": [
+          "development rules require high test coverage layered controllers services and no direct database access from controllers"
+        ],
+        "hints": [
+          "documentation",
+          "governance"
+        ]
+      },
+      "relevant_paths": [
+        "CODEX_RULES.md"
+      ]
+    }
+  ]
+}
