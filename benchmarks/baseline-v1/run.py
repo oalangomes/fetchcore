@@ -77,7 +77,7 @@ def main() -> int:
         embedding=embedding_identity,
     ).to_mapping()
 
-    fetchcore_revision = _git_revision(Path.cwd())
+    fetchcore_revision = _git_revision(ROOT.parents[1])
     config_identity = {
         "fetchcore_revision": fetchcore_revision,
         "manifest_fingerprint": mapping_fingerprint(manifest),
@@ -261,6 +261,7 @@ def _prepare_indexes(
     )
 
     if ids & {"solr-lexical", "solr-hybrid"}:
+        solr_vectors = "solr-hybrid" in ids
         settings = SolrSettings.from_mapping(
             {
                 **_object(backend_settings, "solr"),
@@ -271,14 +272,19 @@ def _prepare_indexes(
         store = SolrIndexStore(
             UrllibSolrTransport(settings),
             settings,
-            embedding_provider=solr_embedding_provider(dense_retrieval),
+            embedding_provider=(
+                solr_embedding_provider(dense_retrieval)
+                if solr_vectors
+                else None
+            ),
         )
         # Solr intentionally owns schema validation, not schema creation.
-        store.validate_schema(require_vectors=True)
+        store.validate_schema(require_vectors=solr_vectors)
         result = store.full_rebuild(canonical)
         backends["solr"] = result.to_mapping()
 
     if ids & {"opensearch-lexical", "opensearch-hybrid"}:
+        opensearch_vectors = "opensearch-hybrid" in ids
         settings = OpenSearchSettings.from_mapping(
             {
                 **_object(backend_settings, "opensearch"),
@@ -290,7 +296,11 @@ def _prepare_indexes(
             UrllibOpenSearchTransport(settings),
             settings,
             clock=_utc_now,
-            embedding_provider=opensearch_embedding_provider(dense_retrieval),
+            embedding_provider=(
+                opensearch_embedding_provider(dense_retrieval)
+                if opensearch_vectors
+                else None
+            ),
         )
         result = store.full_rebuild(canonical)
         backends["opensearch"] = result.to_mapping()
