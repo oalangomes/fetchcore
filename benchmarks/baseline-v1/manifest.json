@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "baseline_id": "fetchcore-baseline-v1",
+  "protocol": "fetchcore.baseline-v1",
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "clone_url": "https://github.com/oalangomes/NeuroTrack_MS.git",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7",
+    "ground_truth": "ground-truth.json"
+  },
+  "measurement": {
+    "warmups": 1,
+    "repetitions": 20,
+    "k": 20,
+    "max_results": 20,
+    "diagnostic_candidate_window": 80
+  },
+  "environment": {
+    "profile_id": "fetchcore-local-benchmark-v1",
+    "embedding": {
+      "provider": "ollama",
+      "model": "embeddinggemma",
+      "dimensions": 768
+    },
+    "service_endpoints": {
+      "solr": "http://localhost:8983/solr",
+      "opensearch": "http://localhost:9200",
+      "qdrant": "http://localhost:6333",
+      "ollama": "http://localhost:11434"
+    },
+    "note": "Service/runtime versions are observed at execution time and frozen into each artifact."
+  },
+  "arms": [
+    {
+      "id": "local-lexical",
+      "backend": "local-semantic",
+      "mode": "lexical"
+    },
+    {
+      "id": "solr-lexical",
+      "backend": "solr",
+      "mode": "lexical"
+    },
+    {
+      "id": "solr-hybrid",
+      "backend": "solr",
+      "mode": "hybrid"
+    },
+    {
+      "id": "opensearch-lexical",
+      "backend": "opensearch",
+      "mode": "lexical"
+    },
+    {
+      "id": "opensearch-hybrid",
+      "backend": "opensearch",
+      "mode": "hybrid"
+    },
+    {
+      "id": "qdrant-dense",
+      "backend": "qdrant-vector",
+      "mode": "dense"
+    },
+    {
+      "id": "qdrant-hybrid",
+      "backend": "qdrant-vector",
+      "mode": "hybrid"
+    }
+  ],
+  "promotion": {
+    "require_exact_corpus_revision": true,
+    "require_all_arms": true,
+    "require_environment_identity": true,
+    "artifacts_directory": "artifacts"
+  }
+}
