@@ -9,12 +9,16 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from pathlib import Path
+import os
+import platform
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 
 from fetchcore.retrieval import RetrievalBackendCapabilities
+from fetchcore.signals import QuerySignal
 from fetchcore.search import (
     KnowledgeSearchBackend,
     KnowledgeSearchResponse,
@@ -113,6 +117,7 @@ class BaselineArtifact:
     config_fingerprint: str
     observations: tuple[RetrievalQualityObservation, ...]
     aggregate: dict[str, object]
+    environment: dict[str, object] = field(default_factory=dict)
 
     def to_mapping(self) -> dict[str, object]:
         return {
@@ -122,9 +127,62 @@ class BaselineArtifact:
             "corpus": dict(self.corpus),
             "config": dict(self.config),
             "config_fingerprint": self.config_fingerprint,
+            "environment": dict(self.environment),
             "observations": [item.to_mapping() for item in self.observations],
             "aggregate": dict(self.aggregate),
         }
+
+
+@dataclass(frozen=True)
+class BaselineEnvironment:
+    """Execution environment identity recorded with a baseline artifact."""
+
+    profile_id: str
+    python_version: str
+    platform_system: str
+    platform_release: str
+    machine: str
+    cpu_count: int | None
+    services: dict[str, str] = field(default_factory=dict)
+    embedding: dict[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.profile_id.strip():
+            raise BaselineConfigurationError(
+                "baseline environment profile_id must not be empty"
+            )
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "profile_id": self.profile_id,
+            "python_version": self.python_version,
+            "platform_system": self.platform_system,
+            "platform_release": self.platform_release,
+            "machine": self.machine,
+            "cpu_count": self.cpu_count,
+            "services": dict(sorted(self.services.items())),
+            "embedding": _canonical_mapping(self.embedding),
+        }
+
+
+def capture_baseline_environment(
+    profile_id: str,
+    *,
+    services: Mapping[str, str] | None = None,
+    embedding: Mapping[str, object] | None = None,
+) -> BaselineEnvironment:
+    """Capture stable host/runtime metadata without probing private machine identity."""
+
+    return BaselineEnvironment(
+        profile_id=profile_id,
+        python_version=platform.python_version(),
+        platform_system=platform.system(),
+        platform_release=platform.release(),
+        machine=platform.machine(),
+        cpu_count=os.cpu_count(),
+        services=dict(services or {}),
+        embedding=_canonical_mapping(embedding or {}),
+    )
 
 
 @dataclass(frozen=True)
@@ -143,6 +201,115 @@ class BaselineQueryCase:
             relevant=self.relevant,
             identity_field=self.identity_field,
         )
+
+
+@dataclass(frozen=True)
+class BaselineSuite:
+    """Versioned corpus identity plus reproducible retrieval query cases."""
+
+    schema_version: int
+    corpus: dict[str, object]
+    cases: tuple[BaselineQueryCase, ...]
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, object]) -> "BaselineSuite":
+        schema_version = int(str(value.get("schema_version", 0)))
+        if schema_version != 1:
+            raise BaselineConfigurationError(
+                f"unsupported baseline suite schema_version {schema_version}"
+            )
+        raw_corpus = value.get("corpus")
+        if not isinstance(raw_corpus, Mapping):
+            raise BaselineConfigurationError("baseline suite corpus must be an object")
+        corpus = _canonical_mapping(raw_corpus)
+        repository = str(corpus.get("repository", "")).strip()
+        revision = str(corpus.get("revision", "")).strip()
+        if not repository or not revision:
+            raise BaselineConfigurationError(
+                "baseline suite corpus requires repository and revision"
+            )
+        raw_queries = value.get("queries")
+        if not isinstance(raw_queries, list) or not raw_queries:
+            raise BaselineConfigurationError(
+                "baseline suite queries must be a non-empty list"
+            )
+
+        cases: list[BaselineQueryCase] = []
+        for raw_query in raw_queries:
+            if not isinstance(raw_query, Mapping):
+                raise BaselineConfigurationError(
+                    "baseline suite query entries must be objects"
+                )
+            query_id = str(raw_query.get("id", "")).strip()
+            if not query_id:
+                raise BaselineConfigurationError(
+                    "baseline suite query id must not be empty"
+                )
+            raw_intent = raw_query.get("intent")
+            if not isinstance(raw_intent, Mapping):
+                raise BaselineConfigurationError(
+                    f"baseline suite query {query_id!r} intent must be an object"
+                )
+            intent = SearchIntent(
+                exact_terms=_string_tuple(raw_intent.get("exact_terms")),
+                semantic_terms=_string_tuple(raw_intent.get("semantic_terms")),
+                hints=_string_tuple(raw_intent.get("hints")),
+                signals=tuple(
+                    QuerySignal.from_mapping(item)
+                    for item in _object_list(raw_intent.get("signals"))
+                ),
+            )
+            identity_field = str(
+                raw_query.get("identity_field", "source_ref")
+            ).strip()
+            if identity_field not in {"id", "source_ref"}:
+                raise BaselineConfigurationError(
+                    f"baseline suite query {query_id!r} has invalid identity_field"
+                )
+            raw_relevant = raw_query.get("relevant")
+            raw_paths = raw_query.get("relevant_paths")
+            if raw_relevant is not None and raw_paths is not None:
+                raise BaselineConfigurationError(
+                    f"baseline suite query {query_id!r} must use relevant or relevant_paths"
+                )
+            if raw_paths is not None:
+                if identity_field != "source_ref":
+                    raise BaselineConfigurationError(
+                        f"baseline suite query {query_id!r} relevant_paths require source_ref identity"
+                    )
+                paths = _string_tuple(raw_paths)
+                relevant = tuple(
+                    _repository_source_ref(repository, path) for path in paths
+                )
+            else:
+                relevant = _string_tuple(raw_relevant)
+            cases.append(
+                BaselineQueryCase(
+                    query_id=query_id,
+                    intent=intent,
+                    relevant=relevant,
+                    identity_field=identity_field,  # type: ignore[arg-type]
+                )
+            )
+        return cls(
+            schema_version=schema_version,
+            corpus=corpus,
+            cases=tuple(cases),
+        )
+
+
+def load_baseline_suite(path: Path) -> BaselineSuite:
+    """Load a versioned baseline query suite from deterministic JSON."""
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise BaselineConfigurationError(
+            f"failed to load baseline suite from {path}"
+        ) from exc
+    if not isinstance(raw, Mapping):
+        raise BaselineConfigurationError("baseline suite root must be an object")
+    return BaselineSuite.from_mapping(raw)
 
 
 class BaselineRunner:
@@ -189,6 +356,7 @@ class BaselineRunner:
         *,
         corpus: Mapping[str, object],
         config_identity: Mapping[str, object] | None = None,
+        environment: Mapping[str, object] | None = None,
         requirements: tuple[SearchRequirement, ...] = (),
     ) -> BaselineArtifact:
         """Run warmups + measured repetitions and build one v1 artifact."""
@@ -226,6 +394,7 @@ class BaselineRunner:
             corpus=corpus,
             config=config,
             observations=observations,
+            environment=environment,
         )
 
 
@@ -327,6 +496,7 @@ def build_baseline_artifact(
     corpus: Mapping[str, object],
     config: Mapping[str, object],
     observations: Sequence[RetrievalQualityObservation],
+    environment: Mapping[str, object] | None = None,
 ) -> BaselineArtifact:
     """Aggregate repeated observations into the frozen v1 artifact shape."""
 
@@ -372,6 +542,7 @@ def build_baseline_artifact(
         config_fingerprint=mapping_fingerprint(config_mapping),
         observations=values,
         aggregate=aggregate,
+        environment=_canonical_mapping(environment or {}),
     )
 
 
@@ -430,6 +601,37 @@ def mapping_fingerprint(value: Mapping[str, object]) -> str:
         ensure_ascii=True,
     )
     return "sha256:" + hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+
+
+def _repository_source_ref(repository: str, path: str) -> str:
+    normalized = path.replace("\\", "/").strip("/")
+    if not normalized or ".." in normalized.split("/"):
+        raise BaselineConfigurationError(
+            f"baseline relevant path is invalid: {path!r}"
+        )
+    encoded_repository = quote(repository, safe="/.:@")
+    return f"repository://{encoded_repository}/{quote(normalized, safe='/')}"
+
+
+def _string_tuple(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise BaselineConfigurationError("baseline string collection must be a list")
+    result = tuple(str(item).strip() for item in value)
+    if any(not item for item in result):
+        raise BaselineConfigurationError(
+            "baseline string collection must not contain empty values"
+        )
+    return result
+
+
+def _object_list(value: object) -> list[object]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise BaselineConfigurationError("baseline object collection must be a list")
+    return list(value)
 
 
 def _canonical_mapping(value: Mapping[str, object]) -> dict[str, object]:
