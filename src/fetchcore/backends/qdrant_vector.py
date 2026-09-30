@@ -59,6 +59,12 @@ from fetchcore.projection import (
 )
 from fetchcore.repository.indexing import RepositoryIndexResult, RepositoryIndexer
 from fetchcore.retrieval import RetrievalBackendCapabilities
+from fetchcore.telemetry import (
+    RetrievalStageTelemetry,
+    RetrievalTelemetry,
+    elapsed_ms,
+    returned_chars,
+)
 from fetchcore.search import (
     KnowledgeSearchError,
     KnowledgeSearchResponse,
@@ -944,9 +950,11 @@ class QdrantVectorBackend:
                     "snapshot_revision": snapshot.revision,
                 },
             )
+        embedding_started = self.timer()
         query_text = store.serializer.serialize_query(intent)
         vectors = embedder.embed((query_text,))
         dimensions = _validate_vector_dimensions(vectors)
+        embedding_ms = elapsed_ms(embedding_started, self.timer())
         if dimensions != snapshot.vector_dimensions:
             raise KnowledgeSearchError(
                 "query embedding dimensions do not match the active Qdrant snapshot",
@@ -987,8 +995,10 @@ class QdrantVectorBackend:
                 query_text=query_text,
                 started=started,
                 timer=self.timer,
+                embedding_ms=embedding_ms,
             )
 
+        dense_started = self.timer()
         raw_query = transport.request(
             "POST",
             f"collections/{quote(alias, safe='')}/points/query",
@@ -1001,6 +1011,7 @@ class QdrantVectorBackend:
             },
         )
         points = _qdrant_query_points(raw_query)
+        dense_ms = elapsed_ms(dense_started, self.timer())
 
         results: list[SearchResult] = []
         for rank, point in enumerate(points[: scope.max_results], start=1):
@@ -1119,12 +1130,46 @@ class QdrantVectorBackend:
         else:
             metadata["diagnostic_candidate_window"] = "disabled"
 
+        duration_ms = elapsed_ms(started, self.timer())
+        telemetry = RetrievalTelemetry(
+            mode="dense",
+            duration_ms=duration_ms,
+            candidates_examined=len(points),
+            candidates_returned=len(results),
+            returned_chars=returned_chars(item.content for item in results),
+            stages=(
+                RetrievalStageTelemetry(name="embedding", duration_ms=embedding_ms),
+                RetrievalStageTelemetry(
+                    name="dense",
+                    duration_ms=dense_ms,
+                    candidates_out=len(points),
+                ),
+            ),
+            fingerprints={
+                **(
+                    {"projection": snapshot.projection_fingerprint}
+                    if snapshot.projection_fingerprint is not None
+                    else {}
+                ),
+                "embedding_serializer": snapshot.serializer_fingerprint,
+            },
+            budget={
+                "max_results": scope.max_results,
+                "output_truncated": pool_count > scope.max_results,
+            },
+            metadata={
+                "embedding_provider": snapshot.embedding_provider,
+                "embedding_model": snapshot.embedding_model,
+                "vector_dimensions": snapshot.vector_dimensions,
+            },
+        )
         return KnowledgeSearchResponse(
             backend=self.backend_id,
             status="found" if results else "not_found",
             results=tuple(results),
             metadata=metadata,
-            duration_ms=max(0, round((self.timer() - started) * 1_000)),
+            duration_ms=duration_ms,
+            telemetry=telemetry,
         )
 
 
@@ -1164,6 +1209,7 @@ def _qdrant_hybrid_response(
     query_text: str,
     started: float,
     timer: Callable[[], float],
+    embedding_ms: int,
 ) -> KnowledgeSearchResponse:
     expected_sparse = {
         "sparse_vector_name": SPARSE_VECTOR_NAME,
@@ -1195,6 +1241,7 @@ def _qdrant_hybrid_response(
             category="schema_mismatch",
         )
     alias = _repository_alias(settings, snapshot.repository)
+    dense_started = timer()
     dense_points = _qdrant_query_points(
         transport.request(
             "POST",
@@ -1208,6 +1255,8 @@ def _qdrant_hybrid_response(
             },
         )
     )
+    dense_ms = elapsed_ms(dense_started, timer())
+    sparse_started = timer()
     sparse_points = _qdrant_query_points(
         transport.request(
             "POST",
@@ -1222,6 +1271,8 @@ def _qdrant_hybrid_response(
             },
         )
     )
+    sparse_ms = elapsed_ms(sparse_started, timer())
+    fusion_started = timer()
 
     dense_by_id: dict[str, _QdrantHybridChannelCandidate] = {}
     for rank, point in enumerate(dense_points, start=1):
@@ -1305,6 +1356,7 @@ def _qdrant_hybrid_response(
             parameters={"k": DEFAULT_RRF_K},
         )
     )
+    fusion_ms = elapsed_ms(fusion_started, timer())
     controls = ValidatedProjectionV3Controls(
         projection_version=snapshot.projection_version,
         field_boosts=dict(DEFAULT_FIELD_BOOSTS),
@@ -1479,12 +1531,67 @@ def _qdrant_hybrid_response(
         ),
         "reranker": False,
     }
+    duration_ms = elapsed_ms(started, timer())
+    telemetry = RetrievalTelemetry(
+        mode="hybrid",
+        duration_ms=duration_ms,
+        candidates_examined=len(fusion_result.candidates),
+        candidates_returned=len(results),
+        returned_chars=returned_chars(item.content for item in results),
+        stages=(
+            RetrievalStageTelemetry(name="embedding", duration_ms=embedding_ms),
+            RetrievalStageTelemetry(
+                name="dense",
+                duration_ms=dense_ms,
+                candidates_out=len(dense_points),
+            ),
+            RetrievalStageTelemetry(
+                name="lexical",
+                duration_ms=sparse_ms,
+                candidates_out=len(sparse_by_id),
+                metadata={
+                    "representation": "sparse",
+                    "raw_candidates": len(sparse_points),
+                },
+            ),
+            RetrievalStageTelemetry(
+                name="fusion",
+                duration_ms=fusion_ms,
+                candidates_in=len(fusion_candidates),
+                candidates_out=len(fusion_result.candidates),
+            ),
+        ),
+        fingerprints={
+            **(
+                {"projection": snapshot.projection_fingerprint}
+                if snapshot.projection_fingerprint is not None
+                else {}
+            ),
+            "embedding_serializer": snapshot.serializer_fingerprint,
+            "sparse_analyzer": SPARSE_ANALYZER_FINGERPRINT,
+            "fusion_input": fusion_result.input_fingerprint,
+            "fusion_output": fusion_result.output_fingerprint,
+        },
+        budget={
+            "max_results": scope.max_results,
+            "output_truncated": any(
+                not item.returned for item in fusion_result.candidates
+            ),
+        },
+        metadata={
+            "embedding_provider": snapshot.embedding_provider,
+            "embedding_model": snapshot.embedding_model,
+            "vector_dimensions": snapshot.vector_dimensions,
+            "fusion_strategy": "rrf",
+        },
+    )
     return KnowledgeSearchResponse(
         backend=backend_id,
         status="found" if results else "not_found",
         results=tuple(results),
         metadata=metadata,
-        duration_ms=max(0, round((timer() - started) * 1_000)),
+        duration_ms=duration_ms,
+        telemetry=telemetry,
     )
 
 def _absolute_http_url(value: str, label: str) -> str:
