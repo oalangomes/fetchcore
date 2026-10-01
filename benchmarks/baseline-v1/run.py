@@ -61,6 +61,7 @@ def main() -> int:
     expected_repository = str(suite.corpus["repository"])
     expected_revision = str(suite.corpus["revision"])
     _validate_workspace(workspace, expected_revision)
+    suite.validate_workspace_regions(workspace)
 
     measurement = _object(manifest, "measurement")
     environment_config = _object(manifest, "environment")
