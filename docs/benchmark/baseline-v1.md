@@ -62,10 +62,11 @@ Every artifact must identify the corpus sufficiently to reproduce it. At minimum
 
 For multi-repository experiments, record every repository/revision pair.
 
-Ground Truth may identify results by canonical result `id` or `source_ref`.
-It should cover representative source code/tests and, when the corpus contains
-them, repository documentation, architecture/decision records, schemas,
-configuration or workflows.
+Ground Truth identifies minimal evidence regions by canonical repository path plus
+1-based line ranges. It should cover representative source code/tests and, when
+the corpus contains them, repository documentation, architecture/decision records,
+schemas, configuration or workflows. Alternatives may encode multiple equally
+sufficient evidence locations without forcing one arbitrary implementation.
 
 A documentation/policy match is evidence. FetchCore does not promote it to
 organizational authority.
@@ -122,28 +123,54 @@ available. The metric must not add backend reads merely to manufacture parity.
 
 ## Quality metrics
 
-For every measured query/run, baseline v1 records:
+Baseline v1 uses evidence-region Ground Truth because finding the right file is
+not sufficient for a coding agent or LLM. Each query declares logical evidence
+requirements. A requirement has one or more sufficient alternatives; each
+alternative contains one or more minimal line regions.
 
-- Recall@K;
-- Ground Truth recovered / total;
-- reciprocal rank;
-- nDCG@K using binary relevance;
-- useful evidence density = relevant returned results / returned results;
-- latency;
-- candidates examined/returned;
-- returned characters;
-- retrieval telemetry.
+The evaluator records:
 
-The aggregate artifact records mean quality/efficiency metrics and repeated-run
-p50/p95/p99 latency.
+- **source Recall@K** — diagnostic only: whether each evidence requirement had
+  at least one source-complete alternative represented in the returned results;
+- **EvidenceRecall@K** — primary: fraction of evidence requirements whose
+  sufficient regions are fully covered by the top-K results;
+- **SpanCoverage@K** — primary: mean best-alternative line coverage across
+  evidence requirements, preserving partial recovery;
+- **evidence MRR** — reciprocal rank of the first result that adds new reviewed
+  Ground Truth line coverage;
+- **evidence nDCG@K** — discounted incremental span-coverage gain by result
+  rank, normalized against the same observed gains sorted into ideal order;
+- **useful context line ratio** — unique reviewed Ground Truth lines covered
+  from the best alternative for each requirement divided by all returned result
+  lines. Duplicate returned spans still consume denominator budget;
+- latency, candidates examined/returned, returned lines/chars and retrieval
+  telemetry.
+
+A `source_ref` hit with the wrong line range therefore improves source Recall
+but does not improve EvidenceRecall or SpanCoverage.
+
+Every top-K result persisted in an artifact carries only evaluation coordinates:
+
+```text
+rank
+id
+source_ref
+line_start
+line_end
+```
+
+Source content is not copied into the public artifact. These coordinates make
+quality re-evaluation possible without querying a backend again.
 
 ## Artifact
 
-Artifacts use:
+Promoted retrieval artifacts use:
 
 ```text
-schema_version = 1
+schema_version = 2
 protocol = fetchcore.baseline-v1
+ground_truth_schema_version = 2
+metrics_schema_version = 1
 ```
 
 They also carry:
@@ -151,9 +178,16 @@ They also carry:
 - arm identity;
 - corpus identity;
 - config identity and SHA-256 fingerprint;
-- all measured observations;
+- Ground Truth SHA-256 fingerprint;
+- metric-definition SHA-256 fingerprint;
+- all measured observations with ranked result spans;
 - aggregate metrics;
 - observed projection/serializer/fusion fingerprints.
+
+The Ground Truth and metric fingerprints are comparison boundaries. A changed
+query/evidence definition or metric formula is not silently comparable with the
+frozen baseline. Such a change requires explicit protocol/schema evolution
+rather than redefining `baseline-v1` in place after promotion.
 
 The JSON shape is intentionally independent of retrievalgate. An external
 regression harness can consume the artifact without FetchCore depending on it.
@@ -228,11 +262,13 @@ Do not put API keys or credentials in `config_identity`.
 
 A measurement is a frozen FetchCore baseline only when:
 
-1. the corpus revision and Ground Truth are immutable;
-2. every requested arm actually ran with its declared capability;
-3. measured repetitions meet the protocol;
-4. artifacts record the configuration/fingerprints;
-5. failures are explicit rather than replaced with another backend/mode.
+1. the corpus revision and evidence-region Ground Truth are immutable;
+2. Ground Truth schema/fingerprint and metric schema/fingerprint match;
+3. every requested arm actually ran with its declared capability;
+4. every returned top-K result has observable line coordinates;
+5. measured repetitions meet the protocol;
+6. artifacts record the configuration/fingerprints;
+7. failures are explicit rather than replaced with another backend/mode.
 
 Schema fixtures and unit-test artifacts are not performance baselines.
 
@@ -257,8 +293,8 @@ revision: 74ce3244956a65baed61f1dae6f498cb2be4f3b7
 corpus_id: neurotrack-ms-74ce3244
 ```
 
-The corpus repository is private. FetchCore stores only query intent, path-level
-Ground Truth and immutable repository identity. Source content is materialized
+The corpus repository is private. FetchCore stores only query intent, evidence-region
+coordinates and immutable repository identity. Source content is materialized
 locally and must not be copied into benchmark artifacts.
 
 The runner fails closed when:
