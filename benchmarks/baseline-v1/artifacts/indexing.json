@@ -1,12 +1,12 @@
 {
   "backends": {
-    "solr": {
+    "opensearch": {
       "added": 9620,
       "deleted": 0,
-      "duration_ms": 765623,
+      "duration_ms": 320715,
       "mode": "full_rebuild",
       "snapshot": {
-        "branch": null,
+        "branch": "benchmark/fetchCore",
         "corpus_checksum": "f5f8bdf0512db7b4c932ce404ffa07f296e5036aa8b8fd7e10fad509cf5496e4",
         "document_count": 9620,
         "embedding_model": "embeddinggemma",
@@ -19,7 +19,83 @@
         "projection_version": "3",
         "record_kind": "snapshot",
         "repository": "oalangomes/NeuroTrack_MS",
-        "snapshot_indexed_at": "2026-09-30T21:42:59.795090+00:00",
+        "snapshot_indexed_at": "2026-10-01T16:45:12.622676+00:00",
+        "snapshot_revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7",
+        "snapshot_status": "ready",
+        "vector_dimensions": 768
+      },
+      "telemetry": {
+        "backend_deletes": 0,
+        "backend_writes": 9620,
+        "duration_ms": 320715,
+        "embedding_duration_ms": 305502,
+        "embedding_requests": 49,
+        "embedding_throughput_vectors_per_second": 31.489,
+        "embedding_vectors": 9620
+      },
+      "unchanged": 0,
+      "updated": 0
+    },
+    "qdrant": {
+      "added": 9620,
+      "deleted": 0,
+      "duration_ms": 318733,
+      "mode": "full_rebuild",
+      "snapshot": {
+        "branch": "benchmark/fetchCore",
+        "corpus_checksum": "f5f8bdf0512db7b4c932ce404ffa07f296e5036aa8b8fd7e10fad509cf5496e4",
+        "document_count": 9620,
+        "embedding_model": "embeddinggemma",
+        "embedding_provider": "ollama",
+        "embedding_serializer_fingerprint": "sha256:5f859289b8b3a594e924545edb1c3ae6178b77ea22cf3ff224d43c5ec7aeb43a",
+        "embedding_serializer_mode": "projection-v3",
+        "embedding_serializer_version": "2",
+        "id": "1ef3add5-7504-524e-958e-41fb73578d9c",
+        "projection_fingerprint": "sha256:cfd4a63f85c8e4034bf17f0f82f08a47c717d52e75a9180ffb1eb6cad719e039",
+        "projection_version": "3",
+        "record_kind": "snapshot",
+        "repository": "oalangomes/NeuroTrack_MS",
+        "snapshot_indexed_at": "2026-10-01T16:50:46.522901+00:00",
+        "snapshot_revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7",
+        "snapshot_status": "ready",
+        "sparse_analyzer_fingerprint": "c13fcfc1b38ca0f920ebecd74edbd7530464ec52df0db1f13327c737e86e18af",
+        "sparse_analyzer_version": "projection-v3-hashed-lexical-v1",
+        "sparse_modifier": "idf",
+        "sparse_vector_name": "lexical",
+        "vector_dimensions": 768
+      },
+      "telemetry": {
+        "backend_deletes": 0,
+        "backend_writes": 9620,
+        "duration_ms": 318733,
+        "embedding_duration_ms": 301808,
+        "embedding_requests": 301,
+        "embedding_throughput_vectors_per_second": 31.875,
+        "embedding_vectors": 9620
+      },
+      "unchanged": 0,
+      "updated": 0
+    },
+    "solr": {
+      "added": 9620,
+      "deleted": 0,
+      "duration_ms": 770005,
+      "mode": "full_rebuild",
+      "snapshot": {
+        "branch": "benchmark/fetchCore",
+        "corpus_checksum": "f5f8bdf0512db7b4c932ce404ffa07f296e5036aa8b8fd7e10fad509cf5496e4",
+        "document_count": 9620,
+        "embedding_model": "embeddinggemma",
+        "embedding_provider": "ollama",
+        "embedding_serializer_fingerprint": "sha256:5f859289b8b3a594e924545edb1c3ae6178b77ea22cf3ff224d43c5ec7aeb43a",
+        "embedding_serializer_mode": "projection-v3",
+        "embedding_serializer_version": "2",
+        "id": "snapshot:5f6a70bb2b4b3145038a0ce2a412e736e997055907885de5efc813a790ee8098",
+        "projection_fingerprint": "sha256:cfd4a63f85c8e4034bf17f0f82f08a47c717d52e75a9180ffb1eb6cad719e039",
+        "projection_version": "3",
+        "record_kind": "snapshot",
+        "repository": "oalangomes/NeuroTrack_MS",
+        "snapshot_indexed_at": "2026-10-01T16:31:46.532538+00:00",
         "snapshot_revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7",
         "snapshot_status": "ready",
         "vector_dimensions": 768
@@ -27,10 +103,10 @@
       "telemetry": {
         "backend_deletes": 9620,
         "backend_writes": 9620,
-        "duration_ms": 765623,
-        "embedding_duration_ms": 307308,
+        "duration_ms": 770005,
+        "embedding_duration_ms": 305202,
         "embedding_requests": 49,
-        "embedding_throughput_vectors_per_second": 31.304,
+        "embedding_throughput_vectors_per_second": 31.52,
         "embedding_vectors": 9620
       },
       "unchanged": 0,
@@ -982,7 +1058,7 @@
       "repository://oalangomes/NeuroTrack_MS/tests/workers/notificationWorker.test.js": 16
     },
     "documents_produced": 9620,
-    "duration_ms": 11151,
+    "duration_ms": 12359,
     "files_changed": 894,
     "files_discovered": 1189,
     "files_eligible": 894,
@@ -992,7 +1068,7 @@
     "files_scanned": 1189,
     "files_skipped": 295,
     "files_unvisited_due_to_truncation": 0,
-    "indexing_throughput_chunks_per_second": 862.703,
+    "indexing_throughput_chunks_per_second": 778.38,
     "removal_detection_blockers": [],
     "removal_detection_complete": true,
     "removed": 0,
@@ -1198,10 +1274,12 @@
     "python_version": "3.12.3",
     "services": {
       "ollama": "0.34.1",
+      "opensearch": "3.8.0",
+      "qdrant": "1.19.0",
       "solr": "9.10.1"
     }
   },
-  "fetchcore_revision": "a17471effb5e3637bdd6ed468ca1a19b6b77daa1",
+  "fetchcore_revision": "e5b364a0f978186c47911246298f7c9fcc6c1631",
   "indexing_fingerprint": "sha256:0edd5af77860146b2027e69674c798aafcf74b0f517d8a8adf6d3702776f9e3e",
   "protocol": "fetchcore.baseline-v1",
   "schema_version": 1
