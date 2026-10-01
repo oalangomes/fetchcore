@@ -41,9 +41,13 @@ class EmbeddingConfig:
     @classmethod
     def from_mapping(cls, value: Mapping[str, object] | None) -> EmbeddingConfig:
         """Build the value from a mapping while validating its public contract."""
-        data = dict(value or {})
-        provider = str(data.get("provider", cls.provider)).strip()
-        model = str(data.get("model", cls.model)).strip()
+        data = _configuration_mapping(value, "retrieval.dense.embedding")
+        provider = _string_value(
+            data.get("provider", cls.provider), "retrieval.dense.embedding.provider"
+        ).strip()
+        model = _string_value(
+            data.get("model", cls.model), "retrieval.dense.embedding.model"
+        ).strip()
         timeout_seconds = _optional_positive_float(
             data.get("timeout_seconds"),
             "retrieval.dense.embedding.timeout_seconds",
@@ -90,7 +94,7 @@ class DenseRetrievalConfig:
     @classmethod
     def from_mapping(cls, value: Mapping[str, object] | None) -> DenseRetrievalConfig:
         """Build the value from a mapping while validating its public contract."""
-        data = dict(value or {})
+        data = _configuration_mapping(value, "retrieval.dense")
         enabled = _bool_value(data.get("enabled", False), "retrieval.dense.enabled")
         embedding = _mapping_value(
             data.get("embedding"),
@@ -120,9 +124,11 @@ class HybridRetrievalConfig:
     @classmethod
     def from_mapping(cls, value: Mapping[str, object] | None) -> HybridRetrievalConfig:
         """Build the value from a mapping while validating its public contract."""
-        data = dict(value or {})
+        data = _configuration_mapping(value, "retrieval.hybrid")
         enabled = _bool_value(data.get("enabled", False), "retrieval.hybrid.enabled")
-        strategy = str(data.get("strategy", "rrf")).strip().casefold()
+        strategy = _string_value(
+            data.get("strategy", "rrf"), "retrieval.hybrid.strategy"
+        ).strip().casefold()
         if strategy != "rrf":
             raise RetrievalConfigurationError(
                 "retrieval.hybrid.strategy currently supports only 'rrf'",
@@ -149,7 +155,7 @@ class RetrievalToggleConfig:
         path: str,
     ) -> RetrievalToggleConfig:
         """Build the value from a mapping while validating its public contract."""
-        data = dict(value or {})
+        data = _configuration_mapping(value, path)
         return cls(enabled=_bool_value(data.get("enabled", False), f"{path}.enabled"))
 
     def to_mapping(self) -> dict[str, object]:
@@ -170,7 +176,7 @@ class RerankingConfig:
     @classmethod
     def from_mapping(cls, value: Mapping[str, object] | None) -> RerankingConfig:
         """Build a fail-closed reranking configuration from its public mapping."""
-        data = dict(value or {})
+        data = _configuration_mapping(value, "retrieval.reranking")
         allowed = {"enabled", "scorer", "window_size", "parameters"}
         unknown = sorted(set(data) - allowed)
         if unknown:
@@ -210,9 +216,9 @@ class RerankingConfig:
             allow_none=True,
         )
         parameters = tuple(
-            (str(name), _reranking_parameter_value(parameter, str(name)))
+            (name, _reranking_parameter_value(parameter, name))
             for name, parameter in sorted(
-                (raw_parameters or {}).items(), key=lambda item: str(item[0])
+                (raw_parameters or {}).items(), key=lambda item: item[0]
             )
         )
         if any(not name for name, _value in parameters):
@@ -280,7 +286,7 @@ class RetrievalConfig:
     @classmethod
     def from_mapping(cls, value: Mapping[str, object] | None) -> RetrievalConfig:
         """Build the value from a mapping while validating its public contract."""
-        data = dict(value or {})
+        data = _configuration_mapping(value, "retrieval")
         allowed = {"dense", "hybrid", "reranking", "ltr", "mode"}
         unknown = sorted(set(data) - allowed)
         if unknown:
@@ -304,12 +310,16 @@ class RetrievalConfig:
         )
         config = cls(dense=dense, hybrid=hybrid, reranking=reranking, ltr=ltr)
         config.validate_semantics()
-        serialized_mode = data.get("mode")
-        if serialized_mode is not None and str(serialized_mode) != config.mode:
+        if "mode" not in data:
+            return config
+        serialized_mode = data["mode"]
+        if not isinstance(serialized_mode, str):
+            raise RetrievalConfigurationError("retrieval.mode must be a string")
+        if serialized_mode != config.mode:
             raise RetrievalConfigurationError(
                 "retrieval.mode does not match effective retrieval configuration",
                 metadata={
-                    "serialized_mode": str(serialized_mode),
+                    "serialized_mode": serialized_mode,
                     "effective_mode": config.mode,
                 },
             )
@@ -414,7 +424,26 @@ def _mapping_value(
         return None
     if not isinstance(value, Mapping):
         raise RetrievalConfigurationError(f"{path} must be an object")
-    return {str(key): item for key, item in value.items()}
+    if any(not isinstance(key, str) for key in value):
+        raise RetrievalConfigurationError(f"{path} field names must be strings")
+    return dict(value)
+
+
+def _configuration_mapping(
+    value: Mapping[str, object] | None,
+    path: str,
+) -> dict[str, object]:
+    if value is None:
+        return {}
+    mapping = _mapping_value(value, path, allow_none=False)
+    assert mapping is not None
+    return dict(mapping)
+
+
+def _string_value(value: object, path: str) -> str:
+    if not isinstance(value, str):
+        raise RetrievalConfigurationError(f"{path} must be a string")
+    return value
 
 
 def _bool_value(value: object, path: str) -> bool:
@@ -436,7 +465,12 @@ def _optional_positive_float(value: object, path: str) -> float | None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise RetrievalConfigurationError(f"{path} must be a positive finite number")
-    result = float(value)
+    try:
+        result = float(value)
+    except OverflowError as exc:
+        raise RetrievalConfigurationError(
+            f"{path} must be a positive finite number"
+        ) from exc
     if result <= 0 or not isfinite(result):
         raise RetrievalConfigurationError(f"{path} must be a positive finite number")
     return result

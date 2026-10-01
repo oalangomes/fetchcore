@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
-from typing import Literal
+from typing import Literal, cast
 
 from fetchcore.retrieval.signals import QuerySignal
 
@@ -101,32 +101,28 @@ class EvidenceObservation:
         raw_attributes = data.get("attributes", {})
         if not isinstance(raw_attributes, Mapping):
             raise ValueError("EvidenceObservation attributes must be an object")
+        if any(not isinstance(key, str) for key in raw_attributes):
+            raise ValueError("EvidenceObservation attribute names must be strings")
         return cls(
-            category=str(data.get("category", "")),  # type: ignore[arg-type]
-            subtype=str(data.get("subtype", "")),  # type: ignore[arg-type]
-            value=str(data.get("value", "")),
-            source_ref=str(data.get("source_ref", "")),
-            slice_ref=(
-                str(data["slice_ref"]) if data.get("slice_ref") is not None else None
+            category=cast(
+                EvidenceObservationCategory,
+                _string_value(data.get("category", ""), "category"),
             ),
-            revision=(
-                str(data["revision"]) if data.get("revision") is not None else None
+            subtype=cast(
+                EvidenceObservationSubtype,
+                _string_value(data.get("subtype", ""), "subtype"),
             ),
-            checksum=(
-                str(data["checksum"]) if data.get("checksum") is not None else None
+            value=_string_value(data.get("value", ""), "value"),
+            source_ref=_string_value(data.get("source_ref", ""), "source_ref"),
+            slice_ref=_optional_string(data.get("slice_ref"), "slice_ref"),
+            revision=_optional_string(data.get("revision"), "revision"),
+            checksum=_optional_string(data.get("checksum"), "checksum"),
+            line_start=_optional_int(data.get("line_start"), "line_start"),
+            line_end=_optional_int(data.get("line_end"), "line_end"),
+            provenance=_string_value(
+                data.get("provenance", "provider_normalized"), "provenance"
             ),
-            line_start=(
-                int(str(data["line_start"]))
-                if data.get("line_start") is not None
-                else None
-            ),
-            line_end=(
-                int(str(data["line_end"]))
-                if data.get("line_end") is not None
-                else None
-            ),
-            provenance=str(data.get("provenance", "provider_normalized")),
-            attributes={str(key): value for key, value in raw_attributes.items()},
+            attributes=dict(raw_attributes),
         )
 
     def to_mapping(self) -> dict[str, object]:
@@ -188,23 +184,19 @@ class QueryMatchEvidence:
             raise ValueError("QueryMatchEvidence must be an object")
         return cls(
             signal=QuerySignal.from_mapping(data.get("signal")),
-            match_type=str(data.get("match_type", "")),
+            match_type=_string_value(data.get("match_type", ""), "match_type"),
             channels=_string_tuple(data.get("channels", []), "channels"),
             matched_values=_string_tuple(
                 data.get("matched_values", []), "matched_values"
             ),
-            source_ref=str(data.get("source_ref", "")),
-            strength=(
-                float(str(data["strength"]))
-                if data.get("strength") is not None
-                else None
+            source_ref=_string_value(data.get("source_ref", ""), "source_ref"),
+            strength=_optional_float(data.get("strength"), "strength"),
+            normalized_contribution=_optional_float(
+                data.get("normalized_contribution"), "normalized_contribution"
             ),
-            normalized_contribution=(
-                float(str(data["normalized_contribution"]))
-                if data.get("normalized_contribution") is not None
-                else None
+            provenance=_string_value(
+                data.get("provenance", "provider_normalized"), "provenance"
             ),
-            provenance=str(data.get("provenance", "provider_normalized")),
             derivation=_string_tuple(data.get("derivation", []), "derivation"),
         )
 
@@ -225,4 +217,37 @@ class QueryMatchEvidence:
 def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
     if not isinstance(value, (list, tuple)):
         raise ValueError(f"{field_name} must be a list")
-    return tuple(str(item) for item in value)
+    if any(not isinstance(item, str) for item in value):
+        raise ValueError(f"{field_name} must contain only strings")
+    return tuple(value)
+
+
+def _string_value(value: object, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    return value
+
+
+def _optional_string(value: object, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _string_value(value, field_name)
+
+
+def _optional_int(value: object, field_name: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field_name} must be an integer")
+    return value
+
+
+def _optional_float(value: object, field_name: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field_name} must be a number")
+    try:
+        return float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{field_name} must be a number") from exc
