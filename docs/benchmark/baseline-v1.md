@@ -9,9 +9,9 @@ adaptive budgets, reranking, chunking or graph expansion.
 The baseline evaluates retrieval evidence. It does not decide consumer
 satisfaction or authority.
 
-> Status: **candidate protocol, not promoted yet**. The source-only measurements
-> captured on 2026-09-30 are pre-baseline evidence. Promotion requires a new run
-> with the evidence-region protocol described here.
+> Status: **candidate protocol, not promoted yet**. A complete evidence-aware
+> nine-arm run was captured on 2026-10-01. Promotion now depends on final
+> artifact review and the tag/freeze decision, not on another mandatory rerun.
 
 ## Why evidence regions
 
@@ -243,6 +243,25 @@ python benchmarks/baseline-v1/run.py \
 The runner validates the revision, clean worktree and Ground Truth coordinates
 before probing services or starting measurement.
 
+Every execution automatically receives the next monotonic run version under the
+selected output root:
+
+```text
+artifacts/V0.1/
+artifacts/V0.2/
+artifacts/V0.3/
+...
+```
+
+A successful execution writes `run.json` in that directory. The run version is
+provenance only and is intentionally excluded from the retrieval configuration
+fingerprint so repeated measurements remain comparable. If a run fails after
+reserving a version, that partial directory is not reused.
+
+The historical evidence-aware artifacts committed directly under `artifacts/`
+predate this mechanism. The first execution using the versioned runner starts at
+`V0.1`.
+
 ## Promotion gate
 
 Baseline v1 is promoted only when all of the following are true:
@@ -253,7 +272,9 @@ Baseline v1 is promoted only when all of the following are true:
 4. all nine requested arms run their declared capability;
 5. every returned top-K result has valid source line coordinates;
 6. all arms meet the repetition protocol;
-7. environment/config/projection fingerprints are present;
+7. environment/config fingerprints are present, plus every projection,
+   serializer, fusion or backend-specific fingerprint applicable to the
+   capability actually executed;
 8. failures are explicit rather than replaced by fallbacks;
 9. the Solr performance anomaly is understood well enough to interpret its
    latency results honestly;

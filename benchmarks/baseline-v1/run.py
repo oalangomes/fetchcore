@@ -85,6 +85,10 @@ def main() -> int:
         "corpus_revision": expected_revision,
     }
 
+    output_root = args.output.resolve()
+    run_version, output_dir = _allocate_run_output_dir(output_root)
+    print(f"[baseline] run_version={run_version} output={output_dir}")
+
     indexing_payload: dict[str, object] | None = None
     if args.prepare_index:
         indexing_payload = _prepare_indexes(
@@ -98,9 +102,6 @@ def main() -> int:
             environment=environment,
             fetchcore_revision=fetchcore_revision,
         )
-
-    output_dir = args.output.resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     for arm in selected:
         backend = BackendRegistry().create(arm.backend)
@@ -163,6 +164,31 @@ def main() -> int:
         )
         print(f"[baseline] indexing artifact={destination}")
 
+    run_manifest = {
+        "schema_version": 1,
+        "run_version": run_version,
+        "protocol": "fetchcore.baseline-v1",
+        "status": "complete",
+        "completed_at": _utc_now(),
+        "fetchcore_revision": fetchcore_revision,
+        "corpus": suite.corpus,
+        "arms": [arm.to_mapping() for arm in selected],
+        "prepare_index": bool(args.prepare_index),
+        "artifacts": [f"{arm.id}.json" for arm in selected],
+        "indexing_artifact": (
+            "indexing.json" if indexing_payload is not None else None
+        ),
+    }
+    run_manifest_path = output_dir / "run.json"
+    run_manifest_path.write_text(
+        json.dumps(run_manifest, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(
+        f"[baseline] run_version={run_version} "
+        f"manifest={run_manifest_path}"
+    )
+
     return 0
 
 
@@ -189,9 +215,37 @@ def _parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=ARTIFACTS_DIR,
-        help="Artifact output directory.",
+        help=(
+            "Artifact output root. Each execution creates the next "
+            "V0.N child directory automatically."
+        ),
     )
     return parser
+
+
+def _allocate_run_output_dir(output_root: Path) -> tuple[str, Path]:
+    """Reserve the next monotonic V0.N directory for one benchmark execution."""
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    prefix = "V0."
+    observed_versions: list[int] = []
+    for entry in output_root.iterdir():
+        if not entry.is_dir() or not entry.name.startswith(prefix):
+            continue
+        suffix = entry.name[len(prefix):]
+        if suffix.isdigit():
+            observed_versions.append(int(suffix))
+
+    version_number = max(observed_versions, default=0) + 1
+    while True:
+        run_version = f"{prefix}{version_number}"
+        output_dir = output_root / run_version
+        try:
+            output_dir.mkdir()
+        except FileExistsError:
+            version_number += 1
+            continue
+        return run_version, output_dir
 
 
 def _select_arms(requested: list[str]) -> tuple[BaselineArm, ...]:

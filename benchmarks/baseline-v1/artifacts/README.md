@@ -1,33 +1,40 @@
-# Baseline artifact status
+# Baseline artifact layout
 
-The JSON retrieval artifacts currently present in this directory were measured on
-2026-09-30 using the earlier source-level evaluator.
+The evidence-aware retrieval artifacts currently stored directly in this
+directory were captured on 2026-10-01 before automatic run versioning existed.
+They are retained as historical evidence for PR #48 and are not silently
+renamed or rewritten.
 
-They are retained as **pre-baseline experimental evidence** only.
-
-They must not be used as the promoted `fetchcore.baseline-v1` regression ruler
-because they do not contain the evidence-region result coordinates required by
-artifact schema v2:
+From the versioned runner onward, each benchmark execution is isolated under a
+monotonic run directory:
 
 ```text
-rank
-id
-source_ref
-line_start
-line_end
+artifacts/
+├── README.md
+├── <historical pre-versioning artifacts>
+├── V0.1/
+│   ├── run.json
+│   ├── local-lexical.json
+│   ├── solr-lexical.json
+│   ├── solr-dense.json
+│   ├── solr-hybrid.json
+│   ├── opensearch-lexical.json
+│   ├── opensearch-dense.json
+│   ├── opensearch-hybrid.json
+│   ├── qdrant-dense.json
+│   ├── qdrant-hybrid.json
+│   └── indexing.json        # only when --prepare-index is used
+├── V0.2/
+└── V0.3/
 ```
 
-The per-backend indexing artifacts remain useful measurements of that run, but
-their presence does not promote the retrieval artifacts.
+`fetchcore.baseline-v1` remains the protocol identity. `V0.N` identifies one
+concrete execution and is provenance only; it does not alter retrieval config
+fingerprints.
 
-The next complete run must use:
+A complete versioned run has a `run.json` with `status: "complete"`. If an
+execution fails after reserving a version, its directory may remain partial and
+must not be treated as a completed baseline run. Versions are never reused.
 
-- Ground Truth schema v2;
-- artifact schema v2;
-- metrics schema v1;
-- the exact frozen NeuroTrack_MS revision;
-- all nine declared arms;
-- evidence-aware metrics from `fetchcore.baseline`.
-
-After review, the final evidence-aware artifacts replace the source-level
-measurements as the promoted baseline-v1 evidence.
+The root-level pre-versioning artifacts do not participate in the counter. The
+first execution after this mechanism is introduced is `V0.1`.

@@ -88,11 +88,59 @@ content.
 The runner validates Ground Truth coordinates against the exact local checkout
 before measurement.
 
+## Run versioning
+
+The protocol identity remains `fetchcore.baseline-v1`. Individual executions
+receive a separate monotonic run version automatically.
+
+The output root is scanned for directories matching `V0.<number>`; the runner
+atomically reserves the next number before measurement:
+
+```text
+artifacts/
+├── V0.1/
+│   ├── run.json
+│   ├── local-lexical.json
+│   ├── ...
+│   └── indexing.json
+├── V0.2/
+│   ├── run.json
+│   └── ...
+└── V0.3/
+    └── ...
+```
+
+A successful run writes `run.json` with:
+
+- `run_version`;
+- protocol;
+- completion status/time;
+- FetchCore revision;
+- corpus identity;
+- selected arms;
+- whether indexing was prepared;
+- the artifact filenames produced.
+
+The run version is provenance only. It is **not** added to the retrieval
+configuration identity and therefore does not change `config_fingerprint`.
+This is important: two otherwise identical executions remain directly
+comparable even when they are `V0.1` and `V0.2`.
+
+A run that fails after reserving its directory may leave a partial `V0.N`
+directory without a complete `run.json`. That version remains evidence of the
+attempt and is not reused. The next execution advances monotonically.
+
+The evidence-aware artifacts already committed at the artifact root predate this
+versioning mechanism. They remain historical evidence and do not participate in
+the automatic counter; the first execution with the versioned runner is
+`V0.1`.
+
 ## Indexing artifact
 
-`artifacts/indexing.json` is the consolidated indexing record for the complete
-nine-arm run. The canonical corpus is materialized once and the required remote
-projections are prepared once per backend.
+Within a versioned run, `artifacts/V0.N/indexing.json` is the consolidated
+indexing record when `--prepare-index` is used for the complete nine-arm run.
+The canonical corpus is materialized once and the required remote projections
+are prepared once per backend.
 
 It records independent Solr, OpenSearch and Qdrant snapshots and telemetry under
 `backends`, including projection/serializer fingerprints, writes/deletes,
