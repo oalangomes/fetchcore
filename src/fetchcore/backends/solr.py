@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import re
 import struct
+import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
@@ -469,6 +471,131 @@ class UrllibSolrTransport:
                 category=category,
                 metadata={"operation": path.lstrip("/")},
             ) from exc
+        try:
+            decoded = json.loads(raw.decode("utf-8")) if raw else {}
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise KnowledgeSearchError(
+                "Solr returned an invalid JSON response",
+                category="response_parsing_failure",
+                metadata={"operation": path.lstrip("/")},
+            ) from exc
+        if not isinstance(decoded, dict):
+            raise KnowledgeSearchError(
+                "Solr returned an unexpected response shape",
+                category="response_parsing_failure",
+                metadata={"operation": path.lstrip("/")},
+            )
+        return cast(dict[str, object], decoded)
+
+
+class PersistentSolrTransport:
+    """Dependency-free Solr transport with per-thread HTTP/1.1 connection reuse."""
+
+    def __init__(self, settings: SolrSettings) -> None:
+        """Initialize a direct persistent transport for one Solr collection."""
+        self.settings = settings
+        parsed = urlparse(settings.url)
+        self._connection_type = (
+            http.client.HTTPSConnection
+            if parsed.scheme == "https"
+            else http.client.HTTPConnection
+        )
+        self._host = cast(str, parsed.hostname)
+        self._port = parsed.port
+        prefix = parsed.path.rstrip("/")
+        self._base_path = f"{prefix}/{quote(settings.collection, safe='')}"
+        self._local = threading.local()
+
+    def get(
+        self,
+        path: str,
+        params: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Execute a GET request on the current thread's persistent connection."""
+        return self._request("GET", path, params=params)
+
+    def post(
+        self,
+        path: str,
+        payload: object,
+        params: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Execute a POST request on the current thread's persistent connection."""
+        return self._request("POST", path, payload=payload, params=params)
+
+    def close(self) -> None:
+        """Close the connection owned by the current thread, when present."""
+        connection = getattr(self._local, "connection", None)
+        if connection is not None:
+            connection.close()
+            del self._local.connection
+
+    def _connection(self) -> http.client.HTTPConnection:
+        connection = getattr(self._local, "connection", None)
+        if connection is None:
+            connection = self._connection_type(
+                self._host,
+                self._port,
+                timeout=self.settings.timeout_seconds,
+            )
+            self._local.connection = connection
+        return cast(http.client.HTTPConnection, connection)
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        payload: object | None = None,
+        params: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        query = urlencode(params or {}, doseq=True)
+        target = f"{self._base_path}/{path.lstrip('/')}"
+        if query:
+            target = f"{target}?{query}"
+        body = None if payload is None else json.dumps(payload).encode("utf-8")
+        try:
+            connection = self._connection()
+            connection.request(
+                method,
+                target,
+                body=body,
+                headers={"Accept": "application/json", "Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            raw = response.read()
+        except TimeoutError as exc:
+            self.close()
+            raise KnowledgeSearchError(
+                "Solr request timed out",
+                category="timeout",
+                metadata={"operation": path.lstrip("/")},
+            ) from exc
+        except (OSError, http.client.HTTPException) as exc:
+            self.close()
+            raise KnowledgeSearchError(
+                "Solr is unavailable",
+                category="unavailable",
+                metadata={"operation": path.lstrip("/")},
+            ) from exc
+
+        if response.status >= 400:
+            if response.status == 404:
+                category = "collection_missing"
+            elif response.status in {400, 409, 422}:
+                category = "schema_mismatch"
+            elif path.lstrip("/") == "update":
+                category = "index_update_failure"
+            else:
+                category = "unavailable"
+            raise KnowledgeSearchError(
+                f"Solr request failed with HTTP {response.status}",
+                category=category,
+                metadata={
+                    "http_status": response.status,
+                    "operation": path.lstrip("/"),
+                },
+            )
         try:
             decoded = json.loads(raw.decode("utf-8")) if raw else {}
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -1634,7 +1761,7 @@ class SolrBackend:
     def __init__(
         self,
         *,
-        transport_factory: Callable[[SolrSettings], SolrTransport] = UrllibSolrTransport,
+        transport_factory: Callable[[SolrSettings], SolrTransport] = PersistentSolrTransport,
         embedding_factory: Callable[[RetrievalConfig], EmbeddingProvider] = solr_embedding_provider,
         timer: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -1642,6 +1769,17 @@ class SolrBackend:
         self.transport_factory = transport_factory
         self.embedding_factory = embedding_factory
         self.timer = timer
+        self._transport: SolrTransport | None = None
+        self._transport_settings: SolrSettings | None = None
+        self._transport_lock = threading.Lock()
+
+    def _transport_for(self, settings: SolrSettings) -> SolrTransport:
+        """Reuse one transport while the effective Solr settings remain unchanged."""
+        with self._transport_lock:
+            if self._transport is None or self._transport_settings != settings:
+                self._transport = self.transport_factory(settings)
+                self._transport_settings = settings
+            return self._transport
 
     def search(
         self,
@@ -1656,7 +1794,7 @@ class SolrBackend:
                 "Solr candidate budget must be positive", category="schema_mismatch"
             )
         settings = SolrSettings.from_mapping(scope.settings)
-        transport = self.transport_factory(settings)
+        transport = self._transport_for(settings)
         store = SolrIndexStore(transport, settings)
         repository = scope.repository or RepositoryIndexer().resolve_repository_identity(
             scope.workspace
