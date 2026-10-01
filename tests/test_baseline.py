@@ -427,6 +427,89 @@ def test_baseline_suite_loads_evidence_regions_as_canonical_source_refs(
     assert suite.fingerprint.startswith("sha256:")
 
 
+def test_evidence_alternative_rejects_overlapping_regions() -> None:
+    source_ref = "repository://repo/shared.py"
+
+    with pytest.raises(BaselineConfigurationError, match="overlapping"):
+        BaselineEvidenceAlternative(
+            regions=(
+                BaselineEvidenceRegion(source_ref, 10, 20),
+                BaselineEvidenceRegion(source_ref, 20, 30),
+            )
+        )
+
+
+def test_suite_validates_regions_against_workspace(tmp_path: Path) -> None:
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "needle.py").write_text("a\nb\nc\n", encoding="utf-8")
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "corpus": {
+                    "repository": "owner/repo",
+                    "revision": "abc123",
+                },
+                "queries": [
+                    {
+                        "id": "q1",
+                        "intent": {"semantic_terms": ["needle"]},
+                        "required_evidence": [
+                            {
+                                "id": "needle",
+                                "alternatives": [
+                                    {
+                                        "regions": [
+                                            {
+                                                "path": "src/needle.py",
+                                                "line_start": 2,
+                                                "line_end": 3,
+                                            }
+                                        ]
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    suite = load_baseline_suite(suite_path)
+    suite.validate_workspace_regions(tmp_path)
+
+    bad_region = BaselineEvidenceRegion(
+        "repository://owner/repo/src/needle.py",
+        2,
+        4,
+    )
+    bad_suite = type(suite)(
+        schema_version=suite.schema_version,
+        corpus=suite.corpus,
+        cases=(
+            BaselineQueryCase(
+                query_id="q1",
+                intent=suite.cases[0].intent,
+                requirements=(
+                    BaselineEvidenceRequirement(
+                        id="needle",
+                        alternatives=(
+                            BaselineEvidenceAlternative(regions=(bad_region,)),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        fingerprint=suite.fingerprint,
+    )
+    with pytest.raises(BaselineConfigurationError, match="exceeds file length"):
+        bad_suite.validate_workspace_regions(tmp_path)
+
+
 def test_baseline_suite_rejects_source_only_v1_schema(tmp_path: Path) -> None:
     suite_path = tmp_path / "suite.json"
     suite_path.write_text(
