@@ -8,11 +8,14 @@ import json
 import os
 import subprocess
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Protocol
 from urllib.request import Request, urlopen
 
 from fetchcore.application import BackendRegistry
+from fetchcore.backends.ollama import OllamaEmbeddingProvider, OllamaEmbeddingSettings
 from fetchcore.backends.opensearch import (
     OpenSearchIndexStore,
     OpenSearchSettings,
@@ -31,25 +34,235 @@ from fetchcore.backends.solr import (
     solr_embedding_provider,
 )
 from fetchcore.baseline import (
-    BASELINE_V1_ARMS,
     BaselineArm,
     BaselineConfigurationError,
+    BaselineRetrievalMode,
     BaselineRunner,
     capture_baseline_environment,
     load_baseline_suite,
     mapping_fingerprint,
     write_baseline_artifact,
 )
-from fetchcore.embedding import OllamaEmbeddingProvider, OllamaEmbeddingSettings
-from fetchcore.repository.index_operations import prepare_repository_index_runtime
+from fetchcore.application.index_operations import prepare_repository_index_runtime
+from fetchcore.repository.indexing import RepositoryIndexResult
 from fetchcore.retrieval import RetrievalConfig
-from fetchcore.search import SearchScope
+from fetchcore.retrieval.contracts import SearchScope
 
 
 ROOT = Path(__file__).resolve().parent
 MANIFEST_PATH = ROOT / "manifest.json"
 GROUND_TRUTH_PATH = ROOT / "ground-truth.json"
 ARTIFACTS_DIR = ROOT / "artifacts"
+
+
+@dataclass(frozen=True)
+class BenchmarkBackendContext:
+    """Backend-specific benchmark inputs resolved from the suite manifest."""
+
+    endpoints: Mapping[str, object]
+    embedding_identity: Mapping[str, object]
+    settings: Mapping[str, object]
+    diagnostic_candidate_window: int
+
+
+class BenchmarkBackendAdapter(Protocol):
+    """Thin backend integration boundary used only by the benchmark runner."""
+
+    backend_id: str
+    indexing_artifact_key: str | None
+
+    def build_settings(self, context: BenchmarkBackendContext) -> dict[str, object]: ...
+
+    def probe_service_versions(
+        self,
+        context: BenchmarkBackendContext,
+    ) -> dict[str, str]: ...
+
+    def prepare_index(
+        self,
+        canonical: RepositoryIndexResult,
+        *,
+        modes: frozenset[BaselineRetrievalMode],
+        retrieval: RetrievalConfig,
+        context: BenchmarkBackendContext,
+    ) -> dict[str, object] | None: ...
+
+
+class LocalBenchmarkAdapter:
+    backend_id = "local-semantic"
+    indexing_artifact_key: str | None = None
+
+    def build_settings(self, context: BenchmarkBackendContext) -> dict[str, object]:
+        return dict(_object(context.settings, self.backend_id))
+
+    def probe_service_versions(
+        self,
+        context: BenchmarkBackendContext,
+    ) -> dict[str, str]:
+        return {}
+
+    def prepare_index(
+        self,
+        canonical: RepositoryIndexResult,
+        *,
+        modes: frozenset[BaselineRetrievalMode],
+        retrieval: RetrievalConfig,
+        context: BenchmarkBackendContext,
+    ) -> dict[str, object] | None:
+        return None
+
+
+class SolrBenchmarkAdapter:
+    backend_id = "solr"
+    indexing_artifact_key: str | None = "solr"
+
+    def build_settings(self, context: BenchmarkBackendContext) -> dict[str, object]:
+        return {
+            **_object(context.settings, self.backend_id),
+            "url": context.endpoints["solr"],
+            "diagnostic_candidate_window": context.diagnostic_candidate_window,
+        }
+
+    def probe_service_versions(
+        self,
+        context: BenchmarkBackendContext,
+    ) -> dict[str, str]:
+        payload = _http_json(
+            f"{str(context.endpoints['solr']).rstrip('/')}/admin/info/system?wt=json"
+        )
+        lucene = payload.get("lucene")
+        return {
+            "solr": (
+                str(lucene.get("solr-spec-version", "unknown"))
+                if isinstance(lucene, Mapping)
+                else "unknown"
+            )
+        }
+
+    def prepare_index(
+        self,
+        canonical: RepositoryIndexResult,
+        *,
+        modes: frozenset[BaselineRetrievalMode],
+        retrieval: RetrievalConfig,
+        context: BenchmarkBackendContext,
+    ) -> dict[str, object]:
+        vectors = bool(modes & {"dense", "hybrid"})
+        settings = SolrSettings.from_mapping(self.build_settings(context))
+        store = SolrIndexStore(
+            UrllibSolrTransport(settings),
+            settings,
+            embedding_provider=(
+                solr_embedding_provider(retrieval) if vectors else None
+            ),
+        )
+        # Solr intentionally owns schema validation, not schema creation.
+        store.validate_schema(require_vectors=vectors)
+        return store.full_rebuild(canonical).to_mapping()
+
+
+class OpenSearchBenchmarkAdapter:
+    backend_id = "opensearch"
+    indexing_artifact_key: str | None = "opensearch"
+
+    def build_settings(self, context: BenchmarkBackendContext) -> dict[str, object]:
+        return {
+            **_object(context.settings, self.backend_id),
+            "url": context.endpoints["opensearch"],
+            "diagnostic_candidate_window": context.diagnostic_candidate_window,
+        }
+
+    def probe_service_versions(
+        self,
+        context: BenchmarkBackendContext,
+    ) -> dict[str, str]:
+        payload = _http_json(str(context.endpoints["opensearch"]))
+        version = payload.get("version")
+        return {
+            "opensearch": (
+                str(version.get("number", "unknown"))
+                if isinstance(version, Mapping)
+                else "unknown"
+            )
+        }
+
+    def prepare_index(
+        self,
+        canonical: RepositoryIndexResult,
+        *,
+        modes: frozenset[BaselineRetrievalMode],
+        retrieval: RetrievalConfig,
+        context: BenchmarkBackendContext,
+    ) -> dict[str, object]:
+        vectors = bool(modes & {"dense", "hybrid"})
+        settings = OpenSearchSettings.from_mapping(self.build_settings(context))
+        store = OpenSearchIndexStore(
+            UrllibOpenSearchTransport(settings),
+            settings,
+            clock=_utc_now,
+            embedding_provider=(
+                opensearch_embedding_provider(retrieval) if vectors else None
+            ),
+        )
+        return store.full_rebuild(canonical).to_mapping()
+
+
+class QdrantBenchmarkAdapter:
+    backend_id = "qdrant-vector"
+    indexing_artifact_key: str | None = "qdrant"
+
+    def build_settings(self, context: BenchmarkBackendContext) -> dict[str, object]:
+        return {
+            **_object(context.settings, self.backend_id),
+            "url": context.endpoints["qdrant"],
+            "embedding_url": context.endpoints["ollama"],
+            "embedding_model": context.embedding_identity["model"],
+            "diagnostic_candidate_window": context.diagnostic_candidate_window,
+        }
+
+    def probe_service_versions(
+        self,
+        context: BenchmarkBackendContext,
+    ) -> dict[str, str]:
+        payload = _http_json(str(context.endpoints["qdrant"]))
+        return {"qdrant": str(payload.get("version", "unknown"))}
+
+    def prepare_index(
+        self,
+        canonical: RepositoryIndexResult,
+        *,
+        modes: frozenset[BaselineRetrievalMode],
+        retrieval: RetrievalConfig,
+        context: BenchmarkBackendContext,
+    ) -> dict[str, object]:
+        settings = QdrantVectorSettings.from_mapping(self.build_settings(context))
+        embedder = OllamaEmbeddingProvider(
+            OllamaEmbeddingSettings(
+                url=settings.embedding_url,
+                model=settings.embedding_model,
+                timeout_seconds=settings.timeout_seconds,
+                request_batch_size=settings.batch_size,
+            )
+        )
+        store = QdrantVectorIndexStore(
+            UrllibQdrantTransport(settings),
+            settings,
+            embedder,
+            clock=_utc_now,
+        )
+        return store.full_rebuild(canonical).to_mapping()
+
+
+def benchmark_backend_adapters() -> dict[str, BenchmarkBackendAdapter]:
+    """Return the explicit benchmark adapter registry."""
+
+    adapters: tuple[BenchmarkBackendAdapter, ...] = (
+        LocalBenchmarkAdapter(),
+        SolrBenchmarkAdapter(),
+        OpenSearchBenchmarkAdapter(),
+        QdrantBenchmarkAdapter(),
+    )
+    return {adapter.backend_id: adapter for adapter in adapters}
 
 
 def main() -> int:
@@ -68,10 +281,31 @@ def main() -> int:
     endpoints = _object(environment_config, "service_endpoints")
     embedding_identity = _object(environment_config, "embedding")
     backend_settings = _object(manifest, "backend_settings")
-    os.environ["OLLAMA_URL"] = str(endpoints["ollama"])
+    if str(embedding_identity["provider"]) == "ollama":
+        ollama_url = endpoints.get("ollama")
+        if ollama_url is None:
+            raise BaselineConfigurationError(
+                "ollama embedding provider requires an ollama service endpoint"
+            )
+        os.environ["OLLAMA_URL"] = str(ollama_url)
 
-    selected = _select_arms(args.arm)
-    service_versions = _service_versions(selected, endpoints)
+    available_arms = _manifest_arms(manifest)
+    adapters = benchmark_backend_adapters()
+    _validate_backend_adapters(available_arms, adapters)
+    selected = _select_arms(args.arm, available_arms)
+    backend_context = BenchmarkBackendContext(
+        endpoints=endpoints,
+        embedding_identity=embedding_identity,
+        settings=backend_settings,
+        diagnostic_candidate_window=int(
+            str(measurement["diagnostic_candidate_window"])
+        ),
+    )
+    service_versions = _service_versions(
+        selected,
+        context=backend_context,
+        adapters=adapters,
+    )
     environment = capture_baseline_environment(
         str(environment_config["profile_id"]),
         services=service_versions,
@@ -96,9 +330,8 @@ def main() -> int:
             workspace=workspace,
             repository=expected_repository,
             revision=expected_revision,
-            endpoints=endpoints,
-            embedding_identity=embedding_identity,
-            backend_settings=backend_settings,
+            context=backend_context,
+            adapters=adapters,
             environment=environment,
             fetchcore_revision=fetchcore_revision,
         )
@@ -113,10 +346,8 @@ def main() -> int:
         )
         settings = _backend_settings(
             arm,
-            endpoints=endpoints,
-            diagnostic_candidate_window=int(str(measurement["diagnostic_candidate_window"])),
-            embedding_identity=embedding_identity,
-            backend_settings=backend_settings,
+            context=backend_context,
+            adapters=adapters,
         )
         scope = SearchScope(
             workspace=workspace,
@@ -432,10 +663,57 @@ def _allocate_run_output_dir(output_root: Path) -> tuple[str, Path]:
         return run_version, output_dir
 
 
-def _select_arms(requested: list[str]) -> tuple[BaselineArm, ...]:
-    available = {arm.id: arm for arm in BASELINE_V1_ARMS}
+def _manifest_arms(manifest: Mapping[str, object]) -> tuple[BaselineArm, ...]:
+    raw_arms = manifest.get("arms")
+    if not isinstance(raw_arms, list) or not raw_arms:
+        raise BaselineConfigurationError(
+            "baseline manifest requires a non-empty arms list"
+        )
+    arms: list[BaselineArm] = []
+    for raw_arm in raw_arms:
+        if not isinstance(raw_arm, Mapping):
+            raise BaselineConfigurationError(
+                "baseline manifest arms must be JSON objects"
+            )
+        arms.append(BaselineArm.from_mapping(raw_arm))
+    duplicates = sorted(
+        arm_id
+        for arm_id in {arm.id for arm in arms}
+        if sum(arm.id == arm_id for arm in arms) > 1
+    )
+    if duplicates:
+        raise BaselineConfigurationError(
+            f"baseline manifest contains duplicate arm ids: {', '.join(duplicates)}"
+        )
+    return tuple(arms)
+
+
+def _validate_backend_adapters(
+    arms: Sequence[BaselineArm],
+    adapters: Mapping[str, BenchmarkBackendAdapter],
+) -> None:
+    mismatched = sorted(
+        key for key, adapter in adapters.items() if key != adapter.backend_id
+    )
+    if mismatched:
+        raise BaselineConfigurationError(
+            "benchmark adapter registry keys do not match adapter ids: "
+            + ", ".join(mismatched)
+        )
+    missing = sorted({arm.backend for arm in arms} - adapters.keys())
+    if missing:
+        raise BaselineConfigurationError(
+            f"baseline manifest has no benchmark adapter for: {', '.join(missing)}"
+        )
+
+
+def _select_arms(
+    requested: list[str],
+    available_arms: Sequence[BaselineArm],
+) -> tuple[BaselineArm, ...]:
+    available = {arm.id: arm for arm in available_arms}
     if not requested:
-        return BASELINE_V1_ARMS
+        return tuple(available_arms)
     unknown = sorted(set(requested) - available.keys())
     if unknown:
         raise BaselineConfigurationError(f"unknown baseline arms: {', '.join(unknown)}")
@@ -459,9 +737,8 @@ def _prepare_indexes(
     workspace: Path,
     repository: str,
     revision: str,
-    endpoints: Mapping[str, object],
-    embedding_identity: Mapping[str, object],
-    backend_settings: Mapping[str, object],
+    context: BenchmarkBackendContext,
+    adapters: Mapping[str, BenchmarkBackendAdapter],
     environment: Mapping[str, object],
     fetchcore_revision: str,
 ) -> dict[str, object]:
@@ -487,82 +764,53 @@ def _prepare_indexes(
     }
     backends = payload["backends"]
     assert isinstance(backends, dict)
-
-    ids = {arm.id for arm in arms}
-    dense_retrieval = _retrieval_for_mode(
-        "hybrid",
-        provider=str(embedding_identity["provider"]),
-        model=str(embedding_identity["model"]),
+    backends.update(
+        _prepare_backend_indexes(
+            arms,
+            canonical=canonical,
+            context=context,
+            adapters=adapters,
+        )
     )
-    assert dense_retrieval is not None
-
-    if ids & {"solr-lexical", "solr-dense", "solr-hybrid"}:
-        solr_vectors = bool(ids & {"solr-dense", "solr-hybrid"})
-        solr_settings = SolrSettings.from_mapping(
-            {
-                **_object(backend_settings, "solr"),
-                "url": endpoints["solr"],
-                "diagnostic_candidate_window": 80,
-            }
-        )
-        solr_store = SolrIndexStore(
-            UrllibSolrTransport(solr_settings),
-            solr_settings,
-            embedding_provider=(solr_embedding_provider(dense_retrieval) if solr_vectors else None),
-        )
-        # Solr intentionally owns schema validation, not schema creation.
-        solr_store.validate_schema(require_vectors=solr_vectors)
-        solr_result = solr_store.full_rebuild(canonical)
-        backends["solr"] = solr_result.to_mapping()
-
-    if ids & {"opensearch-lexical", "opensearch-dense", "opensearch-hybrid"}:
-        opensearch_vectors = bool(ids & {"opensearch-dense", "opensearch-hybrid"})
-        opensearch_settings = OpenSearchSettings.from_mapping(
-            {
-                **_object(backend_settings, "opensearch"),
-                "url": endpoints["opensearch"],
-                "diagnostic_candidate_window": 80,
-            }
-        )
-        opensearch_store = OpenSearchIndexStore(
-            UrllibOpenSearchTransport(opensearch_settings),
-            opensearch_settings,
-            clock=_utc_now,
-            embedding_provider=(
-                opensearch_embedding_provider(dense_retrieval) if opensearch_vectors else None
-            ),
-        )
-        opensearch_result = opensearch_store.full_rebuild(canonical)
-        backends["opensearch"] = opensearch_result.to_mapping()
-
-    if ids & {"qdrant-dense", "qdrant-hybrid"}:
-        qdrant_settings = QdrantVectorSettings.from_mapping(
-            {
-                **_object(backend_settings, "qdrant-vector"),
-                "url": endpoints["qdrant"],
-                "embedding_url": endpoints["ollama"],
-                "embedding_model": embedding_identity["model"],
-                "diagnostic_candidate_window": 80,
-            }
-        )
-        embedder = OllamaEmbeddingProvider(
-            OllamaEmbeddingSettings(
-                url=qdrant_settings.embedding_url,
-                model=qdrant_settings.embedding_model,
-                timeout_seconds=qdrant_settings.timeout_seconds,
-                request_batch_size=qdrant_settings.batch_size,
-            )
-        )
-        qdrant_store = QdrantVectorIndexStore(
-            UrllibQdrantTransport(qdrant_settings),
-            qdrant_settings,
-            embedder,
-            clock=_utc_now,
-        )
-        qdrant_result = qdrant_store.full_rebuild(canonical)
-        backends["qdrant"] = qdrant_result.to_mapping()
 
     return payload
+
+
+def _prepare_backend_indexes(
+    arms: Sequence[BaselineArm],
+    *,
+    canonical: RepositoryIndexResult,
+    context: BenchmarkBackendContext,
+    adapters: Mapping[str, BenchmarkBackendAdapter],
+) -> dict[str, object]:
+    retrieval = _retrieval_for_mode(
+        "hybrid",
+        provider=str(context.embedding_identity["provider"]),
+        model=str(context.embedding_identity["model"]),
+    )
+    assert retrieval is not None
+
+    results: dict[str, object] = {}
+    for backend_id, modes in _backend_modes(arms).items():
+        adapter = _adapter_for(backend_id, adapters)
+        result = adapter.prepare_index(
+            canonical,
+            modes=modes,
+            retrieval=retrieval,
+            context=context,
+        )
+        if result is None:
+            continue
+        key = adapter.indexing_artifact_key
+        if key is None:
+            raise BaselineConfigurationError(
+                f"benchmark adapter {backend_id!r} returned indexing telemetry "
+                "without an artifact key"
+            )
+        if key in results:
+            raise BaselineConfigurationError(f"duplicate indexing artifact key {key!r}")
+        results[key] = result
+    return results
 
 
 def _retrieval_for_mode(
@@ -598,63 +846,54 @@ def _retrieval_for_mode(
 def _backend_settings(
     arm: BaselineArm,
     *,
-    endpoints: Mapping[str, object],
-    diagnostic_candidate_window: int,
-    embedding_identity: Mapping[str, object],
-    backend_settings: Mapping[str, object],
+    context: BenchmarkBackendContext,
+    adapters: Mapping[str, BenchmarkBackendAdapter],
 ) -> dict[str, object]:
-    if arm.backend == "local-semantic":
-        return dict(_object(backend_settings, "local-semantic"))
-    if arm.backend == "solr":
-        return {
-            **_object(backend_settings, "solr"),
-            "url": endpoints["solr"],
-            "diagnostic_candidate_window": diagnostic_candidate_window,
-        }
-    if arm.backend == "opensearch":
-        return {
-            **_object(backend_settings, "opensearch"),
-            "url": endpoints["opensearch"],
-            "diagnostic_candidate_window": diagnostic_candidate_window,
-        }
-    if arm.backend == "qdrant-vector":
-        return {
-            **_object(backend_settings, "qdrant-vector"),
-            "url": endpoints["qdrant"],
-            "embedding_url": endpoints["ollama"],
-            "embedding_model": embedding_identity["model"],
-            "diagnostic_candidate_window": diagnostic_candidate_window,
-        }
-    raise BaselineConfigurationError(f"no benchmark settings for backend {arm.backend!r}")
+    return _adapter_for(arm.backend, adapters).build_settings(context)
 
 
 def _service_versions(
-    arms: tuple[BaselineArm, ...],
-    endpoints: Mapping[str, object],
+    arms: Sequence[BaselineArm],
+    *,
+    context: BenchmarkBackendContext,
+    adapters: Mapping[str, BenchmarkBackendAdapter],
 ) -> dict[str, str]:
-    ids = {arm.id for arm in arms}
     versions: dict[str, str] = {}
-    if ids & {"solr-lexical", "solr-dense", "solr-hybrid"}:
-        payload = _http_json(f"{str(endpoints['solr']).rstrip('/')}/admin/info/system?wt=json")
-        lucene = payload.get("lucene")
-        versions["solr"] = (
-            str(lucene.get("solr-spec-version", "unknown"))
-            if isinstance(lucene, Mapping)
-            else "unknown"
+    for backend_id in _backend_modes(arms):
+        versions.update(
+            _adapter_for(backend_id, adapters).probe_service_versions(context)
         )
-    if ids & {"opensearch-lexical", "opensearch-dense", "opensearch-hybrid"}:
-        payload = _http_json(str(endpoints["opensearch"]))
-        version = payload.get("version")
-        versions["opensearch"] = (
-            str(version.get("number", "unknown")) if isinstance(version, Mapping) else "unknown"
+    embedding_provider = str(context.embedding_identity["provider"])
+    if (
+        any(arm.mode in {"dense", "hybrid"} for arm in arms)
+        and embedding_provider == "ollama"
+    ):
+        payload = _http_json(
+            f"{str(context.endpoints['ollama']).rstrip('/')}/api/version"
         )
-    if ids & {"qdrant-dense", "qdrant-hybrid"}:
-        payload = _http_json(str(endpoints["qdrant"]))
-        versions["qdrant"] = str(payload.get("version", "unknown"))
-    if any(arm.mode in {"dense", "hybrid"} for arm in arms):
-        payload = _http_json(f"{str(endpoints['ollama']).rstrip('/')}/api/version")
         versions["ollama"] = str(payload.get("version", "unknown"))
     return versions
+
+
+def _backend_modes(
+    arms: Sequence[BaselineArm],
+) -> dict[str, frozenset[BaselineRetrievalMode]]:
+    grouped: dict[str, set[BaselineRetrievalMode]] = {}
+    for arm in arms:
+        grouped.setdefault(arm.backend, set()).add(arm.mode)
+    return {backend: frozenset(modes) for backend, modes in grouped.items()}
+
+
+def _adapter_for(
+    backend_id: str,
+    adapters: Mapping[str, BenchmarkBackendAdapter],
+) -> BenchmarkBackendAdapter:
+    adapter = adapters.get(backend_id)
+    if adapter is None:
+        raise BaselineConfigurationError(
+            f"no benchmark adapter registered for backend {backend_id!r}"
+        )
+    return adapter
 
 
 def _http_json(url: str) -> dict[str, object]:

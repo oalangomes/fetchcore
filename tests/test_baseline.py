@@ -314,6 +314,34 @@ def test_frozen_v1_arm_matrix_is_complete_and_unique() -> None:
     assert len({arm.id for arm in BASELINE_V1_ARMS}) == len(BASELINE_V1_ARMS)
 
 
+def test_baseline_arm_is_parsed_from_manifest_mapping() -> None:
+    arm = BaselineArm.from_mapping(
+        {"id": "fixture-hybrid", "backend": "fixture", "mode": "hybrid"}
+    )
+
+    assert arm == BaselineArm("fixture-hybrid", "fixture", "hybrid")
+
+
+@pytest.mark.parametrize(
+    "value, message",
+    [
+        ({"backend": "fixture", "mode": "lexical"}, "non-empty id and backend"),
+        ({"id": "fixture", "mode": "lexical"}, "non-empty id and backend"),
+        ({"id": None, "backend": "fixture", "mode": "lexical"}, "non-empty id"),
+        (
+            {"id": "fixture-invalid", "backend": "fixture", "mode": "invalid"},
+            "unsupported mode",
+        ),
+    ],
+)
+def test_baseline_arm_manifest_mapping_fails_closed(
+    value: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(BaselineConfigurationError, match=message):
+        BaselineArm.from_mapping(value)
+
+
 def test_baseline_manifest_matches_frozen_arm_matrix() -> None:
     root = Path(__file__).resolve().parents[1]
     manifest = json.loads(

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,7 +12,100 @@ SPEC = importlib.util.spec_from_file_location("fetchcore_baseline_v1_run", RUN_P
 assert SPEC is not None
 assert SPEC.loader is not None
 RUN_MODULE = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = RUN_MODULE
 SPEC.loader.exec_module(RUN_MODULE)
+
+
+class _FixtureBenchmarkAdapter:
+    backend_id = "fixture"
+    indexing_artifact_key = "fixture-index"
+
+    def __init__(self) -> None:
+        self.prepared_modes: frozenset[str] = frozenset()
+
+    def build_settings(self, context: Any) -> dict[str, object]:
+        return {"endpoint": context.endpoints["fixture"]}
+
+    def probe_service_versions(self, context: Any) -> dict[str, str]:
+        del context
+        return {"fixture-service": "1.2.3"}
+
+    def prepare_index(
+        self,
+        canonical: object,
+        *,
+        modes: frozenset[str],
+        retrieval: object,
+        context: Any,
+    ) -> dict[str, object]:
+        del canonical, retrieval, context
+        self.prepared_modes = modes
+        return {
+            "mode": "fixture_rebuild",
+            "duration_ms": 1,
+            "telemetry": {"backend_writes": 2},
+        }
+
+
+def _fixture_context() -> object:
+    return RUN_MODULE.BenchmarkBackendContext(
+        endpoints={"fixture": "http://fixture.test"},
+        embedding_identity={"provider": "fixture", "model": "fixture-model"},
+        settings={"fixture": {}},
+        diagnostic_candidate_window=12,
+    )
+
+
+def test_manifest_and_adapter_registry_are_the_backend_extension_boundary() -> None:
+    arms = RUN_MODULE._manifest_arms(
+        {
+            "arms": [
+                {"id": "fixture-lexical", "backend": "fixture", "mode": "lexical"},
+                {"id": "fixture-dense", "backend": "fixture", "mode": "dense"},
+            ]
+        }
+    )
+    adapter = _FixtureBenchmarkAdapter()
+    adapters = {adapter.backend_id: adapter}
+
+    RUN_MODULE._validate_backend_adapters(arms, adapters)
+
+    assert RUN_MODULE._select_arms(["fixture-dense"], arms) == (arms[1],)
+    assert RUN_MODULE._backend_settings(
+        arms[0], context=_fixture_context(), adapters=adapters
+    ) == {"endpoint": "http://fixture.test"}
+    assert RUN_MODULE._service_versions(
+        arms, context=_fixture_context(), adapters=adapters
+    ) == {"fixture-service": "1.2.3"}
+
+    indexing = RUN_MODULE._prepare_backend_indexes(
+        arms,
+        canonical=object(),
+        context=_fixture_context(),
+        adapters=adapters,
+    )
+
+    assert adapter.prepared_modes == frozenset({"lexical", "dense"})
+    assert indexing == {
+        "fixture-index": {
+            "mode": "fixture_rebuild",
+            "duration_ms": 1,
+            "telemetry": {"backend_writes": 2},
+        }
+    }
+
+
+def test_manifest_backend_without_adapter_fails_explicitly() -> None:
+    arms = RUN_MODULE._manifest_arms(
+        {"arms": [{"id": "fixture-lexical", "backend": "fixture", "mode": "lexical"}]}
+    )
+
+    try:
+        RUN_MODULE._validate_backend_adapters(arms, {})
+    except RUN_MODULE.BaselineConfigurationError as exc:
+        assert str(exc) == "baseline manifest has no benchmark adapter for: fixture"
+    else:
+        raise AssertionError("missing backend adapter should fail closed")
 
 
 def test_allocate_run_output_dir_advances_monotonically(tmp_path: Path) -> None:

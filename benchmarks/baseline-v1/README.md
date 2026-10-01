@@ -47,6 +47,28 @@ predates later harness-only changes.
 
 No unsupported capability or failed backend may be silently replaced.
 
+## Backend adapter boundary
+
+The manifest is the runtime source of truth for arm ids, backend ids and
+retrieval modes. The runner has no arm-name conditionals. Benchmark-specific
+integration is isolated behind `BenchmarkBackendAdapter`, whose three
+responsibilities are:
+
+- build backend settings from the manifest context;
+- probe service versions for environment provenance;
+- prepare the backend index and return its telemetry, when applicable.
+
+Adding a backend to a future benchmark matrix therefore requires implementing
+the normal FetchCore backend and registering it in `BackendRegistry`, adding one
+thin benchmark adapter to `benchmark_backend_adapters()`, and declaring its arms
+and settings in the manifest. The runner's selection, version capture, index
+dispatch, measurement and report generation do not need backend-specific
+branches. A contract test exercises this extension path with a fixture backend.
+
+The nine arms in `baseline-v1` remain frozen. A newly supported backend belongs
+in a new protocol version or an explicitly experimental suite; the adapter
+boundary makes that addition mechanical without rewriting this protocol.
+
 ## Fingerprint applicability
 
 Promotion requires the environment and benchmark configuration identity for every
