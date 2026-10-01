@@ -295,8 +295,38 @@ def test_baseline_capability_validation_fails_closed() -> None:
         )
 
 
-def test_frozen_v1_arm_ids_are_unique() -> None:
+def test_frozen_v1_arm_matrix_is_complete_and_unique() -> None:
+    expected = (
+        ("local-lexical", "local-semantic", "lexical"),
+        ("solr-lexical", "solr", "lexical"),
+        ("solr-dense", "solr", "dense"),
+        ("solr-hybrid", "solr", "hybrid"),
+        ("opensearch-lexical", "opensearch", "lexical"),
+        ("opensearch-dense", "opensearch", "dense"),
+        ("opensearch-hybrid", "opensearch", "hybrid"),
+        ("qdrant-dense", "qdrant-vector", "dense"),
+        ("qdrant-hybrid", "qdrant-vector", "hybrid"),
+    )
+
+    observed = tuple((arm.id, arm.backend, arm.mode) for arm in BASELINE_V1_ARMS)
+
+    assert observed == expected
     assert len({arm.id for arm in BASELINE_V1_ARMS}) == len(BASELINE_V1_ARMS)
+
+
+def test_baseline_manifest_matches_frozen_arm_matrix() -> None:
+    root = Path(__file__).resolve().parents[1]
+    manifest = json.loads(
+        (root / "benchmarks/baseline-v1/manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert tuple(
+        (item["id"], item["backend"], item["mode"])
+        for item in manifest["arms"]
+    ) == tuple(
+        (arm.id, arm.backend, arm.mode)
+        for arm in BASELINE_V1_ARMS
+    )
 
 
 class _FixtureBackend:
