@@ -37,11 +37,13 @@ predates later harness-only changes.
 
 1. local lexical
 2. Solr lexical
-3. Solr hybrid
-4. OpenSearch lexical
-5. OpenSearch hybrid
-6. Qdrant dense
-7. Qdrant hybrid
+3. Solr dense
+4. Solr hybrid
+5. OpenSearch lexical
+6. OpenSearch dense
+7. OpenSearch hybrid
+8. Qdrant dense
+9. Qdrant hybrid
 
 No unsupported capability or failed backend may be silently replaced.
 
@@ -69,7 +71,7 @@ The source-level measurements captured on 2026-09-30 were useful experimental
 evidence, but they are **not the promoted baseline-v1**. They were produced
 before evidence-region Ground Truth became the quality contract.
 
-The final promotion requires a new evidence-aware run of all seven arms after the
+The final promotion requires a new evidence-aware run of all nine arms after the
 Solr performance investigation is understood.
 
 See `docs/benchmark/baseline-v1.md` for metric definitions and the promotion
