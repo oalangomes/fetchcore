@@ -43,6 +43,11 @@
       "mode": "lexical"
     },
     {
+      "id": "solr-dense",
+      "backend": "solr",
+      "mode": "dense"
+    },
+    {
       "id": "solr-hybrid",
       "backend": "solr",
       "mode": "hybrid"
@@ -51,6 +56,11 @@
       "id": "opensearch-lexical",
       "backend": "opensearch",
       "mode": "lexical"
+    },
+    {
+      "id": "opensearch-dense",
+      "backend": "opensearch",
+      "mode": "dense"
     },
     {
       "id": "opensearch-hybrid",
