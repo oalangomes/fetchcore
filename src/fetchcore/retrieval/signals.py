@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
-from typing import Literal, cast
+from typing import Literal, cast, get_args
 
 
 QueryClassification = Literal[
@@ -25,25 +25,8 @@ QueryClassification = Literal[
 ]
 QuerySignalType = Literal["exact", "semantic", "reference", "hint"]
 
-_QUERY_CLASSIFICATIONS = frozenset(
-    {
-        "direct_reference",
-        "exact_identifier",
-        "path",
-        "architecture_concept",
-        "functional_objective",
-        "behavioral_constraint",
-        "completion_instruction",
-        "domain_concept",
-        "semantic_phrase",
-        "semantic_term",
-        "repository_identity",
-        "scope_hint",
-        "product_identity",
-        "generic_instruction",
-    }
-)
-_QUERY_SIGNAL_TYPES = frozenset({"exact", "semantic", "reference", "hint"})
+_QUERY_CLASSIFICATIONS: frozenset[str] = frozenset(get_args(QueryClassification))
+_QUERY_SIGNAL_TYPES: frozenset[str] = frozenset(get_args(QuerySignalType))
 
 
 @dataclass(frozen=True)
