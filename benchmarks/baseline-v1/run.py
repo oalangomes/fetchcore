@@ -10,6 +10,7 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Mapping
+from urllib.parse import unquote
 from urllib.request import Request, urlopen
 
 from fetchcore.application import BackendRegistry
@@ -61,6 +62,7 @@ def main() -> int:
     expected_repository = str(suite.corpus["repository"])
     expected_revision = str(suite.corpus["revision"])
     _validate_workspace(workspace, expected_revision)
+    _validate_evidence_regions(workspace, suite, expected_repository)
     suite.validate_workspace_regions(workspace)
 
     measurement = _object(manifest, "measurement")
@@ -218,6 +220,54 @@ def _validate_workspace(workspace: Path, expected_revision: str) -> None:
         raise BaselineConfigurationError(
             "baseline corpus workspace must have a clean working tree"
         )
+
+
+def _validate_evidence_regions(
+    workspace: Path,
+    suite: object,
+    repository: str,
+) -> None:
+    """Fail closed when reviewed Ground Truth coordinates do not match the corpus."""
+
+    cases = getattr(suite, "cases", ())
+    prefix = f"repository://{repository}/"
+    observed: set[tuple[str, int, int]] = set()
+    for case in cases:
+        for requirement in case.requirements:
+            for alternative in requirement.alternatives:
+                for region in alternative.regions:
+                    key = (region.source_ref, region.line_start, region.line_end)
+                    if key in observed:
+                        continue
+                    observed.add(key)
+                    if not region.source_ref.startswith(prefix):
+                        raise BaselineConfigurationError(
+                            "baseline evidence source_ref does not match frozen repository"
+                        )
+                    relative = unquote(region.source_ref[len(prefix):])
+                    path = (workspace / relative).resolve()
+                    try:
+                        path.relative_to(workspace)
+                    except ValueError as exc:
+                        raise BaselineConfigurationError(
+                            f"baseline evidence path escapes corpus: {relative}"
+                        ) from exc
+                    if not path.is_file():
+                        raise BaselineConfigurationError(
+                            f"baseline evidence path does not exist: {relative}"
+                        )
+                    try:
+                        line_count = len(path.read_text(encoding="utf-8").splitlines())
+                    except (OSError, UnicodeDecodeError) as exc:
+                        raise BaselineConfigurationError(
+                            f"baseline evidence path is not readable UTF-8: {relative}"
+                        ) from exc
+                    if region.line_end > line_count:
+                        raise BaselineConfigurationError(
+                            "baseline evidence range exceeds source file: "
+                            f"{relative}:{region.line_start}-{region.line_end} "
+                            f"(file has {line_count} lines)"
+                        )
 
 
 def _prepare_indexes(
