@@ -1,19 +1,33 @@
-# Baseline v1 artifacts
+# Baseline artifact status
 
-Only promoted retrieval artifacts generated with:
+The JSON retrieval artifacts currently present in this directory were measured on
+2026-09-30 using the earlier source-level evaluator.
 
-- artifact schema v2;
+They are retained as **pre-baseline experimental evidence** only.
+
+They must not be used as the promoted `fetchcore.baseline-v1` regression ruler
+because they do not contain the evidence-region result coordinates required by
+artifact schema v2:
+
+```text
+rank
+id
+source_ref
+line_start
+line_end
+```
+
+The per-backend indexing artifacts remain useful measurements of that run, but
+their presence does not promote the retrieval artifacts.
+
+The next complete run must use:
+
 - Ground Truth schema v2;
+- artifact schema v2;
 - metrics schema v1;
-- matching Ground Truth and metrics fingerprints;
-- ranked result spans (`source_ref`, `line_start`, `line_end`);
+- the exact frozen NeuroTrack_MS revision;
+- all seven declared arms;
+- evidence-aware metrics from `fetchcore.baseline`.
 
-belong directly in this directory.
-
-The earlier source-only retrieval run was intentionally removed from the
-promotable tree after the evidence-region protocol was defined. It remains
-available in Git history as pre-freeze evidence and must not be compared as a
-frozen baseline.
-
-Indexing telemetry under `indexing/` is retained because its measurement
-contract is independent from retrieval Ground Truth.
+After review, the final evidence-aware artifacts replace the source-level
+measurements as the promoted baseline-v1 evidence.
