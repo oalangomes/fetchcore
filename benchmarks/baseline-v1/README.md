@@ -10,8 +10,7 @@ retrieval/performance baseline.
 - corpus id: `neurotrack-ms-74ce3244`
 
 The corpus is private. FetchCore does not copy source content into this
-benchmark directory. Ground Truth stores only retrieval intents and canonical
-repository paths.
+benchmark directory. Ground Truth stores retrieval intents plus minimal evidence regions as canonical\nrepository paths and 1-based line ranges. It never copies source content.
 
 The selected revision intentionally predates a later harness-only commit so the
 baseline corpus is the product repository, not benchmark scaffolding.
@@ -20,7 +19,7 @@ baseline corpus is the product repository, not benchmark scaffolding.
 
 - 1 warm-up per query;
 - 20 measured repetitions per query;
-- Recall@20 / RR / nDCG@20 / useful evidence density;
+- source Recall@20 as a diagnostic;\n- EvidenceRecall@20 and span coverage as primary quality metrics;\n- evidence MRR and evidence nDCG@20 over incremental useful span coverage;\n- useful context line ratio, returned lines/chars and candidate counts;
 - p50 / p95 / p99 over repeated measured retrievals;
 - max 20 returned results;
 - diagnostic candidate window 80 when the backend supports it;
@@ -66,15 +65,11 @@ services were identical.
 - architecture documentation;
 - repository development/governance documentation.
 
-Ground Truth identifies evidence by `source_ref`, derived from repository
-identity + path. It does not encode semantic satisfaction or organizational
-authority.
+Ground Truth is schema v2. Each query declares one or more logical evidence\nrequirements. A requirement contains sufficient alternatives, and each alternative\ncontains minimal `(source_ref, line_start, line_end)` regions. A source hit alone is\ndiagnostic; evidence is recovered only when a sufficient region set is covered.\n\nThe protocol does not decide consumer satisfaction or organizational authority. It\nonly evaluates whether the retrieval response contained the reviewed technical\nevidence.
 
 ## Promotion
 
-Artifacts belong under `artifacts/` only after running on the exact corpus
-revision and recording environment identity. Unit-test fixtures are not
-baseline artifacts.
+Artifacts belong under `artifacts/` only after running on the exact corpus\nrevision and recording environment identity. Retrieval artifacts must use artifact\nschema v2, Ground Truth schema v2 and metrics schema v1, including their SHA-256\nfingerprints and ranked result spans. Source-only pre-freeze runs are retained only\nin Git history and are not promotable baseline artifacts. Unit-test fixtures are not\nbaseline artifacts.
 
 The final freeze is:
 
