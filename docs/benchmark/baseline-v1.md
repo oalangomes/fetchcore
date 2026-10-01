@@ -2,25 +2,58 @@
 
 Issue: #18
 
-FetchCore baseline v1 freezes retrieval quality and operational cost before
-SearchIntent v2, targeted fast paths, caching, adaptive budgets or reranking
-promotion change retrieval behavior.
+FetchCore baseline v1 is the frozen retrieval-quality and operational-cost ruler
+used before evolving SearchIntent semantics, targeted fast paths, caches,
+adaptive budgets, reranking, chunking or graph expansion.
 
-The baseline evaluates FetchCore retrieval only. It does not decide consumer
+The baseline evaluates retrieval evidence. It does not decide consumer
 satisfaction or authority.
 
-## Measurement layers
+> Status: **candidate protocol, not promoted yet**. The source-only measurements
+> captured on 2026-09-30 are pre-baseline evidence. Promotion requires a new run
+> with the evidence-region protocol described here.
 
-Keep three layers separate:
+## Why evidence regions
 
-1. **telemetry** — observable runtime cost and flow;
-2. **diagnostics** — why a candidate matched or how a backend translated a query;
-3. **quality metrics** — comparison of returned evidence against explicit Ground Truth.
+Finding the right file is not sufficient for a coding agent or LLM. A result may
+have the expected `source_ref` but contain the wrong chunk.
 
-Runtime responses may carry optional `RetrievalTelemetry`. Ground Truth metrics
-are computed only by `fetchcore.baseline`.
+Baseline v1 therefore models Ground Truth as logical evidence requirements:
 
-## Frozen v1 arms
+```text
+query
+└── required_evidence[]          # requirements are AND
+    └── alternatives[]           # alternatives are OR
+        └── regions[]
+            ├── path
+            ├── line_start
+            └── line_end
+```
+
+Each region is the smallest reviewed source span needed to contribute that piece
+of technical evidence. Alternatives allow more than one equally sufficient
+realization without forcing one arbitrary implementation.
+
+The private corpus content is never copied into FetchCore. Only repository
+identity, query intent, paths and 1-based line coordinates are versioned.
+
+## Frozen corpus
+
+```text
+repository: oalangomes/NeuroTrack_MS
+revision: 74ce3244956a65baed61f1dae6f498cb2be4f3b7
+corpus_id: neurotrack-ms-74ce3244
+```
+
+The suite currently contains 20 reviewed queries and 42 evidence requirements
+covering services, controllers, tests, routes, queues/workers, configuration,
+Docker/runtime topology, architecture documentation and repository development
+rules.
+
+At runtime the runner fails closed if the checkout is not at the exact revision,
+is dirty, or any Ground Truth region points outside the actual file length.
+
+## Frozen arms
 
 | Arm | Backend | Mode |
 | --- | --- | --- |
@@ -32,124 +65,101 @@ are computed only by `fetchcore.baseline`.
 | qdrant-dense | qdrant-vector | dense |
 | qdrant-hybrid | qdrant-vector | hybrid |
 
-A runner validates each arm against `RetrievalBackendCapabilities`. Unsupported
-capabilities fail closed; the protocol never substitutes another mode silently.
+Unsupported capabilities, incompatible schemas or environment failures are
+explicit errors. No arm silently substitutes another mode.
 
-## Frozen run protocol
+## Run protocol
 
-A promoted baseline run uses:
+A promoted run uses:
 
 - one warm-up per query, excluded from measurement;
-- at least 20 measured repetitions per query;
-- the same repository revision and Ground Truth across compared arms;
-- one controlled retrieval/configuration variable at a time when comparing later changes;
-- explicit `k` and result budget;
-- deterministic config/corpus identity in every artifact.
-
-The implementation uses nearest-rank percentiles for p50/p95/p99.
-
-## Corpus identity
-
-Every artifact must identify the corpus sufficiently to reproduce it. At minimum:
-
-```json
-{
-  "repository": "owner/repository",
-  "revision": "<immutable revision>",
-  "corpus_id": "<stable benchmark corpus id>"
-}
-```
-
-For multi-repository experiments, record every repository/revision pair.
-
-Ground Truth identifies minimal evidence regions by canonical repository path plus
-1-based line ranges. It should cover representative source code/tests and, when
-the corpus contains them, repository documentation, architecture/decision records,
-schemas, configuration or workflows. Alternatives may encode multiple equally
-sufficient evidence locations without forcing one arbitrary implementation.
-
-A documentation/policy match is evidence. FetchCore does not promote it to
-organizational authority.
-
-## Retrieval telemetry
-
-The backend-neutral response telemetry records:
-
-- retrieval mode;
-- end-to-end duration;
-- candidates examined and returned;
-- returned character count;
-- bounded stage telemetry;
-- relevant projection/serializer/fusion fingerprints;
-- current result budget.
-
-Current stages are:
-
-- local lexical: `lexical`;
-- Solr/OpenSearch dense: `embedding -> dense`;
-- Solr/OpenSearch hybrid: `embedding -> dense -> lexical -> fusion`;
-- Qdrant dense: `embedding -> dense`;
-- Qdrant hybrid: `embedding -> dense -> lexical(sparse) -> fusion`.
-
-The current backends return complete batches, so true time-to-first-candidate is
-not observable yet and is omitted rather than fabricated.
-
-Post-acquisition reranking reports its own `duration_ms` when it is explicitly
-enabled. Reranking remains experimental and is not a frozen v1 arm.
-
-## Indexing telemetry
-
-`RepositoryIndexTelemetry` keeps its existing detailed coverage and now also
-exports stable baseline aliases:
-
-- `files_scanned`;
-- `files_changed`;
-- `chunks_total`;
-- `chunks_changed`;
-- `indexing_throughput_chunks_per_second`.
-
-Backend index synchronization may emit `IndexSyncTelemetry`:
-
-- total sync duration;
-- logical knowledge writes/deletes;
-- embedding requests;
-- embedding vectors;
-- embedding duration;
-- embedding throughput.
-
-Blue/green generation garbage collection is not counted as a logical
-knowledge-document delete when the previous document count is not already
-available. The metric must not add backend reads merely to manufacture parity.
+- 20 measured repetitions per query;
+- the same immutable corpus and Ground Truth across all arms;
+- K=20 and max 20 returned results;
+- diagnostic candidate window 80 where supported;
+- Ollama + `embeddinggemma` + 768 dimensions for dense paths;
+- RRF as the hybrid fusion baseline;
+- nearest-rank p50/p95/p99;
+- one controlled retrieval/configuration variable at a time in later experiments.
 
 ## Quality metrics
 
-Baseline v1 uses evidence-region Ground Truth because finding the right file is
-not sufficient for a coding agent or LLM. Each query declares logical evidence
-requirements. A requirement has one or more sufficient alternatives; each
-alternative contains one or more minimal line regions.
+### SourceRecall@K — diagnostic
 
-The evaluator records:
+For each evidence requirement, this asks whether at least one sufficient
+alternative has all of its source files represented in the top K.
 
-- **source Recall@K** — diagnostic only: whether each evidence requirement had
-  at least one source-complete alternative represented in the returned results;
-- **EvidenceRecall@K** — primary: fraction of evidence requirements whose
-  sufficient regions are fully covered by the top-K results;
-- **SpanCoverage@K** — primary: mean best-alternative line coverage across
-  evidence requirements, preserving partial recovery;
-- **evidence MRR** — reciprocal rank of the first result that adds new reviewed
-  Ground Truth line coverage;
-- **evidence nDCG@K** — discounted incremental span-coverage gain by result
-  rank, normalized against the same observed gains sorted into ideal order;
-- **useful context line ratio** — unique reviewed Ground Truth lines covered
-  from the best alternative for each requirement divided by all returned result
-  lines. Duplicate returned spans still consume denominator budget;
-- latency, candidates examined/returned, returned lines/chars and retrieval
-  telemetry.
+A source hit does **not** imply the evidence span was returned.
 
-A `source_ref` hit with the wrong line range therefore improves source Recall
-but does not improve EvidenceRecall or SpanCoverage.
+### EvidenceRecall@K — primary
 
-Every top-K result persisted in an artifact carries only evaluation coordinates:
+```text
+fully covered evidence requirements
+───────────────────────────────────
+all evidence requirements
+```
+
+A requirement is recovered only when one sufficient alternative is completely
+covered by the union of returned result spans.
+
+### SpanCoverage@K — primary
+
+For each requirement, calculate line coverage for every alternative, keep the
+best alternative, then average those coverage ratios across requirements.
+
+This preserves partial recovery instead of collapsing every incomplete result to
+zero.
+
+### Evidence MRR
+
+Reciprocal rank of the first returned result that adds reviewed Ground Truth line
+coverage. It answers how soon useful evidence starts appearing.
+
+### Evidence nDCG@K
+
+Each result rank receives the incremental mean span-coverage gain created when
+that result is added. DCG discounts those gains by rank. IDCG sorts the same
+observed gains into ideal order.
+
+This metric evaluates ordering of the evidence that was recovered.
+Missing evidence is captured separately by EvidenceRecall and SpanCoverage.
+
+### UsefulContextLineRatio — primary efficiency metric
+
+```text
+unique reviewed GT lines covered
+────────────────────────────────
+all returned result lines
+```
+
+Ground Truth lines are deduplicated. Returned spans are not: returning the same
+chunk twice consumes context twice and therefore increases the denominator
+without increasing useful evidence.
+
+This is deliberately a line-based v1 measure because line coordinates are
+backend-neutral and can be persisted without source content. Returned characters
+are also recorded as an operational context-size metric.
+
+## Performance and cost metrics
+
+Every measured observation also records:
+
+- end-to-end duration;
+- candidates examined and returned;
+- returned lines and characters;
+- bounded stage telemetry;
+- projection/serializer/fusion fingerprints;
+- current result budget.
+
+Repeated observations produce p50/p95/p99 end-to-end latency.
+
+Indexing is measured separately and never folded into query latency. Indexing
+telemetry includes files/chunks observed, sync duration, logical backend writes
+and deletes, embedding requests/vectors, embedding duration and throughput.
+
+## Re-evaluable artifacts
+
+Every top-K result persists coordinates only:
 
 ```text
 rank
@@ -159,10 +169,11 @@ line_start
 line_end
 ```
 
-Source content is not copied into the public artifact. These coordinates make
-quality re-evaluation possible without querying a backend again.
+No private source content is stored.
 
-## Artifact
+These coordinates allow metric bugs or reporting changes to be investigated
+without querying the backend again, provided the Ground Truth and metric
+semantics are unchanged.
 
 Promoted retrieval artifacts use:
 
@@ -173,181 +184,79 @@ ground_truth_schema_version = 2
 metrics_schema_version = 1
 ```
 
-They also carry:
+They also contain SHA-256 fingerprints for:
 
-- arm identity;
-- corpus identity;
-- config identity and SHA-256 fingerprint;
-- Ground Truth SHA-256 fingerprint;
-- metric-definition SHA-256 fingerprint;
-- all measured observations with ranked result spans;
-- aggregate metrics;
-- observed projection/serializer/fusion fingerprints.
+- Ground Truth;
+- metric definitions;
+- benchmark configuration;
+- observed projection/serializer/fusion contracts.
 
-The Ground Truth and metric fingerprints are comparison boundaries. A changed
-query/evidence definition or metric formula is not silently comparable with the
-frozen baseline. Such a change requires explicit protocol/schema evolution
-rather than redefining `baseline-v1` in place after promotion.
+A fingerprint mismatch is a comparison boundary, not something to silently
+normalize away.
 
-The JSON shape is intentionally independent of retrievalgate. An external
-regression harness can consume the artifact without FetchCore depending on it.
+## Stability rule
 
-## Running locally
+Before the first promotion/tag, the candidate protocol may be corrected.
 
-Index the target repository in the backend being measured first. Then configure
-the same `SearchScope`, immutable corpus identity and Ground Truth for every
-comparable arm.
+After `baseline-v1` is promoted:
 
-Example using the local lexical backend:
+- changing Ground Truth meaning;
+- changing a metric formula;
+- changing artifact semantics;
+- or changing the comparison contract
 
-```python
-from pathlib import Path
+requires explicit schema/protocol evolution. A semantic change must never be
+silently published under the same frozen baseline identity.
 
-from fetchcore.backends.local_semantic import LocalSemanticBackend
-from fetchcore.baseline import (
-    BaselineArm,
-    BaselineQueryCase,
-    BaselineRunner,
-    write_baseline_artifact,
-)
-from fetchcore.search import SearchIntent, SearchScope
+## Measurement layers
 
-workspace = Path(".").resolve()
-arm = BaselineArm("local-lexical", "local-semantic", "lexical")
-scope = SearchScope(
-    workspace=workspace,
-    revision="<git-sha>",
-    repository="owner/repository",
-    knowledge_types=("code", "tests", "documentation", "configuration"),
-    max_results=20,
-)
-cases = (
-    BaselineQueryCase(
-        query_id="q-auth-validation",
-        intent=SearchIntent(semantic_terms=("authentication validation",)),
-        relevant=("repository://owner/repository/src/auth.py",),
-        identity_field="source_ref",
-    ),
-)
+Keep these separate:
 
-runner = BaselineRunner(
-    backend=LocalSemanticBackend(),
-    arm=arm,
-    scope=scope,
-    repetitions=20,
-    warmups=1,
-)
-artifact = runner.run(
-    cases,
-    corpus={
-        "corpus_id": "example-v1",
-        "repository": "owner/repository",
-        "revision": "<git-sha>",
-    },
-    config_identity={"protocol_config": "baseline-v1"},
-)
-write_baseline_artifact(
-    Path("artifacts/baseline-v1/local-lexical.json"),
-    artifact,
-)
-```
+1. **telemetry** — what the runtime did and how much it cost;
+2. **diagnostics** — why candidates matched / how the backend translated work;
+3. **quality metrics** — how ranked returned spans compare with reviewed GT.
 
-For Solr/OpenSearch/Qdrant, instantiate the corresponding backend and provide
-the backend settings plus `RetrievalConfig` through `SearchScope`. The arm
-mode must match the resolved retrieval mode or the runner fails closed.
+FetchCore only returns evidence/candidates. Benchmark quality is not consumer
+satisfaction and never grants authority.
 
-Do not put API keys or credentials in `config_identity`.
+## Running
 
-## Promotion gate
-
-A measurement is a frozen FetchCore baseline only when:
-
-1. the corpus revision and evidence-region Ground Truth are immutable;
-2. Ground Truth schema/fingerprint and metric schema/fingerprint match;
-3. every requested arm actually ran with its declared capability;
-4. every returned top-K result has observable line coordinates;
-5. measured repetitions meet the protocol;
-6. artifacts record the configuration/fingerprints;
-7. failures are explicit rather than replaced with another backend/mode.
-
-Schema fixtures and unit-test artifacts are not performance baselines.
-
-
-## Frozen v1 corpus and executable suite
-
-The first promoted baseline uses the versioned suite under:
-
-```text
-benchmarks/baseline-v1/
-├── manifest.json
-├── ground-truth.json
-├── run.py
-└── artifacts/
-```
-
-The frozen corpus identity is:
-
-```text
-repository: oalangomes/NeuroTrack_MS
-revision: 74ce3244956a65baed61f1dae6f498cb2be4f3b7
-corpus_id: neurotrack-ms-74ce3244
-```
-
-The corpus repository is private. FetchCore stores only query intent, evidence-region
-coordinates and immutable repository identity. Source content is materialized
-locally and must not be copied into benchmark artifacts.
-
-The runner fails closed when:
-
-- the corpus checkout is not at the exact frozen revision;
-- the corpus checkout has uncommitted changes;
-- a requested backend service cannot be reached;
-- a requested backend capability is unsupported;
-- Solr does not expose the expected frozen schema/vector contract.
-
-Backend defaults are not relied on for corpus coverage. The manifest explicitly
-freezes local file patterns, scan bounds, knowledge-type rules, collection/index
-names, candidate window and embedding identity.
-
-Run every arm against an already prepared environment:
-
-```bash
-python benchmarks/baseline-v1/run.py \
-  --workspace /path/to/NeuroTrack_MS
-```
-
-To rebuild backend projections first:
+The exact private checkout must already exist locally:
 
 ```bash
 python benchmarks/baseline-v1/run.py \
   --workspace /path/to/NeuroTrack_MS \
+  --arm opensearch-hybrid
+```
+
+To rebuild a remote projection before measuring:
+
+```bash
+python benchmarks/baseline-v1/run.py \
+  --workspace /path/to/NeuroTrack_MS \
+  --arm opensearch-hybrid \
   --prepare-index
 ```
 
-To measure one arm while diagnosing the environment:
+The runner validates the revision, clean worktree and Ground Truth coordinates
+before probing services or starting measurement.
 
-```bash
-python benchmarks/baseline-v1/run.py \
-  --workspace /path/to/NeuroTrack_MS \
-  --arm local-lexical
-```
+## Promotion gate
 
-`--prepare-index` writes a separate `indexing.json` artifact so repository
-acquisition/indexing cost is not mixed into repeated retrieval latency.
+Baseline v1 is promoted only when all of the following are true:
 
-### Environment identity
+1. corpus revision is immutable and the checkout is clean;
+2. all 42 evidence requirements have reviewed valid coordinates;
+3. Ground Truth schema/fingerprint and metrics schema/fingerprint are frozen;
+4. all seven requested arms run their declared capability;
+5. every returned top-K result has valid source line coordinates;
+6. all arms meet the repetition protocol;
+7. environment/config/projection fingerprints are present;
+8. failures are explicit rather than replaced by fallbacks;
+9. the Solr performance anomaly is understood well enough to interpret its
+   latency results honestly;
+10. final evidence-aware artifacts have been reviewed before the tag.
 
-Every measured artifact records the logical profile
-`fetchcore-local-benchmark-v1` plus observed:
-
-- Python version;
-- OS/kernel release;
-- machine architecture;
-- CPU count;
-- Solr/OpenSearch/Qdrant versions used by the selected arm;
-- Ollama version for dense/hybrid arms;
-- embedding provider/model/dimensions.
-
-Quality metrics can be inspected across environments, but latency and throughput
-must only be compared as equivalent when the recorded environment profile and
-relevant service/runtime identities are compatible.
+The JSON contract remains independent of retrievalgate. External regression
+testing may consume it without moving satisfaction/approval semantics into
+FetchCore.
