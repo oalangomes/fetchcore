@@ -304,8 +304,8 @@ or backend configuration.
 
 ## 10. Indexing
 
-The consolidated `artifacts/indexing.json` records a complete canonical scan and full rebuilds for
-all three remote stores.
+The consolidated `artifacts/V0.1/indexing.json` records a complete canonical scan and full rebuilds
+for all three remote stores.
 
 Canonical indexing:
 

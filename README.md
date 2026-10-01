@@ -98,7 +98,8 @@ Benchmark **protocol version** and **execution version** are separate concepts:
 - artifacts are written under
   `benchmarks/baseline-v1/artifacts/V0.N/`;
 - a successful execution writes `run.json` with the run identity, selected arms,
-  FetchCore revision and corpus identity;
+  FetchCore revision and corpus identity, plus a generated `README.md` report
+  with retrieval and optional indexing metrics;
 - the run version is provenance only and is deliberately excluded from retrieval
   configuration fingerprints.
 

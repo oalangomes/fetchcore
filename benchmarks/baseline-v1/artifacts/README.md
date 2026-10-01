@@ -1,9 +1,8 @@
 # Baseline artifact layout
 
-The evidence-aware retrieval artifacts currently stored directly in this
-directory were captured on 2026-10-01 before automatic run versioning existed.
-They are retained as historical evidence for PR #48 and are not silently
-renamed or rewritten.
+The evidence-aware retrieval artifacts captured on 2026-10-01 before automatic
+run versioning existed are preserved as run `V0.1`. Their JSON measurement
+payloads were moved without modification.
 
 From the versioned runner onward, each benchmark execution is isolated under a
 monotonic run directory:
@@ -11,9 +10,9 @@ monotonic run directory:
 ```text
 artifacts/
 ├── README.md
-├── <historical pre-versioning artifacts>
 ├── V0.1/
 │   ├── run.json
+│   ├── README.md             # generated metrics report
 │   ├── local-lexical.json
 │   ├── solr-lexical.json
 │   ├── solr-dense.json
@@ -36,5 +35,14 @@ A complete versioned run has a `run.json` with `status: "complete"`. If an
 execution fails after reserving a version, its directory may remain partial and
 must not be treated as a completed baseline run. Versions are never reused.
 
-The root-level pre-versioning artifacts do not participate in the counter. The
-first execution after this mechanism is introduced is `V0.1`.
+Every completed run has a generated `README.md` containing retrieval quality,
+latency and volume tables. When indexing is prepared, the same report includes
+canonical scan and per-backend indexing metrics.
+
+`V0.1/run.json` was reconstructed during the layout migration. Its
+`completed_at` value uses the timestamp of commit `5ca5278`, which incorporated
+the frozen artifacts, because the original payloads did not record a wall-clock
+completion time. The `provenance` field makes that distinction explicit.
+
+Because `V0.1` is reserved by the migrated baseline, the next execution created
+by the versioned runner is `V0.2`.

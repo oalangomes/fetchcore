@@ -253,14 +253,17 @@ artifacts/V0.3/
 ...
 ```
 
-A successful execution writes `run.json` in that directory. The run version is
-provenance only and is intentionally excluded from the retrieval configuration
-fingerprint so repeated measurements remain comparable. If a run fails after
-reserving a version, that partial directory is not reused.
+A successful execution writes `run.json` and a generated metrics `README.md` in
+that directory. The report summarizes retrieval quality, latency and volume,
+plus canonical and backend indexing metrics when `--prepare-index` is used. The
+run version is provenance only and is intentionally excluded from the retrieval
+configuration fingerprint so repeated measurements remain comparable. If a run
+fails after reserving a version, that partial directory is not reused.
 
-The historical evidence-aware artifacts committed directly under `artifacts/`
-predate this mechanism. The first execution using the versioned runner starts at
-`V0.1`.
+The evidence-aware artifacts captured before automatic versioning are preserved
+under `artifacts/V0.1/`. Their measurement payloads were moved without
+modification; the reconstructed `run.json` records the migration provenance.
+The first new execution using the versioned runner therefore starts at `V0.2`.
 
 ## Promotion gate
 

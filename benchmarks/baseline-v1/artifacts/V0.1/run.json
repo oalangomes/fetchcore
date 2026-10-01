@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "run_version": "V0.1",
+  "protocol": "fetchcore.baseline-v1",
+  "status": "complete",
+  "completed_at": "2026-10-01T15:09:18-03:00",
+  "fetchcore_revision": "e5b364a0f978186c47911246298f7c9fcc6c1631",
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+  },
+  "arms": [
+    {
+      "id": "local-lexical",
+      "backend": "local-semantic",
+      "mode": "lexical"
+    },
+    {
+      "id": "solr-lexical",
+      "backend": "solr",
+      "mode": "lexical"
+    },
+    {
+      "id": "solr-dense",
+      "backend": "solr",
+      "mode": "dense"
+    },
+    {
+      "id": "solr-hybrid",
+      "backend": "solr",
+      "mode": "hybrid"
+    },
+    {
+      "id": "opensearch-lexical",
+      "backend": "opensearch",
+      "mode": "lexical"
+    },
+    {
+      "id": "opensearch-dense",
+      "backend": "opensearch",
+      "mode": "dense"
+    },
+    {
+      "id": "opensearch-hybrid",
+      "backend": "opensearch",
+      "mode": "hybrid"
+    },
+    {
+      "id": "qdrant-dense",
+      "backend": "qdrant-vector",
+      "mode": "dense"
+    },
+    {
+      "id": "qdrant-hybrid",
+      "backend": "qdrant-vector",
+      "mode": "hybrid"
+    }
+  ],
+  "prepare_index": true,
+  "artifacts": [
+    "local-lexical.json",
+    "solr-lexical.json",
+    "solr-dense.json",
+    "solr-hybrid.json",
+    "opensearch-lexical.json",
+    "opensearch-dense.json",
+    "opensearch-hybrid.json",
+    "qdrant-dense.json",
+    "qdrant-hybrid.json"
+  ],
+  "indexing_artifact": "indexing.json",
+  "metrics_report": "README.md",
+  "provenance": {
+    "kind": "migrated-pre-versioning-run",
+    "source_layout": "artifacts/",
+    "completed_at_basis": "git commit 5ca5278c9f6e0441583338d98e5ba3f788c2f92a"
+  }
+}

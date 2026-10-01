@@ -100,6 +100,7 @@ atomically reserves the next number before measurement:
 artifacts/
 ├── V0.1/
 │   ├── run.json
+│   ├── README.md
 │   ├── local-lexical.json
 │   ├── ...
 │   └── indexing.json
@@ -119,7 +120,13 @@ A successful run writes `run.json` with:
 - corpus identity;
 - selected arms;
 - whether indexing was prepared;
-- the artifact filenames produced.
+- the artifact filenames produced;
+- the generated metrics report filename.
+
+Each successful run also writes `README.md` beside `run.json`. It summarizes
+retrieval quality, latency and volume for every selected arm. Runs created with
+`--prepare-index` additionally include canonical and backend indexing metrics.
+The report is derived from the JSON artifacts, which remain the source of truth.
 
 The run version is provenance only. It is **not** added to the retrieval
 configuration identity and therefore does not change `config_fingerprint`.
@@ -130,10 +137,10 @@ A run that fails after reserving its directory may leave a partial `V0.N`
 directory without a complete `run.json`. That version remains evidence of the
 attempt and is not reused. The next execution advances monotonically.
 
-The evidence-aware artifacts already committed at the artifact root predate this
-versioning mechanism. They remain historical evidence and do not participate in
-the automatic counter; the first execution with the versioned runner is
-`V0.1`.
+The evidence-aware artifacts captured before automatic versioning are preserved
+as `V0.1`. Their JSON payloads were moved without modification, and the
+reconstructed `run.json` records the migration provenance. Because `V0.1` is now
+reserved, the first new execution with the versioned runner starts at `V0.2`.
 
 ## Indexing artifact
 
