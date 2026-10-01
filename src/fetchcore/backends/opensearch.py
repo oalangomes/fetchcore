@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
@@ -14,16 +13,18 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
-from fetchcore.embedding import (
+from fetchcore.backends.ollama import configured_ollama_provider
+from fetchcore.backends.opensearch_query import (
+    OPENSEARCH_VECTOR_FIELD, _EXACT_FIELDS, _search_body, _search_documents,
+)
+from fetchcore.retrieval.embedding import (
     VECTOR_EMBEDDING_SERIALIZATION_VERSION,
     EmbeddingProvider,
-    OllamaEmbeddingProvider,
-    OllamaEmbeddingSettings,
     ProjectionEmbeddingMode,
     ProjectionV3EmbeddingSerializer,
     validate_vector_dimensions,
 )
-from fetchcore.fusion import (
+from fetchcore.retrieval.fusion import (
     DEFAULT_RRF_K,
     FusionCandidate,
     FusionChannelSignal,
@@ -46,11 +47,9 @@ from fetchcore.projection import (
     corpus_checksum,
     projection_contract_fingerprint,
 )
-from fetchcore.projection_semantics import (
+from fetchcore.projection.semantics import (
     DEFAULT_FIELD_BOOSTS,
     DEFAULT_SIGNAL_TYPE_BOOSTS,
-    QUERY_FIELDS_BY_SIGNAL_TYPE,
-    SIGNAL_FIELD_FACTORS,
     ProjectionV3MatchResult,
     bounded_diagnostic_metadata,
     classify_capabilities,
@@ -60,7 +59,6 @@ from fetchcore.projection_semantics import (
     normalize_provider_scores,
     optional_int,
     optional_str,
-    query_field_boost,
     query_match_evidence,
     query_type_counts,
     relationships,
@@ -69,7 +67,6 @@ from fetchcore.projection_semantics import (
     structural_candidate_evidence,
     structural_observations,
     technical_role_value,
-    typed_query_entries,
     typed_query_mapping_telemetry,
     validate_projection_v3_controls,
 )
@@ -78,34 +75,17 @@ from fetchcore.repository.indexing import (
     RepositoryIndexer,
     RepositoryIndexResult,
 )
-from fetchcore.search import (
+from fetchcore.retrieval.contracts import (
     KnowledgeSearchError,
     KnowledgeSearchResponse,
     SearchIntent,
     SearchRequirement,
     SearchResult,
 )
-from fetchcore.search import SearchScope as KnowledgeSearchScope
+from fetchcore.retrieval.contracts import SearchScope as KnowledgeSearchScope
 
 
-_EXACT_FIELDS = frozenset(
-    {
-        "identifiers_exact",
-        "content_identifiers_exact",
-        "symbols",
-        "filename_exact",
-        "technical_role",
-        "path_segments",
-        "route_methods",
-        "route_paths",
-        "route_mechanisms",
-        "import_targets",
-        "dependency_targets",
-        "relation_targets",
-    }
-)
 _TEXT_FIELDS = frozenset({"content", "path_text", "documentation_text"})
-OPENSEARCH_VECTOR_FIELD = "embedding_vector"
 OPENSEARCH_VECTOR_DIMENSIONS = 768
 _RRF_K = DEFAULT_RRF_K
 
@@ -939,24 +919,8 @@ class OpenSearchKnowledgeIndex:
 
 def opensearch_embedding_provider(retrieval: RetrievalConfig) -> EmbeddingProvider:
     """Resolve the neutral embedding identity used by OpenSearch dense retrieval."""
-
-    embedding = retrieval.dense.embedding
-    if embedding.provider != "ollama":
-        raise KnowledgeSearchError(
-            "configured embedding provider is not supported by OpenSearch dense retrieval",
-            category="unsupported_capability",
-            metadata={
-                "backend": "opensearch",
-                "capability": f"embedding_provider:{embedding.provider}",
-            },
-        )
-    return OllamaEmbeddingProvider(
-        OllamaEmbeddingSettings(
-            url=os.environ.get("OLLAMA_URL", "http://localhost:11434"),
-            model=embedding.model,
-        ),
-        timeout_seconds=embedding.timeout_seconds,
-        request_batch_size=embedding.request_batch_size,
+    return configured_ollama_provider(
+        retrieval, backend_id="opensearch", backend_name="OpenSearch"
     )
 
 
@@ -2096,161 +2060,3 @@ def _scope_filters(
 
 def _clamp(value: float) -> float:
     return max(0.0, min(1.0, value))
-
-
-def _search_body(
-    intent: SearchIntent,
-    scope: KnowledgeSearchScope,
-    snapshot: OpenSearchIndexSnapshot,
-    settings: OpenSearchSettings,
-) -> dict[str, object]:
-    clauses: list[dict[str, object]] = []
-    for signal_type, value, multiplier in typed_query_entries(intent):
-        field_names = (
-            *tuple(SIGNAL_FIELD_FACTORS[signal_type]),
-            *QUERY_FIELDS_BY_SIGNAL_TYPE[signal_type],
-        )
-        field_clauses: list[dict[str, object]] = []
-        for field_name in field_names:
-            boost = query_field_boost(
-                signal_type,
-                field_name,
-                multiplier,
-                settings,
-            )
-            query_value = value.casefold()
-            if field_name in _EXACT_FIELDS:
-                field_clauses.append(
-                    {"term": {field_name: {"value": query_value, "boost": boost}}}
-                )
-            else:
-                field_clauses.append(
-                    {
-                        "match_phrase": {
-                            field_name: {
-                                "query": query_value,
-                                "boost": boost,
-                            }
-                        }
-                    }
-                )
-        if field_clauses:
-            clauses.append(
-                {
-                    "bool": {
-                        "should": field_clauses,
-                        "minimum_should_match": 1,
-                    }
-                }
-            )
-
-    filters: list[dict[str, object]] = [
-        {"term": {"record_kind": "knowledge"}},
-        {"term": {"repository": snapshot.repository}},
-    ]
-    if scope.repository_paths:
-        filters.append(
-            {
-                "bool": {
-                    "minimum_should_match": 1,
-                    "should": [
-                        {
-                            "match_phrase": {
-                                "path_text": {
-                                    "query": item.casefold(),
-                                }
-                            }
-                        }
-                        for item in scope.repository_paths
-                    ],
-                }
-            }
-        )
-    if scope.knowledge_types:
-        filters.append({"terms": {"knowledge_type": list(scope.knowledge_types)}})
-    for field_name in ("language", "source_type"):
-        raw = scope.settings.get(field_name)
-        if raw is None:
-            continue
-        if isinstance(raw, str):
-            values = [raw]
-        elif isinstance(raw, (list, tuple)):
-            values = [str(item) for item in raw if str(item).strip()]
-        else:
-            raise KnowledgeSearchError(
-                f"OpenSearch filter {field_name!r} must be a string or list",
-                category="schema_mismatch",
-            )
-        if values:
-            filters.append({"terms": {field_name: values}})
-
-    query: dict[str, object]
-    if scope.repository_paths:
-        query = {"bool": {"filter": filters}}
-    else:
-        query = {
-            "bool": {
-                "filter": filters,
-                "should": clauses or [{"match_all": {}}],
-                "minimum_should_match": 1,
-            }
-        }
-    return {
-        "size": max(
-            scope.max_results,
-            settings.diagnostic_candidate_window or scope.max_results,
-        ),
-        "query": query,
-        "sort": [{"_score": {"order": "desc"}}, {"id": {"order": "asc"}}],
-        "track_total_hits": True,
-        "_source": {"excludes": [OPENSEARCH_VECTOR_FIELD]},
-    }
-
-
-def _search_documents(
-    payload: Mapping[str, object],
-) -> tuple[list[dict[str, object]], int]:
-    raw_hits = payload.get("hits")
-    if not isinstance(raw_hits, Mapping):
-        raise KnowledgeSearchError(
-            "OpenSearch response is missing hits",
-            category="response_parsing_failure",
-        )
-    raw_items = raw_hits.get("hits", [])
-    if not isinstance(raw_items, list):
-        raise KnowledgeSearchError(
-            "OpenSearch hits have an invalid shape",
-            category="response_parsing_failure",
-        )
-    docs: list[dict[str, object]] = []
-    for raw_item in raw_items:
-        if not isinstance(raw_item, Mapping):
-            raise KnowledgeSearchError(
-                "OpenSearch hit is not an object",
-                category="response_parsing_failure",
-            )
-        raw_source = raw_item.get("_source")
-        if not isinstance(raw_source, Mapping):
-            raise KnowledgeSearchError(
-                "OpenSearch hit has no _source",
-                category="response_parsing_failure",
-            )
-        document = {str(key): value for key, value in raw_source.items()}
-        if document.get("record_kind") == "snapshot":
-            # Snapshot queries intentionally use this parser too; the caller
-            # determines whether control records are expected.
-            pass
-        document["score"] = float_value(raw_item.get("_score"))
-        docs.append(document)
-
-    raw_total = raw_hits.get("total", len(docs))
-    if isinstance(raw_total, Mapping):
-        raw_total = raw_total.get("value", len(docs))
-    try:
-        total = int(cast(float | int | str, raw_total))
-    except (TypeError, ValueError) as exc:
-        raise KnowledgeSearchError(
-            "OpenSearch total hit count is invalid",
-            category="response_parsing_failure",
-        ) from exc
-    return docs, total

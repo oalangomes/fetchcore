@@ -8,7 +8,7 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-from fetchcore.search import SearchIntent
+from fetchcore.retrieval.contracts import SearchIntent
 
 
 SPARSE_VECTOR_NAME = "lexical"

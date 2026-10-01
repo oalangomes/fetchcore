@@ -7,6 +7,7 @@ metrics (whether Ground Truth was recovered).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 
 
@@ -150,7 +151,7 @@ def elapsed_ms(started: float, ended: float) -> int:
     return max(0, round((ended - started) * 1_000))
 
 
-def returned_chars(contents: object) -> int:
+def returned_chars(contents: Iterable[object]) -> int:
     """Return deterministic character cost for an iterable of result contents."""
 
     return sum(len(str(value)) for value in contents)

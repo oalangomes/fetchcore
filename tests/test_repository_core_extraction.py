@@ -7,9 +7,9 @@ def test_canonical_repository_core_imports_without_agentsorch() -> None:
     modules = (
         "fetchcore.repository.indexing",
         "fetchcore.repository.safe_scan",
-        "fetchcore.repository.evidence",
+        "fetchcore.knowledge.evidence",
         "fetchcore.repository.knowledge_pack",
-        "fetchcore.repository.sap_commerce_pack",
+        "fetchcore.repository.extractors.frameworks.sap_commerce.pack",
         "fetchcore.repository.semantic_indexing",
     )
 

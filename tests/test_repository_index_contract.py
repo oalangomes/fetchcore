@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pytest import MonkeyPatch
 
-from fetchcore.repository import index_contract
+from fetchcore.repository import index_fingerprint
 from fetchcore.repository.document_indexing import DocumentRepositoryIndexer
 from fetchcore.repository.document_policy import RepositoryDocumentIndexPolicy
 from fetchcore.repository.index_contract import (
@@ -78,12 +78,12 @@ def test_contract_version_participates_in_fingerprint_without_mutating_projectio
     monkeypatch: MonkeyPatch,
 ) -> None:
     indexer = _indexer()
-    current_contract_version = index_contract.INDEXING_CONTRACT_VERSION
+    current_contract_version = index_fingerprint.INDEXING_CONTRACT_VERSION
     current_projection_version = SOLR_PROJECTION_VERSION
     current = indexing_contract_fingerprint(indexer)
 
     monkeypatch.setattr(
-        index_contract,
+        index_fingerprint,
         "INDEXING_CONTRACT_VERSION",
         f"{current_contract_version}-synthetic-alternative",
     )

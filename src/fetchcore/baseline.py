@@ -13,13 +13,14 @@ import os
 import platform
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
+from itertools import pairwise
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote, unquote
 
 from fetchcore.retrieval import RetrievalBackendCapabilities
-from fetchcore.signals import QuerySignal
-from fetchcore.search import (
+from fetchcore.retrieval.signals import QuerySignal
+from fetchcore.retrieval.contracts import (
     KnowledgeSearchBackend,
     KnowledgeSearchResponse,
     SearchIntent,
@@ -133,7 +134,7 @@ class BaselineEvidenceAlternative:
             )
         for ranges in by_source.values():
             ordered = sorted(ranges)
-            for previous, current in zip(ordered, ordered[1:], strict=False):
+            for previous, current in pairwise(ordered):
                 if current[0] <= previous[1]:
                     raise BaselineConfigurationError(
                         "baseline evidence alternative contains overlapping regions"
@@ -346,7 +347,7 @@ class BaselineSuite:
     fingerprint: str
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, object]) -> "BaselineSuite":
+    def from_mapping(cls, value: Mapping[str, object]) -> BaselineSuite:
         schema_version = int(str(value.get("schema_version", 0)))
         if schema_version != BASELINE_GROUND_TRUTH_SCHEMA_VERSION:
             raise BaselineConfigurationError(

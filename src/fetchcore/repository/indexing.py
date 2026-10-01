@@ -23,13 +23,13 @@ from fetchcore.repository.corpus_policy import (
     resolve_source_origin,
     validate_corpus_policy,
 )
-from fetchcore.repository.evidence import (
+from fetchcore.knowledge.evidence import (
     KnowledgeEvidence,
     _StructureObservation,
     build_knowledge_evidence,
     extract_source_structure,
 )
-from fetchcore.repository.knowledge_chunking import chunks_for_knowledge
+from fetchcore.knowledge.chunking import chunks_for_knowledge
 from fetchcore.repository.lexical import (
     LexicalChunkProjection,
     analyze_lexical_source,

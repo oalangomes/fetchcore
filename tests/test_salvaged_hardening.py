@@ -6,7 +6,7 @@ from urllib.error import HTTPError
 
 import pytest
 
-import fetchcore.embedding as embedding_module
+import fetchcore.backends.ollama as ollama_module
 from fetchcore.backends.opensearch import opensearch_embedding_provider
 from fetchcore.backends.solr import solr_embedding_provider
 from fetchcore.embedding import OllamaEmbeddingProvider
@@ -109,8 +109,8 @@ def test_ollama_embedding_retries_known_transient_transport_failure(
             )
         return Response()
 
-    monkeypatch.setattr(embedding_module, "urlopen", flaky)
-    monkeypatch.setattr(embedding_module, "sleep", sleeps.append)
+    monkeypatch.setattr(ollama_module, "urlopen", flaky)
+    monkeypatch.setattr(ollama_module, "sleep", sleeps.append)
 
     assert OllamaEmbeddingProvider(model="embeddinggemma").embed(("hello",)) == (
         (1.0, 2.0),
@@ -137,8 +137,8 @@ def test_ollama_embedding_does_not_retry_generic_bad_request(
             fp=BytesIO(b'{"error":"invalid embedding request"}'),
         )
 
-    monkeypatch.setattr(embedding_module, "urlopen", fail)
-    monkeypatch.setattr(embedding_module, "sleep", sleeps.append)
+    monkeypatch.setattr(ollama_module, "urlopen", fail)
+    monkeypatch.setattr(ollama_module, "sleep", sleeps.append)
 
     with pytest.raises(Exception) as captured:
         OllamaEmbeddingProvider(model="embeddinggemma").embed(("hello",))

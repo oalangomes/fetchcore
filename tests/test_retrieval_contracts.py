@@ -153,7 +153,12 @@ def test_backend_capability_validation_fails_closed() -> None:
 
 def test_contract_modules_do_not_import_agentsorch() -> None:
     root = Path(__file__).resolve().parents[1] / "src" / "fetchcore"
-    for relative in ("signals.py", "evidence.py", "search.py", "retrieval.py"):
+    for relative in (
+        "retrieval/signals.py",
+        "retrieval/evidence.py",
+        "retrieval/contracts.py",
+        "retrieval/config.py",
+    ):
         content = (root / relative).read_text(encoding="utf-8")
         assert "agentsorch" not in content
 

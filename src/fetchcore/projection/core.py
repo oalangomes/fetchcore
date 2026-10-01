@@ -11,10 +11,10 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import cast
 
-from fetchcore.repository.evidence import KnowledgeEvidence
+from fetchcore.knowledge.evidence import KnowledgeEvidence
 from fetchcore.repository.indexing import KnowledgeDocument, KnowledgeProvenance
 from fetchcore.repository.lexical import supports_lexical_analysis
-from fetchcore.search import KnowledgeSearchError
+from fetchcore.retrieval.contracts import KnowledgeSearchError
 
 
 PROJECTION_VERSION = "3"

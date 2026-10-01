@@ -106,13 +106,13 @@ def test_projection_semantics_use_fetchcore_query_and_evidence_contracts() -> No
 def test_projection_ranking_core_has_no_agentsorch_imports() -> None:
     root = Path(__file__).resolve().parents[1] / "src" / "fetchcore"
     for relative in (
-        "projection.py",
-        "projection_semantics.py",
-        "embedding.py",
-        "fusion.py",
-        "reranking.py",
-        "reranking_query.py",
-        "reranking_runtime.py",
+        "projection/core.py",
+        "projection/semantics.py",
+        "retrieval/embedding.py",
+        "retrieval/fusion.py",
+        "retrieval/reranking.py",
+        "retrieval/reranking_query.py",
+        "retrieval/reranking_runtime.py",
     ):
         tree = ast.parse((root / relative).read_text(encoding="utf-8"))
         imported_modules = {

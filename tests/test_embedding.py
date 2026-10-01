@@ -11,6 +11,7 @@ from urllib.request import Request
 import pytest
 
 import fetchcore.embedding as embedding_module
+import fetchcore.backends.ollama as ollama_module
 from fetchcore.embedding import (
     VECTOR_EMBEDDING_SERIALIZATION_VERSION,
     OllamaEmbeddingProvider,
@@ -80,7 +81,7 @@ def test_ollama_embedding_batches_large_requests_without_reordering(
         embeddings = [[float(item.removeprefix("item-"))] for item in batch]
         return Response(json.dumps({"embeddings": embeddings}).encode("utf-8"))
 
-    monkeypatch.setattr(embedding_module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(ollama_module, "urlopen", fake_urlopen)
     provider = OllamaEmbeddingProvider(model="embeddinggemma")
     texts = tuple(f"item-{index}" for index in range(65))
 
@@ -113,7 +114,7 @@ def test_ollama_embedding_http_error_preserves_bounded_diagnostics(
             ),
         )
 
-    monkeypatch.setattr(embedding_module, "urlopen", fail)
+    monkeypatch.setattr(ollama_module, "urlopen", fail)
     provider = OllamaEmbeddingProvider(model="embeddinggemma")
     texts = ("a" * 123, "b" * 456)
 

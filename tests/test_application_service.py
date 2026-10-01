@@ -10,6 +10,7 @@ from fetchcore.application import (
     RepositoryBinding,
     RetrievalApplicationService,
     SearchRequest,
+    ServingLimits,
     SourceReadRequest,
 )
 from fetchcore.retrieval import RetrievalBackendCapabilities
@@ -94,6 +95,30 @@ def test_search_routes_through_backend_neutral_application_boundary(tmp_path: Pa
     assert scope.knowledge_types == ("code",)
     assert scope.settings == {"collection": "fixture"}
     assert requirements == ()
+
+
+def test_serving_limits_are_explicit_and_fail_closed(tmp_path: Path) -> None:
+    backend = FixtureBackend()
+    binding = RepositoryBinding(
+        repository="owner/repo", workspace=tmp_path, backend="fixture"
+    )
+    service = RetrievalApplicationService(
+        {binding.repository: binding},
+        backends=BackendRegistry({"fixture": lambda: backend}),
+        limits=ServingLimits(search_results=2, source_lines=2, source_bytes=100),
+    )
+    with pytest.raises(KnowledgeSearchError) as exc:
+        service.search(SearchRequest(query="needle", limit=3))
+    assert exc.value.category == "schema_mismatch"
+
+    source = tmp_path / "source.txt"
+    source.write_text("one\ntwo\nthree\n", encoding="utf-8")
+    result = service.get_source(SourceReadRequest(source_ref="source.txt"))
+    assert result.content == "one\ntwo"
+    assert result.truncated is True
+
+    with pytest.raises(ValueError):
+        ServingLimits(source_bytes=0)
 
 
 def test_search_fails_closed_outside_authorized_repository(tmp_path: Path) -> None:

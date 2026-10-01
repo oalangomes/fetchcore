@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
-from fetchcore.repository.document_extractors import DocumentSourceExtractor
+from fetchcore.repository.extractors.documents import DocumentSourceExtractor
 from fetchcore.repository.document_indexing import DocumentRepositoryIndexer
 from fetchcore.repository.document_policy import RepositoryDocumentIndexPolicy
 from fetchcore.repository.indexing import (

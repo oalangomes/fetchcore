@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fetchcore.repository.knowledge_pack import RepositoryKnowledgePack
-from fetchcore.repository.sap_commerce_pack import SapCommerceKnowledgePack
+from fetchcore.repository.extractors.frameworks.sap_commerce.pack import SapCommerceKnowledgePack
 
 
 def default_repository_knowledge_packs() -> tuple[RepositoryKnowledgePack, ...]:

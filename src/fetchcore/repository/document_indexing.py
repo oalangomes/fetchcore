@@ -23,7 +23,7 @@ from fetchcore.repository.corpus_policy import (
     resolve_corpus_purpose,
     resolve_source_origin,
 )
-from fetchcore.repository.document_extractors import (
+from fetchcore.repository.extractors.documents import (
     DocumentExtractionError,
     DocumentSourceExtractor,
     DocumentUnit,
@@ -35,8 +35,8 @@ from fetchcore.repository.document_scan import (
     SafeDocumentSource,
     scan_repository_documents,
 )
-from fetchcore.repository.evidence import KnowledgeEvidence, SectionEvidence
-from fetchcore.repository.html import HtmlRepositoryIndexer
+from fetchcore.knowledge.evidence import KnowledgeEvidence, SectionEvidence
+from fetchcore.repository.extractors.languages.html import HtmlRepositoryIndexer
 from fetchcore.repository.indexing import (
     KnowledgeDocument,
     KnowledgeProvenance,

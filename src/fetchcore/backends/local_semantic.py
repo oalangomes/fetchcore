@@ -19,7 +19,7 @@ from fetchcore.telemetry import (
     elapsed_ms,
     returned_chars,
 )
-from fetchcore.search import (
+from fetchcore.retrieval.contracts import (
     KnowledgeSearchResponse,
     SearchIntent,
     SearchCapabilitySource,
@@ -27,8 +27,8 @@ from fetchcore.search import (
     SearchResult,
     SearchScope,
 )
-from fetchcore.signals import QuerySignal
-from fetchcore.evidence import EvidenceObservation, QueryMatchEvidence
+from fetchcore.retrieval.signals import QuerySignal
+from fetchcore.retrieval.evidence import EvidenceObservation, QueryMatchEvidence
 from fetchcore.repository.safe_scan import SafeSource, scan_repository_text
 
 

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote
 
 from fetchcore.retrieval import RetrievalConfig
-from fetchcore.search import (
-    KnowledgeSearchBackend,
+from fetchcore.retrieval.contracts import (
     KnowledgeSearchError,
     KnowledgeSearchResponse,
     SearchIntent,
@@ -22,73 +21,23 @@ MAX_SEARCH_LIMIT = 100
 MAX_SOURCE_LINES = 400
 MAX_SOURCE_BYTES = 1_000_000
 
-BackendFactory = Callable[[], KnowledgeSearchBackend]
 
+@dataclass(frozen=True)
+class ServingLimits:
+    """Caller-selected safety bounds for retrieval and source serving."""
 
-def _local_semantic_backend() -> KnowledgeSearchBackend:
-    from fetchcore.backends.local_semantic import LocalSemanticBackend
+    search_results: int = MAX_SEARCH_LIMIT
+    source_lines: int = MAX_SOURCE_LINES
+    source_bytes: int = MAX_SOURCE_BYTES
+    context_lines: int = 100
 
-    return LocalSemanticBackend()
+    def __post_init__(self) -> None:
+        if min(self.search_results, self.source_lines, self.source_bytes) < 1:
+            raise ValueError("serving limits must be positive")
+        if self.context_lines < 0:
+            raise ValueError("serving context_lines must be non-negative")
 
-
-def _solr_backend() -> KnowledgeSearchBackend:
-    from fetchcore.backends.solr import SolrBackend
-
-    return SolrBackend()
-
-
-def _opensearch_backend() -> KnowledgeSearchBackend:
-    from fetchcore.backends.opensearch import OpenSearchBackend
-
-    return OpenSearchBackend()
-
-
-def _qdrant_vector_backend() -> KnowledgeSearchBackend:
-    from fetchcore.backends.qdrant_vector import QdrantVectorBackend
-
-    return QdrantVectorBackend()
-
-
-def builtin_backend_factories() -> dict[str, BackendFactory]:
-    """Return the built-in retrieval backends without constructing them eagerly."""
-    return {
-        "local-semantic": _local_semantic_backend,
-        "solr": _solr_backend,
-        "opensearch": _opensearch_backend,
-        "qdrant-vector": _qdrant_vector_backend,
-    }
-
-
-class BackendRegistry:
-    """Resolve backend ids behind an application-level factory boundary."""
-
-    def __init__(
-        self,
-        factories: Mapping[str, BackendFactory] | None = None,
-    ) -> None:
-        self._factories = dict(
-            builtin_backend_factories() if factories is None else factories
-        )
-
-    def create(self, backend_id: str) -> KnowledgeSearchBackend:
-        factory = self._factories.get(backend_id)
-        if factory is None:
-            raise KnowledgeSearchError(
-                f"unsupported FetchCore backend {backend_id!r}",
-                category="unsupported_backend",
-                metadata={"backend": backend_id},
-            )
-        backend = factory()
-        if backend.backend_id != backend_id:
-            raise KnowledgeSearchError(
-                "backend registry returned a mismatched backend",
-                category="schema_mismatch",
-                metadata={
-                    "requested_backend": backend_id,
-                    "actual_backend": backend.backend_id,
-                },
-            )
-        return backend
+from .composition import BackendRegistry
 
 
 @dataclass(frozen=True)
@@ -170,6 +119,7 @@ class RetrievalApplicationService:
         bindings: Mapping[str, RepositoryBinding],
         *,
         backends: BackendRegistry | None = None,
+        limits: ServingLimits | None = None,
     ) -> None:
         if not bindings:
             raise ValueError("at least one repository binding is required")
@@ -178,6 +128,7 @@ class RetrievalApplicationService:
             if key != binding.repository:
                 raise ValueError("repository binding key must equal binding.repository")
         self._backends = backends or BackendRegistry()
+        self._limits = limits or ServingLimits()
 
     @property
     def repositories(self) -> tuple[str, ...]:
@@ -191,9 +142,9 @@ class RetrievalApplicationService:
                 "search requires query or exact_terms",
                 category="schema_mismatch",
             )
-        if not 1 <= request.limit <= MAX_SEARCH_LIMIT:
+        if not 1 <= request.limit <= self._limits.search_results:
             raise KnowledgeSearchError(
-                f"search limit must be between 1 and {MAX_SEARCH_LIMIT}",
+                f"search limit must be between 1 and {self._limits.search_results}",
                 category="schema_mismatch",
                 metadata={"limit": request.limit},
             )
@@ -224,9 +175,9 @@ class RetrievalApplicationService:
                 "source_ref must not be empty",
                 category="schema_mismatch",
             )
-        if not 0 <= request.context_lines <= 100:
+        if not 0 <= request.context_lines <= self._limits.context_lines:
             raise KnowledgeSearchError(
-                "context_lines must be between 0 and 100",
+                f"context_lines must be between 0 and {self._limits.context_lines}",
                 category="schema_mismatch",
             )
 
@@ -252,7 +203,7 @@ class RetrievalApplicationService:
                 metadata={"repository": repository, "path": relative_path},
             )
         size = candidate.stat().st_size
-        if size > MAX_SOURCE_BYTES:
+        if size > self._limits.source_bytes:
             raise KnowledgeSearchError(
                 "source file exceeds the serving byte limit",
                 category="source_too_large",
@@ -260,7 +211,7 @@ class RetrievalApplicationService:
                     "repository": repository,
                     "path": relative_path,
                     "size_bytes": size,
-                    "max_bytes": MAX_SOURCE_BYTES,
+                    "max_bytes": self._limits.source_bytes,
                 },
             )
 
@@ -285,8 +236,9 @@ class RetrievalApplicationService:
             line_start=request.line_start,
             line_end=request.line_end,
             context_lines=request.context_lines,
+            max_source_lines=self._limits.source_lines,
         )
-        bounded_end = min(end, start + MAX_SOURCE_LINES - 1)
+        bounded_end = min(end, start + self._limits.source_lines - 1)
         truncated = bounded_end < end or start > 1 or bounded_end < total_lines
         return SourceReadResult(
             repository=repository,
@@ -376,6 +328,7 @@ def _source_window(
     line_start: int | None,
     line_end: int | None,
     context_lines: int,
+    max_source_lines: int = MAX_SOURCE_LINES,
 ) -> tuple[int, int]:
     if line_start is None and line_end is not None:
         raise KnowledgeSearchError(
@@ -383,7 +336,7 @@ def _source_window(
             category="schema_mismatch",
         )
     if line_start is None:
-        return 1, min(total_lines, MAX_SOURCE_LINES)
+        return 1, min(total_lines, max_source_lines)
     if line_start < 1 or line_start > total_lines:
         raise KnowledgeSearchError(
             "line_start is outside the source file",
