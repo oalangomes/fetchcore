@@ -75,8 +75,10 @@ class BaselineArm:
 BASELINE_V1_ARMS: tuple[BaselineArm, ...] = (
     BaselineArm("local-lexical", "local-semantic", "lexical"),
     BaselineArm("solr-lexical", "solr", "lexical"),
+    BaselineArm("solr-dense", "solr", "dense"),
     BaselineArm("solr-hybrid", "solr", "hybrid"),
     BaselineArm("opensearch-lexical", "opensearch", "lexical"),
+    BaselineArm("opensearch-dense", "opensearch", "dense"),
     BaselineArm("opensearch-hybrid", "opensearch", "hybrid"),
     BaselineArm("qdrant-dense", "qdrant-vector", "dense"),
     BaselineArm("qdrant-hybrid", "qdrant-vector", "hybrid"),
