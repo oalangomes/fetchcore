@@ -1,7 +1,7 @@
-# FetchCore baseline v1 freeze
+# FetchCore baseline v1 candidate
 
-This directory contains the immutable input definition for the first FetchCore
-retrieval/performance baseline.
+This directory contains the executable candidate protocol for the first promoted
+FetchCore retrieval/performance baseline.
 
 ## Corpus
 
@@ -9,24 +9,31 @@ retrieval/performance baseline.
 - revision: `74ce3244956a65baed61f1dae6f498cb2be4f3b7`
 - corpus id: `neurotrack-ms-74ce3244`
 
-The corpus is private. FetchCore does not copy source content into this
-benchmark directory. Ground Truth stores retrieval intents plus minimal evidence regions as canonical\nrepository paths and 1-based line ranges. It never copies source content.
+The corpus is private. FetchCore stores no source content here.
 
-The selected revision intentionally predates a later harness-only commit so the
-baseline corpus is the product repository, not benchmark scaffolding.
+`ground-truth.json` stores query intent plus reviewed evidence requirements as
+repository paths and 1-based line regions. The selected revision intentionally
+predates later harness-only changes.
 
-## Protocol
+## Candidate protocol
 
-- 1 warm-up per query;
-- 20 measured repetitions per query;
-- source Recall@20 as a diagnostic;\n- EvidenceRecall@20 and span coverage as primary quality metrics;\n- evidence MRR and evidence nDCG@20 over incremental useful span coverage;\n- useful context line ratio, returned lines/chars and candidate counts;
-- p50 / p95 / p99 over repeated measured retrievals;
+- Ground Truth schema: 2;
+- artifact schema: 2;
+- metrics schema: 1;
+- 20 queries;
+- 42 evidence requirements;
+- requirements are AND; alternatives inside a requirement are OR;
+- SourceRecall@20 is diagnostic;
+- EvidenceRecall@20 and SpanCoverage@20 are primary coverage metrics;
+- evidence MRR and evidence nDCG measure ranking;
+- UsefulContextLineRatio measures useful evidence per returned line budget;
+- 1 warm-up + 20 measured repetitions per query;
 - max 20 returned results;
-- diagnostic candidate window 80 when the backend supports it;
-- embedding identity: Ollama + embeddinggemma + 768 dimensions;
-- RRF remains the hybrid fusion baseline.
+- diagnostic candidate window 80;
+- Ollama + embeddinggemma + 768 dimensions for dense retrieval;
+- RRF is the hybrid fusion baseline.
 
-## Frozen arms
+## Arms
 
 1. local lexical
 2. Solr lexical
@@ -36,48 +43,34 @@ baseline corpus is the product repository, not benchmark scaffolding.
 6. Qdrant dense
 7. Qdrant hybrid
 
-A frozen baseline requires all seven artifacts. Unsupported capability or
-environment/schema mismatch fails the run; no arm may silently substitute
-another mode.
+No unsupported capability or failed backend may be silently replaced.
 
-## Environment
+## Artifact safety
 
-The logical environment profile is
-`fetchcore-local-benchmark-v1`.
-
-Each artifact additionally records the observed Python/OS/CPU profile and
-backend/embedding service versions. Performance comparisons are valid only
-between compatible environment profiles. Quality metrics remain useful across
-environments, but latency/throughput must not be compared as if hardware and
-services were identical.
-
-## Ground Truth
-
-`ground-truth.json` contains 20 reviewed queries spanning:
-
-- exact identifiers;
-- services/controllers;
-- tests;
-- routes;
-- queues/workers;
-- configuration;
-- Docker/runtime configuration;
-- architecture documentation;
-- repository development/governance documentation.
-
-Ground Truth is schema v2. Each query declares one or more logical evidence\nrequirements. A requirement contains sufficient alternatives, and each alternative\ncontains minimal `(source_ref, line_start, line_end)` regions. A source hit alone is\ndiagnostic; evidence is recovered only when a sufficient region set is covered.\n\nThe protocol does not decide consumer satisfaction or organizational authority. It\nonly evaluates whether the retrieval response contained the reviewed technical\nevidence.
-
-## Promotion
-
-Artifacts belong under `artifacts/` only after running on the exact corpus\nrevision and recording environment identity. Retrieval artifacts must use artifact\nschema v2, Ground Truth schema v2 and metrics schema v1, including their SHA-256\nfingerprints and ranked result spans. Source-only pre-freeze runs are retained only\nin Git history and are not promotable baseline artifacts. Unit-test fixtures are not\nbaseline artifacts.
-
-The final freeze is:
+Measured retrieval artifacts persist only ranked evaluation coordinates:
 
 ```text
-FetchCore revision/tag
-+ corpus SHA
-+ Ground Truth
-+ config fingerprint
-+ environment profile
-+ seven measured artifacts
+rank
+id
+source_ref
+line_start
+line_end
 ```
+
+That is enough to re-evaluate evidence metrics without publishing private source
+content.
+
+The runner validates Ground Truth coordinates against the exact local checkout
+before measurement.
+
+## Current status
+
+The source-level measurements captured on 2026-09-30 were useful experimental
+evidence, but they are **not the promoted baseline-v1**. They were produced
+before evidence-region Ground Truth became the quality contract.
+
+The final promotion requires a new evidence-aware run of all seven arms after the
+Solr performance investigation is understood.
+
+See `docs/benchmark/baseline-v1.md` for metric definitions and the promotion
+gate.
