@@ -15,7 +15,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from fetchcore.retrieval import RetrievalBackendCapabilities
 from fetchcore.signals import QuerySignal
@@ -28,8 +28,32 @@ from fetchcore.search import (
 )
 
 
-BaselineIdentityField = Literal["id", "source_ref"]
 BaselineRetrievalMode = Literal["lexical", "dense", "hybrid"]
+
+BASELINE_PROTOCOL = "fetchcore.baseline-v1"
+BASELINE_ARTIFACT_SCHEMA_VERSION = 2
+BASELINE_GROUND_TRUTH_SCHEMA_VERSION = 2
+BASELINE_METRICS_SCHEMA_VERSION = 1
+BASELINE_V1_METRICS_SPEC: dict[str, object] = {
+    "schema_version": BASELINE_METRICS_SCHEMA_VERSION,
+    "line_coordinates": "1-based inclusive",
+    "alternative_coverage": (
+        "unique reviewed lines covered / reviewed lines in the alternative"
+    ),
+    "requirement_coverage": "maximum alternative coverage",
+    "source_recall_at_k": "requirements with any source-complete alternative / requirements",
+    "evidence_recall_at_k": "requirements with requirement_coverage == 1 / requirements",
+    "span_coverage_at_k": "mean requirement_coverage across requirements",
+    "evidence_mrr": "reciprocal rank of first result adding new Ground Truth line coverage",
+    "evidence_ndcg_at_k": (
+        "DCG of incremental mean span-coverage gains by result rank, normalized "
+        "against the same gains sorted descending"
+    ),
+    "useful_context_line_ratio": (
+        "unique Ground Truth lines covered from each requirement's best alternative "
+        "/ total returned result lines, where duplicate returned spans still consume budget"
+    ),
+}
 
 
 class BaselineConfigurationError(ValueError):
@@ -51,8 +75,10 @@ class BaselineArm:
 BASELINE_V1_ARMS: tuple[BaselineArm, ...] = (
     BaselineArm("local-lexical", "local-semantic", "lexical"),
     BaselineArm("solr-lexical", "solr", "lexical"),
+    BaselineArm("solr-dense", "solr", "dense"),
     BaselineArm("solr-hybrid", "solr", "hybrid"),
     BaselineArm("opensearch-lexical", "opensearch", "lexical"),
+    BaselineArm("opensearch-dense", "opensearch", "dense"),
     BaselineArm("opensearch-hybrid", "opensearch", "hybrid"),
     BaselineArm("qdrant-dense", "qdrant-vector", "dense"),
     BaselineArm("qdrant-hybrid", "qdrant-vector", "hybrid"),
@@ -60,48 +86,149 @@ BASELINE_V1_ARMS: tuple[BaselineArm, ...] = (
 
 
 @dataclass(frozen=True)
+class BaselineEvidenceRegion:
+    """Minimal line region sufficient to contribute one piece of evidence."""
+
+    source_ref: str
+    line_start: int
+    line_end: int
+
+    def __post_init__(self) -> None:
+        if not self.source_ref.strip():
+            raise BaselineConfigurationError("baseline evidence source_ref must not be empty")
+        if self.line_start < 1 or self.line_end < self.line_start:
+            raise BaselineConfigurationError(
+                "baseline evidence region requires 1-based line_start <= line_end"
+            )
+
+    @property
+    def line_count(self) -> int:
+        return self.line_end - self.line_start + 1
+
+    def to_mapping(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class BaselineEvidenceAlternative:
+    """One sufficient region set for satisfying an evidence requirement."""
+
+    regions: tuple[BaselineEvidenceRegion, ...]
+
+    def __post_init__(self) -> None:
+        if not self.regions:
+            raise BaselineConfigurationError("baseline evidence alternative must not be empty")
+        keys = {
+            (region.source_ref, region.line_start, region.line_end)
+            for region in self.regions
+        }
+        if len(keys) != len(self.regions):
+            raise BaselineConfigurationError(
+                "baseline evidence alternative contains duplicate regions"
+            )
+        by_source: dict[str, list[tuple[int, int]]] = {}
+        for region in self.regions:
+            by_source.setdefault(region.source_ref, []).append(
+                (region.line_start, region.line_end)
+            )
+        for ranges in by_source.values():
+            ordered = sorted(ranges)
+            for previous, current in zip(ordered, ordered[1:], strict=False):
+                if current[0] <= previous[1]:
+                    raise BaselineConfigurationError(
+                        "baseline evidence alternative contains overlapping regions"
+                    )
+
+    def to_mapping(self) -> dict[str, object]:
+        return {"regions": [region.to_mapping() for region in self.regions]}
+
+
+@dataclass(frozen=True)
+class BaselineEvidenceRequirement:
+    """One logical evidence need with one or more sufficient alternatives."""
+
+    id: str
+    alternatives: tuple[BaselineEvidenceAlternative, ...]
+
+    def __post_init__(self) -> None:
+        if not self.id.strip():
+            raise BaselineConfigurationError("baseline evidence requirement id must not be empty")
+        if not self.alternatives:
+            raise BaselineConfigurationError(
+                f"baseline evidence requirement {self.id!r} must have alternatives"
+            )
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "alternatives": [item.to_mapping() for item in self.alternatives],
+        }
+
+
+@dataclass(frozen=True)
 class BaselineGroundTruth:
-    """Ground Truth identity set for one retrieval query."""
+    """Evidence-region Ground Truth for one retrieval query."""
 
     query_id: str
-    relevant: tuple[str, ...]
-    identity_field: BaselineIdentityField = "id"
+    requirements: tuple[BaselineEvidenceRequirement, ...]
 
     def __post_init__(self) -> None:
         if not self.query_id.strip():
             raise BaselineConfigurationError("baseline query_id must not be empty")
-        if not self.relevant:
+        if not self.requirements:
             raise BaselineConfigurationError(
                 f"baseline Ground Truth for {self.query_id!r} must not be empty"
             )
-        if len(set(self.relevant)) != len(self.relevant):
+        ids = [item.id for item in self.requirements]
+        if len(set(ids)) != len(ids):
             raise BaselineConfigurationError(
-                f"baseline Ground Truth for {self.query_id!r} contains duplicates"
+                f"baseline Ground Truth for {self.query_id!r} contains duplicate requirement ids"
             )
 
 
 @dataclass(frozen=True)
+class RetrievalResultSpan:
+    """Ranked result coordinates persisted so quality can be re-evaluated offline."""
+
+    rank: int
+    id: str
+    source_ref: str
+    line_start: int
+    line_end: int
+
+    @property
+    def line_count(self) -> int:
+        return self.line_end - self.line_start + 1
+
+    def to_mapping(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class RetrievalQualityObservation:
-    """Quality and output-efficiency metrics for one retrieval run."""
+    """Evidence quality and output-efficiency metrics for one retrieval run."""
 
     query_id: str
     iteration: int
-    recall_at_k: float
-    ground_truth_recovered: int
-    ground_truth_total: int
-    reciprocal_rank: float
-    ndcg_at_k: float
-    useful_evidence_density: float
+    source_recall_at_k: float
+    evidence_recall_at_k: float
+    evidence_ground_truth_recovered: int
+    evidence_ground_truth_total: int
+    span_coverage_at_k: float
+    evidence_reciprocal_rank: float
+    evidence_ndcg_at_k: float
+    useful_context_line_ratio: float
     duration_ms: int
     candidates_examined: int
     candidates_returned: int
     returned_chars: int
-    result_identities: tuple[str, ...]
+    returned_line_count: int
+    result_spans: tuple[RetrievalResultSpan, ...]
     telemetry: dict[str, object] = field(default_factory=dict)
 
     def to_mapping(self) -> dict[str, object]:
         payload = asdict(self)
-        payload["result_identities"] = list(self.result_identities)
+        payload["result_spans"] = [item.to_mapping() for item in self.result_spans]
         return payload
 
 
@@ -111,6 +238,10 @@ class BaselineArtifact:
 
     schema_version: int
     protocol: str
+    ground_truth_schema_version: int
+    ground_truth_fingerprint: str
+    metrics_schema_version: int
+    metrics_fingerprint: str
     arm: BaselineArm
     corpus: dict[str, object]
     config: dict[str, object]
@@ -123,6 +254,10 @@ class BaselineArtifact:
         return {
             "schema_version": self.schema_version,
             "protocol": self.protocol,
+            "ground_truth_schema_version": self.ground_truth_schema_version,
+            "ground_truth_fingerprint": self.ground_truth_fingerprint,
+            "metrics_schema_version": self.metrics_schema_version,
+            "metrics_fingerprint": self.metrics_fingerprint,
             "arm": self.arm.to_mapping(),
             "corpus": dict(self.corpus),
             "config": dict(self.config),
@@ -187,19 +322,17 @@ def capture_baseline_environment(
 
 @dataclass(frozen=True)
 class BaselineQueryCase:
-    """One reproducible query plus explicit Ground Truth."""
+    """One reproducible query plus explicit evidence Ground Truth."""
 
     query_id: str
     intent: SearchIntent
-    relevant: tuple[str, ...]
-    identity_field: BaselineIdentityField = "id"
+    requirements: tuple[BaselineEvidenceRequirement, ...]
 
     @property
     def truth(self) -> BaselineGroundTruth:
         return BaselineGroundTruth(
             query_id=self.query_id,
-            relevant=self.relevant,
-            identity_field=self.identity_field,
+            requirements=self.requirements,
         )
 
 
@@ -210,11 +343,12 @@ class BaselineSuite:
     schema_version: int
     corpus: dict[str, object]
     cases: tuple[BaselineQueryCase, ...]
+    fingerprint: str
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> "BaselineSuite":
         schema_version = int(str(value.get("schema_version", 0)))
-        if schema_version != 1:
+        if schema_version != BASELINE_GROUND_TRUTH_SCHEMA_VERSION:
             raise BaselineConfigurationError(
                 f"unsupported baseline suite schema_version {schema_version}"
             )
@@ -259,47 +393,77 @@ class BaselineSuite:
                     for item in _object_list(raw_intent.get("signals"))
                 ),
             )
-            identity_field = str(
-                raw_query.get("identity_field", "source_ref")
-            ).strip()
-            if identity_field not in {"id", "source_ref"}:
+            raw_requirements = raw_query.get("required_evidence")
+            if not isinstance(raw_requirements, list) or not raw_requirements:
                 raise BaselineConfigurationError(
-                    f"baseline suite query {query_id!r} has invalid identity_field"
+                    f"baseline suite query {query_id!r} requires non-empty required_evidence"
                 )
-            raw_relevant = raw_query.get("relevant")
-            raw_paths = raw_query.get("relevant_paths")
-            if raw_relevant is not None and raw_paths is not None:
-                raise BaselineConfigurationError(
-                    f"baseline suite query {query_id!r} must use relevant or relevant_paths"
+            requirements = tuple(
+                _evidence_requirement_from_mapping(
+                    item,
+                    repository=repository,
+                    query_id=query_id,
                 )
-            if raw_paths is not None:
-                if identity_field != "source_ref":
-                    raise BaselineConfigurationError(
-                        f"baseline suite query {query_id!r} relevant_paths require source_ref identity"
-                    )
-                paths = _string_tuple(raw_paths)
-                relevant = tuple(
-                    _repository_source_ref(repository, path) for path in paths
-                )
-            else:
-                relevant = _string_tuple(raw_relevant)
+                for item in raw_requirements
+            )
             cases.append(
                 BaselineQueryCase(
                     query_id=query_id,
                     intent=intent,
-                    relevant=relevant,
-                    identity_field=identity_field,  # type: ignore[arg-type]
+                    requirements=requirements,
                 )
             )
+
+        canonical = _canonical_mapping(value)
         return cls(
             schema_version=schema_version,
             corpus=corpus,
             cases=tuple(cases),
+            fingerprint=mapping_fingerprint(canonical),
         )
+
+    def validate_workspace_regions(self, workspace: Path) -> None:
+        """Fail closed when Ground Truth coordinates do not match the frozen checkout."""
+
+        repository = str(self.corpus["repository"])
+        source_prefix = f"repository://{quote(repository, safe='/.:@')}/"
+        line_counts: dict[str, int] = {}
+
+        for case in self.cases:
+            for requirement in case.requirements:
+                for alternative in requirement.alternatives:
+                    for region in alternative.regions:
+                        if not region.source_ref.startswith(source_prefix):
+                            raise BaselineConfigurationError(
+                                "Ground Truth source_ref escapes the frozen repository: "
+                                f"{region.source_ref!r}"
+                            )
+                        relative = unquote(region.source_ref[len(source_prefix):])
+                        normalized = relative.replace("\\", "/").strip("/")
+                        if not normalized or ".." in normalized.split("/"):
+                            raise BaselineConfigurationError(
+                                f"Ground Truth path is invalid: {relative!r}"
+                            )
+                        if normalized not in line_counts:
+                            target = workspace / normalized
+                            try:
+                                line_counts[normalized] = len(
+                                    target.read_text(encoding="utf-8").splitlines()
+                                )
+                            except (OSError, UnicodeDecodeError) as exc:
+                                raise BaselineConfigurationError(
+                                    f"cannot validate Ground Truth path {normalized!r}"
+                                ) from exc
+                        if region.line_end > line_counts[normalized]:
+                            raise BaselineConfigurationError(
+                                f"Ground Truth region {case.query_id}/{requirement.id} "
+                                f"{normalized}:{region.line_start}-{region.line_end} "
+                                f"exceeds file length {line_counts[normalized]}"
+                            )
 
 
 def load_baseline_suite(path: Path) -> BaselineSuite:
-    """Load a versioned baseline query suite from deterministic JSON."""
+    """Load a versioned evidence-region baseline suite from deterministic JSON."""
 
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -355,6 +519,7 @@ class BaselineRunner:
         cases: Sequence[BaselineQueryCase],
         *,
         corpus: Mapping[str, object],
+        ground_truth_fingerprint: str,
         config_identity: Mapping[str, object] | None = None,
         environment: Mapping[str, object] | None = None,
         requirements: tuple[SearchRequirement, ...] = (),
@@ -363,6 +528,10 @@ class BaselineRunner:
 
         if not cases:
             raise BaselineConfigurationError("baseline runner requires query cases")
+        if not ground_truth_fingerprint.startswith("sha256:"):
+            raise BaselineConfigurationError(
+                "baseline runner requires a SHA-256 Ground Truth fingerprint"
+            )
         for case in cases:
             for _ in range(self.warmups):
                 self.backend.search(case.intent, self.scope, requirements)
@@ -394,6 +563,7 @@ class BaselineRunner:
             corpus=corpus,
             config=config,
             observations=observations,
+            ground_truth_fingerprint=ground_truth_fingerprint,
             environment=environment,
         )
 
@@ -423,7 +593,7 @@ def evaluate_retrieval(
     iteration: int,
     k: int,
 ) -> RetrievalQualityObservation:
-    """Evaluate one backend response against explicit Ground Truth."""
+    """Evaluate ranked result spans against explicit evidence-region Ground Truth."""
 
     if k < 1:
         raise BaselineConfigurationError("baseline k must be positive")
@@ -431,36 +601,72 @@ def evaluate_retrieval(
         raise BaselineConfigurationError("baseline iteration must be positive")
 
     results = response.results[:k]
-    identities = tuple(
-        item.id if truth.identity_field == "id" else item.source_ref
-        for item in results
+    spans: list[RetrievalResultSpan] = []
+    for rank, item in enumerate(results, start=1):
+        if item.line_start is None or item.line_end is None:
+            raise BaselineConfigurationError(
+                "baseline evidence metrics require line_start/line_end for every returned result"
+            )
+        if item.line_start < 1 or item.line_end < item.line_start:
+            raise BaselineConfigurationError(
+                "baseline returned result contains invalid line coordinates"
+            )
+        spans.append(
+            RetrievalResultSpan(
+                rank=rank,
+                id=item.id,
+                source_ref=item.source_ref,
+                line_start=item.line_start,
+                line_end=item.line_end,
+            )
+        )
+    ranked_spans = tuple(spans)
+
+    present_sources = {item.source_ref for item in ranked_spans}
+    source_recovered = sum(
+        1
+        for requirement in truth.requirements
+        if _source_requirement_satisfied(requirement, present_sources)
     )
-    relevant = set(truth.relevant)
-    seen_relevant: set[str] = set()
-    relevant_ranks: list[int] = []
-    for rank, identity in enumerate(identities, start=1):
-        if identity not in relevant or identity in seen_relevant:
-            continue
-        seen_relevant.add(identity)
-        relevant_ranks.append(rank)
+    source_recall = source_recovered / len(truth.requirements)
 
-    recovered = len(seen_relevant)
-    recall = recovered / len(relevant)
-
-    first_rank = relevant_ranks[0] if relevant_ranks else None
-    reciprocal_rank = 0.0 if first_rank is None else 1.0 / first_rank
-
-    dcg = sum(1.0 / math.log2(rank + 1) for rank in relevant_ranks)
-    ideal_hits = min(len(relevant), k)
-    ideal_dcg = sum(1.0 / math.log2(rank + 1) for rank in range(1, ideal_hits + 1))
-    ndcg = 0.0 if ideal_dcg == 0.0 else dcg / ideal_dcg
-    density = 0.0 if not identities else recovered / len(identities)
-
-    telemetry = (
-        {}
-        if response.telemetry is None
-        else response.telemetry.to_mapping()
+    coverages = tuple(
+        _requirement_coverage(requirement, ranked_spans)
+        for requirement in truth.requirements
     )
+    evidence_recovered = sum(coverage == 1.0 for coverage in coverages)
+    evidence_recall = evidence_recovered / len(truth.requirements)
+    span_coverage = sum(coverages) / len(coverages)
+
+    cumulative_coverage: list[float] = []
+    for rank in range(1, len(ranked_spans) + 1):
+        prefix = ranked_spans[:rank]
+        cumulative_coverage.append(
+            sum(
+                _requirement_coverage(requirement, prefix)
+                for requirement in truth.requirements
+            )
+            / len(truth.requirements)
+        )
+    gains: list[float] = []
+    previous = 0.0
+    for current in cumulative_coverage:
+        gains.append(max(0.0, current - previous))
+        previous = current
+    first_gain_rank = next(
+        (rank for rank, gain in enumerate(gains, start=1) if gain > 0.0),
+        None,
+    )
+    reciprocal_rank = 0.0 if first_gain_rank is None else 1.0 / first_gain_rank
+    evidence_ndcg = _normalized_discounted_gain(gains)
+
+    returned_lines = sum(item.line_count for item in ranked_spans)
+    useful_lines = _useful_ground_truth_lines(truth.requirements, ranked_spans)
+    useful_context_ratio = (
+        0.0 if returned_lines == 0 else useful_lines / returned_lines
+    )
+
+    telemetry = {} if response.telemetry is None else response.telemetry.to_mapping()
     candidates_examined = (
         len(response.results)
         if response.telemetry is None
@@ -475,17 +681,20 @@ def evaluate_retrieval(
     return RetrievalQualityObservation(
         query_id=truth.query_id,
         iteration=iteration,
-        recall_at_k=round(recall, 6),
-        ground_truth_recovered=recovered,
-        ground_truth_total=len(relevant),
-        reciprocal_rank=round(reciprocal_rank, 6),
-        ndcg_at_k=round(ndcg, 6),
-        useful_evidence_density=round(density, 6),
+        source_recall_at_k=round(source_recall, 6),
+        evidence_recall_at_k=round(evidence_recall, 6),
+        evidence_ground_truth_recovered=evidence_recovered,
+        evidence_ground_truth_total=len(truth.requirements),
+        span_coverage_at_k=round(span_coverage, 6),
+        evidence_reciprocal_rank=round(reciprocal_rank, 6),
+        evidence_ndcg_at_k=round(evidence_ndcg, 6),
+        useful_context_line_ratio=round(useful_context_ratio, 6),
         duration_ms=response.duration_ms,
         candidates_examined=candidates_examined,
         candidates_returned=len(response.results),
         returned_chars=characters,
-        result_identities=identities,
+        returned_line_count=returned_lines,
+        result_spans=ranked_spans,
         telemetry=telemetry,
     )
 
@@ -496,27 +705,39 @@ def build_baseline_artifact(
     corpus: Mapping[str, object],
     config: Mapping[str, object],
     observations: Sequence[RetrievalQualityObservation],
+    ground_truth_fingerprint: str,
     environment: Mapping[str, object] | None = None,
 ) -> BaselineArtifact:
-    """Aggregate repeated observations into the frozen v1 artifact shape."""
+    """Aggregate repeated observations using frozen evidence-metric semantics."""
 
     if not observations:
         raise BaselineConfigurationError("baseline artifact requires observations")
+    if not ground_truth_fingerprint.startswith("sha256:"):
+        raise BaselineConfigurationError(
+            "baseline artifact requires a SHA-256 Ground Truth fingerprint"
+        )
     config_mapping = _canonical_mapping(config)
     values = tuple(observations)
     durations = [item.duration_ms for item in values]
+    metrics_fingerprint = mapping_fingerprint(BASELINE_V1_METRICS_SPEC)
 
     aggregate: dict[str, object] = {
         "run_count": len(values),
         "query_count": len({item.query_id for item in values}),
-        "recall_at_k_mean": _mean(item.recall_at_k for item in values),
-        "mrr_mean": _mean(item.reciprocal_rank for item in values),
-        "ndcg_at_k_mean": _mean(item.ndcg_at_k for item in values),
-        "useful_evidence_density_mean": _mean(
-            item.useful_evidence_density for item in values
+        "source_recall_at_k_mean": _mean(item.source_recall_at_k for item in values),
+        "evidence_recall_at_k_mean": _mean(item.evidence_recall_at_k for item in values),
+        "span_coverage_at_k_mean": _mean(item.span_coverage_at_k for item in values),
+        "evidence_mrr_mean": _mean(
+            item.evidence_reciprocal_rank for item in values
         ),
-        "ground_truth_recovered": sum(
-            item.ground_truth_recovered for item in values
+        "evidence_ndcg_at_k_mean": _mean(
+            item.evidence_ndcg_at_k for item in values
+        ),
+        "useful_context_line_ratio_mean": _mean(
+            item.useful_context_line_ratio for item in values
+        ),
+        "evidence_ground_truth_recovered": sum(
+            item.evidence_ground_truth_recovered for item in values
         ),
         "duration_ms": {
             "p50": percentile(durations, 0.50),
@@ -530,12 +751,19 @@ def build_baseline_artifact(
             item.candidates_returned for item in values
         ),
         "returned_chars_mean": _mean(item.returned_chars for item in values),
+        "returned_line_count_mean": _mean(
+            item.returned_line_count for item in values
+        ),
         "fingerprints": _observed_fingerprints(values),
     }
 
     return BaselineArtifact(
-        schema_version=1,
-        protocol="fetchcore.baseline-v1",
+        schema_version=BASELINE_ARTIFACT_SCHEMA_VERSION,
+        protocol=BASELINE_PROTOCOL,
+        ground_truth_schema_version=BASELINE_GROUND_TRUTH_SCHEMA_VERSION,
+        ground_truth_fingerprint=ground_truth_fingerprint,
+        metrics_schema_version=BASELINE_METRICS_SCHEMA_VERSION,
+        metrics_fingerprint=metrics_fingerprint,
         arm=arm,
         corpus=_canonical_mapping(corpus),
         config=config_mapping,
@@ -544,6 +772,158 @@ def build_baseline_artifact(
         aggregate=aggregate,
         environment=_canonical_mapping(environment or {}),
     )
+
+
+def _evidence_requirement_from_mapping(
+    value: object,
+    *,
+    repository: str,
+    query_id: str,
+) -> BaselineEvidenceRequirement:
+    if not isinstance(value, Mapping):
+        raise BaselineConfigurationError(
+            f"baseline query {query_id!r} evidence requirement must be an object"
+        )
+    requirement_id = str(value.get("id", "")).strip()
+    raw_alternatives = value.get("alternatives")
+    if not requirement_id or not isinstance(raw_alternatives, list) or not raw_alternatives:
+        raise BaselineConfigurationError(
+            f"baseline query {query_id!r} evidence requirement is incomplete"
+        )
+    alternatives: list[BaselineEvidenceAlternative] = []
+    for raw_alternative in raw_alternatives:
+        if not isinstance(raw_alternative, Mapping):
+            raise BaselineConfigurationError(
+                f"baseline query {query_id!r} evidence alternative must be an object"
+            )
+        raw_regions = raw_alternative.get("regions")
+        if not isinstance(raw_regions, list) or not raw_regions:
+            raise BaselineConfigurationError(
+                f"baseline query {query_id!r} evidence alternative requires regions"
+            )
+        regions: list[BaselineEvidenceRegion] = []
+        for raw_region in raw_regions:
+            if not isinstance(raw_region, Mapping):
+                raise BaselineConfigurationError(
+                    f"baseline query {query_id!r} evidence region must be an object"
+                )
+            path = str(raw_region.get("path", "")).strip()
+            if not path:
+                raise BaselineConfigurationError(
+                    f"baseline query {query_id!r} evidence region requires path"
+                )
+            try:
+                line_start = int(str(raw_region["line_start"]))
+                line_end = int(str(raw_region["line_end"]))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise BaselineConfigurationError(
+                    f"baseline query {query_id!r} evidence region requires integer line bounds"
+                ) from exc
+            regions.append(
+                BaselineEvidenceRegion(
+                    source_ref=_repository_source_ref(repository, path),
+                    line_start=line_start,
+                    line_end=line_end,
+                )
+            )
+        alternatives.append(BaselineEvidenceAlternative(tuple(regions)))
+    return BaselineEvidenceRequirement(
+        id=requirement_id,
+        alternatives=tuple(alternatives),
+    )
+
+
+def _source_requirement_satisfied(
+    requirement: BaselineEvidenceRequirement,
+    present_sources: set[str],
+) -> bool:
+    return any(
+        all(region.source_ref in present_sources for region in alternative.regions)
+        for alternative in requirement.alternatives
+    )
+
+
+def _requirement_coverage(
+    requirement: BaselineEvidenceRequirement,
+    spans: Sequence[RetrievalResultSpan],
+) -> float:
+    return max(
+        _alternative_coverage(alternative, spans)
+        for alternative in requirement.alternatives
+    )
+
+
+def _alternative_coverage(
+    alternative: BaselineEvidenceAlternative,
+    spans: Sequence[RetrievalResultSpan],
+) -> float:
+    total = sum(region.line_count for region in alternative.regions)
+    covered = sum(_covered_lines(region, spans) for region in alternative.regions)
+    return 0.0 if total == 0 else covered / total
+
+
+def _covered_lines(
+    region: BaselineEvidenceRegion,
+    spans: Sequence[RetrievalResultSpan],
+) -> int:
+    covered: set[int] = set()
+    for span in spans:
+        if span.source_ref != region.source_ref:
+            continue
+        start = max(region.line_start, span.line_start)
+        end = min(region.line_end, span.line_end)
+        if start <= end:
+            covered.update(range(start, end + 1))
+    return len(covered)
+
+
+def _best_alternative(
+    requirement: BaselineEvidenceRequirement,
+    spans: Sequence[RetrievalResultSpan],
+) -> BaselineEvidenceAlternative:
+    return max(
+        requirement.alternatives,
+        key=lambda item: (
+            _alternative_coverage(item, spans),
+            -sum(region.line_count for region in item.regions),
+        ),
+    )
+
+
+def _useful_ground_truth_lines(
+    requirements: Sequence[BaselineEvidenceRequirement],
+    spans: Sequence[RetrievalResultSpan],
+) -> int:
+    useful: set[tuple[str, int]] = set()
+    for requirement in requirements:
+        alternative = _best_alternative(requirement, spans)
+        for region in alternative.regions:
+            for span in spans:
+                if span.source_ref != region.source_ref:
+                    continue
+                start = max(region.line_start, span.line_start)
+                end = min(region.line_end, span.line_end)
+                if start <= end:
+                    useful.update(
+                        (region.source_ref, line)
+                        for line in range(start, end + 1)
+                    )
+    return len(useful)
+
+
+def _normalized_discounted_gain(gains: Sequence[float]) -> float:
+    if not gains or sum(gains) <= 0.0:
+        return 0.0
+    dcg = sum(
+        gain / math.log2(rank + 1)
+        for rank, gain in enumerate(gains, start=1)
+    )
+    ideal = sorted(gains, reverse=True)
+    idcg = sum(
+        gain / math.log2(rank + 1)
+        for rank, gain in enumerate(ideal, start=1)
+    )
+    return 0.0 if idcg == 0.0 else dcg / idcg
 
 
 def _observed_fingerprints(

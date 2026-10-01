@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "corpus": {
     "corpus_id": "neurotrack-ms-74ce3244",
     "repository": "oalangomes/NeuroTrack_MS",
@@ -19,8 +19,21 @@
           "service"
         ]
       },
-      "relevant_paths": [
-        "src/modules/medication/services/medicationService.js"
+      "required_evidence": [
+        {
+          "id": "owner-scoped-update",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/medication/services/medicationService.js",
+                  "line_start": 38,
+                  "line_end": 41
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -36,8 +49,21 @@
           "controller"
         ]
       },
-      "relevant_paths": [
-        "src/modules/medication/controllers/medicationController.js"
+      "required_evidence": [
+        {
+          "id": "payload-and-user-validation",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/medication/controllers/medicationController.js",
+                  "line_start": 39,
+                  "line_end": 54
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -50,8 +76,63 @@
           "tests"
         ]
       },
-      "relevant_paths": [
-        "src/modules/medication/tests/controllers/medicationController.test.js"
+      "required_evidence": [
+        {
+          "id": "medication-service-mocks",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/medication/tests/controllers/medicationController.test.js",
+                  "line_start": 8,
+                  "line_end": 15
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "create-controller-test",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/medication/tests/controllers/medicationController.test.js",
+                  "line_start": 68,
+                  "line_end": 82
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "update-controller-test",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/medication/tests/controllers/medicationController.test.js",
+                  "line_start": 154,
+                  "line_end": 168
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "delete-controller-test",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/medication/tests/controllers/medicationController.test.js",
+                  "line_start": 243,
+                  "line_end": 251
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -67,8 +148,35 @@
           "service"
         ]
       },
-      "relevant_paths": [
-        "src/modules/mfa/services/mfaService.js"
+      "required_evidence": [
+        {
+          "id": "mfa-setup-secret",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/mfa/services/mfaService.js",
+                  "line_start": 28,
+                  "line_end": 38
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "mfa-token-verification",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/mfa/services/mfaService.js",
+                  "line_start": 48,
+                  "line_end": 74
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -84,8 +192,49 @@
           "route"
         ]
       },
-      "relevant_paths": [
-        "src/modules/mfa/routes/index.js"
+      "required_evidence": [
+        {
+          "id": "mfa-setup-route",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/mfa/routes/index.js",
+                  "line_start": 26,
+                  "line_end": 26
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "mfa-verify-route",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/mfa/routes/index.js",
+                  "line_start": 49,
+                  "line_end": 49
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "mfa-disable-route",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/mfa/routes/index.js",
+                  "line_start": 63,
+                  "line_end": 63
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -98,8 +247,35 @@
           "controller"
         ]
       },
-      "relevant_paths": [
-        "src/modules/mfa/controllers/mfaController.js"
+      "required_evidence": [
+        {
+          "id": "mfa-token-validation",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/mfa/controllers/mfaController.js",
+                  "line_start": 47,
+                  "line_end": 55
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "mfa-service-error-mapping",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/mfa/controllers/mfaController.js",
+                  "line_start": 56,
+                  "line_end": 71
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -112,8 +288,49 @@
           "tests"
         ]
       },
-      "relevant_paths": [
-        "src/modules/mfa/tests/mfaRoutes.test.js"
+      "required_evidence": [
+        {
+          "id": "mfa-setup-route-test",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/mfa/tests/mfaRoutes.test.js",
+                  "line_start": 40,
+                  "line_end": 50
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "mfa-verify-route-test",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/mfa/tests/mfaRoutes.test.js",
+                  "line_start": 74,
+                  "line_end": 84
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "mfa-disable-route-test",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/mfa/tests/mfaRoutes.test.js",
+                  "line_start": 152,
+                  "line_end": 160
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -129,8 +346,21 @@
           "service"
         ]
       },
-      "relevant_paths": [
-        "src/modules/health/services/healthService.js"
+      "required_evidence": [
+        {
+          "id": "health-metric-collection",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/health/services/healthService.js",
+                  "line_start": 54,
+                  "line_end": 92
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -143,8 +373,21 @@
           "controller"
         ]
       },
-      "relevant_paths": [
-        "src/modules/health/controllers/healthController.js"
+      "required_evidence": [
+        {
+          "id": "health-controller-response",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/health/controllers/healthController.js",
+                  "line_start": 25,
+                  "line_end": 38
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -157,8 +400,35 @@
           "tests"
         ]
       },
-      "relevant_paths": [
-        "src/modules/health/tests/healthController.test.js"
+      "required_evidence": [
+        {
+          "id": "health-metrics-response-test",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/health/tests/healthController.test.js",
+                  "line_start": 35,
+                  "line_end": 44
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "friendly-health-response-test",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/health/tests/healthController.test.js",
+                  "line_start": 58,
+                  "line_end": 67
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -174,8 +444,35 @@
           "service"
         ]
       },
-      "relevant_paths": [
-        "src/modules/home/services/homeService.js"
+      "required_evidence": [
+        {
+          "id": "active-subject-profile",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/home/services/homeService.js",
+                  "line_start": 50,
+                  "line_end": 60
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "context-window-home-load",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/home/services/homeService.js",
+                  "line_start": 82,
+                  "line_end": 104
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -188,8 +485,35 @@
           "controller"
         ]
       },
-      "relevant_paths": [
-        "src/modules/home/controllers/homeController.js"
+      "required_evidence": [
+        {
+          "id": "home-prompt-build",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/home/controllers/homeController.js",
+                  "line_start": 28,
+                  "line_end": 44
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "home-completion-generation",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/home/controllers/homeController.js",
+                  "line_start": 46,
+                  "line_end": 62
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -203,9 +527,35 @@
           "queue"
         ]
       },
-      "relevant_paths": [
-        "src/modules/ai/controllers/aiController.js",
-        "src/queues/aiQueue.js"
+      "required_evidence": [
+        {
+          "id": "controller-enqueue",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/ai/controllers/aiController.js",
+                  "line_start": 228,
+                  "line_end": 276
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "queue-producer",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/queues/aiQueue.js",
+                  "line_start": 70,
+                  "line_end": 88
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -221,8 +571,49 @@
           "queue"
         ]
       },
-      "relevant_paths": [
-        "src/queues/aiQueue.js"
+      "required_evidence": [
+        {
+          "id": "subject-propagation",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/queues/aiQueue.js",
+                  "line_start": 24,
+                  "line_end": 37
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "context-hash-metadata",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/queues/aiQueue.js",
+                  "line_start": 39,
+                  "line_end": 68
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "job-enqueue-with-subject",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/queues/aiQueue.js",
+                  "line_start": 79,
+                  "line_end": 88
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -238,8 +629,35 @@
           "worker"
         ]
       },
-      "relevant_paths": [
-        "src/workers/aiWorker.js"
+      "required_evidence": [
+        {
+          "id": "worker-generation-pipeline",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/workers/aiWorker.js",
+                  "line_start": 405,
+                  "line_end": 454
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "worker-persist-and-emit",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/workers/aiWorker.js",
+                  "line_start": 456,
+                  "line_end": 474
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -252,8 +670,35 @@
           "configuration"
         ]
       },
-      "relevant_paths": [
-        "src/shared/config/config.js"
+      "required_evidence": [
+        {
+          "id": "queue-environment-contract",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/shared/config/config.js",
+                  "line_start": 173,
+                  "line_end": 194
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "queue-runtime-config",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/shared/config/config.js",
+                  "line_start": 360,
+                  "line_end": 383
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -266,8 +711,49 @@
           "configuration"
         ]
       },
-      "relevant_paths": [
-        "docker-compose.yml"
+      "required_evidence": [
+        {
+          "id": "app-runtime-dependencies",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "docker-compose.yml",
+                  "line_start": 21,
+                  "line_end": 62
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ai-worker-runtime",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "docker-compose.yml",
+                  "line_start": 64,
+                  "line_end": 103
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "data-services",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "docker-compose.yml",
+                  "line_start": 234,
+                  "line_end": 243
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -281,8 +767,49 @@
           "architecture"
         ]
       },
-      "relevant_paths": [
-        "docs/architecture/overview.md"
+      "required_evidence": [
+        {
+          "id": "project-layer-structure",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "docs/architecture/overview.md",
+                  "line_start": 15,
+                  "line_end": 35
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "central-runtime-config",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "docs/architecture/overview.md",
+                  "line_start": 54,
+                  "line_end": 56
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "queue-worker-runtime",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "docs/architecture/overview.md",
+                  "line_start": 98,
+                  "line_end": 100
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -296,8 +823,21 @@
           "architecture"
         ]
       },
-      "relevant_paths": [
-        "docs/architecture/c4/component-ai.puml"
+      "required_evidence": [
+        {
+          "id": "ai-components-and-relations",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "docs/architecture/c4/component-ai.puml",
+                  "line_start": 6,
+                  "line_end": 29
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     {
@@ -311,8 +851,35 @@
           "governance"
         ]
       },
-      "relevant_paths": [
-        "CODEX_RULES.md"
+      "required_evidence": [
+        {
+          "id": "test-coverage-rule",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "CODEX_RULES.md",
+                  "line_start": 21,
+                  "line_end": 30
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "layering-database-rule",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "CODEX_RULES.md",
+                  "line_start": 72,
+                  "line_end": 79
+                }
+              ]
+            }
+          ]
+        }
       ]
     }
   ]

@@ -84,6 +84,29 @@ Behavior that is already proven in AgentsOrchNext should be transplanted with th
 New retrieval features should be implemented here after the extraction gate passes.
 
 
+## Retrieval benchmark
+
+FetchCore keeps retrieval quality measurable through the evidence-aware
+`baseline-v1` benchmark. The protocol freezes the corpus, Ground Truth, metric
+semantics and backend/mode matrix independently from any consumer or agent.
+
+Benchmark **protocol version** and **execution version** are separate concepts:
+
+- `fetchcore.baseline-v1` identifies the frozen comparison contract;
+- every invocation of `benchmarks/baseline-v1/run.py` automatically reserves the
+  next run version: `V0.1`, `V0.2`, `V0.3`, and so on;
+- artifacts are written under
+  `benchmarks/baseline-v1/artifacts/V0.N/`;
+- a successful execution writes `run.json` with the run identity, selected arms,
+  FetchCore revision and corpus identity, plus a generated `README.md` report
+  with retrieval and optional indexing metrics;
+- the run version is provenance only and is deliberately excluded from retrieval
+  configuration fingerprints.
+
+This keeps repeated measurements traceable without silently changing the
+scientific baseline contract. See `benchmarks/baseline-v1/README.md` and
+`docs/benchmark/baseline-v1.md`.
+
 ## MCP serving
 
 FetchCore can expose retrieval through a thin MCP v2 adapter without coupling

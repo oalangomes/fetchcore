@@ -7,9 +7,9 @@ import argparse
 import json
 import os
 import subprocess
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Mapping
 from urllib.request import Request, urlopen
 
 from fetchcore.application import BackendRegistry
@@ -61,6 +61,7 @@ def main() -> int:
     expected_repository = str(suite.corpus["repository"])
     expected_revision = str(suite.corpus["revision"])
     _validate_workspace(workspace, expected_revision)
+    suite.validate_workspace_regions(workspace)
 
     measurement = _object(manifest, "measurement")
     environment_config = _object(manifest, "environment")
@@ -84,6 +85,10 @@ def main() -> int:
         "corpus_revision": expected_revision,
     }
 
+    output_root = args.output.resolve()
+    run_version, output_dir = _allocate_run_output_dir(output_root)
+    print(f"[baseline] run_version={run_version} output={output_dir}")
+
     indexing_payload: dict[str, object] | None = None
     if args.prepare_index:
         indexing_payload = _prepare_indexes(
@@ -98,9 +103,7 @@ def main() -> int:
             fetchcore_revision=fetchcore_revision,
         )
 
-    output_dir = args.output.resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
-
+    retrieval_artifacts: list[dict[str, object]] = []
     for arm in selected:
         backend = BackendRegistry().create(arm.backend)
         retrieval = _retrieval_for_mode(
@@ -111,9 +114,7 @@ def main() -> int:
         settings = _backend_settings(
             arm,
             endpoints=endpoints,
-            diagnostic_candidate_window=int(
-                str(measurement["diagnostic_candidate_window"])
-            ),
+            diagnostic_candidate_window=int(str(measurement["diagnostic_candidate_window"])),
             embedding_identity=embedding_identity,
             backend_settings=backend_settings,
         )
@@ -141,6 +142,7 @@ def main() -> int:
         ).run(
             suite.cases,
             corpus=suite.corpus,
+            ground_truth_fingerprint=suite.fingerprint,
             config_identity={
                 **config_identity,
                 "backend_settings": settings,
@@ -151,6 +153,7 @@ def main() -> int:
             output_dir / f"{arm.id}.json",
             artifact,
         )
+        retrieval_artifacts.append(artifact.to_mapping())
         print(f"[baseline] arm={arm.id} artifact={destination}")
 
     if indexing_payload is not None:
@@ -160,6 +163,35 @@ def main() -> int:
             encoding="utf-8",
         )
         print(f"[baseline] indexing artifact={destination}")
+
+    run_manifest = {
+        "schema_version": 1,
+        "run_version": run_version,
+        "protocol": "fetchcore.baseline-v1",
+        "status": "complete",
+        "completed_at": _utc_now(),
+        "fetchcore_revision": fetchcore_revision,
+        "corpus": suite.corpus,
+        "arms": [arm.to_mapping() for arm in selected],
+        "prepare_index": bool(args.prepare_index),
+        "artifacts": [f"{arm.id}.json" for arm in selected],
+        "indexing_artifact": ("indexing.json" if indexing_payload is not None else None),
+        "metrics_report": "README.md",
+    }
+    report_path = _write_metrics_report(
+        output_dir,
+        run_manifest=run_manifest,
+        retrieval_artifacts=retrieval_artifacts,
+        indexing_payload=indexing_payload,
+    )
+    print(f"[baseline] metrics report={report_path}")
+
+    run_manifest_path = output_dir / "run.json"
+    run_manifest_path.write_text(
+        json.dumps(run_manifest, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(f"[baseline] run_version={run_version} manifest={run_manifest_path}")
 
     return 0
 
@@ -187,9 +219,217 @@ def _parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=ARTIFACTS_DIR,
-        help="Artifact output directory.",
+        help=(
+            "Artifact output root. Each execution creates the next "
+            "V0.N child directory automatically."
+        ),
     )
     return parser
+
+
+def _write_metrics_report(
+    output_dir: Path,
+    *,
+    run_manifest: Mapping[str, object],
+    retrieval_artifacts: Sequence[Mapping[str, object]],
+    indexing_payload: Mapping[str, object] | None,
+) -> Path:
+    destination = (output_dir / "README.md").resolve()
+    destination.write_text(
+        _render_metrics_report(
+            run_manifest=run_manifest,
+            retrieval_artifacts=retrieval_artifacts,
+            indexing_payload=indexing_payload,
+        ),
+        encoding="utf-8",
+    )
+    return destination
+
+
+def _render_metrics_report(
+    *,
+    run_manifest: Mapping[str, object],
+    retrieval_artifacts: Sequence[Mapping[str, object]],
+    indexing_payload: Mapping[str, object] | None,
+) -> str:
+    """Render one self-contained Markdown metrics report for a versioned run."""
+
+    run_version = str(run_manifest["run_version"])
+    corpus = _object(run_manifest, "corpus")
+    repository = str(corpus["repository"])
+    revision = str(corpus["revision"])
+    lines = [
+        f"# Baseline {run_version} metrics",
+        "",
+        "This report is generated from the aggregate fields in this run's JSON",
+        "artifacts. The JSON files remain the source of truth.",
+        "",
+        "## Run",
+        "",
+        f"- Protocol: `{run_manifest['protocol']}`",
+        f"- Status: `{run_manifest['status']}`",
+        f"- Completed at: `{run_manifest['completed_at']}`",
+        f"- FetchCore revision: `{run_manifest['fetchcore_revision']}`",
+        f"- Corpus: `{repository}@{revision}`",
+        "",
+        "## Retrieval quality and latency",
+        "",
+        (
+            "| Arm | Source recall@K | Evidence recall@K | Span coverage@K | "
+            "Evidence MRR | Evidence nDCG@K | Useful context | p50 | p95 | p99 |"
+        ),
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+
+    operational_rows: list[str] = []
+    artifact_names: list[str] = []
+    for artifact in retrieval_artifacts:
+        arm = _object(artifact, "arm")
+        aggregate = _object(artifact, "aggregate")
+        duration = _object(aggregate, "duration_ms")
+        arm_id = str(arm["id"])
+        artifact_name = f"{arm_id}.json"
+        artifact_names.append(artifact_name)
+        lines.append(
+            "| "
+            + " | ".join(
+                (
+                    f"[{arm_id}]({artifact_name})",
+                    _format_decimal(aggregate["source_recall_at_k_mean"]),
+                    _format_decimal(aggregate["evidence_recall_at_k_mean"]),
+                    _format_decimal(aggregate["span_coverage_at_k_mean"]),
+                    _format_decimal(aggregate["evidence_mrr_mean"]),
+                    _format_decimal(aggregate["evidence_ndcg_at_k_mean"]),
+                    _format_decimal(aggregate["useful_context_line_ratio_mean"]),
+                    f"{duration['p50']} ms",
+                    f"{duration['p95']} ms",
+                    f"{duration['p99']} ms",
+                )
+            )
+            + " |"
+        )
+        operational_rows.append(
+            "| "
+            + " | ".join(
+                (
+                    arm_id,
+                    str(aggregate["run_count"]),
+                    str(aggregate["query_count"]),
+                    _format_number(aggregate["candidates_examined_mean"]),
+                    _format_number(aggregate["candidates_returned_mean"]),
+                    _format_number(aggregate["returned_chars_mean"]),
+                    _format_number(aggregate["returned_line_count_mean"]),
+                    str(aggregate["evidence_ground_truth_recovered"]),
+                )
+            )
+            + " |"
+        )
+
+    lines.extend(
+        (
+            "",
+            "## Retrieval volume",
+            "",
+            (
+                "| Arm | Observations | Queries | Candidates examined | Candidates returned | "
+                "Returned chars | Returned lines | Ground Truth recovered |"
+            ),
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            *operational_rows,
+            "",
+            "## Indexing",
+            "",
+        )
+    )
+
+    if indexing_payload is None:
+        lines.append("Index preparation was not requested for this run.")
+    else:
+        canonical = _object(indexing_payload, "canonical")
+        lines.extend(
+            (
+                f"- Files discovered: {canonical['files_discovered']}",
+                f"- Files indexed: {canonical['files_indexed']}",
+                f"- Chunks/documents: {canonical['chunks_total']}",
+                f"- Canonical duration: {canonical['duration_ms']} ms",
+                (
+                    "- Canonical throughput: "
+                    f"{_format_number(canonical['indexing_throughput_chunks_per_second'])} "
+                    "chunks/s"
+                ),
+                "",
+                (
+                    "| Backend | Mode | Duration | Writes | Deletes | Embedding duration | "
+                    "Vectors | Vector throughput |"
+                ),
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+            )
+        )
+        for backend, raw_result in sorted(_object(indexing_payload, "backends").items()):
+            if not isinstance(raw_result, Mapping):
+                raise BaselineConfigurationError(
+                    f"indexing backend {backend!r} must be a JSON object"
+                )
+            telemetry = _object(raw_result, "telemetry")
+            lines.append(
+                "| "
+                + " | ".join(
+                    (
+                        str(backend),
+                        str(raw_result["mode"]),
+                        f"{raw_result['duration_ms']} ms",
+                        str(telemetry["backend_writes"]),
+                        str(telemetry["backend_deletes"]),
+                        f"{telemetry.get('embedding_duration_ms', 0)} ms",
+                        str(telemetry.get("embedding_vectors", 0)),
+                        (
+                            f"{_format_number(telemetry.get('embedding_throughput_vectors_per_second', 0))} "
+                            "vectors/s"
+                        ),
+                    )
+                )
+                + " |"
+            )
+
+    lines.extend(("", "## Artifacts", "", "- [run.json](run.json)"))
+    lines.extend(f"- [{name}]({name})" for name in artifact_names)
+    if indexing_payload is not None:
+        lines.append("- [indexing.json](indexing.json)")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _format_decimal(value: object) -> str:
+    return f"{float(str(value)):.6f}"
+
+
+def _format_number(value: object) -> str:
+    return f"{float(str(value)):.3f}".rstrip("0").rstrip(".")
+
+
+def _allocate_run_output_dir(output_root: Path) -> tuple[str, Path]:
+    """Reserve the next monotonic V0.N directory for one benchmark execution."""
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    prefix = "V0."
+    observed_versions: list[int] = []
+    for entry in output_root.iterdir():
+        if not entry.is_dir() or not entry.name.startswith(prefix):
+            continue
+        suffix = entry.name[len(prefix) :]
+        if suffix.isdigit():
+            observed_versions.append(int(suffix))
+
+    version_number = max(observed_versions, default=0) + 1
+    while True:
+        run_version = f"{prefix}{version_number}"
+        output_dir = output_root / run_version
+        try:
+            output_dir.mkdir()
+        except FileExistsError:
+            version_number += 1
+            continue
+        return run_version, output_dir
 
 
 def _select_arms(requested: list[str]) -> tuple[BaselineArm, ...]:
@@ -198,9 +438,7 @@ def _select_arms(requested: list[str]) -> tuple[BaselineArm, ...]:
         return BASELINE_V1_ARMS
     unknown = sorted(set(requested) - available.keys())
     if unknown:
-        raise BaselineConfigurationError(
-            f"unknown baseline arms: {', '.join(unknown)}"
-        )
+        raise BaselineConfigurationError(f"unknown baseline arms: {', '.join(unknown)}")
     return tuple(available[item] for item in requested)
 
 
@@ -208,14 +446,11 @@ def _validate_workspace(workspace: Path, expected_revision: str) -> None:
     actual = _git_revision(workspace)
     if actual != expected_revision:
         raise BaselineConfigurationError(
-            "baseline corpus revision mismatch: "
-            f"expected {expected_revision}, got {actual}"
+            f"baseline corpus revision mismatch: expected {expected_revision}, got {actual}"
         )
     status = _git(workspace, "status", "--porcelain")
     if status.strip():
-        raise BaselineConfigurationError(
-            "baseline corpus workspace must have a clean working tree"
-        )
+        raise BaselineConfigurationError("baseline corpus workspace must have a clean working tree")
 
 
 def _prepare_indexes(
@@ -259,54 +494,49 @@ def _prepare_indexes(
         provider=str(embedding_identity["provider"]),
         model=str(embedding_identity["model"]),
     )
+    assert dense_retrieval is not None
 
-    if ids & {"solr-lexical", "solr-hybrid"}:
-        solr_vectors = "solr-hybrid" in ids
-        settings = SolrSettings.from_mapping(
+    if ids & {"solr-lexical", "solr-dense", "solr-hybrid"}:
+        solr_vectors = bool(ids & {"solr-dense", "solr-hybrid"})
+        solr_settings = SolrSettings.from_mapping(
             {
                 **_object(backend_settings, "solr"),
                 "url": endpoints["solr"],
                 "diagnostic_candidate_window": 80,
             }
         )
-        store = SolrIndexStore(
-            UrllibSolrTransport(settings),
-            settings,
-            embedding_provider=(
-                solr_embedding_provider(dense_retrieval)
-                if solr_vectors
-                else None
-            ),
+        solr_store = SolrIndexStore(
+            UrllibSolrTransport(solr_settings),
+            solr_settings,
+            embedding_provider=(solr_embedding_provider(dense_retrieval) if solr_vectors else None),
         )
         # Solr intentionally owns schema validation, not schema creation.
-        store.validate_schema(require_vectors=solr_vectors)
-        result = store.full_rebuild(canonical)
-        backends["solr"] = result.to_mapping()
+        solr_store.validate_schema(require_vectors=solr_vectors)
+        solr_result = solr_store.full_rebuild(canonical)
+        backends["solr"] = solr_result.to_mapping()
 
-    if ids & {"opensearch-lexical", "opensearch-hybrid"}:
-        opensearch_vectors = "opensearch-hybrid" in ids
-        settings = OpenSearchSettings.from_mapping(
+    if ids & {"opensearch-lexical", "opensearch-dense", "opensearch-hybrid"}:
+        opensearch_vectors = bool(ids & {"opensearch-dense", "opensearch-hybrid"})
+        opensearch_settings = OpenSearchSettings.from_mapping(
             {
                 **_object(backend_settings, "opensearch"),
                 "url": endpoints["opensearch"],
                 "diagnostic_candidate_window": 80,
             }
         )
-        store = OpenSearchIndexStore(
-            UrllibOpenSearchTransport(settings),
-            settings,
+        opensearch_store = OpenSearchIndexStore(
+            UrllibOpenSearchTransport(opensearch_settings),
+            opensearch_settings,
             clock=_utc_now,
             embedding_provider=(
-                opensearch_embedding_provider(dense_retrieval)
-                if opensearch_vectors
-                else None
+                opensearch_embedding_provider(dense_retrieval) if opensearch_vectors else None
             ),
         )
-        result = store.full_rebuild(canonical)
-        backends["opensearch"] = result.to_mapping()
+        opensearch_result = opensearch_store.full_rebuild(canonical)
+        backends["opensearch"] = opensearch_result.to_mapping()
 
     if ids & {"qdrant-dense", "qdrant-hybrid"}:
-        settings = QdrantVectorSettings.from_mapping(
+        qdrant_settings = QdrantVectorSettings.from_mapping(
             {
                 **_object(backend_settings, "qdrant-vector"),
                 "url": endpoints["qdrant"],
@@ -317,20 +547,20 @@ def _prepare_indexes(
         )
         embedder = OllamaEmbeddingProvider(
             OllamaEmbeddingSettings(
-                url=settings.embedding_url,
-                model=settings.embedding_model,
-                timeout_seconds=settings.timeout_seconds,
-                request_batch_size=settings.batch_size,
+                url=qdrant_settings.embedding_url,
+                model=qdrant_settings.embedding_model,
+                timeout_seconds=qdrant_settings.timeout_seconds,
+                request_batch_size=qdrant_settings.batch_size,
             )
         )
-        store = QdrantVectorIndexStore(
-            UrllibQdrantTransport(settings),
-            settings,
+        qdrant_store = QdrantVectorIndexStore(
+            UrllibQdrantTransport(qdrant_settings),
+            qdrant_settings,
             embedder,
             clock=_utc_now,
         )
-        result = store.full_rebuild(canonical)
-        backends["qdrant"] = result.to_mapping()
+        qdrant_result = qdrant_store.full_rebuild(canonical)
+        backends["qdrant"] = qdrant_result.to_mapping()
 
     return payload
 
@@ -395,9 +625,7 @@ def _backend_settings(
             "embedding_model": embedding_identity["model"],
             "diagnostic_candidate_window": diagnostic_candidate_window,
         }
-    raise BaselineConfigurationError(
-        f"no benchmark settings for backend {arm.backend!r}"
-    )
+    raise BaselineConfigurationError(f"no benchmark settings for backend {arm.backend!r}")
 
 
 def _service_versions(
@@ -406,7 +634,7 @@ def _service_versions(
 ) -> dict[str, str]:
     ids = {arm.id for arm in arms}
     versions: dict[str, str] = {}
-    if ids & {"solr-lexical", "solr-hybrid"}:
+    if ids & {"solr-lexical", "solr-dense", "solr-hybrid"}:
         payload = _http_json(f"{str(endpoints['solr']).rstrip('/')}/admin/info/system?wt=json")
         lucene = payload.get("lucene")
         versions["solr"] = (
@@ -414,13 +642,11 @@ def _service_versions(
             if isinstance(lucene, Mapping)
             else "unknown"
         )
-    if ids & {"opensearch-lexical", "opensearch-hybrid"}:
+    if ids & {"opensearch-lexical", "opensearch-dense", "opensearch-hybrid"}:
         payload = _http_json(str(endpoints["opensearch"]))
         version = payload.get("version")
         versions["opensearch"] = (
-            str(version.get("number", "unknown"))
-            if isinstance(version, Mapping)
-            else "unknown"
+            str(version.get("number", "unknown")) if isinstance(version, Mapping) else "unknown"
         )
     if ids & {"qdrant-dense", "qdrant-hybrid"}:
         payload = _http_json(str(endpoints["qdrant"]))
@@ -437,9 +663,7 @@ def _http_json(url: str) -> dict[str, object]:
         with urlopen(request, timeout=10) as response:
             raw = response.read()
     except OSError as exc:
-        raise BaselineConfigurationError(
-            f"baseline service probe failed for {url}: {exc}"
-        ) from exc
+        raise BaselineConfigurationError(f"baseline service probe failed for {url}: {exc}") from exc
     try:
         value = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -481,9 +705,7 @@ def _git(workspace: Path, *args: str) -> str:
             text=True,
         )
     except (OSError, subprocess.CalledProcessError) as exc:
-        raise BaselineConfigurationError(
-            f"git {' '.join(args)} failed in {workspace}"
-        ) from exc
+        raise BaselineConfigurationError(f"git {' '.join(args)} failed in {workspace}") from exc
     return completed.stdout
 
 

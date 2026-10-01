@@ -43,6 +43,11 @@
       "mode": "lexical"
     },
     {
+      "id": "solr-dense",
+      "backend": "solr",
+      "mode": "dense"
+    },
+    {
       "id": "solr-hybrid",
       "backend": "solr",
       "mode": "hybrid"
@@ -51,6 +56,11 @@
       "id": "opensearch-lexical",
       "backend": "opensearch",
       "mode": "lexical"
+    },
+    {
+      "id": "opensearch-dense",
+      "backend": "opensearch",
+      "mode": "dense"
     },
     {
       "id": "opensearch-hybrid",
@@ -72,7 +82,10 @@
     "require_exact_corpus_revision": true,
     "require_all_arms": true,
     "require_environment_identity": true,
-    "artifacts_directory": "artifacts"
+    "artifacts_directory": "artifacts",
+    "require_ground_truth_fingerprint": true,
+    "require_metrics_fingerprint": true,
+    "require_result_spans": true
   },
   "backend_settings": {
     "local-semantic": {
@@ -179,5 +192,7 @@
       "collection": "fetchcore-vector",
       "batch_size": 32
     }
-  }
+  },
+  "ground_truth_schema_version": 2,
+  "metrics_schema_version": 1
 }
