@@ -59,8 +59,10 @@ is dirty, or any Ground Truth region points outside the actual file length.
 | --- | --- | --- |
 | local-lexical | local-semantic | lexical |
 | solr-lexical | solr | lexical |
+| solr-dense | solr | dense |
 | solr-hybrid | solr | hybrid |
 | opensearch-lexical | opensearch | lexical |
+| opensearch-dense | opensearch | dense |
 | opensearch-hybrid | opensearch | hybrid |
 | qdrant-dense | qdrant-vector | dense |
 | qdrant-hybrid | qdrant-vector | hybrid |
@@ -248,7 +250,7 @@ Baseline v1 is promoted only when all of the following are true:
 1. corpus revision is immutable and the checkout is clean;
 2. all 42 evidence requirements have reviewed valid coordinates;
 3. Ground Truth schema/fingerprint and metrics schema/fingerprint are frozen;
-4. all seven requested arms run their declared capability;
+4. all nine requested arms run their declared capability;
 5. every returned top-K result has valid source line coordinates;
 6. all arms meet the repetition protocol;
 7. environment/config/projection fingerprints are present;
