@@ -141,6 +141,7 @@ def main() -> int:
         ).run(
             suite.cases,
             corpus=suite.corpus,
+            ground_truth_fingerprint=suite.fingerprint,
             config_identity={
                 **config_identity,
                 "backend_settings": settings,
