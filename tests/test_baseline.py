@@ -6,16 +6,23 @@ from pathlib import Path
 import pytest
 
 from fetchcore.baseline import (
+    BASELINE_ARTIFACT_SCHEMA_VERSION,
+    BASELINE_GROUND_TRUTH_SCHEMA_VERSION,
+    BASELINE_METRICS_SCHEMA_VERSION,
     BASELINE_V1_ARMS,
+    BASELINE_V1_METRICS_SPEC,
     BaselineArm,
     BaselineConfigurationError,
+    BaselineEvidenceAlternative,
+    BaselineEvidenceRegion,
+    BaselineEvidenceRequirement,
     BaselineGroundTruth,
     BaselineQueryCase,
     BaselineRunner,
-    capture_baseline_environment,
-    load_baseline_suite,
     build_baseline_artifact,
+    capture_baseline_environment,
     evaluate_retrieval,
+    load_baseline_suite,
     mapping_fingerprint,
     percentile,
     validate_baseline_arm,
@@ -30,7 +37,13 @@ from fetchcore.search import (
 from fetchcore.telemetry import RetrievalTelemetry
 
 
-def _result(identifier: str, *, source_ref: str | None = None) -> SearchResult:
+def _result(
+    identifier: str,
+    *,
+    source_ref: str | None = None,
+    line_start: int | None = 1,
+    line_end: int | None = 10,
+) -> SearchResult:
     return SearchResult(
         id=identifier,
         source=f"{identifier}.py",
@@ -38,6 +51,8 @@ def _result(identifier: str, *, source_ref: str | None = None) -> SearchResult:
         knowledge_type="code",
         content=f"class {identifier}: pass",
         score=1.0,
+        line_start=line_start,
+        line_end=line_end,
     )
 
 
@@ -66,71 +81,197 @@ def _response(
     )
 
 
-def test_evaluate_retrieval_computes_quality_and_efficiency_metrics() -> None:
+def _requirement(
+    requirement_id: str,
+    source_ref: str,
+    line_start: int,
+    line_end: int,
+) -> BaselineEvidenceRequirement:
+    return BaselineEvidenceRequirement(
+        id=requirement_id,
+        alternatives=(
+            BaselineEvidenceAlternative(
+                regions=(
+                    BaselineEvidenceRegion(
+                        source_ref=source_ref,
+                        line_start=line_start,
+                        line_end=line_end,
+                    ),
+                )
+            ),
+        ),
+    )
+
+
+def test_evaluate_retrieval_measures_evidence_not_only_source_identity() -> None:
     response = _response(
-        (_result("a"), _result("b"), _result("c")),
+        (
+            _result(
+                "a",
+                source_ref="repository://repo/a.py",
+                line_start=10,
+                line_end=19,
+            ),
+            _result(
+                "b",
+                source_ref="repository://repo/b.py",
+                line_start=1,
+                line_end=5,
+            ),
+            _result(
+                "c",
+                source_ref="repository://repo/c.py",
+                line_start=30,
+                line_end=39,
+            ),
+        ),
         candidates_examined=8,
     )
-    truth = BaselineGroundTruth(query_id="q1", relevant=("a", "c"))
+    truth = BaselineGroundTruth(
+        query_id="q1",
+        requirements=(
+            _requirement("a-evidence", "repository://repo/a.py", 12, 15),
+            _requirement("c-evidence", "repository://repo/c.py", 32, 35),
+        ),
+    )
 
     observed = evaluate_retrieval(response, truth, iteration=1, k=3)
 
-    assert observed.recall_at_k == 1.0
-    assert observed.ground_truth_recovered == 2
-    assert observed.reciprocal_rank == 1.0
-    assert observed.ndcg_at_k == pytest.approx(0.919721, abs=1e-6)
-    assert observed.useful_evidence_density == pytest.approx(0.666667, abs=1e-6)
+    assert observed.source_recall_at_k == 1.0
+    assert observed.evidence_recall_at_k == 1.0
+    assert observed.evidence_ground_truth_recovered == 2
+    assert observed.evidence_ground_truth_total == 2
+    assert observed.span_coverage_at_k == 1.0
+    assert observed.evidence_reciprocal_rank == 1.0
+    assert observed.evidence_ndcg_at_k == pytest.approx(0.919721, abs=1e-6)
+    assert observed.useful_context_line_ratio == pytest.approx(0.32, abs=1e-6)
+    assert observed.returned_line_count == 25
     assert observed.candidates_examined == 8
     assert observed.candidates_returned == 3
+    assert observed.result_spans[0].source_ref == "repository://repo/a.py"
+    assert observed.result_spans[0].line_start == 10
+    assert observed.result_spans[0].line_end == 19
     assert observed.telemetry["fingerprints"] == {
         "projection": "sha256:projection-v3"
     }
 
 
-def test_evaluate_retrieval_deduplicates_relevant_identity_gain() -> None:
-    shared_ref = "repository://repo/src/shared.py"
+def test_source_recall_does_not_claim_evidence_when_wrong_span_is_returned() -> None:
+    source_ref = "repository://repo/shared.py"
+    response = _response(
+        (_result("wrong-region", source_ref=source_ref, line_start=1, line_end=10),)
+    )
+    truth = BaselineGroundTruth(
+        query_id="q1",
+        requirements=(_requirement("needed", source_ref, 50, 60),),
+    )
+
+    observed = evaluate_retrieval(response, truth, iteration=1, k=1)
+
+    assert observed.source_recall_at_k == 1.0
+    assert observed.evidence_recall_at_k == 0.0
+    assert observed.span_coverage_at_k == 0.0
+    assert observed.evidence_reciprocal_rank == 0.0
+    assert observed.evidence_ndcg_at_k == 0.0
+    assert observed.useful_context_line_ratio == 0.0
+
+
+def test_evidence_can_be_completed_by_multiple_chunks() -> None:
+    source_ref = "repository://repo/shared.py"
     response = _response(
         (
-            _result("chunk-a", source_ref=shared_ref),
-            _result("chunk-b", source_ref=shared_ref),
-            _result("other"),
+            _result("first-half", source_ref=source_ref, line_start=10, line_end=14),
+            _result("second-half", source_ref=source_ref, line_start=15, line_end=19),
         )
     )
     truth = BaselineGroundTruth(
         query_id="q1",
-        relevant=(shared_ref,),
-        identity_field="source_ref",
+        requirements=(_requirement("needed", source_ref, 10, 19),),
     )
 
-    observed = evaluate_retrieval(response, truth, iteration=1, k=3)
+    observed = evaluate_retrieval(response, truth, iteration=1, k=2)
 
-    assert observed.recall_at_k == 1.0
-    assert observed.ground_truth_recovered == 1
-    assert observed.reciprocal_rank == 1.0
-    assert observed.ndcg_at_k == 1.0
-    assert observed.useful_evidence_density == pytest.approx(0.333333, abs=1e-6)
+    assert observed.evidence_recall_at_k == 1.0
+    assert observed.span_coverage_at_k == 1.0
+    assert observed.evidence_reciprocal_rank == 1.0
+    assert observed.evidence_ndcg_at_k == 1.0
+    assert observed.useful_context_line_ratio == 1.0
 
 
-def test_baseline_artifact_aggregates_repeated_latency_and_fingerprints() -> None:
-    truth = BaselineGroundTruth(query_id="q1", relevant=("a",))
+def test_duplicate_returned_spans_consume_context_without_duplicate_gain() -> None:
+    source_ref = "repository://repo/shared.py"
+    response = _response(
+        (
+            _result("chunk-a", source_ref=source_ref, line_start=10, line_end=19),
+            _result("chunk-b", source_ref=source_ref, line_start=10, line_end=19),
+        )
+    )
+    truth = BaselineGroundTruth(
+        query_id="q1",
+        requirements=(_requirement("needed", source_ref, 12, 15),),
+    )
+
+    observed = evaluate_retrieval(response, truth, iteration=1, k=2)
+
+    assert observed.evidence_recall_at_k == 1.0
+    assert observed.span_coverage_at_k == 1.0
+    assert observed.evidence_ndcg_at_k == 1.0
+    assert observed.returned_line_count == 20
+    assert observed.useful_context_line_ratio == pytest.approx(0.2, abs=1e-6)
+
+
+def test_evaluate_retrieval_fails_closed_when_result_spans_are_missing() -> None:
+    response = _response(
+        (_result("a", line_start=None, line_end=None),)
+    )
+    truth = BaselineGroundTruth(
+        query_id="q1",
+        requirements=(
+            _requirement("needed", "repository://repo/a.py", 1, 2),
+        ),
+    )
+
+    with pytest.raises(BaselineConfigurationError, match="line_start"):
+        evaluate_retrieval(response, truth, iteration=1, k=1)
+
+
+def test_baseline_artifact_aggregates_evidence_metrics_and_fingerprints() -> None:
+    truth = BaselineGroundTruth(
+        query_id="q1",
+        requirements=(
+            _requirement("needed", "repository://repo/a.py", 1, 2),
+        ),
+    )
     observations = tuple(
         evaluate_retrieval(
-            _response((_result("a"),), duration_ms=duration),
+            _response(
+                (_result("a", line_start=1, line_end=2),),
+                duration_ms=duration,
+            ),
             truth,
             iteration=iteration,
             k=1,
         )
         for iteration, duration in enumerate((10, 20, 30, 40), start=1)
     )
+    gt_fingerprint = mapping_fingerprint({"suite": "fixture-v2"})
 
     artifact = build_baseline_artifact(
         arm=BaselineArm("fixture-lexical", "fixture", "lexical"),
         corpus={"repository": "repo", "revision": "abc123"},
         config={"max_results": 10},
         observations=observations,
+        ground_truth_fingerprint=gt_fingerprint,
     )
 
+    assert artifact.schema_version == BASELINE_ARTIFACT_SCHEMA_VERSION
+    assert artifact.ground_truth_schema_version == BASELINE_GROUND_TRUTH_SCHEMA_VERSION
+    assert artifact.ground_truth_fingerprint == gt_fingerprint
+    assert artifact.metrics_schema_version == BASELINE_METRICS_SCHEMA_VERSION
+    assert artifact.metrics_fingerprint == mapping_fingerprint(BASELINE_V1_METRICS_SPEC)
     assert artifact.aggregate["duration_ms"] == {"p50": 20, "p95": 40, "p99": 40}
+    assert artifact.aggregate["evidence_recall_at_k_mean"] == 1.0
+    assert artifact.aggregate["span_coverage_at_k_mean"] == 1.0
     assert artifact.aggregate["fingerprints"] == {
         "projection": ["sha256:projection-v3"]
     }
@@ -173,7 +314,17 @@ class _FixtureBackend:
     ) -> KnowledgeSearchResponse:
         del intent, scope, requirements
         self.calls += 1
-        return _response((_result("target"),), duration_ms=5)
+        return _response(
+            (
+                _result(
+                    "target",
+                    source_ref="repository://repo/target.py",
+                    line_start=10,
+                    line_end=20,
+                ),
+            ),
+            duration_ms=5,
+        )
 
 
 def test_baseline_runner_excludes_warmups_and_records_measured_runs(
@@ -200,10 +351,18 @@ def test_baseline_runner_excludes_warmups_and_records_measured_runs(
             BaselineQueryCase(
                 query_id="q1",
                 intent=SearchIntent(exact_terms=("target",)),
-                relevant=("target",),
+                requirements=(
+                    _requirement(
+                        "target-region",
+                        "repository://repo/target.py",
+                        12,
+                        15,
+                    ),
+                ),
             ),
         ),
         corpus={"repository": "repo", "revision": "abc123"},
+        ground_truth_fingerprint=mapping_fingerprint({"suite": "fixture-v2"}),
         config_identity={"projection": "3"},
     )
 
@@ -214,15 +373,14 @@ def test_baseline_runner_excludes_warmups_and_records_measured_runs(
     assert artifact.config["warmups"] == 1
 
 
-
-def test_baseline_suite_loads_path_ground_truth_as_canonical_source_refs(
+def test_baseline_suite_loads_evidence_regions_as_canonical_source_refs(
     tmp_path: Path,
 ) -> None:
     suite_path = tmp_path / "suite.json"
     suite_path.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "corpus": {
                     "repository": "owner/repo",
                     "revision": "abc123",
@@ -235,7 +393,22 @@ def test_baseline_suite_loads_path_ground_truth_as_canonical_source_refs(
                             "semantic_terms": ["needle implementation"],
                             "hints": ["service"],
                         },
-                        "relevant_paths": ["src/needle.py"],
+                        "required_evidence": [
+                            {
+                                "id": "needle-region",
+                                "alternatives": [
+                                    {
+                                        "regions": [
+                                            {
+                                                "path": "src/needle.py",
+                                                "line_start": 10,
+                                                "line_end": 20,
+                                            }
+                                        ]
+                                    }
+                                ],
+                            }
+                        ],
                     }
                 ],
             }
@@ -248,17 +421,18 @@ def test_baseline_suite_loads_path_ground_truth_as_canonical_source_refs(
     assert suite.corpus == {"repository": "owner/repo", "revision": "abc123"}
     assert suite.cases[0].query_id == "q1"
     assert suite.cases[0].intent.exact_terms == ("NeedleService",)
-    assert suite.cases[0].relevant == (
-        "repository://owner/repo/src/needle.py",
-    )
+    region = suite.cases[0].requirements[0].alternatives[0].regions[0]
+    assert region.source_ref == "repository://owner/repo/src/needle.py"
+    assert (region.line_start, region.line_end) == (10, 20)
+    assert suite.fingerprint.startswith("sha256:")
 
 
-def test_baseline_suite_rejects_unsupported_schema(tmp_path: Path) -> None:
+def test_baseline_suite_rejects_source_only_v1_schema(tmp_path: Path) -> None:
     suite_path = tmp_path / "suite.json"
     suite_path.write_text(
         json.dumps(
             {
-                "schema_version": 2,
+                "schema_version": 1,
                 "corpus": {"repository": "owner/repo", "revision": "abc123"},
                 "queries": [],
             }
@@ -280,9 +454,15 @@ def test_baseline_environment_is_recorded_in_artifact() -> None:
             "dimensions": 768,
         },
     )
+    truth = BaselineGroundTruth(
+        query_id="q1",
+        requirements=(
+            _requirement("needed", "repository://repo/a.py", 1, 2),
+        ),
+    )
     observation = evaluate_retrieval(
-        _response((_result("a"),), duration_ms=10),
-        BaselineGroundTruth(query_id="q1", relevant=("a",)),
+        _response((_result("a", line_start=1, line_end=2),), duration_ms=10),
+        truth,
         iteration=1,
         k=1,
     )
@@ -292,6 +472,7 @@ def test_baseline_environment_is_recorded_in_artifact() -> None:
         corpus={"repository": "repo", "revision": "abc123"},
         config={"max_results": 10},
         observations=(observation,),
+        ground_truth_fingerprint=mapping_fingerprint({"suite": "fixture-v2"}),
         environment=environment.to_mapping(),
     )
 
@@ -299,12 +480,14 @@ def test_baseline_environment_is_recorded_in_artifact() -> None:
     assert artifact.environment["services"] == {"solr": "9.x"}
 
 
-def test_repository_baseline_v1_suite_is_frozen() -> None:
+def test_repository_baseline_v1_suite_is_evidence_region_frozen() -> None:
     root = Path(__file__).resolve().parents[1]
     suite = load_baseline_suite(root / "benchmarks/baseline-v1/ground-truth.json")
 
-    assert suite.schema_version == 1
+    assert suite.schema_version == 2
     assert suite.corpus["repository"] == "oalangomes/NeuroTrack_MS"
     assert suite.corpus["revision"] == "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
     assert len(suite.cases) == 20
     assert len({case.query_id for case in suite.cases}) == 20
+    assert sum(len(case.requirements) for case in suite.cases) == 41
+    assert suite.fingerprint.startswith("sha256:")
