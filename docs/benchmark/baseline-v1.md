@@ -70,6 +70,13 @@ is dirty, or any Ground Truth region points outside the actual file length.
 Unsupported capabilities, incompatible schemas or environment failures are
 explicit errors. No arm silently substitutes another mode.
 
+The executable runner reads this matrix from `manifest.json`. Backend-specific
+settings, service probes and index preparation live behind a small benchmark
+adapter registry, so future suites can add a backend without adding conditional
+branches to arm selection, measurement or reporting. The frozen v1 matrix is
+not expanded in place; a new arm requires a new protocol version or an
+explicitly experimental suite.
+
 ## Run protocol
 
 A promoted run uses:

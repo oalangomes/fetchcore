@@ -15,7 +15,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from itertools import pairwise
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 from urllib.parse import quote, unquote
 
 from fetchcore.retrieval import RetrievalBackendCapabilities
@@ -68,6 +68,30 @@ class BaselineArm:
     id: str
     backend: str
     mode: BaselineRetrievalMode
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, object]) -> BaselineArm:
+        """Parse one explicitly declared benchmark arm."""
+
+        raw_id = value.get("id")
+        raw_backend = value.get("backend")
+        raw_mode = value.get("mode")
+        if not isinstance(raw_id, str) or not isinstance(raw_backend, str):
+            raise BaselineConfigurationError(
+                "baseline arm requires non-empty id and backend"
+            )
+        arm_id = raw_id.strip()
+        backend = raw_backend.strip()
+        if not arm_id or not backend:
+            raise BaselineConfigurationError(
+                "baseline arm requires non-empty id and backend"
+            )
+        mode = raw_mode.strip() if isinstance(raw_mode, str) else ""
+        if mode not in {"lexical", "dense", "hybrid"}:
+            raise BaselineConfigurationError(
+                f"baseline arm {arm_id!r} has unsupported mode {mode!r}"
+            )
+        return cls(arm_id, backend, cast(BaselineRetrievalMode, mode))
 
     def to_mapping(self) -> dict[str, str]:
         return asdict(self)

@@ -11,12 +11,13 @@ import argparse
 import json
 import os
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 
 from fetchcore.application import BackendRegistry
-from fetchcore.baseline import BASELINE_V1_ARMS, load_baseline_suite
+from fetchcore.baseline import BaselineArm, load_baseline_suite
 from fetchcore.retrieval import RetrievalConfig
-from fetchcore.search import SearchScope
+from fetchcore.retrieval.contracts import SearchScope
 
 
 ROOT = Path(__file__).resolve().parent
@@ -44,7 +45,15 @@ def main() -> int:
 
     manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
     os.environ["OLLAMA_URL"] = manifest["environment"]["service_endpoints"]["ollama"]
-    arms = {arm.id: arm for arm in BASELINE_V1_ARMS}
+    raw_arms = manifest.get("arms")
+    if not isinstance(raw_arms, list):
+        raise ValueError("baseline manifest requires an arms list")
+    parsed_arms = []
+    for item in raw_arms:
+        if not isinstance(item, Mapping):
+            raise ValueError("baseline manifest arms must be JSON objects")
+        parsed_arms.append(BaselineArm.from_mapping(item))
+    arms = {arm.id: arm for arm in parsed_arms}
     selected = args.arm or list(arms)
     unknown = set(selected) - arms.keys()
     if unknown:
@@ -53,7 +62,9 @@ def main() -> int:
     all_equal = True
     for arm_id in selected:
         arm = arms[arm_id]
-        artifact = json.loads((args.reference / f"{arm_id}.json").read_text(encoding="utf-8"))
+        artifact = json.loads(
+            (args.reference / f"{arm_id}.json").read_text(encoding="utf-8")
+        )
         scope_data = artifact["config"]["scope"]
         retrieval_data = scope_data.get("retrieval")
         scope = SearchScope(
