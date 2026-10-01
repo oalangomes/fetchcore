@@ -262,8 +262,8 @@ def _prepare_indexes(
         model=str(embedding_identity["model"]),
     )
 
-    if ids & {"solr-lexical", "solr-hybrid"}:
-        solr_vectors = "solr-hybrid" in ids
+    if ids & {"solr-lexical", "solr-dense", "solr-hybrid"}:
+        solr_vectors = bool(ids & {"solr-dense", "solr-hybrid"})
         settings = SolrSettings.from_mapping(
             {
                 **_object(backend_settings, "solr"),
@@ -285,8 +285,8 @@ def _prepare_indexes(
         result = store.full_rebuild(canonical)
         backends["solr"] = result.to_mapping()
 
-    if ids & {"opensearch-lexical", "opensearch-hybrid"}:
-        opensearch_vectors = "opensearch-hybrid" in ids
+    if ids & {"opensearch-lexical", "opensearch-dense", "opensearch-hybrid"}:
+        opensearch_vectors = bool(ids & {"opensearch-dense", "opensearch-hybrid"})
         settings = OpenSearchSettings.from_mapping(
             {
                 **_object(backend_settings, "opensearch"),
@@ -408,7 +408,7 @@ def _service_versions(
 ) -> dict[str, str]:
     ids = {arm.id for arm in arms}
     versions: dict[str, str] = {}
-    if ids & {"solr-lexical", "solr-hybrid"}:
+    if ids & {"solr-lexical", "solr-dense", "solr-hybrid"}:
         payload = _http_json(f"{str(endpoints['solr']).rstrip('/')}/admin/info/system?wt=json")
         lucene = payload.get("lucene")
         versions["solr"] = (
@@ -416,7 +416,7 @@ def _service_versions(
             if isinstance(lucene, Mapping)
             else "unknown"
         )
-    if ids & {"opensearch-lexical", "opensearch-hybrid"}:
+    if ids & {"opensearch-lexical", "opensearch-dense", "opensearch-hybrid"}:
         payload = _http_json(str(endpoints["opensearch"]))
         version = payload.get("version")
         versions["opensearch"] = (
