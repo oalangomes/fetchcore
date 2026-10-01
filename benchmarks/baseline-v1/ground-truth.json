@@ -78,6 +78,20 @@
       },
       "required_evidence": [
         {
+          "id": "medication-service-mocks",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/modules/medication/tests/controllers/medicationController.test.js",
+                  "line_start": 8,
+                  "line_end": 15
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "create-controller-test",
           "alternatives": [
             {
