@@ -36,9 +36,14 @@ BASELINE_GROUND_TRUTH_SCHEMA_VERSION = 2
 BASELINE_METRICS_SCHEMA_VERSION = 1
 BASELINE_V1_METRICS_SPEC: dict[str, object] = {
     "schema_version": BASELINE_METRICS_SCHEMA_VERSION,
+    "line_coordinates": "1-based inclusive",
+    "alternative_coverage": (
+        "unique reviewed lines covered / reviewed lines in the alternative"
+    ),
+    "requirement_coverage": "maximum alternative coverage",
     "source_recall_at_k": "requirements with any source-complete alternative / requirements",
-    "evidence_recall_at_k": "requirements with any fully covered alternative / requirements",
-    "span_coverage_at_k": "mean best-alternative line coverage across requirements",
+    "evidence_recall_at_k": "requirements with requirement_coverage == 1 / requirements",
+    "span_coverage_at_k": "mean requirement_coverage across requirements",
     "evidence_mrr": "reciprocal rank of first result adding new Ground Truth line coverage",
     "evidence_ndcg_at_k": (
         "DCG of incremental mean span-coverage gains by result rank, normalized "
@@ -119,6 +124,18 @@ class BaselineEvidenceAlternative:
             raise BaselineConfigurationError(
                 "baseline evidence alternative contains duplicate regions"
             )
+        by_source: dict[str, list[tuple[int, int]]] = {}
+        for region in self.regions:
+            by_source.setdefault(region.source_ref, []).append(
+                (region.line_start, region.line_end)
+            )
+        for ranges in by_source.values():
+            ordered = sorted(ranges)
+            for previous, current in zip(ordered, ordered[1:], strict=False):
+                if current[0] <= previous[1]:
+                    raise BaselineConfigurationError(
+                        "baseline evidence alternative contains overlapping regions"
+                    )
 
     def to_mapping(self) -> dict[str, object]:
         return {"regions": [region.to_mapping() for region in self.regions]}
