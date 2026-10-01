@@ -26,7 +26,7 @@ The next complete run must use:
 - artifact schema v2;
 - metrics schema v1;
 - the exact frozen NeuroTrack_MS revision;
-- all seven declared arms;
+- all nine declared arms;
 - evidence-aware metrics from `fetchcore.baseline`.
 
 After review, the final evidence-aware artifacts replace the source-level
