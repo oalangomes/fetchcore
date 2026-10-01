@@ -489,5 +489,99 @@ def test_repository_baseline_v1_suite_is_evidence_region_frozen() -> None:
     assert suite.corpus["revision"] == "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
     assert len(suite.cases) == 20
     assert len({case.query_id for case in suite.cases}) == 20
-    assert sum(len(case.requirements) for case in suite.cases) == 41
+    assert sum(len(case.requirements) for case in suite.cases) == 42
     assert suite.fingerprint.startswith("sha256:")
+
+
+
+def test_baseline_suite_validates_evidence_regions_against_workspace(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "src" / "needle.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("one\ntwo\nthree\n", encoding="utf-8")
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "corpus": {
+                    "repository": "owner/repo",
+                    "revision": "abc123",
+                },
+                "queries": [
+                    {
+                        "id": "q1",
+                        "intent": {"semantic_terms": ["needle"]},
+                        "required_evidence": [
+                            {
+                                "id": "needle-region",
+                                "alternatives": [
+                                    {
+                                        "regions": [
+                                            {
+                                                "path": "src/needle.py",
+                                                "line_start": 2,
+                                                "line_end": 3,
+                                            }
+                                        ]
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    suite = load_baseline_suite(suite_path)
+    suite.validate_workspace_regions(tmp_path)
+
+
+def test_baseline_suite_rejects_evidence_region_beyond_file(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "src" / "needle.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("one\ntwo\nthree\n", encoding="utf-8")
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "corpus": {
+                    "repository": "owner/repo",
+                    "revision": "abc123",
+                },
+                "queries": [
+                    {
+                        "id": "q1",
+                        "intent": {"semantic_terms": ["needle"]},
+                        "required_evidence": [
+                            {
+                                "id": "needle-region",
+                                "alternatives": [
+                                    {
+                                        "regions": [
+                                            {
+                                                "path": "src/needle.py",
+                                                "line_start": 2,
+                                                "line_end": 4,
+                                            }
+                                        ]
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    suite = load_baseline_suite(suite_path)
+    with pytest.raises(BaselineConfigurationError, match="exceeds file length"):
+        suite.validate_workspace_regions(tmp_path)
