@@ -15,7 +15,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from fetchcore.retrieval import RetrievalBackendCapabilities
 from fetchcore.signals import QuerySignal
@@ -402,6 +402,45 @@ class BaselineSuite:
             cases=tuple(cases),
             fingerprint=mapping_fingerprint(canonical),
         )
+
+    def validate_workspace_regions(self, workspace: Path) -> None:
+        """Fail closed when Ground Truth coordinates do not match the frozen checkout."""
+
+        repository = str(self.corpus["repository"])
+        source_prefix = f"repository://{quote(repository, safe='/.:@')}/"
+        line_counts: dict[str, int] = {}
+
+        for case in self.cases:
+            for requirement in case.requirements:
+                for alternative in requirement.alternatives:
+                    for region in alternative.regions:
+                        if not region.source_ref.startswith(source_prefix):
+                            raise BaselineConfigurationError(
+                                "Ground Truth source_ref escapes the frozen repository: "
+                                f"{region.source_ref!r}"
+                            )
+                        relative = unquote(region.source_ref[len(source_prefix):])
+                        normalized = relative.replace("\\", "/").strip("/")
+                        if not normalized or ".." in normalized.split("/"):
+                            raise BaselineConfigurationError(
+                                f"Ground Truth path is invalid: {relative!r}"
+                            )
+                        if normalized not in line_counts:
+                            target = workspace / normalized
+                            try:
+                                line_counts[normalized] = len(
+                                    target.read_text(encoding="utf-8").splitlines()
+                                )
+                            except (OSError, UnicodeDecodeError) as exc:
+                                raise BaselineConfigurationError(
+                                    f"cannot validate Ground Truth path {normalized!r}"
+                                ) from exc
+                        if region.line_end > line_counts[normalized]:
+                            raise BaselineConfigurationError(
+                                f"Ground Truth region {case.query_id}/{requirement.id} "
+                                f"{normalized}:{region.line_start}-{region.line_end} "
+                                f"exceeds file length {line_counts[normalized]}"
+                            )
 
 
 def load_baseline_suite(path: Path) -> BaselineSuite:
