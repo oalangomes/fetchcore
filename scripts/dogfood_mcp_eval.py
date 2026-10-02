@@ -127,6 +127,32 @@ async def evaluate(args: argparse.Namespace, scenarios: tuple[Scenario, ...]) ->
                 + ", ".join(missing_tools)
             )
 
+        smoke_path = scenarios[0].expected_paths[0]
+        smoke_source_ref = (
+            f"repository://{args.repository}/"
+            + smoke_path.strip().lstrip("./")
+        )
+        smoke_result = await session.call_tool(
+            "get_source",
+            {
+                "source_ref": smoke_source_ref,
+                "repository": args.repository,
+            },
+        )
+        smoke_payload = tool_payload(smoke_result)
+        if not str(smoke_payload.get("content", "")).strip():
+            raise RuntimeError(
+                "FetchCore MCP get_source smoke returned empty content for "
+                f"{smoke_source_ref}"
+            )
+        protocol_smoke = {
+            "initialized": True,
+            "required_tools": ["get_source", "search"],
+            "advertised_tools": sorted(tool_names),
+            "get_source_verified": True,
+            "source_ref": smoke_source_ref,
+        }
+
         for scenario in scenarios:
             search_result = await session.call_tool(
                 "search",
@@ -208,6 +234,7 @@ async def evaluate(args: argparse.Namespace, scenarios: tuple[Scenario, ...]) ->
         "revision": args.revision,
         "backend": "solr",
         "collection": args.collection,
+        "protocol_smoke": protocol_smoke,
         "summary": {
             "total": len(reports),
             "passed": passed_count,
@@ -288,6 +315,7 @@ def markdown_report(payload: dict[str, object]) -> str:
         f"- Revision: `{payload.get('revision') or 'unknown'}`",
         f"- Backend: `{payload['backend']}`",
         f"- Collection: `{payload['collection']}`",
+        "- MCP protocol smoke: **PASS**",
         f"- Scenarios: {summary['passed']}/{summary['total']} passed",
         f"- MRR: {float(summary['mrr']):.4f}",
         "",
