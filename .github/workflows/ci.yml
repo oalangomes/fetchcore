@@ -129,7 +129,9 @@ jobs:
           PY
       - name: Exercise operational indexing CLI
         run: |
+          set -o pipefail
           mkdir -p .fetchcore-dogfood-ci
+          fetchcore index bootstrap | tee .fetchcore-dogfood-ci/bootstrap.json
           fetchcore index status | tee .fetchcore-dogfood-ci/status-before.json
           fetchcore index dry-run | tee .fetchcore-dogfood-ci/dry-run.json
           fetchcore index sync | tee .fetchcore-dogfood-ci/sync.json
