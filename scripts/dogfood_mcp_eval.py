@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """End-to-end FetchCore dogfood evaluation through the public MCP stdio boundary."""
 
 from __future__ import annotations
@@ -6,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -110,82 +108,84 @@ async def evaluate(args: argparse.Namespace, scenarios: tuple[Scenario, ...]) ->
     )
     reports: list[dict[str, object]] = []
 
-    async with stdio_client(parameters) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            tools = await session.list_tools()
-            tool_names = {item.name for item in tools.tools}
-            required_tools = {"search", "get_source"}
-            missing_tools = sorted(required_tools - tool_names)
-            if missing_tools:
-                raise RuntimeError(
-                    "FetchCore MCP server is missing required tools: " + ", ".join(missing_tools)
-                )
+    async with (
+        stdio_client(parameters) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        tools = await session.list_tools()
+        tool_names = {item.name for item in tools.tools}
+        required_tools = {"search", "get_source"}
+        missing_tools = sorted(required_tools - tool_names)
+        if missing_tools:
+            raise RuntimeError(
+                "FetchCore MCP server is missing required tools: " + ", ".join(missing_tools)
+            )
 
-            for scenario in scenarios:
-                search_result = await session.call_tool(
-                    "search",
-                    {
-                        "query": scenario.query,
-                        "repository": args.repository,
-                        "limit": scenario.limit,
-                    },
-                )
-                payload = tool_payload(search_result)
-                raw_results = payload.get("results", [])
-                if not isinstance(raw_results, list):
-                    raise ValueError(f"scenario {scenario.id!r} returned invalid results")
-                results = [item for item in raw_results if isinstance(item, dict)]
+    for scenario in scenarios:
+            search_result = await session.call_tool(
+                "search",
+                {
+                    "query": scenario.query,
+                    "repository": args.repository,
+                    "limit": scenario.limit,
+                },
+            )
+            payload = tool_payload(search_result)
+            raw_results = payload.get("results", [])
+            if not isinstance(raw_results, list):
+                raise ValueError(f"scenario {scenario.id!r} returned invalid results")
+            results = [item for item in raw_results if isinstance(item, dict)]
 
-                matched_paths = [
-                    path
-                    for path in scenario.expected_paths
-                    if any(result_matches_path(item, path) for item in results)
-                ]
-                first_rank = first_expected_rank(results, scenario.expected_paths)
-                reciprocal_rank = 0.0 if first_rank is None else 1.0 / first_rank
+            matched_paths = [
+                path
+                for path in scenario.expected_paths
+                if any(result_matches_path(item, path) for item in results)
+            ]
+            first_rank = first_expected_rank(results, scenario.expected_paths)
+            reciprocal_rank = 0.0 if first_rank is None else 1.0 / first_rank
 
-                source_verified = not scenario.verify_source
-                source_ref: str | None = None
-                if scenario.verify_source and first_rank is not None:
-                    matched = results[first_rank - 1]
-                    raw_ref = matched.get("source_ref")
-                    if isinstance(raw_ref, str) and raw_ref.strip():
-                        source_ref = raw_ref
-                        source_result = await session.call_tool(
-                            "get_source",
-                            {
-                                "source_ref": source_ref,
-                                "repository": args.repository,
-                            },
-                        )
-                        source_payload = tool_payload(source_result)
-                        source_verified = bool(str(source_payload.get("content", "")).strip())
+            source_verified = not scenario.verify_source
+            source_ref: str | None = None
+            if scenario.verify_source and first_rank is not None:
+                matched = results[first_rank - 1]
+                raw_ref = matched.get("source_ref")
+                if isinstance(raw_ref, str) and raw_ref.strip():
+                    source_ref = raw_ref
+                    source_result = await session.call_tool(
+                        "get_source",
+                        {
+                            "source_ref": source_ref,
+                            "repository": args.repository,
+                        },
+                    )
+                    source_payload = tool_payload(source_result)
+                    source_verified = bool(str(source_payload.get("content", "")).strip())
 
-                passed = (
-                    len(matched_paths) >= scenario.min_expected_path_hits
-                    and source_verified
-                )
-                reports.append(
-                    {
-                        "id": scenario.id,
-                        "query": scenario.query,
-                        "passed": passed,
-                        "expected_paths": list(scenario.expected_paths),
-                        "matched_paths": matched_paths,
-                        "min_expected_path_hits": scenario.min_expected_path_hits,
-                        "first_expected_rank": first_rank,
-                        "reciprocal_rank": reciprocal_rank,
-                        "source_verified": source_verified,
-                        "source_ref_verified": source_ref,
-                        "backend": payload.get("backend"),
-                        "search_duration_ms": payload.get("duration_ms"),
-                        "top_source_refs": [
-                            item.get("source_ref") or item.get("source")
-                            for item in results[:5]
-                        ],
-                    }
-                )
+            passed = (
+                len(matched_paths) >= scenario.min_expected_path_hits
+                and source_verified
+            )
+            reports.append(
+                {
+                    "id": scenario.id,
+                    "query": scenario.query,
+                    "passed": passed,
+                    "expected_paths": list(scenario.expected_paths),
+                    "matched_paths": matched_paths,
+                    "min_expected_path_hits": scenario.min_expected_path_hits,
+                    "first_expected_rank": first_rank,
+                    "reciprocal_rank": reciprocal_rank,
+                    "source_verified": source_verified,
+                    "source_ref_verified": source_ref,
+                    "backend": payload.get("backend"),
+                    "search_duration_ms": payload.get("duration_ms"),
+                    "top_source_refs": [
+                        item.get("source_ref") or item.get("source")
+                        for item in results[:5]
+                    ],
+                }
+            )
 
     passed_count = sum(1 for item in reports if item["passed"])
     reciprocal_ranks = [float(item["reciprocal_rank"]) for item in reports]
@@ -254,8 +254,7 @@ def result_matches_path(result: dict[str, object], expected_path: str) -> bool:
     normalized = [item.replace("\\", "/").lstrip("./") for item in candidates]
     return any(
         candidate == expected
-        or candidate.endswith("/" + expected)
-        or candidate.endswith(":" + expected)
+        or candidate.endswith(("/" + expected, ":" + expected))
         for candidate in normalized
     )
 
