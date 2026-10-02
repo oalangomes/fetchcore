@@ -149,6 +149,41 @@ This is deliberately a line-based v1 measure because line coordinates are
 backend-neutral and can be persisted without source content. Returned characters
 are also recorded as an operational context-size metric.
 
+`UsefulContextLineRatio` is a **density diagnostic over the complete returned
+set**. It does not answer how much evidence fits inside a bounded consumer context.
+
+### Derived ContextYield@B — budget-aware, outside the frozen v1 metric schema
+
+Budget-aware evidence evaluation is intentionally versioned as a separate derived
+artifact rather than silently changing baseline-v1 `metrics_schema_version = 1`.
+
+For a line budget `B`, ranked result spans are consumed as a prefix:
+
+```text
+ranked spans
+    ↓
+pack whole spans in rank order
+    ↓
+stop before first overflow
+    ↓
+evaluate existing evidence requirements
+```
+
+No returned span is partially sliced to fit the budget.
+
+The initial fixed cutoffs are 100, 250, 500 and 1000 lines. The derived artifact
+reports:
+
+- ContextYield@B: existing mean evidence-region span coverage inside the packed prefix;
+- budgeted EvidenceRecall@B;
+- consumed lines;
+- packed result count.
+
+Because baseline-v1 already persists ranked result coordinates, compatible frozen
+runs can be re-evaluated offline without querying a backend. The derived metric
+definition and budget configuration have independent fingerprints and fail closed
+against incompatible Ground Truth/source-metric identities.
+
 ## Performance and cost metrics
 
 Every measured observation also records:
