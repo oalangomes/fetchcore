@@ -1,0 +1,12 @@
+version: 1
+repository: oalangomes/fetchcore
+defaults:
+  limit: 10
+
+scenarios:
+  - id: mcp-search-and-source-smoke
+    query: "retrieval satisfaction authority FetchCore"
+    expected_paths:
+      - AGENTS.md
+    min_expected_path_hits: 1
+    verify_source: true

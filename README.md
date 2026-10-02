@@ -66,6 +66,28 @@ for the complete Python, container and Compose workflows.
 
 The documentation index is available at [docs/README.md](docs/README.md).
 
+
+### Index a repository
+
+FetchCore exposes its operational indexing path through the CLI:
+
+```bash
+export FETCHCORE_INDEX_REPOSITORY="owner/repository"
+export FETCHCORE_INDEX_REVISION="$(git rev-parse HEAD)"
+export FETCHCORE_INDEX_BACKEND_SETTINGS='{"url":"http://127.0.0.1:8983/solr","collection":"repository-knowledge"}'
+
+fetchcore index bootstrap
+fetchcore index status
+fetchcore index dry-run
+fetchcore index sync
+```
+
+A reusable self-hosted GitHub Actions workflow is included at
+`.github/workflows/repository-index.yml`. FetchCore uses that same workflow to
+index and evaluate itself through MCP after pushes to `master`.
+
+See [Self-hosted repository indexing](docs/guides/self-hosted-indexing.md).
+
 ## Extraction provenance
 
 Initial extraction sources are frozen to:

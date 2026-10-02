@@ -17,6 +17,7 @@ Architecture documents describe current boundaries and invariants. Equivalence r
 ### Guides
 
 - [Getting started](guides/getting-started.md)
+- [Self-hosted repository indexing and dogfood](guides/self-hosted-indexing.md)
 - [MCP serving](serving/mcp.md)
 
 Guides are task-oriented and should keep commands copyable.

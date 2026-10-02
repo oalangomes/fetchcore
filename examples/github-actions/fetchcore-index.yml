@@ -1,0 +1,29 @@
+name: Index repository with FetchCore
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  index:
+    uses: oalangomes/fetchcore/.github/workflows/repository-index.yml@master
+    with:
+      # Add a repository-specific label for hard affinity when desired.
+      # Example: ["self-hosted","Linux","X64","local-runner","my-project"]
+      runner_labels_json: '["self-hosted","Linux","X64"]'
+      target_repository: ${{ github.repository }}
+      target_ref: ${{ github.sha }}
+      target_branch: ${{ github.ref_name }}
+      fetchcore_ref: master
+      collection: my-project-knowledge
+
+      # Stable self-hosted runner: keep Solr state in a local Docker volume.
+      managed_solr: true
+      solr_volume: my-project-fetchcore-solr
+
+      # Set evaluate=true after adding repository-local dogfood scenarios.
+      evaluate: false

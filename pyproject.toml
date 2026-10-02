@@ -30,6 +30,7 @@ dev = [
 ]
 
 [project.scripts]
+fetchcore = "fetchcore.cli:main"
 fetchcore-mcp = "fetchcore.mcp_server:main"
 
 [tool.setuptools.packages.find]

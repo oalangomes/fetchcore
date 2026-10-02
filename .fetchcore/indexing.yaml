@@ -1,0 +1,21 @@
+version: 1
+
+selection:
+  exclude:
+    - "benchmarks/baseline-v1/artifacts/**"
+    - ".fetchcore-dogfood/**"
+    - "dogfood/scenarios/**"
+
+limits:
+  max_files: 2500
+  max_file_bytes: 1000000
+  max_total_bytes: 64000000
+
+chunking:
+  max_lines: 160
+  overlap_lines: 20
+
+classification:
+  rules:
+    - pattern: "dogfood/**"
+      knowledge_type: tests
