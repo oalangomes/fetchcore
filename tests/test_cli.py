@@ -28,6 +28,32 @@ def _context(tmp_path: Path) -> cli._IndexCommandContext:
     )
 
 
+def test_index_bootstrap_provisions_explicit_schema(
+    tmp_path: Path,
+    monkeypatch: object,
+) -> None:
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        cli,
+        "_build_index_context",
+        lambda **_: _context(tmp_path),
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        cli,
+        "provision_lexical_solr_schema",
+        lambda *_: {"validated": True, "created_field_count": 42},
+    )
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["index", "--repository", "oalangomes/fetchcore", "bootstrap"],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["operation"] == "bootstrap"
+    assert payload["result"]["validated"] is True
+
+
 def test_index_status_emits_machine_readable_json(
     tmp_path: Path,
     monkeypatch: object,
