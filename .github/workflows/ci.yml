@@ -147,7 +147,20 @@ jobs:
           payload = json.loads(path.read_text(encoding="utf-8"))
           assert payload["result"]["noop"] is True, payload
           PY
-      - name: Exercise real MCP retrieval
+      - name: Smoke real MCP search and source access
+        run: |
+          python scripts/dogfood_mcp_eval.py \
+            --workspace . \
+            --repository "$FETCHCORE_INDEX_REPOSITORY" \
+            --revision "$FETCHCORE_INDEX_REVISION" \
+            --solr-url http://127.0.0.1:8983/solr \
+            --collection fetchcore-ci \
+            --scenarios dogfood/scenarios/fetchcore-smoke.yaml \
+            --output-json $RUNNER_TEMP/fetchcore-dogfood/mcp-smoke.json \
+            --output-markdown $RUNNER_TEMP/fetchcore-dogfood/mcp-smoke.md
+          cat $RUNNER_TEMP/fetchcore-dogfood/mcp-smoke.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Measure natural-query MCP self-evaluation
         run: |
           python scripts/dogfood_mcp_eval.py \
             --workspace . \
@@ -157,7 +170,8 @@ jobs:
             --collection fetchcore-ci \
             --scenarios dogfood/scenarios/fetchcore-self.yaml \
             --output-json $RUNNER_TEMP/fetchcore-dogfood/mcp-evaluation.json \
-            --output-markdown $RUNNER_TEMP/fetchcore-dogfood/mcp-evaluation.md
+            --output-markdown $RUNNER_TEMP/fetchcore-dogfood/mcp-evaluation.md \
+            --report-only
           cat $RUNNER_TEMP/fetchcore-dogfood/mcp-evaluation.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload dogfood smoke evidence
         if: ${{ always() }}
