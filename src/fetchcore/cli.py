@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from collections.abc import Callable
 
 import click
 
@@ -16,7 +16,7 @@ from fetchcore.application.index_operations import (
     repository_index_status,
 )
 from fetchcore.backends.solr import SolrIndexStore, SolrSettings, UrllibSolrTransport
-from fetchcore.backends.solr_incremental_persistence import (
+from fetchcore.adapters.retrieval.solr.incremental_persistence import (
     TargetedGitAwareSolrSynchronizer,
 )
 from fetchcore.retrieval.contracts import KnowledgeSearchError
@@ -175,7 +175,7 @@ def _build_index_context(
 def _run_operation(
     operation: str,
     context: _IndexCommandContext,
-    execute: Any,
+    execute: Callable[[], dict[str, object]],
 ) -> None:
     try:
         result = execute()
