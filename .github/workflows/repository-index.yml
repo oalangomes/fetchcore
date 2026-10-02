@@ -212,8 +212,9 @@ jobs:
             --name "$container" \
             -p "127.0.0.1:${SOLR_PORT}:8983" \
             -v "${SOLR_VOLUME}:/var/solr" \
+            -v "$GITHUB_WORKSPACE/.fetchcore-runtime/infra/solr/configset:/fetchcore-configset:ro" \
             solr:9.10.1 \
-            solr-precreate "$COLLECTION" >/dev/null
+            solr-precreate "$COLLECTION" /fetchcore-configset >/dev/null
           printf 'FETCHCORE_SOLR_CONTAINER=%s\n' "$container" >> "$GITHUB_ENV"
           printf 'FETCHCORE_SOLR_URL=http://127.0.0.1:%s/solr\n' "$SOLR_PORT" >> "$GITHUB_ENV"
 
