@@ -1,64 +1,39 @@
-# Issue #44 hardcode audit
+# Runtime configuration decision audit (#65)
 
-The unit counted below is an operational or identity **decision group**, not
-every occurrence of a literal. The review covered paths, environment names,
-cache roots, URLs, ports, collection names, timeouts, batches, scan limits,
-candidate windows, embedding model/dimensions, provider/backend names,
-serializer selection, MCP limits, extractor/knowledge-pack registration, and
-versioned identifiers in `src/fetchcore`.
+The unit is a decision group, not each literal. This audit supersedes the #44
+classification after #52 separated adapters by capability. Runtime precedence
+is **safe defaults < explicit operator YAML < environment < explicit caller
+overrides**. A present invalid value fails; it does not fall back.
 
-| Classification | Reviewed groups |
-| --- | ---: |
-| DOMAIN_CONSTANT | 2 |
-| VERSIONED_IDENTITY | 7 |
-| SAFE_DEFAULT | 5 |
-| CONFIGURABLE_POLICY | 6 |
-| VENDOR_SPECIFIC | 7 |
-| LEGACY_EXTRACTION_RESIDUE | 3 |
-| ACCIDENTAL_HARDCODE | 1 |
-| **Hardcodes reviewed** | **31** |
+| Decision | Classification | Current owner → owner | Default / override source | Persisted identity / compatibility |
+| --- | --- | --- | --- | --- |
+| Backend and provider IDs (`solr`, `qdrant-vector`, `ollama`, etc.) | BUILTIN_CATALOG | Composition → explicit registries | Code; test/SDK factories can be injected | IDs unchanged; factory ID mismatch fails |
+| Selected backend, workspace, repository, revision, retrieval configuration | RUNTIME_CONFIG | MCP ENV parser → application runtime loader | Built-in local backend; operator YAML, ENV, caller | Legacy `FETCHCORE_MCP_*` accepted |
+| Solr URL, collection, timeout, batch | SAFE_DEFAULT / RUNTIME_CONFIG | Solr settings and MCP JSON → runtime loader, then Solr settings | Local adapter defaults; operator YAML, `FETCHCORE_SOLR_*`, caller | Projection version and schema unchanged |
+| OpenSearch URL, index, timeout, batch | SAFE_DEFAULT / RUNTIME_CONFIG | OpenSearch settings and MCP JSON → runtime loader, then OpenSearch settings | Local adapter defaults; operator YAML, `FETCHCORE_OPENSEARCH_*`, caller | Projection version and schema unchanged |
+| Qdrant URL, collection, timeout, batch | SAFE_DEFAULT / RUNTIME_CONFIG | Qdrant settings and MCP JSON → runtime loader, then Qdrant settings | Local adapter defaults; operator YAML, `FETCHCORE_QDRANT_*`, caller | Sparse analyzer and projection identities unchanged |
+| Qdrant API key | SECRET | Qdrant settings → runtime loader and adapter | ENV or explicit caller; no versioned default | No persistence change |
+| Qdrant `embedding_url` and `embedding_model` | LEGACY_COMPATIBILITY | Qdrant settings → runtime compatibility translation | Existing MCP JSON/direct settings accepted; new input uses `embedding.ollama.url` and `retrieval.dense.embedding.model` | Direct Qdrant caller behavior retained |
+| Ollama URL, timeout, request batch | SAFE_DEFAULT / RUNTIME_CONFIG | Composition `OLLAMA_URL` → typed `OllamaRuntimeSettings` | Local defaults; operator YAML, canonical ENV, caller | `OLLAMA_URL` retained as compatibility fallback |
+| Selected embedding model | RUNTIME_CONFIG | `EmbeddingConfig` / Qdrant legacy setting → existing typed retrieval config | `embeddinggemma`; operator YAML retrieval, caller | Embedding serialization version/fingerprint unchanged |
+| Repository indexing/document policy files | REPOSITORY_POLICY | Repository source loaders → unchanged | `.fetchcore/indexing.yaml`, `.fetchcore/document-indexing.yaml` | Legacy `.agentsorch` paths unchanged; never read as runtime endpoints |
+| Repository cache root / Git process environment | REPOSITORY_POLICY / LEGACY_COMPATIBILITY | `repository/git_source.py` → unchanged source boundary | `FETCHCORE_REPOSITORY_CACHE`, legacy name | No runtime provider authority |
+| Vector dimensions, schema fields, projection/index/serializer IDs | VERSIONED_IDENTITY | Projection and adapters → unchanged | Code only; versioned migrations required | Byte identities preserved |
+| Retrieval semantics, RRF strategy, safety bounds | DOMAIN_CONSTANT / SAFE_DEFAULT | Retrieval/application contracts → unchanged | Typed retrieval and serving contracts where applicable | No tuning in #65 |
+| Duplicate ad hoc Ollama environment lookup in composition | ACCIDENTAL_HARDCODE | Composition → application runtime loader | Canonical `FETCHCORE_OLLAMA_URL`, legacy `OLLAMA_URL` | Behavior for MCP bootstrap preserved |
 
-The groups and their owners are:
+`os.environ` / `os.getenv` inventory in `src/fetchcore` after this change:
 
-- **DOMAIN_CONSTANT (2):** canonical knowledge/evidence field vocabulary;
-  `SearchMode`/capability semantics. These define contract meaning, not runtime
-  tuning.
-- **VERSIONED_IDENTITY (7):** Projection v3 schema/fingerprint; embedding
-  serialization version/fingerprint; indexing contract version/fingerprint;
-  fusion normalization/schema identity; reranking input/result schema identity;
-  Qdrant sparse analyzer identity; repository/document/orchestration policy
-  versions. None changed because of file moves.
-- **SAFE_DEFAULT (5):** serving safety bounds; repository scan admission defaults;
-  document admission defaults; orchestration concurrency bounds; local lexical
-  safe-scan defaults. Their existing values are retained.
-- **CONFIGURABLE_POLICY (6):** MCP repository binding environment; repository
-  cache root; Git source timeout; repository-local indexing policy; document
-  indexing policy; typed retrieval dense/hybrid/reranking configuration. These
-  remain controlled by callers, environment at the serving/source boundary, or
-  explicit policy files.
-- **VENDOR_SPECIFIC (7):** Solr URL/collection/transport bounds; OpenSearch
-  URL/index/transport bounds; Qdrant URL/collection/transport bounds; vector
-  dimensions and mapping fields; vendor query/filter syntax; snapshot/control
-  records; Ollama URL/model/request bounds. These stay in their adapters.
-- **LEGACY_EXTRACTION_RESIDUE (3):** `AGENTSORCH_REPOSITORY_CACHE`,
-  `.agentsorch/indexing.yaml`, and `.agentsorch/document-indexing.yaml` remain
-  explicit compatibility inputs. New output and preferred configuration use
-  FetchCore names.
-- **ACCIDENTAL_HARDCODE (1):** the Ollama URL environment name and fallback were
-  duplicated in Solr and OpenSearch factories. One Ollama adapter now owns the
-  lookup and reads the existing `OLLAMA_URL` with the same default.
+- `application/runtime_config.py` reads the operator process environment once
+  for runtime bootstrap and explicit `FETCHCORE_CONFIG` path.
+- `repository/git_source.py` reads cache configuration and copies process
+  environment for Git subprocesses. That is a repository source boundary.
+- `serving/mcp.py`, `application/composition.py`, and retrieval/embedding
+  adapters do not discover environment values.
+- The operational indexing CLI uses Click's explicit `FETCHCORE_INDEX_*`
+  options, including the JSON backend setting input retained for the #63
+  self-dogfood workflow. Its indexing contract is separate from MCP serving.
 
-## Relevant before → after decisions
-
-| Before | Classification | After and reason | Compatibility impact |
-| --- | --- | --- | --- |
-| `MAX_SEARCH_LIMIT=100`, `MAX_SOURCE_LINES=400`, `MAX_SOURCE_BYTES=1_000_000`, and context cap `100` were read directly by the service. | SAFE_DEFAULT / CONFIGURABLE_POLICY | `ServingLimits` owns these defaults and is injectable into `RetrievalApplicationService`; validation rejects invalid limits. | Default behavior and error categories remain the same. |
-| Solr and OpenSearch each read `OLLAMA_URL` and repeated `http://localhost:11434`. | ACCIDENTAL_HARDCODE / VENDOR_SPECIFIC | `backends.ollama.configured_ollama_provider` owns the environment lookup and uses `OllamaEmbeddingSettings.url` as the single default. | Same env name, fallback URL, model, timeout, batch, and unsupported-provider error. |
-| `repository/index_operations` added shell and HTML extractors after calling the structural registry. | CONFIGURABLE_POLICY | `repository/extractors/registry.py` composes all built-in source extractors in one place, still returning a fresh mutable mapping for caller extension. | Same default extractor set, selection order, and indexing fingerprint. |
-| `repository/index_contract` combined canonical hash calculation with Solr snapshot types. | VERSIONED_IDENTITY / VENDOR_SPECIFIC | `repository/index_fingerprint` owns the canonical hash; `backends/solr_index_contract` owns Solr persistence. | Version `23` and captured hash unchanged; old imports remain. |
-| Extractor type paths came from their old Python modules. | VERSIONED_IDENTITY | Moved extractor classes explicitly retain historical `__module__` values. | Persisted indexing fingerprints stay byte-for-byte identical. |
-
-The fixed 768-dimensional Solr/OpenSearch mappings are intentionally still
-vendor-specific schema constraints. Treating them as a generic user preference
-would make an incompatible persisted index appear reusable. A later schema
-version/migration can alter them explicitly.
+The operator runtime YAML is only read from an explicit `path` argument or
+`FETCHCORE_CONFIG`. No `.fetchcore` file inside a cloned repository is a runtime
+configuration source. See [runtime configuration](../guides/runtime-configuration.md).
