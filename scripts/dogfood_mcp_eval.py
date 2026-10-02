@@ -35,6 +35,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--output-markdown", type=Path, required=True)
     parser.add_argument("--server-command", default="fetchcore-mcp")
+    parser.add_argument(
+        "--report-only",
+        action="store_true",
+        help="Write the evaluation report but do not fail the process on scenario misses.",
+    )
     return parser.parse_args()
 
 
@@ -329,6 +334,8 @@ def main() -> int:
     args.output_markdown.write_text(markdown_report(payload), encoding="utf-8")
 
     print(json.dumps(payload["summary"], sort_keys=True))
+    if args.report_only:
+        return 0
     return 0 if payload["status"] == "passed" else 1
 
 
