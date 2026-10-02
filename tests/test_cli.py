@@ -5,7 +5,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-import fetchcore.cli as cli
+from fetchcore import cli
 
 
 class _Runtime:
