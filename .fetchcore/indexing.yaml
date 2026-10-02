@@ -4,6 +4,7 @@ selection:
   exclude:
     - "benchmarks/baseline-v1/artifacts/**"
     - ".fetchcore-dogfood/**"
+    - "dogfood/scenarios/**"
 
 limits:
   max_files: 2500
