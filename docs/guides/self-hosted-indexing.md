@@ -38,7 +38,7 @@ fetchcore index ... dry-run
 fetchcore index ... sync
 ```
 
-Every successful command emits JSON. `dry-run` performs no persistent writes.
+Every successful command emits JSON. `bootstrap` explicitly provisions missing lexical Projection v3 Solr schema elements and then validates the schema. It never silently rewrites incompatible existing fields. `dry-run` performs no persistent writes.
 
 Equivalent environment variables are available:
 
@@ -135,11 +135,14 @@ The external service owns persistence. FetchCore still owns snapshot compatibili
 Each run executes:
 
 ```text
-status before
+explicit schema bootstrap/validation
+→ status before
 → dry-run
 → sync
 → status after
 ```
+
+Every piped command enables `pipefail`, so report capture with `tee` cannot turn a failed FetchCore command into a successful workflow step.
 
 and uploads JSON artifacts for each stage. Writers are serialized per repository/collection through GitHub Actions concurrency.
 
