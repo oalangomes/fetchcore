@@ -15,8 +15,15 @@ class _Runtime:
     indexer = object()
 
 
+class _Settings:
+    projection_version = "3"
+
+
 class _Store:
-    pass
+    settings = _Settings()
+
+    def validate_schema(self, *, require_vectors: bool = False) -> None:
+        assert require_vectors is False
 
 
 def _context(tmp_path: Path) -> cli._IndexCommandContext:
@@ -28,7 +35,7 @@ def _context(tmp_path: Path) -> cli._IndexCommandContext:
     )
 
 
-def test_index_bootstrap_provisions_explicit_schema(
+def test_index_bootstrap_validates_explicit_schema(
     tmp_path: Path,
     monkeypatch: object,
 ) -> None:
@@ -37,12 +44,6 @@ def test_index_bootstrap_provisions_explicit_schema(
         "_build_index_context",
         lambda **_: _context(tmp_path),
     )
-    monkeypatch.setattr(  # type: ignore[attr-defined]
-        cli,
-        "provision_lexical_solr_schema",
-        lambda *_: {"validated": True, "created_field_count": 42},
-    )
-
     result = CliRunner().invoke(
         cli.main,
         ["index", "--repository", "oalangomes/fetchcore", "bootstrap"],
