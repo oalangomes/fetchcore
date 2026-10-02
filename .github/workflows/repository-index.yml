@@ -270,17 +270,30 @@ jobs:
           PY
           mkdir -p target/.fetchcore-dogfood
 
+      - name: Bootstrap FetchCore Solr schema
+        run: |
+          set -o pipefail
+          fetchcore index bootstrap | tee target/.fetchcore-dogfood/bootstrap.json
+
       - name: Index status before sync
-        run: fetchcore index status | tee target/.fetchcore-dogfood/status-before.json
+        run: |
+          set -o pipefail
+          fetchcore index status | tee target/.fetchcore-dogfood/status-before.json
 
       - name: Preview index mutation
-        run: fetchcore index dry-run | tee target/.fetchcore-dogfood/dry-run.json
+        run: |
+          set -o pipefail
+          fetchcore index dry-run | tee target/.fetchcore-dogfood/dry-run.json
 
       - name: Synchronize repository index
-        run: fetchcore index sync | tee target/.fetchcore-dogfood/sync.json
+        run: |
+          set -o pipefail
+          fetchcore index sync | tee target/.fetchcore-dogfood/sync.json
 
       - name: Index status after sync
-        run: fetchcore index status | tee target/.fetchcore-dogfood/status-after.json
+        run: |
+          set -o pipefail
+          fetchcore index status | tee target/.fetchcore-dogfood/status-after.json
 
       - name: Evaluate through MCP
         if: ${{ inputs.evaluate }}
@@ -310,6 +323,7 @@ jobs:
           name: fetchcore-index-${{ inputs.collection }}-${{ github.run_id }}
           path: target/.fetchcore-dogfood/
           if-no-files-found: warn
+          include-hidden-files: true
           retention-days: ${{ inputs.artifact_retention_days }}
 
       - name: Stop managed Solr
