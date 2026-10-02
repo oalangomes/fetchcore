@@ -19,6 +19,7 @@ from fetchcore.backends.solr import SolrIndexStore, SolrSettings, UrllibSolrTran
 from fetchcore.backends.solr_incremental_persistence import (
     TargetedGitAwareSolrSynchronizer,
 )
+from fetchcore.backends.solr_schema import provision_lexical_solr_schema
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 from fetchcore.repository.index_policy import RepositoryIndexPolicyError
 
@@ -88,6 +89,17 @@ def index_group(
         )
     except (KnowledgeSearchError, RepositoryIndexPolicyError, OSError, ValueError) as exc:
         raise click.ClickException(_error_message(exc)) from exc
+
+
+@index_group.command("bootstrap")
+@click.pass_obj
+def index_bootstrap(context: _IndexCommandContext) -> None:
+    """Provision and validate the explicit backend schema contract."""
+    _run_operation(
+        "bootstrap",
+        context,
+        lambda: provision_lexical_solr_schema(context.store),
+    )
 
 
 @index_group.command("status")
