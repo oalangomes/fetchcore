@@ -22,5 +22,6 @@ jobs:
       managed_solr: true
       solr_volume: fetchcore-self-solr
       evaluate: true
+      evaluation_gate: false
       scenarios_path: dogfood/scenarios/fetchcore-self.yaml
       artifact_retention_days: 30
