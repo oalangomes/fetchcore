@@ -348,6 +348,12 @@ def _required_text(raw: dict[object, object], key: str, index: int) -> str:
     return value.strip()
 
 
+def _evaluation_exit_code(payload: dict[str, object], enforce_scenario_gate: bool) -> int:
+    if enforce_scenario_gate and payload.get("status") != "passed":
+        return 1
+    return 0
+
+
 def main() -> int:
     args = parse_args()
     scenarios = load_scenarios(args.scenarios)
