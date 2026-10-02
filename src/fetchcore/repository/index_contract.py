@@ -4,7 +4,7 @@ from fetchcore.repository.index_fingerprint import (
     INDEXING_CONTRACT_VERSION,
     indexing_contract_fingerprint,
 )
-from fetchcore.backends.solr_index_contract import (
+from fetchcore.adapters.retrieval.solr.index_contract import (
     IndexContractSolrIndexStore,
     IndexContractSolrSnapshot,
     bind_indexing_contract_store,

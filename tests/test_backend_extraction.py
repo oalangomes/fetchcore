@@ -72,12 +72,12 @@ def test_qdrant_sparse_analyzer_is_deterministic() -> None:
 def test_backend_modules_have_no_agentsorch_imports() -> None:
     root = Path(__file__).resolve().parents[1] / "src" / "fetchcore"
     relatives = (
-        "backends/local_semantic.py",
-        "backends/solr.py",
-        "backends/opensearch.py",
-        "backends/qdrant_vector.py",
-        "backends/solr_projection.py",
-        "backends/qdrant_sparse.py",
+        "adapters/retrieval/local/backend.py",
+        "adapters/retrieval/solr/backend.py",
+        "adapters/retrieval/opensearch/backend.py",
+        "adapters/retrieval/qdrant/backend.py",
+        "adapters/retrieval/solr/projection.py",
+        "adapters/retrieval/qdrant/sparse.py",
     )
     for relative in relatives:
         tree = ast.parse((root / relative).read_text(encoding="utf-8"))

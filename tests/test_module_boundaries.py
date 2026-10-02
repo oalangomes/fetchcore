@@ -74,6 +74,70 @@ def test_canonical_and_transport_modules_do_not_import_concrete_backends() -> No
                 ), path
 
 
+def test_capability_adapter_dependencies_point_inward() -> None:
+    """Concrete selection belongs to composition, not core or another adapter."""
+    core_roots = ("knowledge", "projection", "retrieval", "repository", "serving")
+    historical_repository_shims = {
+        SOURCE / "repository" / "index_contract.py",
+        SOURCE / "repository" / "document_incremental.py",
+        SOURCE / "repository" / "incremental_persistence.py",
+    }
+    for root in core_roots:
+        for path in (SOURCE / root).rglob("*.py"):
+            if path in historical_repository_shims:
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    assert not node.module.startswith("fetchcore.adapters"), path
+                elif isinstance(node, ast.Import):
+                    assert all(
+                        not item.name.startswith("fetchcore.adapters") for item in node.names
+                    ), path
+
+    for path in (SOURCE / "adapters" / "retrieval").rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                assert not node.module.startswith("fetchcore.adapters.embedding"), path
+            elif isinstance(node, ast.Import):
+                assert all(
+                    not item.name.startswith("fetchcore.adapters.embedding")
+                    for item in node.names
+                ), path
+
+
+def test_legacy_backend_paths_reexport_owning_classes() -> None:
+    aliases = (
+        ("local_semantic", "retrieval.local.backend", "LocalSemanticBackend"),
+        ("solr", "retrieval.solr.backend", "SolrBackend"),
+        ("opensearch", "retrieval.opensearch.backend", "OpenSearchBackend"),
+        ("qdrant_vector", "retrieval.qdrant.backend", "QdrantVectorBackend"),
+        ("ollama", "embedding.ollama.provider", "OllamaEmbeddingProvider"),
+    )
+    for old, new, name in aliases:
+        historical = importlib.import_module(f"fetchcore.backends.{old}")
+        owning = importlib.import_module(f"fetchcore.adapters.{new}")
+        assert getattr(historical, name) is getattr(owning, name)
+
+    module_aliases = (
+        ("local_semantic", "retrieval.local.backend"),
+        ("ollama", "embedding.ollama.provider"),
+        ("opensearch_query", "retrieval.opensearch.query"),
+        ("qdrant_vector", "retrieval.qdrant.backend"),
+        ("qdrant_query", "retrieval.qdrant.query"),
+        ("qdrant_sparse", "retrieval.qdrant.sparse"),
+        ("solr_query", "retrieval.solr.query"),
+        ("solr_index_contract", "retrieval.solr.index_contract"),
+        ("solr_incremental", "retrieval.solr.incremental"),
+        ("solr_document_incremental", "retrieval.solr.document_incremental"),
+        ("solr_incremental_persistence", "retrieval.solr.incremental_persistence"),
+        ("solr_projection", "retrieval.solr.projection"),
+    )
+    for old, new in module_aliases:
+        assert importlib.import_module(f"fetchcore.backends.{old}") is (
+            importlib.import_module(f"fetchcore.adapters.{new}")
+        )
+
+
 def test_top_level_module_import_graph_is_acyclic() -> None:
     modules = {
         ".".join(
