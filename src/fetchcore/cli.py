@@ -19,7 +19,6 @@ from fetchcore.backends.solr import SolrIndexStore, SolrSettings, UrllibSolrTran
 from fetchcore.backends.solr_incremental_persistence import (
     TargetedGitAwareSolrSynchronizer,
 )
-from fetchcore.backends.solr_schema import provision_lexical_solr_schema
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 from fetchcore.repository.index_policy import RepositoryIndexPolicyError
 
@@ -95,11 +94,15 @@ def index_group(
 @click.pass_obj
 def index_bootstrap(context: _IndexCommandContext) -> None:
     """Provision and validate the explicit backend schema contract."""
-    _run_operation(
-        "bootstrap",
-        context,
-        lambda: provision_lexical_solr_schema(context.store),
-    )
+    def validate_schema() -> dict[str, object]:
+        context.store.validate_schema(require_vectors=False)
+        return {
+            "schema": "fetchcore.solr.projection-v3",
+            "projection_version": context.store.settings.projection_version,
+            "validated": True,
+        }
+
+    _run_operation("bootstrap", context, validate_schema)
 
 
 @index_group.command("status")
