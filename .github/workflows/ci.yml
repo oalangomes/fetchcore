@@ -161,6 +161,7 @@ jobs:
           name: fetchcore-dogfood-smoke-${{ github.run_id }}
           path: .fetchcore-dogfood-ci/
           if-no-files-found: warn
+          include-hidden-files: true
           retention-days: 7
       - name: Stop ephemeral Solr
         if: ${{ always() }}
