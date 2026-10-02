@@ -54,10 +54,11 @@ serving/MCP -> application service
 `retrieval` owns intent, evidence, typed configuration, fusion, reranking, and
 embedding contracts. `projection` owns backend-neutral projection serialization
 and matching. `repository` owns acquisition, extraction, canonical documents,
-indexing, and persisted incremental state. `backends` owns vendor protocols and
-schemas. `application` owns caller-facing retrieval/source operations and
-composition. `serving` owns transport and environment loading. `baseline` and
-`telemetry` retain their existing specialized responsibilities.
+indexing, and persisted incremental state. `adapters/retrieval` owns concrete
+search implementations and vendor protocols. `adapters/embedding` owns concrete
+embedding implementations. `application` owns caller-facing retrieval/source
+operations and composition. `serving` owns transport and environment loading.
+`baseline` and `telemetry` retain their existing specialized responsibilities.
 
 ## Implemented package map
 
@@ -67,31 +68,48 @@ composition. `serving` owns transport and environment loading. `baseline` and
 | `repository` | Source materialization, safe scanning, policy, canonical documents/indexing, Git delta detection, and `index_fingerprint`. `extractors/languages`, `extractors/documents`, `extractors/frameworks/sap_commerce`, and `extractors/registry` hold implementation and composition points. |
 | `retrieval` | `contracts`, `signals`, `evidence`, `config`, `embedding` serialization/protocol, `fusion`, and `reranking*`. |
 | `projection` | `core` compiler/reader and shared `semantics`. |
-| `backends` | Local, Solr, OpenSearch, Qdrant, and Ollama adapters; `solr_query`, `opensearch_query`, and `qdrant_query` translate/validate vendor requests and responses; `solr_*` integration modules own snapshot and synchronization behavior. |
+| `adapters/retrieval` | `local/backend.py`, `solr/*`, `opensearch/*`, and `qdrant/*` implement `KnowledgeSearchBackend`. Vendor query modules translate requests and responses; Solr integration modules own snapshot and synchronization behavior. |
+| `adapters/embedding` | `ollama/provider.py` implements `EmbeddingProvider` and owns its HTTP transport settings. |
+| `backends` | Historical import shims only. New FetchCore code imports the owning adapter paths. |
 | `application` | `service` owns caller-facing operations through `KnowledgeSearchBackend`; `composition` selects concrete factories; `index_operations` and `orchestration*` coordinate repository indexing. |
 | `serving` | `mcp` loads MCP environment settings and calls only the application service. |
 
-The only direct concrete-backend import under `repository` is the historical
+The direct concrete-adapter import under `repository` is the historical
 `index_contract` compatibility shim. `repository.incremental` and
 `retrieval.embedding` provide lazy compatibility attributes for moved Solr and
-Ollama classes. Canonical functions in those modules do not depend on adapters.
-The static top-level import graph has 133 modules, 234 import edges, and no
-strongly connected component containing more than one module.
+Ollama classes through historical paths. Canonical functions in those modules
+do not depend on adapters.
 
-The application composition root supplies backend factories. Backend IDs select
-implementations only there. Typed backend and retrieval settings own operational
-defaults; adapters own vendor URLs, index names, dimensions, timeouts, and batch
-sizes. MCP environment variables are read only by its serving adapter. Repository
-policy loaders own `.fetchcore` configuration paths, including legacy-path
+The application composition root supplies backend factories and resolves the
+`EmbeddingConfig.provider` identity. It injects an `EmbeddingProvider` factory
+into Solr, OpenSearch, and Qdrant. Retrieval adapters depend on that port and
+never import the Ollama implementation. Unknown backend and provider IDs fail
+closed; identity mismatches also fail closed. Typed backend and retrieval
+settings own operational defaults. Qdrant's historical `embedding_url` and
+`embedding_model` fields remain accepted for compatibility; composition maps
+them to neutral embedding identity and Ollama transport settings. MCP
+environment variables are read only by its serving adapter. Repository policy
+loaders own `.fetchcore` configuration paths, including legacy-path
 compatibility. No canonical contract interprets a vendor response or environment
 variable.
 
 New extractors belong under `repository/extractors` and implement the existing
 `SymbolExtractor`/`StructuralExtractor` contract. A registry composes the default
-implementations; knowledge packs remain source-oriented. New backends implement
-`KnowledgeSearchBackend` and declare `RetrievalBackendCapabilities`, then get a
-factory in application composition. New transports call
+implementations; knowledge packs remain source-oriented. To add a retrieval
+adapter, implement `KnowledgeSearchBackend`, declare
+`RetrievalBackendCapabilities`, place the implementation under
+`adapters/retrieval/<implementation>/`, add a factory in application composition,
+and test the contract and failure behavior. To add an embedding provider,
+implement `EmbeddingProvider` under `adapters/embedding/<implementation>/`,
+resolve its provider ID in composition, and inject it through the existing port.
+Existing retrieval adapters, canonical knowledge, projection semantics, and MCP
+do not need provider-specific changes. New transports call
 `RetrievalApplicationService` and do not implement retrieval policy.
+
+There is no universal `providers/` package: retrieval backends, embedding
+providers, and repository source providers implement different capabilities and
+have different owning contracts. The former `backends/` namespace remains only
+for imports that predate this capability-oriented layout.
 
 Historical import paths remain compatibility aliases to the owning module.
 Aliases contain no duplicate implementation. Removal requires a separate public
