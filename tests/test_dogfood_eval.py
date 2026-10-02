@@ -55,3 +55,17 @@ def test_first_expected_rank_is_one_based() -> None:
     )
 
     assert rank == 2
+
+
+def test_evaluation_is_report_only_without_explicit_gate() -> None:
+    class Args:
+        enforce_scenario_gate = False
+
+    payload = {"status": "failed"}
+    assert dogfood._evaluation_exit_code(payload, Args.enforce_scenario_gate) == 0
+
+
+def test_evaluation_can_be_promoted_to_gate_explicitly() -> None:
+    payload = {"status": "failed"}
+    assert dogfood._evaluation_exit_code(payload, True) == 1
+    assert dogfood._evaluation_exit_code({"status": "passed"}, True) == 0
