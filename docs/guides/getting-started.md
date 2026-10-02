@@ -53,7 +53,7 @@ export FETCHCORE_MCP_BACKEND="local-semantic"
 fetchcore-mcp
 ```
 
-The process serves MCP over stdio. See [MCP serving](../serving/mcp.md) for the complete environment contract and backend examples.
+The process serves MCP over stdio. See [MCP serving](mcp.md) for the complete environment contract and backend examples.
 
 ## Build the FetchCore container
 

@@ -9,9 +9,9 @@ adaptive budgets, reranking, chunking or graph expansion.
 The baseline evaluates retrieval evidence. It does not decide consumer
 satisfaction or authority.
 
-> Status: **candidate protocol, not promoted yet**. A complete evidence-aware
-> nine-arm run was captured on 2026-10-01. Promotion now depends on final
-> artifact review and the tag/freeze decision, not on another mandatory rerun.
+> Status: **frozen baseline (#18 closed)**. The evidence-aware nine-arm V0.1
+> run was captured on 2026-10-01. This protocol remains the comparison contract;
+> later experiments must identify their own protocol and execution versions.
 
 ## Why evidence regions
 
@@ -133,7 +133,7 @@ observed gains into ideal order.
 This metric evaluates ordering of the evidence that was recovered.
 Missing evidence is captured separately by EvidenceRecall and SpanCoverage.
 
-### UsefulContextLineRatio — primary efficiency metric
+### UsefulContextLineRatio — evidence-density diagnostic
 
 ```text
 unique reviewed GT lines covered

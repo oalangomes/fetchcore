@@ -1,61 +1,25 @@
 # FetchCore documentation
 
-This directory is the canonical navigation point for FetchCore technical documentation.
+Use this index to find the current contract. Historical extraction notes and individual experiment results are evidence of earlier work, not the current architecture.
 
-The root README remains the product entry point. Deeper material belongs here so architecture, usage, benchmarks and historical extraction provenance do not compete for the same page.
+| I want to… | Start here |
+| --- | --- |
+| Understand the product and its boundaries | [Architecture overview](architecture/overview.md) and [module boundaries](architecture/module-boundaries.md) |
+| Understand canonical knowledge and projections | [Repository Knowledge](architecture/repository-knowledge.md) and [projection](architecture/projection.md) |
+| Understand retrieval and adapters | [Retrieval](architecture/retrieval.md) and [adapters/composition](architecture/adapters-and-composition.md) |
+| Understand serving | [Serving boundary](architecture/serving.md) |
+| Look up contracts and capabilities | [Contracts](reference/contracts.md) and [capabilities](reference/capabilities.md) |
+| Install and index a repository | [Getting started](guides/getting-started.md) and [self-hosted indexing](guides/self-hosted-indexing.md) |
+| Search or run MCP | [Searching](guides/searching.md) and [MCP](guides/mcp.md) |
+| Configure or add a backend | [Runtime configuration](guides/runtime-configuration.md), [configuration reference](reference/configuration.md), and [adding a backend](guides/adding-a-backend.md) |
+| Reproduce a benchmark | [Experiment convention](benchmarks/protocol.md) and [baseline v1 protocol](benchmarks/baseline-v1.md) |
+| Understand a durable decision | [ADR index](adr/README.md) |
+| Follow a migration or inspect extraction provenance | [Namespace migration](migrations/fetchcore-namespace.md) and [historical extraction](history/extraction/README.md) |
 
-## Current product documentation
+## Vocabulary
 
-### Architecture
-
-- [Module boundaries](architecture/module-boundaries.md)
-- [Hardcode audit](architecture/hardcode-audit.md)
-- [Issue #44 equivalence report](architecture/issue-44-equivalence.md)
-
-Architecture documents describe current boundaries and invariants. Equivalence reports are evidence for specific refactors, not a replacement for the current architecture description.
-
-### Guides
-
-- [Getting started](guides/getting-started.md)
-- [Operator runtime configuration](guides/runtime-configuration.md)
-- [Self-hosted repository indexing and dogfood](guides/self-hosted-indexing.md)
-- [MCP serving](serving/mcp.md)
-
-Guides are task-oriented and should keep commands copyable.
-
-### Benchmarks
-
-- [Baseline v1 protocol](benchmark/baseline-v1.md)
-- [Baseline v1 results](benchmark/baseline-v1-results.md)
-- [Solr latency investigation](benchmark/solr-latency-investigation.md)
-
-Benchmark documentation must preserve corpus/revision, controlled variables, configuration identity, metrics and regressions.
-
-### Migrations
-
-- [FetchCore namespace migration](migrations/fetchcore-namespace.md)
-
-Migration documents remain current only while their compatibility path is operationally relevant.
-
-## Historical extraction provenance
-
-The documents under [`docs/extraction/`](extraction/) describe how proven functionality was extracted from AgentsOrchNext into FetchCore.
-
-They are historical provenance. They must not be interpreted as the current product architecture when a current architecture or reference document exists.
-
-See [the extraction history notice](extraction/README.md).
+[Evidence and provenance](concepts/evidence-and-provenance.md) explains source observations, query matches, and traceability. [Search intent and scope](concepts/search-intent.md) distinguishes current acquisition contracts from planned changes. [Repository identity](concepts/repository-identity.md) explains the repository boundary.
 
 ## Documentation rules
 
-Use one canonical home per concept:
-
-- architecture: boundaries, dependency direction and invariants;
-- guides: executable workflows for users/contributors;
-- reference: precise public contracts/configuration when introduced;
-- benchmark: reproducible experiment protocol/results;
-- migrations: active compatibility/migration guidance;
-- extraction/history: provenance of the initial split.
-
-Prefer lowercase kebab-case filenames, one H1 per document, relative internal links and FetchCore-native terminology.
-
-Do not create empty taxonomy directories merely to make the tree look complete.
+Use lowercase kebab-case filenames (except numbered ADRs), one H1 per page, relative internal links, explicit status labels for historical or proposed behavior, portable text diagrams, and copyable commands. Architecture records boundaries; concepts define vocabulary; guides give tasks; reference states current contracts; benchmarks preserve reproducible evidence; ADRs record durable decisions and alternatives. Keep marketing language out of reference pages and avoid duplicating a canonical explanation.

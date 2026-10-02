@@ -2,7 +2,7 @@ PYTHON ?= python3
 IMAGE ?= fetchcore:dev
 DOCKER ?= docker
 
-.PHONY: help install-dev lint typecheck test build check docker-build docker-smoke compose-config runtime-check
+.PHONY: help install-dev lint typecheck test build check docker-build docker-smoke compose-config runtime-check docs-check
 
 help:
 	@printf '%s\n' \
@@ -12,7 +12,8 @@ help:
 		'  make typecheck      Run mypy' \
 		'  make test           Run pytest with coverage collection' \
 		'  make build          Build Python sdist/wheel' \
-		'  make check          Run lint + typecheck + test + package build' \
+		'  make docs-check     Validate documentation links and index' \
+		'  make check          Run lint + typecheck + test + build + docs checks' \
 		'  make docker-build   Build the FetchCore runtime image' \
 		'  make docker-smoke   Verify non-root image, package import and MCP entry point' \
 		'  make compose-config Validate Docker Compose configuration' \
@@ -34,7 +35,10 @@ test:
 build:
 	$(PYTHON) -m build
 
-check: lint typecheck test build
+docs-check:
+	$(PYTHON) scripts/check_docs.py
+
+check: lint typecheck test build docs-check
 
 docker-build:
 	$(DOCKER) build --tag $(IMAGE) .
