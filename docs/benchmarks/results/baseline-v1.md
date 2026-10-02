@@ -1,5 +1,7 @@
 # FetchCore baseline v1 — final evidence-aware analysis
 
+**Status: frozen V0.1 result, captured 2026-10-01.**
+
 Issue: #18  
 PR: #48  
 Execution revision: `e5b364a0f978186c47911246298f7c9fcc6c1631`  

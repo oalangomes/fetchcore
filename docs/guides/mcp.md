@@ -1,4 +1,4 @@
-# FetchCore MCP serving — P0
+# MCP serving
 
 FetchCore exposes repository retrieval to MCP clients through a transport-neutral
 application boundary.
@@ -84,7 +84,7 @@ mcp dev src/fetchcore/mcp_server.py
 Assuming an already indexed FetchCore-compatible Solr collection:
 
 Create an operator-owned YAML file using the
-[runtime configuration guide](../guides/runtime-configuration.md), set
+[runtime configuration guide](runtime-configuration.md), set
 `FETCHCORE_CONFIG` to its path, and run `fetchcore-mcp`. The MCP adapter
 delegates loading and composition to the application runtime boundary.
 

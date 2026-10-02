@@ -1,5 +1,7 @@
 # Investigação de latência Solr — baseline v1
 
+**Status: point-in-time baseline v1 investigation.**
+
 Data da investigação: 2026-09-30/2026-10-01  
 Baseline: `fetchcore.baseline-v1`  
 Corpus: `oalangomes/NeuroTrack_MS@74ce3244956a65baed61f1dae6f498cb2be4f3b7`
