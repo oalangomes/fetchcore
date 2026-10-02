@@ -56,6 +56,14 @@ jobs:
         run: python -m coverage run -m pytest -q
       - name: Report coverage
         run: python -m coverage report --fail-under=0
+      - name: Re-evaluate frozen baseline ContextYield
+        run: |
+          python benchmarks/baseline-v1/context_yield.py \
+            --artifacts benchmarks/baseline-v1/artifacts/V0.1 \
+            --output "$RUNNER_TEMP/context-yield.json" \
+            --markdown "$RUNNER_TEMP/context-yield.md"
+          cat "$RUNNER_TEMP/context-yield.md"
+          cat "$RUNNER_TEMP/context-yield.md" >> "$GITHUB_STEP_SUMMARY"
 
   build:
     name: build
