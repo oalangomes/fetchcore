@@ -15,23 +15,25 @@ from typing import Protocol
 from urllib.request import Request, urlopen
 
 from fetchcore.application import BackendRegistry
-from fetchcore.backends.ollama import OllamaEmbeddingProvider, OllamaEmbeddingSettings
-from fetchcore.backends.opensearch import (
+from fetchcore.application.composition import (
+    opensearch_embedding_provider,
+    solr_embedding_provider,
+)
+from fetchcore.adapters.embedding.ollama.provider import OllamaEmbeddingProvider, OllamaEmbeddingSettings
+from fetchcore.adapters.retrieval.opensearch.backend import (
     OpenSearchIndexStore,
     OpenSearchSettings,
     UrllibOpenSearchTransport,
-    opensearch_embedding_provider,
 )
-from fetchcore.backends.qdrant_vector import (
+from fetchcore.adapters.retrieval.qdrant.backend import (
     QdrantVectorIndexStore,
     QdrantVectorSettings,
     UrllibQdrantTransport,
 )
-from fetchcore.backends.solr import (
+from fetchcore.adapters.retrieval.solr.backend import (
     SolrIndexStore,
     SolrSettings,
     UrllibSolrTransport,
-    solr_embedding_provider,
 )
 from fetchcore.baseline import (
     BaselineArm,

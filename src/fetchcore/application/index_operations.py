@@ -13,12 +13,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from fetchcore.backends.solr import SolrIndexSnapshot, SolrIndexStore
+from fetchcore.adapters.retrieval.solr.backend import SolrIndexSnapshot, SolrIndexStore
 from fetchcore.repository.corpus_diagnostics import analyze_corpus_duplication
 from fetchcore.repository.default_knowledge_packs import (
     default_repository_knowledge_packs,
 )
-from fetchcore.backends.solr_document_incremental import (
+from fetchcore.adapters.retrieval.solr.document_incremental import (
     DocumentAwareGitSolrSynchronizer,
 )
 from fetchcore.repository.document_policy import (
@@ -30,7 +30,7 @@ from fetchcore.repository.incremental import (
     GitDeltaPlan,
     GitRepositoryChangeDetector,
 )
-from fetchcore.backends.solr_index_contract import (
+from fetchcore.adapters.retrieval.solr.index_contract import (
     bind_indexing_contract_store,
     snapshot_indexing_fingerprint,
     snapshot_mapping,

@@ -1,1 +1,1 @@
-"""Knowledge search backend implementations."""
+"""Compatibility namespace for historical backend imports."""
