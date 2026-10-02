@@ -216,5 +216,5 @@ Baseline v1 is therefore in **final review before promotion**, not waiting for a
 new evidence-aware execution. Promotion still requires the final artifact review
 and tag/freeze decision.
 
-See `docs/benchmark/baseline-v1.md` for metric definitions and the promotion
+See `docs/benchmarks/baseline-v1.md` for metric definitions and the promotion
 gate.

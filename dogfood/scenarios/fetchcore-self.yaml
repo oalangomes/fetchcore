@@ -35,7 +35,7 @@ scenarios:
     query: "MCP RetrievalApplicationService KnowledgeSearchBackend search get_source"
     expected_paths:
       - src/fetchcore/serving/mcp.py
-      - docs/serving/mcp.md
+      - docs/guides/mcp.md
     min_expected_path_hits: 1
 
   - id: retrieval-authority-boundary
