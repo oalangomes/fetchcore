@@ -107,7 +107,8 @@ jobs:
         run: |
           docker run -d --name fetchcore-ci-solr \
             -p 127.0.0.1:8983:8983 \
-            solr:9.10.1 solr-precreate fetchcore-ci
+            -v "$GITHUB_WORKSPACE/infra/solr/configset:/fetchcore-configset:ro" \
+            solr:9.10.1 solr-precreate fetchcore-ci /fetchcore-configset
       - name: Wait for Solr
         run: |
           python - <<'PY'
