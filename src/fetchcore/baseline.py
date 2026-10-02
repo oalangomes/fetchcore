@@ -1008,10 +1008,8 @@ def render_context_yield_report(artifact: Mapping[str, object]) -> str:
                 f"{float(str(raw_metrics['evidence_recall_mean'])):.6f}"
             )
             diagnostic_values.append(
-                (
-                    f"{float(str(raw_metrics['consumed_lines_mean'])):.1f} lines / "
-                    f"{float(str(raw_metrics['packed_result_count_mean'])):.1f} results"
-                )
+                f"{float(str(raw_metrics['consumed_lines_mean'])):.1f} lines / "
+                f"{float(str(raw_metrics['packed_result_count_mean'])):.1f} results"
             )
         lines.append("| " + " | ".join((arm_id, *budget_values)) + " |")
         evidence_rows.append("| " + " | ".join((arm_id, *evidence_values)) + " |")
