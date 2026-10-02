@@ -131,16 +131,20 @@ jobs:
       - name: Exercise operational indexing CLI
         run: |
           set -o pipefail
-          mkdir -p .fetchcore-dogfood-ci
-          fetchcore index bootstrap | tee .fetchcore-dogfood-ci/bootstrap.json
-          fetchcore index status | tee .fetchcore-dogfood-ci/status-before.json
-          fetchcore index dry-run | tee .fetchcore-dogfood-ci/dry-run.json
-          fetchcore index sync | tee .fetchcore-dogfood-ci/sync.json
-          fetchcore index status | tee .fetchcore-dogfood-ci/status-after.json
-          fetchcore index sync | tee .fetchcore-dogfood-ci/sync-noop.json
+          output="$RUNNER_TEMP/fetchcore-dogfood"
+          mkdir -p "$output"
+          fetchcore index bootstrap | tee "$output/bootstrap.json"
+          fetchcore index status | tee "$output/status-before.json"
+          fetchcore index dry-run | tee "$output/dry-run.json"
+          fetchcore index sync | tee "$output/sync.json"
+          fetchcore index status | tee "$output/status-after.json"
+          fetchcore index sync | tee "$output/sync-noop.json"
           python - <<'PY'
           import json
-          payload = json.load(open(".fetchcore-dogfood-ci/sync-noop.json", encoding="utf-8"))
+          import os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "fetchcore-dogfood" / "sync-noop.json"
+          payload = json.loads(path.read_text(encoding="utf-8"))
           assert payload["result"]["noop"] is True, payload
           PY
       - name: Exercise real MCP retrieval
@@ -152,15 +156,15 @@ jobs:
             --solr-url http://127.0.0.1:8983/solr \
             --collection fetchcore-ci \
             --scenarios dogfood/scenarios/fetchcore-self.yaml \
-            --output-json .fetchcore-dogfood-ci/mcp-evaluation.json \
-            --output-markdown .fetchcore-dogfood-ci/mcp-evaluation.md
-          cat .fetchcore-dogfood-ci/mcp-evaluation.md >> "$GITHUB_STEP_SUMMARY"
+            --output-json $RUNNER_TEMP/fetchcore-dogfood/mcp-evaluation.json \
+            --output-markdown $RUNNER_TEMP/fetchcore-dogfood/mcp-evaluation.md
+          cat $RUNNER_TEMP/fetchcore-dogfood/mcp-evaluation.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload dogfood smoke evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: fetchcore-dogfood-smoke-${{ github.run_id }}
-          path: .fetchcore-dogfood-ci/
+          path: ${{ runner.temp }}/fetchcore-dogfood/
           if-no-files-found: warn
           include-hidden-files: true
           retention-days: 7
