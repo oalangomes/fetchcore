@@ -58,6 +58,11 @@ on:
         required: false
         type: boolean
         default: false
+      evaluation_gate:
+        description: Fail the workflow when one or more MCP evaluation scenarios miss expected evidence.
+        required: false
+        type: boolean
+        default: false
       scenarios_path:
         description: Scenario YAML path relative to the target repository.
         required: false
@@ -126,6 +131,11 @@ on:
         required: false
         type: boolean
         default: true
+      evaluation_gate:
+        description: Fail when MCP evaluation scenarios miss expected evidence.
+        required: false
+        type: boolean
+        default: false
       scenarios_path:
         description: Scenario YAML in target repository.
         required: false
@@ -304,18 +314,24 @@ jobs:
           REVISION: ${{ steps.identity.outputs.revision }}
           COLLECTION: ${{ inputs.collection }}
           SCENARIOS_PATH: ${{ inputs.scenarios_path }}
+          EVALUATION_GATE: ${{ inputs.evaluation_gate }}
         run: |
           set -euo pipefail
           test -n "$SCENARIOS_PATH" || { echo "scenarios_path is required when evaluate=true" >&2; exit 2; }
-          python .fetchcore-runtime/scripts/dogfood_mcp_eval.py \
-            --workspace target \
-            --repository "$REPOSITORY" \
-            --revision "$REVISION" \
-            --solr-url "$FETCHCORE_SOLR_URL" \
-            --collection "$COLLECTION" \
-            --scenarios "target/$SCENARIOS_PATH" \
-            --output-json "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation.json" \
+          args=(
+            --workspace target
+            --repository "$REPOSITORY"
+            --revision "$REVISION"
+            --solr-url "$FETCHCORE_SOLR_URL"
+            --collection "$COLLECTION"
+            --scenarios "target/$SCENARIOS_PATH"
+            --output-json "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation.json"
             --output-markdown "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation.md"
+          )
+          if [ "$EVALUATION_GATE" != "true" ]; then
+            args+=(--report-only)
+          fi
+          python .fetchcore-runtime/scripts/dogfood_mcp_eval.py "${args[@]}"
           cat "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload FetchCore indexing evidence
