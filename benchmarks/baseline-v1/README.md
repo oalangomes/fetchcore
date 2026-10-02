@@ -26,7 +26,7 @@ predates later harness-only changes.
 - SourceRecall@20 is diagnostic;
 - EvidenceRecall@20 and SpanCoverage@20 are primary coverage metrics;
 - evidence MRR and evidence nDCG measure ranking;
-- UsefulContextLineRatio measures useful evidence per returned line budget;
+- UsefulContextLineRatio measures known Ground Truth line density across the full returned set;
 - 1 warm-up + 20 measured repetitions per query;
 - max 20 returned results;
 - diagnostic candidate window 80;
@@ -109,6 +109,47 @@ content.
 
 The runner validates Ground Truth coordinates against the exact local checkout
 before measurement.
+
+## Derived line-budget context yield
+
+The frozen baseline-v1 artifact/metrics schemas remain unchanged. Budget-aware
+evidence metrics are emitted as a separate derived artifact so the promoted ruler
+is not silently redefined.
+
+The derived evaluator uses ranked result spans already stored by baseline-v1 and
+packs only complete returned spans in rank order. It stops before the first span
+that would exceed the budget; results are never partially sliced to improve a
+score.
+
+The initial line budgets are:
+
+```text
+100
+250
+500
+1000
+```
+
+For each budget it records:
+
+- ContextYield — mean evidence-region span coverage inside the packed prefix;
+- budgeted evidence recall — fully covered requirements inside the packed prefix;
+- consumed lines;
+- packed result count.
+
+This measures **how much reviewed evidence arrives within bounded context**, which
+is different from `UsefulContextLineRatio` (density across the full returned set).
+
+Existing versioned runs can be re-evaluated offline without invoking retrieval:
+
+```bash
+python benchmarks/baseline-v1/context_yield.py \
+  --artifacts benchmarks/baseline-v1/artifacts/V0.1
+```
+
+This writes `context-yield.json` and `context-yield.md` beside the frozen run.
+The derived artifact fingerprints its metric definition and line-budget
+configuration independently from baseline-v1 metrics schema v1.
 
 ## Run versioning
 

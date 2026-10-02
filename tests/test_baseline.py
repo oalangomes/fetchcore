@@ -7,7 +7,11 @@ import pytest
 
 from fetchcore.baseline import (
     BASELINE_ARTIFACT_SCHEMA_VERSION,
+    BASELINE_CONTEXT_YIELD_METRICS_SPEC,
+    BASELINE_CONTEXT_YIELD_PROTOCOL,
+    BASELINE_CONTEXT_YIELD_SCHEMA_VERSION,
     BASELINE_GROUND_TRUTH_SCHEMA_VERSION,
+    BASELINE_LINE_BUDGETS,
     BASELINE_METRICS_SCHEMA_VERSION,
     BASELINE_V1_ARMS,
     BASELINE_V1_METRICS_SPEC,
@@ -19,12 +23,16 @@ from fetchcore.baseline import (
     BaselineGroundTruth,
     BaselineQueryCase,
     BaselineRunner,
+    BaselineSuite,
     build_baseline_artifact,
+    build_context_yield_artifact,
     capture_baseline_environment,
+    evaluate_line_budgeted_evidence,
     evaluate_retrieval,
     load_baseline_suite,
     mapping_fingerprint,
     percentile,
+    render_context_yield_report,
     validate_baseline_arm,
 )
 from fetchcore.retrieval import RetrievalBackendCapabilities
@@ -218,6 +226,161 @@ def test_duplicate_returned_spans_consume_context_without_duplicate_gain() -> No
     assert observed.evidence_ndcg_at_k == 1.0
     assert observed.returned_line_count == 20
     assert observed.useful_context_line_ratio == pytest.approx(0.2, abs=1e-6)
+
+
+def test_line_budgeted_evidence_uses_ranked_prefix_without_partial_results() -> None:
+    source_ref = "repository://repo/shared.py"
+    response = _response(
+        (
+            _result("first-half", source_ref=source_ref, line_start=10, line_end=14),
+            _result("second-half", source_ref=source_ref, line_start=15, line_end=19),
+        )
+    )
+    truth = BaselineGroundTruth(
+        query_id="q1",
+        requirements=(_requirement("needed", source_ref, 10, 19),),
+    )
+    observed = evaluate_retrieval(response, truth, iteration=1, k=2)
+
+    budgeted = evaluate_line_budgeted_evidence(
+        truth,
+        observed.result_spans,
+        budgets=(4, 5, 9, 10),
+    )
+
+    assert budgeted[0].packed_result_count == 0
+    assert budgeted[0].consumed_lines == 0
+    assert budgeted[0].evidence_recall == 0.0
+    assert budgeted[0].context_yield == 0.0
+
+    assert budgeted[1].packed_result_count == 1
+    assert budgeted[1].consumed_lines == 5
+    assert budgeted[1].evidence_recall == 0.0
+    assert budgeted[1].context_yield == 0.5
+
+    assert budgeted[2].packed_result_count == 1
+    assert budgeted[2].consumed_lines == 5
+    assert budgeted[2].context_yield == 0.5
+
+    assert budgeted[3].packed_result_count == 2
+    assert budgeted[3].consumed_lines == 10
+    assert budgeted[3].evidence_recall == 1.0
+    assert budgeted[3].context_yield == 1.0
+
+
+def test_line_budgeted_evidence_rejects_non_increasing_budgets() -> None:
+    truth = BaselineGroundTruth(
+        query_id="q1",
+        requirements=(
+            _requirement("needed", "repository://repo/a.py", 1, 2),
+        ),
+    )
+
+    with pytest.raises(BaselineConfigurationError, match="strictly increasing"):
+        evaluate_line_budgeted_evidence(truth, (), budgets=(100, 100))
+
+
+def test_context_yield_artifact_re_evaluates_frozen_spans_offline() -> None:
+    source_ref = "repository://repo/shared.py"
+    requirements = (_requirement("needed", source_ref, 10, 19),)
+    truth = BaselineGroundTruth(query_id="q1", requirements=requirements)
+    observation = evaluate_retrieval(
+        _response(
+            (
+                _result("first-half", source_ref=source_ref, line_start=10, line_end=14),
+                _result("second-half", source_ref=source_ref, line_start=15, line_end=19),
+            )
+        ),
+        truth,
+        iteration=1,
+        k=2,
+    )
+    fingerprint = mapping_fingerprint({"suite": "fixture-v2"})
+    source_artifact = build_baseline_artifact(
+        arm=BaselineArm("fixture-lexical", "fixture", "lexical"),
+        corpus={"repository": "repo", "revision": "abc123"},
+        config={"k": 2},
+        observations=(observation,),
+        ground_truth_fingerprint=fingerprint,
+    )
+    suite = BaselineSuite(
+        schema_version=BASELINE_GROUND_TRUTH_SCHEMA_VERSION,
+        corpus={"repository": "repo", "revision": "abc123"},
+        cases=(
+            BaselineQueryCase(
+                query_id="q1",
+                intent=SearchIntent(semantic_terms=("shared",)),
+                requirements=requirements,
+            ),
+        ),
+        fingerprint=fingerprint,
+    )
+
+    derived = build_context_yield_artifact(
+        suite=suite,
+        retrieval_artifacts=(source_artifact.to_mapping(),),
+        budgets=(5, 10),
+    )
+
+    assert derived["schema_version"] == BASELINE_CONTEXT_YIELD_SCHEMA_VERSION
+    assert derived["protocol"] == BASELINE_CONTEXT_YIELD_PROTOCOL
+    assert derived["source_metrics_fingerprint"] == mapping_fingerprint(
+        BASELINE_V1_METRICS_SPEC
+    )
+    assert derived["metrics_fingerprint"] == mapping_fingerprint(
+        BASELINE_CONTEXT_YIELD_METRICS_SPEC
+    )
+    assert derived["budget_config"]["budgets"] == [5, 10]
+    arm = derived["arms"][0]
+    assert arm["aggregate"]["5"]["context_yield_mean"] == 0.5
+    assert arm["aggregate"]["5"]["evidence_recall_mean"] == 0.0
+    assert arm["aggregate"]["10"]["context_yield_mean"] == 1.0
+    assert arm["aggregate"]["10"]["evidence_recall_mean"] == 1.0
+
+    report = render_context_yield_report(derived)
+    assert "ContextYield by line budget" in report
+    assert "| fixture-lexical | 0.500000 | 1.000000 |" in report
+
+
+def test_context_yield_artifact_fails_closed_on_source_metric_mismatch() -> None:
+    fingerprint = mapping_fingerprint({"suite": "fixture-v2"})
+    requirements = (
+        _requirement("needed", "repository://repo/a.py", 1, 2),
+    )
+    truth = BaselineGroundTruth(query_id="q1", requirements=requirements)
+    observation = evaluate_retrieval(
+        _response((_result("a", line_start=1, line_end=2),)),
+        truth,
+        iteration=1,
+        k=1,
+    )
+    source_artifact = build_baseline_artifact(
+        arm=BaselineArm("fixture-lexical", "fixture", "lexical"),
+        corpus={"repository": "repo", "revision": "abc123"},
+        config={"k": 1},
+        observations=(observation,),
+        ground_truth_fingerprint=fingerprint,
+    ).to_mapping()
+    source_artifact["metrics_fingerprint"] = "sha256:wrong"
+    suite = BaselineSuite(
+        schema_version=BASELINE_GROUND_TRUTH_SCHEMA_VERSION,
+        corpus={"repository": "repo", "revision": "abc123"},
+        cases=(
+            BaselineQueryCase(
+                query_id="q1",
+                intent=SearchIntent(semantic_terms=("a",)),
+                requirements=requirements,
+            ),
+        ),
+        fingerprint=fingerprint,
+    )
+
+    with pytest.raises(BaselineConfigurationError, match="metrics fingerprint"):
+        build_context_yield_artifact(
+            suite=suite,
+            retrieval_artifacts=(source_artifact,),
+            budgets=BASELINE_LINE_BUDGETS,
+        )
 
 
 def test_evaluate_retrieval_fails_closed_when_result_spans_are_missing() -> None:

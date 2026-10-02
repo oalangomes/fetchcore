@@ -56,6 +56,23 @@ BASELINE_V1_METRICS_SPEC: dict[str, object] = {
     ),
 }
 
+BASELINE_CONTEXT_YIELD_PROTOCOL = "fetchcore.baseline-v1-context-yield"
+BASELINE_CONTEXT_YIELD_SCHEMA_VERSION = 1
+BASELINE_LINE_BUDGETS: tuple[int, ...] = (100, 250, 500, 1000)
+BASELINE_CONTEXT_YIELD_METRICS_SPEC: dict[str, object] = {
+    "schema_version": BASELINE_CONTEXT_YIELD_SCHEMA_VERSION,
+    "budget_unit": "lines",
+    "packing": "ranked-prefix whole-result spans; stop before first overflow",
+    "budgeted_evidence_recall": (
+        "fully covered evidence requirements in the packed prefix / all requirements"
+    ),
+    "context_yield": (
+        "mean best-alternative Ground Truth span coverage in the packed prefix"
+    ),
+    "consumed_lines": "sum of full returned result spans packed within the line budget",
+    "packed_result_count": "number of ranked result spans packed within the line budget",
+}
+
 
 class BaselineConfigurationError(ValueError):
     """Raised when one baseline arm cannot be executed as declared."""
@@ -224,6 +241,20 @@ class RetrievalResultSpan:
     @property
     def line_count(self) -> int:
         return self.line_end - self.line_start + 1
+
+    def to_mapping(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class BudgetedEvidenceMetric:
+    """Evidence recovered by a ranked prefix constrained by a line budget."""
+
+    line_budget: int
+    packed_result_count: int
+    consumed_lines: int
+    evidence_recall: float
+    context_yield: float
 
     def to_mapping(self) -> dict[str, object]:
         return asdict(self)
@@ -724,6 +755,312 @@ def evaluate_retrieval(
     )
 
 
+def evaluate_line_budgeted_evidence(
+    truth: BaselineGroundTruth,
+    spans: Sequence[RetrievalResultSpan],
+    *,
+    budgets: Sequence[int] = BASELINE_LINE_BUDGETS,
+) -> tuple[BudgetedEvidenceMetric, ...]:
+    """Measure evidence recovery inside deterministic ranked-prefix line budgets."""
+
+    normalized_budgets = _validated_line_budgets(budgets)
+    metrics: list[BudgetedEvidenceMetric] = []
+    for budget in normalized_budgets:
+        packed: list[RetrievalResultSpan] = []
+        consumed_lines = 0
+        for span in spans:
+            next_total = consumed_lines + span.line_count
+            if next_total > budget:
+                break
+            packed.append(span)
+            consumed_lines = next_total
+
+        coverages = tuple(
+            _requirement_coverage(requirement, packed)
+            for requirement in truth.requirements
+        )
+        evidence_recall = (
+            sum(coverage == 1.0 for coverage in coverages) / len(coverages)
+        )
+        context_yield = sum(coverages) / len(coverages)
+        metrics.append(
+            BudgetedEvidenceMetric(
+                line_budget=budget,
+                packed_result_count=len(packed),
+                consumed_lines=consumed_lines,
+                evidence_recall=round(evidence_recall, 6),
+                context_yield=round(context_yield, 6),
+            )
+        )
+    return tuple(metrics)
+
+
+def build_context_yield_artifact(
+    *,
+    suite: BaselineSuite,
+    retrieval_artifacts: Sequence[Mapping[str, object]],
+    budgets: Sequence[int] = BASELINE_LINE_BUDGETS,
+) -> dict[str, object]:
+    """Re-evaluate frozen ranked spans under line budgets without invoking retrieval."""
+
+    if not retrieval_artifacts:
+        raise BaselineConfigurationError(
+            "context-yield re-evaluation requires retrieval artifacts"
+        )
+    normalized_budgets = _validated_line_budgets(budgets)
+    expected_metrics_fingerprint = mapping_fingerprint(BASELINE_V1_METRICS_SPEC)
+    metrics_fingerprint = mapping_fingerprint(BASELINE_CONTEXT_YIELD_METRICS_SPEC)
+    budget_config = {
+        "unit": "lines",
+        "budgets": list(normalized_budgets),
+        "packing": "ranked-prefix-whole-result-stop-on-overflow",
+    }
+    truths = {case.query_id: case.truth for case in suite.cases}
+    arm_payloads: list[dict[str, object]] = []
+
+    for raw_artifact in retrieval_artifacts:
+        if str(raw_artifact.get("protocol", "")) != BASELINE_PROTOCOL:
+            raise BaselineConfigurationError(
+                "context-yield source artifact protocol mismatch"
+            )
+        if int(str(raw_artifact.get("schema_version", 0))) != BASELINE_ARTIFACT_SCHEMA_VERSION:
+            raise BaselineConfigurationError(
+                "context-yield source artifact schema mismatch"
+            )
+        if str(raw_artifact.get("ground_truth_fingerprint", "")) != suite.fingerprint:
+            raise BaselineConfigurationError(
+                "context-yield Ground Truth fingerprint mismatch"
+            )
+        if int(str(raw_artifact.get("metrics_schema_version", 0))) != BASELINE_METRICS_SCHEMA_VERSION:
+            raise BaselineConfigurationError(
+                "context-yield source metrics schema mismatch"
+            )
+        if str(raw_artifact.get("metrics_fingerprint", "")) != expected_metrics_fingerprint:
+            raise BaselineConfigurationError(
+                "context-yield source metrics fingerprint mismatch"
+            )
+
+        raw_arm = raw_artifact.get("arm")
+        raw_observations = raw_artifact.get("observations")
+        if not isinstance(raw_arm, Mapping) or not isinstance(raw_observations, list):
+            raise BaselineConfigurationError(
+                "context-yield source artifact requires arm and observations"
+            )
+
+        aggregate_values: dict[int, dict[str, list[float]]] = {
+            budget: {
+                "context_yield": [],
+                "evidence_recall": [],
+                "consumed_lines": [],
+                "packed_result_count": [],
+            }
+            for budget in normalized_budgets
+        }
+        observations: list[dict[str, object]] = []
+        for raw_observation in raw_observations:
+            if not isinstance(raw_observation, Mapping):
+                raise BaselineConfigurationError(
+                    "context-yield source observation must be an object"
+                )
+            query_id = str(raw_observation.get("query_id", "")).strip()
+            truth = truths.get(query_id)
+            if truth is None:
+                raise BaselineConfigurationError(
+                    f"context-yield source observation has unknown query_id {query_id!r}"
+                )
+            raw_spans = raw_observation.get("result_spans")
+            if not isinstance(raw_spans, list):
+                raise BaselineConfigurationError(
+                    "context-yield source observation requires result_spans"
+                )
+            spans = tuple(_result_span_from_mapping(item) for item in raw_spans)
+            if tuple(span.rank for span in spans) != tuple(range(1, len(spans) + 1)):
+                raise BaselineConfigurationError(
+                    "context-yield result spans must preserve contiguous ranked order"
+                )
+
+            budgeted = evaluate_line_budgeted_evidence(
+                truth,
+                spans,
+                budgets=normalized_budgets,
+            )
+            for item in budgeted:
+                values = aggregate_values[item.line_budget]
+                values["context_yield"].append(item.context_yield)
+                values["evidence_recall"].append(item.evidence_recall)
+                values["consumed_lines"].append(float(item.consumed_lines))
+                values["packed_result_count"].append(float(item.packed_result_count))
+            observations.append(
+                {
+                    "query_id": query_id,
+                    "iteration": int(str(raw_observation.get("iteration", 0))),
+                    "budgets": [item.to_mapping() for item in budgeted],
+                }
+            )
+
+        aggregate = {
+            str(budget): {
+                "context_yield_mean": _mean(aggregate_values[budget]["context_yield"]),
+                "evidence_recall_mean": _mean(
+                    aggregate_values[budget]["evidence_recall"]
+                ),
+                "consumed_lines_mean": _mean(
+                    aggregate_values[budget]["consumed_lines"]
+                ),
+                "packed_result_count_mean": _mean(
+                    aggregate_values[budget]["packed_result_count"]
+                ),
+            }
+            for budget in normalized_budgets
+        }
+        arm_payloads.append(
+            {
+                "arm": _canonical_mapping(raw_arm),
+                "source_config_fingerprint": str(
+                    raw_artifact.get("config_fingerprint", "")
+                ),
+                "observation_count": len(observations),
+                "observations": observations,
+                "aggregate": aggregate,
+            }
+        )
+
+    return {
+        "schema_version": BASELINE_CONTEXT_YIELD_SCHEMA_VERSION,
+        "protocol": BASELINE_CONTEXT_YIELD_PROTOCOL,
+        "source_protocol": BASELINE_PROTOCOL,
+        "source_artifact_schema_version": BASELINE_ARTIFACT_SCHEMA_VERSION,
+        "source_metrics_schema_version": BASELINE_METRICS_SCHEMA_VERSION,
+        "source_metrics_fingerprint": expected_metrics_fingerprint,
+        "ground_truth_schema_version": suite.schema_version,
+        "ground_truth_fingerprint": suite.fingerprint,
+        "metrics_fingerprint": metrics_fingerprint,
+        "budget_config": budget_config,
+        "budget_config_fingerprint": mapping_fingerprint(budget_config),
+        "arms": arm_payloads,
+    }
+
+
+def render_context_yield_report(artifact: Mapping[str, object]) -> str:
+    """Render a compact Markdown report from a derived context-yield artifact."""
+
+    raw_budget_config = artifact.get("budget_config")
+    raw_arms = artifact.get("arms")
+    if not isinstance(raw_budget_config, Mapping) or not isinstance(raw_arms, list):
+        raise BaselineConfigurationError(
+            "context-yield report requires budget_config and arms"
+        )
+    raw_budgets = raw_budget_config.get("budgets")
+    if not isinstance(raw_budgets, list):
+        raise BaselineConfigurationError(
+            "context-yield report budget_config requires budgets"
+        )
+    budgets = _validated_line_budgets(tuple(int(str(item)) for item in raw_budgets))
+
+    lines = [
+        "# Baseline context yield",
+        "",
+        "Derived offline from frozen ranked result spans and evidence-region Ground Truth.",
+        "No retrieval backend is invoked by this report.",
+        "",
+        f"- Protocol: `{artifact.get('protocol', '')}`",
+        f"- Source protocol: `{artifact.get('source_protocol', '')}`",
+        f"- Metrics fingerprint: `{artifact.get('metrics_fingerprint', '')}`",
+        f"- Budget fingerprint: `{artifact.get('budget_config_fingerprint', '')}`",
+        "",
+        "## ContextYield by line budget",
+        "",
+        "| Arm | " + " | ".join(f"{budget}L" for budget in budgets) + " |",
+        "| --- | " + " | ".join("---:" for _ in budgets) + " |",
+    ]
+
+    evidence_rows: list[str] = []
+    diagnostic_rows: list[str] = []
+    for raw_arm in raw_arms:
+        if not isinstance(raw_arm, Mapping):
+            raise BaselineConfigurationError(
+                "context-yield report arm entry must be an object"
+            )
+        arm = raw_arm.get("arm")
+        aggregate = raw_arm.get("aggregate")
+        if not isinstance(arm, Mapping) or not isinstance(aggregate, Mapping):
+            raise BaselineConfigurationError(
+                "context-yield report arm requires arm and aggregate"
+            )
+        arm_id = str(arm.get("id", "")).strip()
+        if not arm_id:
+            raise BaselineConfigurationError(
+                "context-yield report arm id must not be empty"
+            )
+        budget_values = []
+        evidence_values = []
+        diagnostic_values = []
+        for budget in budgets:
+            raw_metrics = aggregate.get(str(budget))
+            if not isinstance(raw_metrics, Mapping):
+                raise BaselineConfigurationError(
+                    f"context-yield report missing aggregate for {budget}L"
+                )
+            budget_values.append(
+                f"{float(str(raw_metrics['context_yield_mean'])):.6f}"
+            )
+            evidence_values.append(
+                f"{float(str(raw_metrics['evidence_recall_mean'])):.6f}"
+            )
+            diagnostic_values.append(
+                f"{float(str(raw_metrics['consumed_lines_mean'])):.1f} lines / "
+                f"{float(str(raw_metrics['packed_result_count_mean'])):.1f} results"
+            )
+        lines.append("| " + " | ".join((arm_id, *budget_values)) + " |")
+        evidence_rows.append("| " + " | ".join((arm_id, *evidence_values)) + " |")
+        diagnostic_rows.append("| " + " | ".join((arm_id, *diagnostic_values)) + " |")
+
+    lines.extend(
+        (
+            "",
+            "## Budgeted evidence recall",
+            "",
+            "| Arm | " + " | ".join(f"{budget}L" for budget in budgets) + " |",
+            "| --- | " + " | ".join("---:" for _ in budgets) + " |",
+            *evidence_rows,
+            "",
+            "## Packed-context diagnostics",
+            "",
+            "| Arm | " + " | ".join(f"{budget}L" for budget in budgets) + " |",
+            "| --- | " + " | ".join("---:" for _ in budgets) + " |",
+            *diagnostic_rows,
+            "",
+            (
+                "ContextYield is budgeted span coverage, not consumer satisfaction or "
+                "semantic authority."
+            ),
+            "",
+        )
+    )
+    return "\n".join(lines)
+
+
+def write_context_yield_artifact(
+    path: Path,
+    artifact: Mapping[str, object],
+) -> Path:
+    """Write one deterministic derived context-yield JSON artifact."""
+
+    destination = path.resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(
+            _canonical_mapping(artifact),
+            sort_keys=True,
+            indent=2,
+            ensure_ascii=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return destination
+
+
 def build_baseline_artifact(
     *,
     arm: BaselineArm,
@@ -855,6 +1192,51 @@ def _evidence_requirement_from_mapping(
     return BaselineEvidenceRequirement(
         id=requirement_id,
         alternatives=tuple(alternatives),
+    )
+
+
+def _validated_line_budgets(budgets: Sequence[int]) -> tuple[int, ...]:
+    values = tuple(int(item) for item in budgets)
+    if not values or any(item < 1 for item in values):
+        raise BaselineConfigurationError(
+            "context-yield line budgets must contain positive integers"
+        )
+    if values != tuple(sorted(set(values))):
+        raise BaselineConfigurationError(
+            "context-yield line budgets must be unique and strictly increasing"
+        )
+    return values
+
+
+def _result_span_from_mapping(value: object) -> RetrievalResultSpan:
+    if not isinstance(value, Mapping):
+        raise BaselineConfigurationError(
+            "context-yield result span must be an object"
+        )
+    try:
+        rank = int(str(value["rank"]))
+        line_start = int(str(value["line_start"]))
+        line_end = int(str(value["line_end"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise BaselineConfigurationError(
+            "context-yield result span requires integer rank/line bounds"
+        ) from exc
+    identifier = str(value.get("id", "")).strip()
+    source_ref = str(value.get("source_ref", "")).strip()
+    if rank < 1 or not identifier or not source_ref:
+        raise BaselineConfigurationError(
+            "context-yield result span requires positive rank, id and source_ref"
+        )
+    if line_start < 1 or line_end < line_start:
+        raise BaselineConfigurationError(
+            "context-yield result span contains invalid line coordinates"
+        )
+    return RetrievalResultSpan(
+        rank=rank,
+        id=identifier,
+        source_ref=source_ref,
+        line_start=line_start,
+        line_end=line_end,
     )
 
 
