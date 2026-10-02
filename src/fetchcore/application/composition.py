@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
 BackendFactory = Callable[[], KnowledgeSearchBackend]
 EmbeddingFactory = Callable[[EmbeddingConfig, Mapping[str, object]], EmbeddingProvider]
+BUILTIN_BACKEND_IDS = frozenset({"local-semantic", "solr", "opensearch", "qdrant-vector"})
+BUILTIN_EMBEDDING_PROVIDER_IDS = frozenset({"ollama"})
 
 
 def _ollama_factory(
@@ -30,8 +32,6 @@ def _ollama_factory(
         OllamaEmbeddingSettings(
             url=runtime.url,
             model=embedding.model,
-            timeout_seconds=runtime.timeout_seconds,
-            request_batch_size=runtime.request_batch_size,
         ),
         timeout_seconds=embedding.timeout_seconds,
         request_batch_size=embedding.request_batch_size,
@@ -119,6 +119,7 @@ def opensearch_embedding_provider(retrieval: RetrievalConfig) -> EmbeddingProvid
 def _qdrant_embedding_provider(
     settings: QdrantVectorSettings, embedding: EmbeddingConfig,
 ) -> EmbeddingProvider:
+    """Historical direct helper; new backend factories use the provider registry."""
     return create_embedding_provider(
         EmbeddingConfig(
             provider=embedding.provider,
@@ -146,13 +147,16 @@ def builtin_backend_factories(
         settings: QdrantVectorSettings, embedding: EmbeddingConfig
     ) -> EmbeddingProvider:
         if providers is None:
-            return _qdrant_embedding_provider(settings, embedding)
+            # Translate the historical Qdrant URL for direct registry callers.
+            # The execution envelope remains the supplied EmbeddingConfig.
+            legacy = EmbeddingProviderRegistry(
+                settings={"ollama": {"url": settings.embedding_url}}
+            )
+            return legacy.create(
+                embedding, backend_id="qdrant-vector", backend_name="Qdrant vector"
+            )
         return registry.create(
-            EmbeddingConfig(
-                provider=embedding.provider,
-                model=settings.embedding_model,
-                timeout_seconds=settings.timeout_seconds,
-            ),
+            embedding,
             backend_id="qdrant-vector",
             backend_name="Qdrant vector",
         )

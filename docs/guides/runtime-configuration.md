@@ -18,6 +18,8 @@ retrieval:
     embedding:
       provider: ollama
       model: embeddinggemma
+      timeout_seconds: 60
+      request_batch_size: 32
 backends:
   qdrant-vector:
     url: http://qdrant:6333
@@ -26,8 +28,6 @@ backends:
 embedding:
   ollama:
     url: http://ollama:11434
-    timeout_seconds: 30
-    request_batch_size: 32
 ```
 
 The format has its own version (`1`), independent of projection, indexing, and
@@ -65,6 +65,12 @@ Simple runtime environment overrides include `FETCHCORE_BACKEND`,
 `FETCHCORE_OLLAMA_REQUEST_BATCH_SIZE`. Use YAML for structured retrieval and
 backend settings. Keep secrets out of checked-in YAML; inject the Qdrant API key
 through ENV or explicit caller values.
+
+`EmbeddingConfig` (`retrieval.dense.embedding`) owns provider, model, timeout,
+and request batch. `embedding.ollama` owns only the Ollama URL. The two Ollama
+ENV execution overrides are translated into `EmbeddingConfig` before
+composition, following the same source precedence. Qdrant's backend timeout
+controls only Qdrant transport; it does not override the embedding timeout.
 
 Historical `FETCHCORE_MCP_*` names remain accepted when the canonical runtime
 name is absent. `OLLAMA_URL` is the fallback for `FETCHCORE_OLLAMA_URL`.

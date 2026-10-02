@@ -9,8 +9,16 @@ import pytest
 
 from fetchcore.adapters.embedding.ollama.provider import OllamaEmbeddingProvider
 from fetchcore.adapters.retrieval.local.backend import LocalSemanticBackend
+from fetchcore.adapters.retrieval.qdrant.backend import QdrantVectorBackend, QdrantVectorSettings
 from fetchcore.adapters.retrieval.solr.backend import SolrBackend
-from fetchcore.application.composition import BackendRegistry, EmbeddingProviderRegistry
+from fetchcore.application.composition import (
+    BUILTIN_BACKEND_IDS,
+    BUILTIN_EMBEDDING_PROVIDER_IDS,
+    BackendRegistry,
+    EmbeddingProviderRegistry,
+    builtin_backend_factories,
+    builtin_embedding_provider_factories,
+)
 from fetchcore.application.runtime_config import (
     FetchCoreRuntimeConfig,
     load_runtime_config,
@@ -60,8 +68,9 @@ def test_yaml_env_and_explicit_precedence(tmp_path: Path) -> None:
         ("version: 1\nbackends: []\n", "mapping"),
         ("version: 1\nembedding:\n  ollama: []\n", "mapping"),
         ("version: 1\nembedding:\n  ollama:\n    url: 123\n", "url"),
-        ("version: 1\nembedding:\n  ollama:\n    request_batch_size: 0\n", "request_batch_size"),
-        ("version: 1\nembedding:\n  ollama:\n    timeout_seconds: -1\n", "timeout_seconds"),
+        ("version: 1\nretrieval:\n  dense:\n    embedding:\n      request_batch_size: 0\n", "request_batch_size"),
+        ("version: 1\nretrieval:\n  dense:\n    embedding:\n      timeout_seconds: -1\n", "timeout_seconds"),
+        ("version: 1\nembedding:\n  ollama:\n    timeout_seconds: 30\n", "unsupported fields"),
         ("version: 1\nembedding:\n  ollama:\n    extra: true\n", "unsupported fields"),
         ("version: 1\nbackends:\n  solr:\n    url: ftp://bad\n", "url"),
         ("version: 1\nbackends:\n  solr:\n    url: http://host:bad/solr\n", "url"),
@@ -143,14 +152,109 @@ def test_canonical_empty_retrieval_fails() -> None:
 
 
 def test_runtime_provider_settings_reach_builtin_adapter() -> None:
-    from fetchcore.application.composition import builtin_backend_factories
-
     providers = EmbeddingProviderRegistry(settings={"ollama": {"url": "http://operator:11434"}})
     backend = builtin_backend_factories(providers)["solr"]()
     assert isinstance(backend, SolrBackend)
     provider = backend.embedding_factory(RetrievalConfig())
     assert isinstance(provider, OllamaEmbeddingProvider)
     assert provider.url == "http://operator:11434"
+    assert provider.timeout_seconds == 30.0
+    assert provider.request_batch_size == 32
+
+
+def test_qdrant_transport_timeout_does_not_override_embedding_envelope() -> None:
+    config = load_runtime_config(environ={}, overrides={
+        "runtime": {"backend": "qdrant-vector"},
+        "backends": {"qdrant-vector": {"timeout_seconds": 5}},
+        "retrieval": {"dense": {"enabled": True, "embedding": {
+            "provider": "ollama", "model": "embeddinggemma",
+            "timeout_seconds": 60, "request_batch_size": 7,
+        }}},
+        "embedding": {"ollama": {"url": "http://operator:11434"}},
+    })
+    assert config.retrieval is not None
+    settings = QdrantVectorSettings.from_mapping(config.backend_settings)
+    providers = EmbeddingProviderRegistry(settings={"ollama": config.ollama.to_mapping()})
+    backend = BackendRegistry(providers=providers).create("qdrant-vector")
+    assert isinstance(backend, QdrantVectorBackend)
+    provider = backend.embedding_factory(settings, config.retrieval.dense.embedding)
+    assert isinstance(provider, OllamaEmbeddingProvider)
+    assert settings.timeout_seconds == 5
+    assert provider.timeout_seconds == 60
+    assert provider.request_batch_size == 7
+    assert provider.url == "http://operator:11434"
+
+
+def test_execution_env_overrides_retrieval_envelope(tmp_path: Path) -> None:
+    path = tmp_path / "operator.yaml"
+    path.write_text(
+        "version: 1\nretrieval:\n  dense:\n    embedding:\n"
+        "      timeout_seconds: 30\n      request_batch_size: 2\n",
+        encoding="utf-8",
+    )
+    env = {
+        "FETCHCORE_OLLAMA_TIMEOUT_SECONDS": "60",
+        "FETCHCORE_OLLAMA_REQUEST_BATCH_SIZE": "7",
+    }
+    config = load_runtime_config(path=path, environ=env)
+    assert config.retrieval is not None
+    assert config.retrieval.dense.embedding.timeout_seconds == 60
+    assert config.retrieval.dense.embedding.request_batch_size == 7
+    assert config.ollama.to_mapping() == {"url": "http://localhost:11434"}
+    explicit = load_runtime_config(path=path, environ=env, overrides={
+        "retrieval": {"dense": {"embedding": {
+            "timeout_seconds": 90, "request_batch_size": 9,
+        }}}
+    })
+    assert explicit.retrieval is not None
+    assert explicit.retrieval.dense.embedding.timeout_seconds == 90
+    assert explicit.retrieval.dense.embedding.request_batch_size == 9
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        load_runtime_config(
+            path=path, environ={"FETCHCORE_OLLAMA_TIMEOUT_SECONDS": "-1"}
+        )
+
+
+def test_qdrant_env_only_execution_preserves_legacy_model() -> None:
+    config = load_runtime_config(environ={
+        "FETCHCORE_MCP_BACKEND": "qdrant-vector",
+        "FETCHCORE_MCP_BACKEND_SETTINGS": '{"embedding_model":"legacy-model"}',
+        "FETCHCORE_OLLAMA_TIMEOUT_SECONDS": "60",
+    })
+    assert config.retrieval is not None
+    assert config.retrieval.dense.enabled
+    assert config.retrieval.dense.embedding.model == "legacy-model"
+    assert config.retrieval.dense.embedding.timeout_seconds == 60
+
+
+def test_builtin_catalogs_match_runtime_accepted_ids() -> None:
+    assert set(builtin_backend_factories()) == BUILTIN_BACKEND_IDS
+    assert set(builtin_embedding_provider_factories()) == BUILTIN_EMBEDDING_PROVIDER_IDS
+    for backend_id in BUILTIN_BACKEND_IDS:
+        assert load_runtime_config(
+            environ={}, overrides={"runtime": {"backend": backend_id}}
+        ).backend == backend_id
+    for provider_id in BUILTIN_EMBEDDING_PROVIDER_IDS:
+        load_runtime_config(environ={}, overrides={"embedding": {provider_id: {}}})
+
+
+def test_runtime_string_lists_strip_and_reject_blank_or_non_string(tmp_path: Path) -> None:
+    path = tmp_path / "operator.yaml"
+    path.write_text(
+        'version: 1\nruntime:\n  knowledge_types: [" code "]\n'
+        '  repository_paths: [" src/foo "]\n',
+        encoding="utf-8",
+    )
+    config = load_runtime_config(path=path, environ={})
+    assert config.knowledge_types == ("code",)
+    assert config.repository_paths == ("src/foo",)
+    for invalid in ('["   "]', '[123]'):
+        path.write_text(
+            f"version: 1\nruntime:\n  knowledge_types: {invalid}\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="knowledge_types"):
+            load_runtime_config(path=path, environ={})
 
 
 def test_provider_registry_resolves_and_rejects_unknown_or_mismatch() -> None:

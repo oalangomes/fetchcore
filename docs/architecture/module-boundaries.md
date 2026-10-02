@@ -98,7 +98,11 @@ never import the Ollama implementation. Unknown backend and provider IDs fail
 closed; identity mismatches also fail closed. Typed backend and retrieval
 settings own operational defaults. Qdrant's historical `embedding_url` and
 `embedding_model` fields remain accepted for compatibility; runtime bootstrap maps
-them to neutral embedding identity and Ollama transport settings. Repository policy
+them to neutral embedding identity and Ollama transport settings. The
+`EmbeddingConfig` owns provider, model, timeout, and request batch; the Ollama
+runtime setting owns only its URL. Qdrant's timeout stays with Qdrant transport.
+Built-in identity sets live with composition and runtime validation uses those
+same IDs; tests check both factory catalogs against them. Repository policy
 loaders own `.fetchcore` configuration paths, including legacy-path
 compatibility. No canonical contract interprets a vendor response or environment
 variable.
