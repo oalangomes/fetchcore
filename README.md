@@ -32,6 +32,40 @@ FetchCore does **not** own:
 
 Consumers such as AgentsOrch, GAC tooling, coders and MCP clients integrate through adapters.
 
+
+## Quick start
+
+For contributor setup:
+
+```bash
+python -m pip install -e ".[dev]"
+make check
+```
+
+Run the MCP stdio server with the local backend:
+
+```bash
+export FETCHCORE_MCP_WORKSPACE="$PWD"
+export FETCHCORE_MCP_REPOSITORY="owner/repository"
+export FETCHCORE_MCP_BACKEND="local-semantic"
+
+fetchcore-mcp
+```
+
+FetchCore also ships a reproducible container contract without bundling any
+retrieval backend:
+
+```bash
+make docker-build
+make docker-smoke
+```
+
+Optional Solr, OpenSearch and Qdrant development services are available through
+explicit Docker Compose profiles. See [Getting started](docs/guides/getting-started.md)
+for the complete Python, container and Compose workflows.
+
+The documentation index is available at [docs/README.md](docs/README.md).
+
 ## Extraction provenance
 
 Initial extraction sources are frozen to:
