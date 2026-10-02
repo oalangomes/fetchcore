@@ -3,7 +3,16 @@
 from .composition import (
     BackendFactory as BackendFactory,
     BackendRegistry as BackendRegistry,
+    EmbeddingFactory as EmbeddingFactory,
+    EmbeddingProviderRegistry as EmbeddingProviderRegistry,
     builtin_backend_factories as builtin_backend_factories,
+    builtin_embedding_provider_factories as builtin_embedding_provider_factories,
+)
+from .runtime_config import (
+    FetchCoreRuntimeConfig as FetchCoreRuntimeConfig,
+    OllamaRuntimeSettings as OllamaRuntimeSettings,
+    load_runtime_config as load_runtime_config,
+    service_from_runtime_config as service_from_runtime_config,
 )
 from .service import (
     MAX_SEARCH_LIMIT as MAX_SEARCH_LIMIT,

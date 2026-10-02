@@ -2,49 +2,18 @@
 
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fetchcore.application import (
-    RepositoryBinding,
-    RetrievalApplicationService,
-    SearchRequest,
-    SourceReadRequest,
-)
-from fetchcore.retrieval import RetrievalConfig
+from fetchcore.application import RetrievalApplicationService, SearchRequest, SourceReadRequest
+from fetchcore.application.runtime_config import load_runtime_config, service_from_runtime_config
 
 if TYPE_CHECKING:
     from mcp.server import MCPServer
 
 
 def service_from_environment() -> RetrievalApplicationService:
-    """Build one explicitly scoped serving service from environment variables."""
-    workspace = Path(os.environ.get("FETCHCORE_MCP_WORKSPACE", os.getcwd())).expanduser()
-    repository = os.environ.get("FETCHCORE_MCP_REPOSITORY", workspace.name).strip()
-    backend = os.environ.get("FETCHCORE_MCP_BACKEND", "local-semantic").strip()
-    revision = os.environ.get("FETCHCORE_MCP_REVISION")
-    settings = _json_mapping("FETCHCORE_MCP_BACKEND_SETTINGS", default={})
-    retrieval_raw = _optional_json_mapping("FETCHCORE_MCP_RETRIEVAL")
-    retrieval = (
-        None
-        if retrieval_raw is None
-        else RetrievalConfig.from_mapping(retrieval_raw)
-    )
-    knowledge_types = _csv("FETCHCORE_MCP_KNOWLEDGE_TYPES")
-    repository_paths = _csv("FETCHCORE_MCP_REPOSITORY_PATHS")
-    binding = RepositoryBinding(
-        repository=repository,
-        workspace=workspace,
-        backend=backend,
-        revision=None if revision is None else revision.strip() or None,
-        settings=settings,
-        retrieval=retrieval,
-        knowledge_types=knowledge_types,
-        repository_paths=repository_paths,
-    )
-    return RetrievalApplicationService({repository: binding})
+    """Compatibility entry point for the application runtime bootstrap."""
+    return service_from_runtime_config(load_runtime_config())
 
 
 def create_mcp_server(service: RetrievalApplicationService) -> MCPServer:
@@ -112,31 +81,6 @@ def create_mcp_server(service: RetrievalApplicationService) -> MCPServer:
 def main() -> None:
     """Run the FetchCore MCP server over stdio."""
     mcp.run()
-
-
-def _json_mapping(name: str, *, default: dict[str, object]) -> dict[str, object]:
-    raw = os.environ.get(name)
-    if raw is None or not raw.strip():
-        return dict(default)
-    value = json.loads(raw)
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must contain a JSON object")
-    return {str(key): item for key, item in value.items()}
-
-
-def _optional_json_mapping(name: str) -> dict[str, object] | None:
-    raw = os.environ.get(name)
-    if raw is None or not raw.strip():
-        return None
-    return _json_mapping(name, default={})
-
-
-def _csv(name: str) -> tuple[str, ...]:
-    return tuple(
-        item.strip()
-        for item in os.environ.get(name, "").split(",")
-        if item.strip()
-    )
 
 
 mcp = create_mcp_server(service_from_environment())
