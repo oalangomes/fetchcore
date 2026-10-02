@@ -1,0 +1,46 @@
+version: 1
+repository: oalangomes/fetchcore
+defaults:
+  limit: 10
+
+scenarios:
+  - id: repository-index-policy
+    query: "Where is the repository-local .fetchcore/indexing.yaml policy loaded and validated?"
+    expected_paths:
+      - src/fetchcore/repository/index_policy.py
+    min_expected_path_hits: 1
+    verify_source: true
+
+  - id: targeted-incremental-sync
+    query: "TargetedGitAwareSolrSynchronizer indexing_contract_changed incremental sync"
+    expected_paths:
+      - src/fetchcore/backends/solr_incremental_persistence.py
+      - src/fetchcore/backends/solr_incremental.py
+    min_expected_path_hits: 1
+
+  - id: repository-source-safety
+    query: "source_ref escapes the authorized repository workspace unauthorized_source"
+    expected_paths:
+      - src/fetchcore/application/service.py
+    min_expected_path_hits: 1
+    verify_source: true
+
+  - id: backend-composition
+    query: "builtin_backend_factories local-semantic solr opensearch qdrant-vector"
+    expected_paths:
+      - src/fetchcore/application/composition.py
+    min_expected_path_hits: 1
+
+  - id: mcp-serving-boundary
+    query: "MCP RetrievalApplicationService KnowledgeSearchBackend search get_source"
+    expected_paths:
+      - src/fetchcore/serving/mcp.py
+      - docs/serving/mcp.md
+    min_expected_path_hits: 1
+
+  - id: retrieval-authority-boundary
+    query: "retrieval satisfaction authority FetchCore"
+    expected_paths:
+      - AGENTS.md
+      - README.md
+    min_expected_path_hits: 1
