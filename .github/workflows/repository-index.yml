@@ -1,0 +1,320 @@
+name: Repository index
+
+on:
+  workflow_call:
+    inputs:
+      runner_labels_json:
+        description: JSON array of self-hosted runner labels.
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64"]'
+      target_repository:
+        description: Repository to index. Defaults to the caller repository.
+        required: false
+        type: string
+        default: ""
+      target_ref:
+        description: Git ref/SHA to index. Defaults to the caller SHA.
+        required: false
+        type: string
+        default: ""
+      target_branch:
+        description: Branch identity persisted in the FetchCore snapshot.
+        required: false
+        type: string
+        default: ""
+      fetchcore_ref:
+        description: FetchCore ref used as the indexing/runtime implementation.
+        required: false
+        type: string
+        default: master
+      collection:
+        description: Solr collection used for repository knowledge.
+        required: false
+        type: string
+        default: fetchcore-knowledge
+      managed_solr:
+        description: Start a local persistent Solr container on the self-hosted runner.
+        required: false
+        type: boolean
+        default: true
+      solr_url:
+        description: External Solr base URL when managed_solr is false.
+        required: false
+        type: string
+        default: http://127.0.0.1:8983/solr
+      solr_port:
+        description: Host port for managed Solr.
+        required: false
+        type: string
+        default: "8983"
+      solr_volume:
+        description: Persistent Docker volume for managed Solr state.
+        required: false
+        type: string
+        default: fetchcore-index-solr
+      evaluate:
+        description: Run MCP dogfood scenarios after indexing.
+        required: false
+        type: boolean
+        default: false
+      scenarios_path:
+        description: Scenario YAML path relative to the target repository.
+        required: false
+        type: string
+        default: ""
+      artifact_retention_days:
+        description: Retention for indexing/evaluation reports.
+        required: false
+        type: number
+        default: 14
+
+  workflow_dispatch:
+    inputs:
+      runner_labels_json:
+        description: JSON array of self-hosted runner labels.
+        required: false
+        type: string
+        default: '["self-hosted","Linux","X64"]'
+      target_repository:
+        description: Repository to index.
+        required: false
+        type: string
+        default: oalangomes/fetchcore
+      target_ref:
+        description: Ref/SHA to index.
+        required: false
+        type: string
+        default: master
+      target_branch:
+        description: Branch identity persisted in the snapshot.
+        required: false
+        type: string
+        default: master
+      fetchcore_ref:
+        description: FetchCore implementation ref.
+        required: false
+        type: string
+        default: master
+      collection:
+        description: Solr collection.
+        required: false
+        type: string
+        default: fetchcore-self
+      managed_solr:
+        description: Start local persistent Solr.
+        required: false
+        type: boolean
+        default: true
+      solr_url:
+        description: External Solr URL when managed_solr is false.
+        required: false
+        type: string
+        default: http://127.0.0.1:8983/solr
+      solr_port:
+        description: Host port for managed Solr.
+        required: false
+        type: string
+        default: "8983"
+      solr_volume:
+        description: Persistent Docker volume.
+        required: false
+        type: string
+        default: fetchcore-self-solr
+      evaluate:
+        description: Run MCP dogfood scenarios.
+        required: false
+        type: boolean
+        default: true
+      scenarios_path:
+        description: Scenario YAML in target repository.
+        required: false
+        type: string
+        default: dogfood/scenarios/fetchcore-self.yaml
+      artifact_retention_days:
+        description: Artifact retention days.
+        required: false
+        type: number
+        default: 14
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fetchcore-index-${{ inputs.collection }}-${{ inputs.target_repository || github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  index:
+    name: index
+    runs-on: ${{ fromJSON(inputs.runner_labels_json) }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.target_repository || github.repository }}
+          ref: ${{ inputs.target_ref || github.sha }}
+          fetch-depth: 0
+          path: target
+
+      - name: Checkout FetchCore runtime
+        uses: actions/checkout@v4
+        with:
+          repository: oalangomes/fetchcore
+          ref: ${{ inputs.fetchcore_ref }}
+          fetch-depth: 1
+          path: .fetchcore-runtime
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: .fetchcore-runtime/pyproject.toml
+
+      - name: Install FetchCore runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".fetchcore-runtime[mcp]"
+
+      - name: Resolve indexing identity
+        id: identity
+        env:
+          TARGET_REPOSITORY: ${{ inputs.target_repository || github.repository }}
+          TARGET_BRANCH: ${{ inputs.target_branch || github.ref_name }}
+        run: |
+          set -euo pipefail
+          revision="$(git -C target rev-parse HEAD)"
+          printf 'repository=%s\n' "$TARGET_REPOSITORY" >> "$GITHUB_OUTPUT"
+          printf 'branch=%s\n' "$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
+          printf 'revision=%s\n' "$revision" >> "$GITHUB_OUTPUT"
+
+      - name: Start managed Solr
+        if: ${{ inputs.managed_solr }}
+        env:
+          COLLECTION: ${{ inputs.collection }}
+          SOLR_PORT: ${{ inputs.solr_port }}
+          SOLR_VOLUME: ${{ inputs.solr_volume }}
+        run: |
+          set -euo pipefail
+          case "$SOLR_PORT" in
+            *[!0-9]*|"") echo "solr_port must be numeric" >&2; exit 2 ;;
+          esac
+          case "$SOLR_VOLUME" in
+            *[!A-Za-z0-9_.-]*|"") echo "solr_volume contains unsupported characters" >&2; exit 2 ;;
+          esac
+          container="fetchcore-solr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker rm -f "$container" >/dev/null 2>&1 || true
+          docker volume create "$SOLR_VOLUME" >/dev/null
+          docker run -d \
+            --name "$container" \
+            -p "127.0.0.1:${SOLR_PORT}:8983" \
+            -v "${SOLR_VOLUME}:/var/solr" \
+            solr:9.10.1 \
+            solr-precreate "$COLLECTION" >/dev/null
+          printf 'FETCHCORE_SOLR_CONTAINER=%s\n' "$container" >> "$GITHUB_ENV"
+          printf 'FETCHCORE_SOLR_URL=http://127.0.0.1:%s/solr\n' "$SOLR_PORT" >> "$GITHUB_ENV"
+
+      - name: Use external Solr
+        if: ${{ !inputs.managed_solr }}
+        env:
+          SOLR_URL: ${{ inputs.solr_url }}
+        run: printf 'FETCHCORE_SOLR_URL=%s\n' "$SOLR_URL" >> "$GITHUB_ENV"
+
+      - name: Wait for Solr
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import time
+          from urllib.error import URLError
+          from urllib.request import urlopen
+
+          url = os.environ["FETCHCORE_SOLR_URL"].rstrip("/") + "/admin/info/system"
+          error = None
+          for _ in range(60):
+              try:
+                  with urlopen(url, timeout=2) as response:
+                      if 200 <= response.status < 300:
+                          raise SystemExit(0)
+              except (OSError, URLError) as exc:
+                  error = exc
+                  time.sleep(2)
+          raise SystemExit(f"Solr did not become ready at {url}: {error}")
+          PY
+
+      - name: Configure FetchCore indexing
+        env:
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
+          BRANCH: ${{ steps.identity.outputs.branch }}
+          REVISION: ${{ steps.identity.outputs.revision }}
+          COLLECTION: ${{ inputs.collection }}
+        run: |
+          set -euo pipefail
+          printf 'FETCHCORE_INDEX_WORKSPACE=%s/target\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          printf 'FETCHCORE_INDEX_REPOSITORY=%s\n' "$REPOSITORY" >> "$GITHUB_ENV"
+          printf 'FETCHCORE_INDEX_BRANCH=%s\n' "$BRANCH" >> "$GITHUB_ENV"
+          printf 'FETCHCORE_INDEX_REVISION=%s\n' "$REVISION" >> "$GITHUB_ENV"
+          printf 'FETCHCORE_INDEX_BACKEND=solr\n' >> "$GITHUB_ENV"
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          import os
+          payload = {
+              "url": os.environ["FETCHCORE_SOLR_URL"],
+              "collection": os.environ["COLLECTION"],
+              "projection_version": "3",
+          }
+          print("FETCHCORE_INDEX_BACKEND_SETTINGS=" + json.dumps(payload, separators=(",", ":")))
+          PY
+          mkdir -p target/.fetchcore-dogfood
+
+      - name: Index status before sync
+        run: fetchcore index status | tee target/.fetchcore-dogfood/status-before.json
+
+      - name: Preview index mutation
+        run: fetchcore index dry-run | tee target/.fetchcore-dogfood/dry-run.json
+
+      - name: Synchronize repository index
+        run: fetchcore index sync | tee target/.fetchcore-dogfood/sync.json
+
+      - name: Index status after sync
+        run: fetchcore index status | tee target/.fetchcore-dogfood/status-after.json
+
+      - name: Evaluate through MCP
+        if: ${{ inputs.evaluate }}
+        env:
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
+          REVISION: ${{ steps.identity.outputs.revision }}
+          COLLECTION: ${{ inputs.collection }}
+          SCENARIOS_PATH: ${{ inputs.scenarios_path }}
+        run: |
+          set -euo pipefail
+          test -n "$SCENARIOS_PATH" || { echo "scenarios_path is required when evaluate=true" >&2; exit 2; }
+          python .fetchcore-runtime/scripts/dogfood_mcp_eval.py \
+            --workspace target \
+            --repository "$REPOSITORY" \
+            --revision "$REVISION" \
+            --solr-url "$FETCHCORE_SOLR_URL" \
+            --collection "$COLLECTION" \
+            --scenarios "target/$SCENARIOS_PATH" \
+            --output-json target/.fetchcore-dogfood/mcp-evaluation.json \
+            --output-markdown target/.fetchcore-dogfood/mcp-evaluation.md
+          cat target/.fetchcore-dogfood/mcp-evaluation.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload FetchCore indexing evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fetchcore-index-${{ inputs.collection }}-${{ github.run_id }}
+          path: target/.fetchcore-dogfood/
+          if-no-files-found: warn
+          retention-days: ${{ inputs.artifact_retention_days }}
+
+      - name: Stop managed Solr
+        if: ${{ always() && inputs.managed_solr }}
+        run: |
+          if [ -n "${FETCHCORE_SOLR_CONTAINER:-}" ]; then
+            docker rm -f "$FETCHCORE_SOLR_CONTAINER" >/dev/null 2>&1 || true
+          fi
