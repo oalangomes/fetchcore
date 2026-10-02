@@ -115,14 +115,14 @@ async def evaluate(args: argparse.Namespace, scenarios: tuple[Scenario, ...]) ->
         await session.initialize()
         tools = await session.list_tools()
         tool_names = {item.name for item in tools.tools}
-        required_tools = {"search", "get_source"}
-        missing_tools = sorted(required_tools - tool_names)
+        missing_tools = sorted({"search", "get_source"} - tool_names)
         if missing_tools:
             raise RuntimeError(
-                "FetchCore MCP server is missing required tools: " + ", ".join(missing_tools)
+                "FetchCore MCP server is missing required tools: "
+                + ", ".join(missing_tools)
             )
 
-    for scenario in scenarios:
+        for scenario in scenarios:
             search_result = await session.call_tool(
                 "search",
                 {
@@ -160,7 +160,9 @@ async def evaluate(args: argparse.Namespace, scenarios: tuple[Scenario, ...]) ->
                         },
                     )
                     source_payload = tool_payload(source_result)
-                    source_verified = bool(str(source_payload.get("content", "")).strip())
+                    source_verified = bool(
+                        str(source_payload.get("content", "")).strip()
+                    )
 
             passed = (
                 len(matched_paths) >= scenario.min_expected_path_hits
@@ -209,13 +211,14 @@ async def evaluate(args: argparse.Namespace, scenarios: tuple[Scenario, ...]) ->
                 0.0 if not reports else passed_count / len(reports)
             ),
             "mrr": (
-                0.0 if not reciprocal_ranks else sum(reciprocal_ranks) / len(reciprocal_ranks)
+                0.0
+                if not reciprocal_ranks
+                else sum(reciprocal_ranks) / len(reciprocal_ranks)
             ),
             "search_duration_ms_total": sum(duration_values),
         },
         "scenarios": reports,
     }
-
 
 def tool_payload(result: Any) -> dict[str, object]:
     structured = getattr(result, "structuredContent", None)
