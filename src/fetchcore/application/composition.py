@@ -1,8 +1,7 @@
-"""Built-in backend composition for the retrieval application boundary."""
+"""Explicit built-in implementation registries and application composition."""
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
@@ -13,32 +12,71 @@ from fetchcore.retrieval.embedding import EmbeddingProvider
 if TYPE_CHECKING:
     from fetchcore.adapters.retrieval.qdrant.backend import QdrantVectorSettings
 
-
 BackendFactory = Callable[[], KnowledgeSearchBackend]
+EmbeddingFactory = Callable[[EmbeddingConfig, Mapping[str, object]], EmbeddingProvider]
+BUILTIN_BACKEND_IDS = frozenset({"local-semantic", "solr", "opensearch", "qdrant-vector"})
+BUILTIN_EMBEDDING_PROVIDER_IDS = frozenset({"ollama"})
 
 
-def _local_semantic_backend() -> KnowledgeSearchBackend:
-    from fetchcore.adapters.retrieval.local.backend import LocalSemanticBackend
+def _ollama_factory(
+    embedding: EmbeddingConfig, settings: Mapping[str, object]
+) -> EmbeddingProvider:
+    from fetchcore.adapters.embedding.ollama.provider import (
+        OllamaEmbeddingProvider,
+        OllamaEmbeddingSettings,
+    )
+    from .runtime_config import OllamaRuntimeSettings
 
-    return LocalSemanticBackend()
+    runtime = OllamaRuntimeSettings.from_mapping(settings)
+    return OllamaEmbeddingProvider(
+        OllamaEmbeddingSettings(
+            url=runtime.url,
+            model=embedding.model,
+        ),
+        timeout_seconds=embedding.timeout_seconds,
+        request_batch_size=embedding.request_batch_size,
+    )
 
 
-def _solr_backend() -> KnowledgeSearchBackend:
-    from fetchcore.adapters.retrieval.solr.backend import SolrBackend
-
-    return SolrBackend(embedding_factory=solr_embedding_provider)
+def builtin_embedding_provider_factories() -> dict[str, EmbeddingFactory]:
+    return {"ollama": _ollama_factory}
 
 
-def _opensearch_backend() -> KnowledgeSearchBackend:
-    from fetchcore.adapters.retrieval.opensearch.backend import OpenSearchBackend
+class EmbeddingProviderRegistry:
+    """Resolve provider identity through explicit, injectable factories."""
 
-    return OpenSearchBackend(embedding_factory=opensearch_embedding_provider)
+    def __init__(
+        self,
+        factories: Mapping[str, EmbeddingFactory] | None = None,
+        *,
+        settings: Mapping[str, Mapping[str, object]] | None = None,
+    ) -> None:
+        self._factories = dict(
+            builtin_embedding_provider_factories() if factories is None else factories
+        )
+        self._settings = dict(settings or {})
 
-
-def _qdrant_vector_backend() -> KnowledgeSearchBackend:
-    from fetchcore.adapters.retrieval.qdrant.backend import QdrantVectorBackend
-
-    return QdrantVectorBackend(embedding_factory=_qdrant_embedding_provider)
+    def create(
+        self, embedding: EmbeddingConfig, *, backend_id: str, backend_name: str
+    ) -> EmbeddingProvider:
+        factory = self._factories.get(embedding.provider)
+        if factory is None:
+            raise KnowledgeSearchError(
+                f"configured embedding provider is not supported by {backend_name} dense retrieval",
+                category="unsupported_capability",
+                metadata={"backend": backend_id, "capability": f"embedding_provider:{embedding.provider}"},
+            )
+        provider = factory(embedding, self._settings.get(embedding.provider, {}))
+        if provider.provider_id != embedding.provider:
+            raise KnowledgeSearchError(
+                "embedding composition returned a mismatched provider",
+                category="schema_mismatch",
+                metadata={
+                    "requested_provider": embedding.provider,
+                    "actual_provider": provider.provider_id,
+                },
+            )
+        return provider
 
 
 def create_embedding_provider(
@@ -48,57 +86,31 @@ def create_embedding_provider(
     backend_name: str,
     url: str | None = None,
 ) -> EmbeddingProvider:
-    """Select an embedding implementation at the application composition boundary."""
-    if embedding.provider != "ollama":
-        raise KnowledgeSearchError(
-            f"configured embedding provider is not supported by {backend_name} dense retrieval",
-            category="unsupported_capability",
-            metadata={
-                "backend": backend_id,
-                "capability": f"embedding_provider:{embedding.provider}",
-            },
-        )
-    from fetchcore.adapters.embedding.ollama.provider import (
-        OllamaEmbeddingProvider,
-        OllamaEmbeddingSettings,
-    )
+    """Keep the historical helper while routing selection through the registry."""
+    from .runtime_config import ollama_settings_from_environment
 
-    provider = OllamaEmbeddingProvider(
-        OllamaEmbeddingSettings(
-            url=url or os.environ.get("OLLAMA_URL", OllamaEmbeddingSettings.url),
-            model=embedding.model,
-        ),
-        timeout_seconds=embedding.timeout_seconds,
-        request_batch_size=embedding.request_batch_size,
+    settings: dict[str, Mapping[str, object]] = {}
+    if embedding.provider == "ollama":
+        resolved_url = ollama_settings_from_environment().url if url is None else url
+        settings["ollama"] = {"url": resolved_url}
+    return EmbeddingProviderRegistry(settings=settings).create(
+        embedding, backend_id=backend_id, backend_name=backend_name
     )
-    if provider.provider_id != embedding.provider:
-        raise KnowledgeSearchError(
-            "embedding composition returned a mismatched provider",
-            category="schema_mismatch",
-            metadata={
-                "requested_provider": embedding.provider,
-                "actual_provider": provider.provider_id,
-            },
-        )
-    return provider
 
 
 def configured_ollama_provider(
     retrieval: RetrievalConfig, *, backend_id: str, backend_name: str,
 ) -> EmbeddingProvider:
-    """Retain the historical factory signature for existing integrations."""
     return create_embedding_provider(
         retrieval.dense.embedding, backend_id=backend_id, backend_name=backend_name
     )
 
 
 def solr_embedding_provider(retrieval: RetrievalConfig) -> EmbeddingProvider:
-    """Compose the provider used by Solr dense retrieval."""
     return configured_ollama_provider(retrieval, backend_id="solr", backend_name="Solr")
 
 
 def opensearch_embedding_provider(retrieval: RetrievalConfig) -> EmbeddingProvider:
-    """Compose the provider used by OpenSearch dense retrieval."""
     return configured_ollama_provider(
         retrieval, backend_id="opensearch", backend_name="OpenSearch"
     )
@@ -107,15 +119,7 @@ def opensearch_embedding_provider(retrieval: RetrievalConfig) -> EmbeddingProvid
 def _qdrant_embedding_provider(
     settings: QdrantVectorSettings, embedding: EmbeddingConfig,
 ) -> EmbeddingProvider:
-    if embedding.provider != "ollama":
-        raise KnowledgeSearchError(
-            "configured embedding provider is not supported by Qdrant vector backend",
-            category="unsupported_capability",
-            metadata={
-                "backend": "qdrant-vector",
-                "capability": f"embedding_provider:{embedding.provider}",
-            },
-        )
+    """Historical direct helper; new backend factories use the provider registry."""
     return create_embedding_provider(
         EmbeddingConfig(
             provider=embedding.provider,
@@ -128,13 +132,48 @@ def _qdrant_embedding_provider(
     )
 
 
-def builtin_backend_factories() -> dict[str, BackendFactory]:
-    """Return the built-in retrieval backends without constructing them eagerly."""
+def builtin_backend_factories(
+    providers: EmbeddingProviderRegistry | None = None,
+) -> dict[str, BackendFactory]:
+    """Return the code-owned backend catalog without constructing adapters eagerly."""
+    from fetchcore.adapters.retrieval.local.backend import LocalSemanticBackend
+    from fetchcore.adapters.retrieval.opensearch.backend import OpenSearchBackend
+    from fetchcore.adapters.retrieval.qdrant.backend import QdrantVectorBackend
+    from fetchcore.adapters.retrieval.solr.backend import SolrBackend
+
+    registry = providers or EmbeddingProviderRegistry()
+
+    def qdrant_provider(
+        settings: QdrantVectorSettings, embedding: EmbeddingConfig
+    ) -> EmbeddingProvider:
+        if providers is None:
+            # Translate the historical Qdrant URL for direct registry callers.
+            # The execution envelope remains the supplied EmbeddingConfig.
+            legacy = EmbeddingProviderRegistry(
+                settings={"ollama": {"url": settings.embedding_url}}
+            )
+            return legacy.create(
+                embedding, backend_id="qdrant-vector", backend_name="Qdrant vector"
+            )
+        return registry.create(
+            embedding,
+            backend_id="qdrant-vector",
+            backend_name="Qdrant vector",
+        )
+
     return {
-        "local-semantic": _local_semantic_backend,
-        "solr": _solr_backend,
-        "opensearch": _opensearch_backend,
-        "qdrant-vector": _qdrant_vector_backend,
+        "local-semantic": LocalSemanticBackend,
+        "solr": lambda: SolrBackend(
+            embedding_factory=lambda retrieval: registry.create(
+                retrieval.dense.embedding, backend_id="solr", backend_name="Solr"
+            )
+        ),
+        "opensearch": lambda: OpenSearchBackend(
+            embedding_factory=lambda retrieval: registry.create(
+                retrieval.dense.embedding, backend_id="opensearch", backend_name="OpenSearch"
+            )
+        ),
+        "qdrant-vector": lambda: QdrantVectorBackend(embedding_factory=qdrant_provider),
     }
 
 
@@ -144,9 +183,11 @@ class BackendRegistry:
     def __init__(
         self,
         factories: Mapping[str, BackendFactory] | None = None,
+        *,
+        providers: EmbeddingProviderRegistry | None = None,
     ) -> None:
         self._factories = dict(
-            builtin_backend_factories() if factories is None else factories
+            builtin_backend_factories(providers) if factories is None else factories
         )
 
     def create(self, backend_id: str) -> KnowledgeSearchBackend:

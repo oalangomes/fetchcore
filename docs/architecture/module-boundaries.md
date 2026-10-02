@@ -48,7 +48,9 @@ repository sources and extraction -> canonical repository knowledge
 retrieval contracts -----------------^       ^              |
 retrieval execution -------------------------+--------------+
 application service -> backend port -> concrete adapters (composition only)
-serving/MCP -> application service
+operator YAML / ENV / explicit caller -> application runtime config
+application runtime config -> composition -> backend/provider registries -> adapters
+serving/MCP -> application runtime bootstrap -> application service
 ```
 
 `retrieval` owns intent, evidence, typed configuration, fusion, reranking, and
@@ -57,7 +59,8 @@ and matching. `repository` owns acquisition, extraction, canonical documents,
 indexing, and persisted incremental state. `adapters/retrieval` owns concrete
 search implementations and vendor protocols. `adapters/embedding` owns concrete
 embedding implementations. `application` owns caller-facing retrieval/source
-operations and composition. `serving` owns transport and environment loading.
+operations, operator runtime configuration, and composition. `serving` owns only
+transport bootstrap and tools; it does not parse vendor configuration.
 `baseline` and `telemetry` retain their existing specialized responsibilities.
 
 ## Implemented package map
@@ -71,8 +74,8 @@ operations and composition. `serving` owns transport and environment loading.
 | `adapters/retrieval` | `local/backend.py`, `solr/*`, `opensearch/*`, and `qdrant/*` implement `KnowledgeSearchBackend`. Vendor query modules translate requests and responses; Solr integration modules own snapshot and synchronization behavior. |
 | `adapters/embedding` | `ollama/provider.py` implements `EmbeddingProvider` and owns its HTTP transport settings. |
 | `backends` | Historical import shims only. New FetchCore code imports the owning adapter paths. |
-| `application` | `service` owns caller-facing operations through `KnowledgeSearchBackend`; `composition` selects concrete factories; `index_operations` and `orchestration*` coordinate repository indexing. |
-| `serving` | `mcp` loads MCP environment settings and calls only the application service. |
+| `application` | `service` owns caller-facing operations through `KnowledgeSearchBackend`; `runtime_config` resolves operator YAML, ENV, and explicit caller overrides; `composition` contains the backend and embedding provider registries; `index_operations` and `orchestration*` coordinate repository indexing. |
+| `serving` | `mcp` invokes application bootstrap and exposes transport tools. |
 
 The direct concrete-adapter import under `repository` is the historical
 `index_contract` compatibility shim. `repository.incremental` and
@@ -80,15 +83,26 @@ The direct concrete-adapter import under `repository` is the historical
 Ollama classes through historical paths. Canonical functions in those modules
 do not depend on adapters.
 
+The application runtime loader resolves defaults < explicit operator YAML < ENV
+< explicit caller overrides. It does not search the repository workspace for
+runtime files. Repository-owned `.fetchcore` policy is a separate source
+boundary and cannot supply network/provider endpoints. Core contracts and
+adapters do not read ENV; composition consumes resolved runtime values. MCP may
+load runtime configuration through application bootstrap but owns no vendor
+semantics.
+
 The application composition root supplies backend factories and resolves the
-`EmbeddingConfig.provider` identity. It injects an `EmbeddingProvider` factory
+`EmbeddingConfig.provider` identity through an explicit provider registry. It injects an `EmbeddingProvider` factory
 into Solr, OpenSearch, and Qdrant. Retrieval adapters depend on that port and
 never import the Ollama implementation. Unknown backend and provider IDs fail
 closed; identity mismatches also fail closed. Typed backend and retrieval
 settings own operational defaults. Qdrant's historical `embedding_url` and
-`embedding_model` fields remain accepted for compatibility; composition maps
-them to neutral embedding identity and Ollama transport settings. MCP
-environment variables are read only by its serving adapter. Repository policy
+`embedding_model` fields remain accepted for compatibility; runtime bootstrap maps
+them to neutral embedding identity and Ollama transport settings. The
+`EmbeddingConfig` owns provider, model, timeout, and request batch; the Ollama
+runtime setting owns only its URL. Qdrant's timeout stays with Qdrant transport.
+Built-in identity sets live with composition and runtime validation uses those
+same IDs; tests check both factory catalogs against them. Repository policy
 loaders own `.fetchcore` configuration paths, including legacy-path
 compatibility. No canonical contract interprets a vendor response or environment
 variable.
@@ -101,7 +115,7 @@ adapter, implement `KnowledgeSearchBackend`, declare
 `adapters/retrieval/<implementation>/`, add a factory in application composition,
 and test the contract and failure behavior. To add an embedding provider,
 implement `EmbeddingProvider` under `adapters/embedding/<implementation>/`,
-resolve its provider ID in composition, and inject it through the existing port.
+register its factory in the application provider registry, and inject it through the existing port.
 Existing retrieval adapters, canonical knowledge, projection semantics, and MCP
 do not need provider-specific changes. New transports call
 `RetrievalApplicationService` and do not implement retrieval policy.

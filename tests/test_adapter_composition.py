@@ -104,6 +104,18 @@ def test_qdrant_legacy_embedding_settings_compose_equivalently() -> None:
     assert captured.value.category == "unsupported_capability"
     assert captured.value.metadata["capability"] == "embedding_provider:missing"
 
+    isolated = QdrantVectorSettings.from_mapping({
+        "embedding_url": "http://127.0.0.1:11434",
+        "timeout_seconds": 5,
+    })
+    provider = backend.embedding_factory(
+        isolated, EmbeddingConfig(timeout_seconds=60, request_batch_size=7)
+    )
+    assert isolated.timeout_seconds == 5
+    assert isinstance(provider, OllamaEmbeddingProvider)
+    assert provider.timeout_seconds == 60
+    assert provider.request_batch_size == 7
+
 
 def test_historical_embedding_factory_exports_remain_available() -> None:
     from fetchcore.application.composition import (

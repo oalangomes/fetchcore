@@ -8,6 +8,8 @@ MCP client
    ↓
 MCPServer adapter
    ↓
+application runtime bootstrap (operator config)
+   ↓
 RetrievalApplicationService
    ↓
 RepositoryBinding / authorization scope
@@ -62,9 +64,9 @@ source output is bounded.
 The simplest configuration uses the local lexical backend:
 
 ```bash
-export FETCHCORE_MCP_WORKSPACE="$PWD"
-export FETCHCORE_MCP_REPOSITORY="owner/repo"
-export FETCHCORE_MCP_BACKEND="local-semantic"
+export FETCHCORE_WORKSPACE="$PWD"
+export FETCHCORE_REPOSITORY="owner/repo"
+export FETCHCORE_BACKEND="local-semantic"
 
 fetchcore-mcp
 ```
@@ -81,34 +83,12 @@ mcp dev src/fetchcore/mcp_server.py
 
 Assuming an already indexed FetchCore-compatible Solr collection:
 
-```bash
-export FETCHCORE_MCP_WORKSPACE="/path/to/repository"
-export FETCHCORE_MCP_REPOSITORY="oalangomes/NeuroTrack_MS"
-export FETCHCORE_MCP_BACKEND="solr"
-export FETCHCORE_MCP_BACKEND_SETTINGS='{
-  "url": "http://localhost:8983/solr",
-  "collection": "fetchcore-knowledge",
-  "projection_version": "3"
-}'
-export FETCHCORE_MCP_RETRIEVAL='{
-  "dense": {
-    "enabled": true,
-    "embedding": {
-      "provider": "ollama",
-      "model": "embeddinggemma"
-    }
-  },
-  "hybrid": {
-    "enabled": true,
-    "strategy": "rrf"
-  }
-}'
-export OLLAMA_URL="http://172.21.32.1:11434"
+Create an operator-owned YAML file using the
+[runtime configuration guide](../guides/runtime-configuration.md), set
+`FETCHCORE_CONFIG` to its path, and run `fetchcore-mcp`. The MCP adapter
+delegates loading and composition to the application runtime boundary.
 
-fetchcore-mcp
-```
-
-## Environment contract
+## Historical environment contract
 
 - `FETCHCORE_MCP_WORKSPACE`
 - `FETCHCORE_MCP_REPOSITORY`
@@ -118,6 +98,10 @@ fetchcore-mcp
 - `FETCHCORE_MCP_RETRIEVAL` (JSON object, optional)
 - `FETCHCORE_MCP_KNOWLEDGE_TYPES` (comma-separated, optional)
 - `FETCHCORE_MCP_REPOSITORY_PATHS` (comma-separated, optional)
+
+These names remain compatibility inputs. New deployments should use the
+runtime-level names and versioned YAML described in the guide. The historical
+JSON-in-ENV fields are retained for existing integrations, including dogfood.
 
 P0 exposes one authorized repository binding per server process. Federated
 multi-repository MCP search remains a separate benchmarked capability rather
