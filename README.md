@@ -76,6 +76,7 @@ export FETCHCORE_INDEX_REPOSITORY="owner/repository"
 export FETCHCORE_INDEX_REVISION="$(git rev-parse HEAD)"
 export FETCHCORE_INDEX_BACKEND_SETTINGS='{"url":"http://127.0.0.1:8983/solr","collection":"repository-knowledge"}'
 
+fetchcore index bootstrap
 fetchcore index status
 fetchcore index dry-run
 fetchcore index sync
