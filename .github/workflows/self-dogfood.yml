@@ -1,0 +1,26 @@
+name: FetchCore self dogfood
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  self-index:
+    uses: ./.github/workflows/repository-index.yml
+    with:
+      runner_labels_json: ${{ vars.FETCHCORE_INDEX_RUNNER_LABELS_JSON || '["self-hosted","Linux","X64"]' }}
+      target_repository: oalangomes/fetchcore
+      target_ref: ${{ github.sha }}
+      target_branch: master
+      fetchcore_ref: ${{ github.sha }}
+      collection: fetchcore-self
+      managed_solr: true
+      solr_volume: fetchcore-self-solr
+      evaluate: true
+      scenarios_path: dogfood/scenarios/fetchcore-self.yaml
+      artifact_retention_days: 30
