@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Re-evaluate frozen baseline-v1 ranked spans under deterministic line budgets."""
 
 from __future__ import annotations
