@@ -38,7 +38,7 @@ fetchcore index ... dry-run
 fetchcore index ... sync
 ```
 
-Every successful command emits JSON. `bootstrap` explicitly provisions missing lexical Projection v3 Solr schema elements and then validates the schema. It never silently rewrites incompatible existing fields. `dry-run` performs no persistent writes.
+Every successful command emits JSON. `bootstrap` validates the active Solr collection against the FetchCore Projection v3 schema. Managed Solr is provisioned from `infra/solr/configset`, which preserves the behavior-proven analyzers, BM25 parameters and vector field contract extracted from AgentsOrchNext. The CLI never silently rewrites an incompatible schema. `dry-run` performs no persistent writes.
 
 Equivalent environment variables are available:
 
@@ -99,7 +99,7 @@ This keeps runner affinity outside FetchCore domain contracts.
 
 ### Managed local Solr
 
-`managed_solr: true` starts pinned Solr `9.10.1` on the selected self-hosted runner and mounts a named Docker volume.
+`managed_solr: true` starts pinned Solr `9.10.1` on the selected self-hosted runner, creates the requested collection from the FetchCore configset in `infra/solr/configset`, and mounts a named Docker volume.
 
 ```text
 workflow run N
@@ -121,7 +121,7 @@ This provides real incremental behavior only while the runner/host retains that 
 
 ### External Solr
 
-For ephemeral runners or shared infrastructure:
+For ephemeral runners or shared infrastructure, the external service must already expose the requested collection with a schema compatible with the FetchCore configset. The workflow validates that contract before indexing:
 
 ```yaml
 managed_solr: false
