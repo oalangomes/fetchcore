@@ -22,7 +22,7 @@ SearchIntent
 SearchExpression = Term | Anchor | AllOf | AnyOf
 ```
 
-`Anchor(kind, value, origin="caller")` supports `identifier`, `qualified_symbol`, `path`, `route` and `source_ref`. Anchors are required facts, not estimates of relevance. `Term(value)` is a declared lexical phrase. `AllOf(children)` requires all children; `AnyOf(children)` requires at least one child. Grouping applies within one retrieved record, not across an arbitrary set of results. Children are nonempty tuples; intent structure is limited to 16 levels and 256 nodes. `QueryExpansion(value, origin)` records explicit recall text and who supplied it.
+`Anchor(kind, value, origin="caller")` supports `identifier`, `qualified_symbol`, `path`, `route` and `source_ref`. Anchors are required facts, not estimates of relevance. `Term(value)` is a declared lexical phrase. `AllOf(children)` requires all children; `AnyOf(children)` requires at least one child. Grouping applies within one retrieved record, not across an arbitrary set of results. Children are nonempty tuples; intent structure is limited to depth 16 (root depth zero) and 256 nodes. `QueryExpansion(value, origin)` records explicit recall text and who supplied it.
 
 Top-level anchors and the expression constrain the base query. Explicit expansions add recall alternatives to that base without relaxing anchors or branches. Hints remain preferences. A requirements-only intent starts with all records satisfying those requirements, so adding an expansion cannot narrow it.
 
@@ -58,7 +58,7 @@ Third-party backends must advertise `canonical_query=True` and consume that fiel
 
 The initial unsupported-semantics policy is **reject**. There is no configurable flattening fallback. Adapters check all participating channels before backend I/O, scanning or embedding; hybrid fails if either channel cannot preserve the request. Rejection raises `KnowledgeSearchError(category="unsupported_semantics")` with the channel, unsupported constructs, reason and `translation_policy: reject`.
 
-The small `IntentTranslation` observation supports `preserved`, `broadened`, `partially_unsupported` and `rejected`. Current successful translations use `preserved`, or `broadened` for caller-supplied expansions. Native analysis of the canonical query is classified as preserved. Rejected structure is never concatenated into embedding text.
+The small `IntentTranslation` observation supports `preserved`, `broadened`, `partially_unsupported` and `rejected`. Successful translations use `preserved`, or `broadened` for caller-supplied expansions. Local diagnostics report `partially_unsupported` when the existing local acquisition path does not consume a legacy signal (for example a reference-only signal); supplied and consumed signals remain separate. This preserves v1 behavior without claiming the signal was used. Hard v2 anchors/expressions still reject. Native analysis of the canonical query is classified as preserved. Rejected structure is never concatenated into embedding text.
 
 When `settings.diagnostic_candidate_window` is enabled, response metadata includes `intent_translation` per channel: canonical text, actual lexical request/embedding text/local terms/sparse terms, consumed anchors and expression, legacy signals, expansion origins, status and reason. This diagnostic explicitly contains query text; leave it disabled to avoid the additional query payload. Failure metadata is available regardless of diagnostics. Existing telemetry, result provenance and acquisition scores retain their meanings.
 

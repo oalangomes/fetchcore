@@ -400,3 +400,17 @@ def test_intent_rejects_excessive_combined_structure():
         SearchIntent(anchors=tuple(Anchor("identifier", str(i)) for i in range(257)))
     with pytest.raises(ValueError, match="limit"):
         SearchIntent(expression=AllOf(tuple(Term(str(i)) for i in range(257))))
+
+
+def test_local_diagnostics_do_not_claim_unconsumed_legacy_reference_signal(tmp_path):
+    reference = replace(
+        signal(), type="reference", classification="direct_reference", value="src/absent.py"
+    )
+    intent = SearchIntent(canonical_query="authentication", signals=(reference,))
+    response = LocalSemanticBackend().search(intent, scope(tmp_path, diagnostics=True), ())
+    observation = response.metadata["intent_translation"][0]
+    assert observation["status"] == "partially_unsupported"
+    assert observation["signals_consumed"] == []
+    assert observation["signals_supplied"] == [reference.to_mapping()]
+    assert observation["unsupported"] == ["signals[0]"]
+    assert observation["reasons"] == ["legacy_signals_not_consumed"]

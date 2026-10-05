@@ -7,6 +7,7 @@ from typing import Literal
 
 from fetchcore.retrieval.config import RetrievalBackendCapabilities
 from fetchcore.retrieval.contracts import KnowledgeSearchError, SearchIntent, SearchScope
+from fetchcore.retrieval.signals import QuerySignal
 
 
 TranslationStatus = Literal["preserved", "broadened", "partially_unsupported", "rejected"]
@@ -92,24 +93,35 @@ def validate_intent_translation(
 def translation_diagnostics(
     intent: SearchIntent,
     scope: SearchScope,
+    *,
+    consumed_signals: tuple[QuerySignal, ...] | None = None,
     **representations: object,
 ) -> dict[str, object]:
     """Reuse response diagnostics, with full query text only on explicit opt-in."""
     if scope.settings.get("diagnostic_candidate_window") is None:
         return {}
+    consumed = intent.signals if consumed_signals is None else consumed_signals
+    unsupported = tuple(
+        f"signals[{index}]" for index, signal in enumerate(intent.signals) if signal not in consumed
+    )
     observations = []
     for channel, representation in representations.items():
         observation = IntentTranslation(
             channel,
-            "broadened" if intent.expansions else "preserved",
-            ("caller_supplied_expansions",) if intent.expansions else (),
+            "partially_unsupported"
+            if unsupported
+            else ("broadened" if intent.expansions else "preserved"),
+            (("caller_supplied_expansions",) if intent.expansions else ())
+            + (("legacy_signals_not_consumed",) if unsupported else ()),
+            unsupported,
         ).to_mapping()
         observation.update(
             canonical_query=intent.canonical_query,
             representation=representation,
             anchors_consumed=[x.to_mapping() for x in intent.anchors],
             expression_consumed=intent.expression.to_mapping() if intent.expression else None,
-            signals_consumed=[x.to_mapping() for x in intent.signals],
+            signals_supplied=[x.to_mapping() for x in intent.signals],
+            signals_consumed=[x.to_mapping() for x in consumed],
             expansions=[x.to_mapping() for x in intent.expansions],
             translation_policy="reject",
         )

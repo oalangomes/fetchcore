@@ -30,13 +30,13 @@ The paired run of the final implementation produced the following measurements. 
 | MRR | 0.1667 | 0.3889 |
 | Zero-result rate | 83.33% | 0% |
 | Mean candidates examined | 0.1667 | 10 |
-| Application latency p50 | 1018.595 ms | 941.376 ms |
-| Application latency p95 | 1035.537 ms | 1029.254 ms |
-| Application latency p99 | 1069.847 ms | 1041.460 ms |
+| Application latency p50 | 1018.595 ms | 1022.137 ms |
+| Application latency p95 | 1035.537 ms | 1039.453 ms |
+| Application latency p99 | 1069.847 ms | 1048.027 ms |
 
-The existing MCP smoke independently reproduced those expected-path and MRR results: [before](../../benchmarks/search-intent-v2/artifacts/mcp-before.json), [after](../../benchmarks/search-intent-v2/artifacts/mcp-after.json). The full repeated [before observations](../../benchmarks/search-intent-v2/artifacts/serving-before.json) and [after observations](../../benchmarks/search-intent-v2/artifacts/serving-after.json) preserve every measured rank, path and latency. Source-tree hashes identify the exact measured implementations; the final after artifact matches the committed runtime source. Latency differences are not promoted as a performance improvement because the environment was not isolated.
+The existing MCP smoke independently reproduced those expected-path and MRR results: [before](../../benchmarks/search-intent-v2/artifacts/mcp-before.json), [after](../../benchmarks/search-intent-v2/artifacts/mcp-after.json). The full repeated [before observations](../../benchmarks/search-intent-v2/artifacts/serving-before.json) and [after observations](../../benchmarks/search-intent-v2/artifacts/serving-after.json) preserve every measured rank, path and latency. Source-tree hashes identify the exact measured implementations; the final after artifact matches the committed runtime source. The small p50/p95 increases are retained; latency differences are not promoted as an improvement because the environment was not isolated.
 
-The authority-boundary scenario regressed from rank 1 to rank 2 even though aggregate MRR improved. The incremental-sync scenario still misses the reviewed top-10 paths. Its expected paths point to compatibility modules; implementation modules moved during earlier decomposition. That Ground Truth should be reviewed separately, not changed inside this experiment to raise the score.
+The authority-boundary scenario regressed from rank 1 to rank 2 even though aggregate MRR improved. The incremental-sync scenario still misses the reviewed top-10 paths. Its expected paths point to compatibility modules; implementation modules moved during earlier decomposition. The actual `src/fetchcore/adapters/retrieval/solr/incremental_persistence.py` implementation appears at rank 9, while the reviewed `backends/` compatibility paths remain absent. That Ground Truth should be reviewed separately, not changed inside this experiment to raise the score.
 
 Local lexical retrieval still uses its existing phrase/term matcher; no general improvement in natural-language local recall is claimed. Dense/hybrid requests with declared groups or anchors now explicitly reject rather than attempting a lossy representation. Qualified-symbol matching depends on values actually present in the projection; this is not a symbol resolver.
 
@@ -48,7 +48,21 @@ All 20 frozen baseline-v1 intents produce byte-equivalent canonical mappings, So
 4a3b18e742c447e878b1bf35ef4b78370c98e1f1db5b110269ae04c4882ccc12
 ```
 
-The [compatibility test](../../tests/test_search_intent_v2.py) checks that digest against the new implementation. Document serializer/projection fingerprints and embedding identities were not changed. The existing frozen baseline runner is also exercised on the exact NeuroTrack corpus revision for the local lexical arm. Remote dense/hybrid quality is not re-promoted by these measurements; their v1 input representations are covered by the equivalence gate, and unsupported v2 groups fail before execution.
+The [compatibility test](../../tests/test_search_intent_v2.py) checks that digest against the new implementation. Document serializer/projection fingerprints and embedding identities were not changed. The existing frozen baseline runner completed 400 measured observations per version (20 queries × 20 repetitions, plus warmups) on NeuroTrack revision `74ce3244956a65baed61f1dae6f498cb2be4f3b7`. All ranked result spans, source/evidence metrics, result sizes and candidate counts matched exactly across every observation; configuration, Ground Truth and metric fingerprints also matched. See the [comparison summary](../../benchmarks/search-intent-v2/artifacts/frozen-local-comparison.json) and compressed raw artifacts ([before](../../benchmarks/search-intent-v2/artifacts/frozen-local-before.json.gz), [after](../../benchmarks/search-intent-v2/artifacts/frozen-local-after.json.gz)).
+
+| Frozen local-v1 metric | Before | After |
+| --- | ---: | ---: |
+| SourceRecall@20 | 0.35 | 0.35 |
+| EvidenceRecall@20 | 0 | 0 |
+| Evidence MRR | 0.118333 | 0.118333 |
+| SpanCoverage@20 | 0.070563 | 0.070563 |
+| Zero-result rate | 60% | 60% |
+| Mean candidates examined | 13.1 | 13.1 |
+| Latency p50 | 3347 ms | 3333 ms |
+| Latency p95 | 4273 ms | 4316 ms |
+| Latency p99 | 4595 ms | 4616 ms |
+
+The zero evidence recall and 60% zero-result rate remain existing limitations of this local v1 arm, not improvements delivered by v2. The observed p95/p99 increases are recorded rather than hidden. The two local arms ran concurrently; timing is descriptive. Remote dense/hybrid quality is not re-promoted by these measurements; their v1 input representations are covered by the equivalence gate, and unsupported v2 groups fail before execution.
 
 ## Reproduction
 
@@ -115,7 +129,7 @@ The minimal model uses one expression tree rather than separate alternatives and
 | `docs/architecture/retrieval.md`, `docs/README.md` | Current architectural status and discoverable documentation links. |
 | `docs/benchmarks/search-intent-v2.md` | Hypothesis, measurements, regressions, commands and implementation report. |
 
-Validation on the implementation: 340 tests passed with both native integration fixtures enabled; Ruff, strict mypy over `src`, documentation checks, and sdist/wheel build passed. The regular suite skips the two opt-in integration tests unless services are explicitly supplied. The all-channel frozen translation digest is a compatibility check, not a claim of measured v2 dense/hybrid retrieval quality.
+Validation on the implementation: 341 tests passed with both native integration fixtures enabled; Ruff, strict mypy over `src`, documentation checks, and sdist/wheel build passed. The regular suite skips the two opt-in integration tests unless services are explicitly supplied. The all-channel frozen translation digest is a compatibility check, not a claim of measured v2 dense/hybrid retrieval quality.
 
 No generic NLP, generic query parser, synonym engine, core stemming/tokenization, learned planner, automatic expansion, authority/satisfaction model or targeted fast path was added. Scope/configuration, provenance, persisted identities, BM25 weights, fusion and reranking boundaries remain separate.
 

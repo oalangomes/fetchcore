@@ -274,10 +274,28 @@ class LocalSemanticBackend:
             status="success",
             results=returned,
             metadata={
-                **translation_diagnostics(intent, scope, lexical={
-                    "exact_terms": list(query.exact_terms),
-                    "semantic_terms": list(query.semantic_terms), "hints": list(query.hints),
-                }),
+                **translation_diagnostics(
+                    intent,
+                    scope,
+                    consumed_signals=tuple(
+                        signal
+                        for signal in intent.signals
+                        if signal.value.strip().casefold()
+                        in {
+                            value.casefold()
+                            for value in {
+                                "exact": query.exact_terms,
+                                "semantic": query.semantic_terms,
+                                "hint": query.hints,
+                            }.get(signal.type, ())
+                        }
+                    ),
+                    lexical={
+                        "exact_terms": list(query.exact_terms),
+                        "semantic_terms": list(query.semantic_terms),
+                        "hints": list(query.hints),
+                    },
+                ),
                 "query_terms": list(query.terms),
                 "exact_terms_used": list(query.exact_terms),
                 "semantic_terms_used": list(query.semantic_terms),
