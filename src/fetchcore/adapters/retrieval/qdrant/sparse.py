@@ -9,6 +9,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from fetchcore.retrieval.contracts import SearchIntent
+from fetchcore.retrieval.config import RetrievalBackendCapabilities
+from fetchcore.retrieval.translation import validate_intent_translation
 
 
 SPARSE_VECTOR_NAME = "lexical"
@@ -81,8 +83,14 @@ def projection_sparse_terms(document: Mapping[str, object]) -> tuple[str, ...]:
 
 def intent_sparse_terms(intent: SearchIntent) -> tuple[str, ...]:
     """Extract deterministic lexical terms from the backend-neutral search intent."""
+    validate_intent_translation(
+        intent, channel="sparse", capabilities=RetrievalBackendCapabilities(canonical_query=True),
+    )
     values: list[str] = []
     values.extend(signal.value for signal in intent.signals)
+    if intent.canonical_query:
+        values.append(intent.canonical_query)
+    values.extend(item.value for item in intent.expansions)
     values.extend(intent.exact_terms)
     values.extend(intent.semantic_terms)
     values.extend(intent.hints)

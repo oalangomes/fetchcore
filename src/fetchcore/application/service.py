@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import unquote
 
 from fetchcore.retrieval import RetrievalConfig
+from fetchcore.retrieval.translation import validate_intent_translation
 from fetchcore.retrieval.contracts import (
     KnowledgeSearchError,
     KnowledgeSearchResponse,
@@ -153,7 +154,7 @@ class RetrievalApplicationService:
         knowledge_types = request.knowledge_types or binding.knowledge_types
         intent = SearchIntent(
             exact_terms=exact_terms,
-            semantic_terms=(query,) if query else (),
+            canonical_query=request.query,
         )
         scope = SearchScope(
             workspace=binding.workspace,
@@ -167,6 +168,8 @@ class RetrievalApplicationService:
             settings=dict(binding.settings),
             retrieval=binding.retrieval,
         )
+        mode = binding.retrieval.mode if binding.retrieval else "lexical"
+        validate_intent_translation(intent, channel=mode, capabilities=backend.retrieval_capabilities)
         return backend.search(intent, scope, ())
 
     def get_source(self, request: SourceReadRequest) -> SourceReadResult:

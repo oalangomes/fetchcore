@@ -1,0 +1,184 @@
+{
+  "backend": "solr",
+  "collection": "issue19",
+  "protocol_smoke": {
+    "advertised_tools": [
+      "get_source",
+      "search"
+    ],
+    "get_source_verified": true,
+    "initialized": true,
+    "required_tools": [
+      "get_source",
+      "search"
+    ],
+    "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/repository/index_policy.py"
+  },
+  "repository": "oalangomes/fetchcore",
+  "revision": "32fb976",
+  "scenarios": [
+    {
+      "backend": "solr",
+      "expected_paths": [
+        "src/fetchcore/repository/index_policy.py"
+      ],
+      "first_expected_rank": 4,
+      "id": "repository-index-policy",
+      "matched_paths": [
+        "src/fetchcore/repository/index_policy.py"
+      ],
+      "min_expected_path_hits": 1,
+      "passed": true,
+      "query": "Where is the repository-local .fetchcore/indexing.yaml policy loaded and validated?",
+      "reciprocal_rank": 0.25,
+      "search_duration_ms": 976,
+      "source_ref_verified": "repository://oalangomes/fetchcore/src/fetchcore/repository/index_policy.py",
+      "source_verified": true,
+      "top_source_refs": [
+        "repository://oalangomes/fetchcore/docs/migrations/fetchcore-namespace.md",
+        "repository://oalangomes/fetchcore/docs/migrations/fetchcore-namespace.md",
+        "repository://oalangomes/fetchcore/src/fetchcore/repository/document_policy.py",
+        "repository://oalangomes/fetchcore/src/fetchcore/repository/index_policy.py",
+        "repository://oalangomes/fetchcore/docs/migrations/issue-65-runtime-audit.md"
+      ]
+    },
+    {
+      "backend": "solr",
+      "expected_paths": [
+        "src/fetchcore/backends/solr_incremental_persistence.py",
+        "src/fetchcore/backends/solr_incremental.py"
+      ],
+      "first_expected_rank": null,
+      "id": "targeted-incremental-sync",
+      "matched_paths": [],
+      "min_expected_path_hits": 1,
+      "passed": false,
+      "query": "TargetedGitAwareSolrSynchronizer indexing_contract_changed incremental sync",
+      "reciprocal_rank": 0.0,
+      "search_duration_ms": 952,
+      "source_ref_verified": null,
+      "source_verified": true,
+      "top_source_refs": [
+        "repository://oalangomes/fetchcore/tests/test_cli.py",
+        "repository://oalangomes/fetchcore/src/fetchcore/cli.py",
+        "repository://oalangomes/fetchcore/docs/guides/self-hosted-indexing.md",
+        "repository://oalangomes/fetchcore/tests/test_repository_incremental_persistence.py",
+        "repository://oalangomes/fetchcore/docs/guides/self-hosted-indexing.md"
+      ]
+    },
+    {
+      "backend": "solr",
+      "expected_paths": [
+        "src/fetchcore/application/service.py"
+      ],
+      "first_expected_rank": 1,
+      "id": "repository-source-safety",
+      "matched_paths": [
+        "src/fetchcore/application/service.py"
+      ],
+      "min_expected_path_hits": 1,
+      "passed": true,
+      "query": "source_ref escapes the authorized repository workspace unauthorized_source",
+      "reciprocal_rank": 1.0,
+      "search_duration_ms": 962,
+      "source_ref_verified": "repository://oalangomes/fetchcore/src/fetchcore/application/service.py",
+      "source_verified": true,
+      "top_source_refs": [
+        "repository://oalangomes/fetchcore/src/fetchcore/application/service.py",
+        "repository://oalangomes/fetchcore/src/fetchcore/application/service.py",
+        "repository://oalangomes/fetchcore/docs/guides/mcp.md",
+        "repository://oalangomes/fetchcore/tests/test_application_service.py",
+        "repository://oalangomes/fetchcore/docs/concepts/repository-identity.md"
+      ]
+    },
+    {
+      "backend": "solr",
+      "expected_paths": [
+        "src/fetchcore/application/composition.py"
+      ],
+      "first_expected_rank": 4,
+      "id": "backend-composition",
+      "matched_paths": [
+        "src/fetchcore/application/composition.py"
+      ],
+      "min_expected_path_hits": 1,
+      "passed": true,
+      "query": "builtin_backend_factories local-semantic solr opensearch qdrant-vector",
+      "reciprocal_rank": 0.25,
+      "search_duration_ms": 980,
+      "source_ref_verified": null,
+      "source_verified": true,
+      "top_source_refs": [
+        "repository://oalangomes/fetchcore/src/fetchcore/baseline.py",
+        "repository://oalangomes/fetchcore/benchmarks/baseline-v1/manifest.json",
+        "repository://oalangomes/fetchcore/tests/test_baseline.py",
+        "repository://oalangomes/fetchcore/src/fetchcore/application/composition.py",
+        "repository://oalangomes/fetchcore/docs/benchmarks/baseline-v1.md"
+      ]
+    },
+    {
+      "backend": "solr",
+      "expected_paths": [
+        "src/fetchcore/serving/mcp.py",
+        "docs/guides/mcp.md"
+      ],
+      "first_expected_rank": 3,
+      "id": "mcp-serving-boundary",
+      "matched_paths": [
+        "src/fetchcore/serving/mcp.py",
+        "docs/guides/mcp.md"
+      ],
+      "min_expected_path_hits": 1,
+      "passed": true,
+      "query": "MCP RetrievalApplicationService KnowledgeSearchBackend search get_source",
+      "reciprocal_rank": 0.3333333333333333,
+      "search_duration_ms": 1024,
+      "source_ref_verified": null,
+      "source_verified": true,
+      "top_source_refs": [
+        "repository://oalangomes/fetchcore/docs/guides/searching.md",
+        "repository://oalangomes/fetchcore/tests/test_mcp_server.py",
+        "repository://oalangomes/fetchcore/docs/guides/mcp.md",
+        "repository://oalangomes/fetchcore/docs/architecture/serving.md",
+        "repository://oalangomes/fetchcore/docs/guides/getting-started.md"
+      ]
+    },
+    {
+      "backend": "solr",
+      "expected_paths": [
+        "AGENTS.md",
+        "README.md"
+      ],
+      "first_expected_rank": 2,
+      "id": "retrieval-authority-boundary",
+      "matched_paths": [
+        "AGENTS.md",
+        "README.md"
+      ],
+      "min_expected_path_hits": 1,
+      "passed": true,
+      "query": "retrieval satisfaction authority FetchCore",
+      "reciprocal_rank": 0.5,
+      "search_duration_ms": 1051,
+      "source_ref_verified": null,
+      "source_verified": true,
+      "top_source_refs": [
+        "repository://oalangomes/fetchcore/docs/history/extraction/retrieval-contracts.md",
+        "repository://oalangomes/fetchcore/AGENTS.md",
+        "repository://oalangomes/fetchcore/docs/benchmarks/baseline-v1.md",
+        "repository://oalangomes/fetchcore/AGENTS.md",
+        "repository://oalangomes/fetchcore/README.md"
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "status": "failed",
+  "summary": {
+    "expected_path_hit_rate": 0.8333333333333334,
+    "failed": 1,
+    "mrr": 0.3888888888888889,
+    "passed": 5,
+    "search_duration_ms_total": 5945,
+    "total": 6
+  }
+}

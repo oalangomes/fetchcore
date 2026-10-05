@@ -138,6 +138,10 @@ class ProjectionV3EmbeddingSerializer:
 
     def serialize_query(self, intent: SearchIntent) -> str:
         """Serialize search intent into deterministic embedding query text."""
+        from fetchcore.retrieval.config import RetrievalBackendCapabilities
+        from fetchcore.retrieval.translation import validate_intent_translation
+        validate_intent_translation(intent, channel="dense",
+                                    capabilities=RetrievalBackendCapabilities(canonical_query=True))
         groups: dict[str, list[str]] = {
             "exact": [],
             "reference": [],
@@ -170,6 +174,8 @@ class ProjectionV3EmbeddingSerializer:
                 lines.append(f"{signal_type}:")
                 lines.extend(serialized_values)
         rendered = "\n".join(lines).strip()
+        if intent.canonical_query:
+            rendered = intent.canonical_query + ("\n" + rendered if rendered else "")
         if not rendered:
             raise KnowledgeSearchError(
                 "vector search requires at least one query signal",

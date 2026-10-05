@@ -1,0 +1,140 @@
+{
+  "backend": "solr",
+  "collection": "issue19",
+  "protocol_smoke": {
+    "advertised_tools": [
+      "get_source",
+      "search"
+    ],
+    "get_source_verified": true,
+    "initialized": true,
+    "required_tools": [
+      "get_source",
+      "search"
+    ],
+    "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/repository/index_policy.py"
+  },
+  "repository": "oalangomes/fetchcore",
+  "revision": "32fb976",
+  "scenarios": [
+    {
+      "backend": "solr",
+      "expected_paths": [
+        "src/fetchcore/repository/index_policy.py"
+      ],
+      "first_expected_rank": null,
+      "id": "repository-index-policy",
+      "matched_paths": [],
+      "min_expected_path_hits": 1,
+      "passed": false,
+      "query": "Where is the repository-local .fetchcore/indexing.yaml policy loaded and validated?",
+      "reciprocal_rank": 0.0,
+      "search_duration_ms": 1089,
+      "source_ref_verified": null,
+      "source_verified": false,
+      "top_source_refs": []
+    },
+    {
+      "backend": "solr",
+      "expected_paths": [
+        "src/fetchcore/backends/solr_incremental_persistence.py",
+        "src/fetchcore/backends/solr_incremental.py"
+      ],
+      "first_expected_rank": null,
+      "id": "targeted-incremental-sync",
+      "matched_paths": [],
+      "min_expected_path_hits": 1,
+      "passed": false,
+      "query": "TargetedGitAwareSolrSynchronizer indexing_contract_changed incremental sync",
+      "reciprocal_rank": 0.0,
+      "search_duration_ms": 941,
+      "source_ref_verified": null,
+      "source_verified": true,
+      "top_source_refs": []
+    },
+    {
+      "backend": "solr",
+      "expected_paths": [
+        "src/fetchcore/application/service.py"
+      ],
+      "first_expected_rank": null,
+      "id": "repository-source-safety",
+      "matched_paths": [],
+      "min_expected_path_hits": 1,
+      "passed": false,
+      "query": "source_ref escapes the authorized repository workspace unauthorized_source",
+      "reciprocal_rank": 0.0,
+      "search_duration_ms": 939,
+      "source_ref_verified": null,
+      "source_verified": false,
+      "top_source_refs": []
+    },
+    {
+      "backend": "solr",
+      "expected_paths": [
+        "src/fetchcore/application/composition.py"
+      ],
+      "first_expected_rank": null,
+      "id": "backend-composition",
+      "matched_paths": [],
+      "min_expected_path_hits": 1,
+      "passed": false,
+      "query": "builtin_backend_factories local-semantic solr opensearch qdrant-vector",
+      "reciprocal_rank": 0.0,
+      "search_duration_ms": 933,
+      "source_ref_verified": null,
+      "source_verified": true,
+      "top_source_refs": []
+    },
+    {
+      "backend": "solr",
+      "expected_paths": [
+        "src/fetchcore/serving/mcp.py",
+        "docs/guides/mcp.md"
+      ],
+      "first_expected_rank": null,
+      "id": "mcp-serving-boundary",
+      "matched_paths": [],
+      "min_expected_path_hits": 1,
+      "passed": false,
+      "query": "MCP RetrievalApplicationService KnowledgeSearchBackend search get_source",
+      "reciprocal_rank": 0.0,
+      "search_duration_ms": 941,
+      "source_ref_verified": null,
+      "source_verified": true,
+      "top_source_refs": []
+    },
+    {
+      "backend": "solr",
+      "expected_paths": [
+        "AGENTS.md",
+        "README.md"
+      ],
+      "first_expected_rank": 1,
+      "id": "retrieval-authority-boundary",
+      "matched_paths": [
+        "AGENTS.md"
+      ],
+      "min_expected_path_hits": 1,
+      "passed": true,
+      "query": "retrieval satisfaction authority FetchCore",
+      "reciprocal_rank": 1.0,
+      "search_duration_ms": 965,
+      "source_ref_verified": null,
+      "source_verified": true,
+      "top_source_refs": [
+        "repository://oalangomes/fetchcore/AGENTS.md"
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "status": "failed",
+  "summary": {
+    "expected_path_hit_rate": 0.16666666666666666,
+    "failed": 5,
+    "mrr": 0.16666666666666666,
+    "passed": 1,
+    "search_duration_ms_total": 5808,
+    "total": 6
+  }
+}

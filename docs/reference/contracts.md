@@ -5,7 +5,9 @@
 | Contract | Module | Current meaning |
 | --- | --- | --- |
 | `QuerySignal` | `fetchcore.retrieval.signals` | Typed query signal with classification, origin, weight, and optional `required` marker. |
-| `SearchIntent` | `fetchcore.retrieval.contracts` | `exact_terms`, `semantic_terms`, `hints`, `signals`; `terms` deduplicates exact and semantic terms. |
+| `SearchIntent` | `fetchcore.retrieval.contracts` | Canonical query, anchors, declared expression, expansions, hints, signals and legacy terms; see [SearchIntent v2](../concepts/search-intent.md). |
+| `Term`, `Anchor`, `AllOf`, `AnyOf`, `QueryExpansion` | `fetchcore.retrieval.contracts` | Immutable declared meaning and expansion provenance, with deterministic mapping. |
+| `IntentTranslation` | `fetchcore.retrieval.translation` | Channel, translation status, reasons and unsupported constructs. |
 | `SearchRequirement` | `fetchcore.retrieval.contracts` | Knowledge type, capabilities, minimum/target allocation and priority hint. |
 | `SearchScope` | `fetchcore.retrieval.contracts` | Workspace, revision/repository, knowledge types, result bound, mode, paths, settings and optional `RetrievalConfig`. |
 | `SearchResult` | `fetchcore.retrieval.contracts` | Hit identity, content, score, source trace, capabilities, observations, relationships, query matches. |
@@ -16,6 +18,6 @@
 | `QueryMatchEvidence` | `fetchcore.retrieval.evidence` | Signal, match type, channels, values, source and bounded contribution details. |
 | `EmbeddingProvider` | `fetchcore.retrieval.embedding` | Provider ID and embedding operations independent of Ollama transport. |
 | `RetrievalConfig` | `fetchcore.retrieval.config` | Dense, hybrid, reranking and LTR settings; effective mode is lexical, dense or hybrid. |
-| `RetrievalBackendCapabilities` | `fetchcore.retrieval.config` | Advertised lexical, dense, hybrid and LTR acquisition support. The serialized reranking flag is retained for compatibility; reranking is post-acquisition. |
+| `RetrievalBackendCapabilities` | `fetchcore.retrieval.config` | Advertised lexical, dense, hybrid, LTR, direct canonical-query and lexical requirement support. The serialized reranking flag is retained for compatibility; reranking is post-acquisition. |
 
 `SearchResult.to_mapping()` omits empty/absent fields and validates alignment score and capability source identity. `SearchScope.to_mapping()` excludes runtime-only `settings`. `KnowledgeSearchResponse.to_mapping()` includes telemetry when present. Consult the dataclasses and round-trip tests before changing serialized meaning. See [capabilities](capabilities.md) and [evidence vocabulary](../concepts/evidence-and-provenance.md).

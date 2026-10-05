@@ -11,3 +11,5 @@
 | `ollama` | `adapters/embedding/ollama` | Embedding provider, separate from retrieval backends. |
 
 Inspect each adapter's `retrieval_capabilities` for exact mode support. An unsupported requested mode raises a typed error; there is no implicit dense/lexical substitution. See [retrieval configuration](configuration.md).
+
+`canonical_query` advertises direct canonical-text consumption, independently of the backend's native analysis. `lexical_requirements` advertises required anchors and declared boolean groups on the lexical channel. Solr/OpenSearch advertise both; local and Qdrant advertise canonical text only. Dense participation does not inherit lexical requirement support. `validate_intent_translation` rejects unsupported declared constructs before execution; its initial policy is reject. See [SearchIntent v2](../concepts/search-intent.md) for the per-channel matrix and compatibility rules.

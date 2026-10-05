@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import quote
 
+from fetchcore.retrieval.translation import validate_intent_translation, translation_diagnostics
+
 from fetchcore.retrieval import RetrievalBackendCapabilities
 from fetchcore.telemetry import (
     RetrievalStageTelemetry,
@@ -133,7 +135,7 @@ class LocalSemanticBackend:
     """Deterministic local backend adapted from SemanticSearchExtractor ideas."""
 
     backend_id = "local-semantic"
-    retrieval_capabilities = RetrievalBackendCapabilities(lexical=True)
+    retrieval_capabilities = RetrievalBackendCapabilities(lexical=True, canonical_query=True)
 
     def __init__(
         self,
@@ -149,6 +151,12 @@ class LocalSemanticBackend:
         requirements: tuple[SearchRequirement, ...],
     ) -> KnowledgeSearchResponse:
         """Execute retrieval for the supplied intent, scope, and requirements."""
+        mode = scope.retrieval.mode if scope.retrieval else "lexical"
+        channels = ("lexical", "dense") if mode == "hybrid" else (mode,)
+        for channel in channels:
+            validate_intent_translation(
+                intent, channel=channel, capabilities=self.retrieval_capabilities,
+            )
         started = self.timer()
         settings = scope.settings
         query = _local_query(intent, settings)
@@ -223,7 +231,7 @@ class LocalSemanticBackend:
                 for item in found.candidates
                 if not allowed_types or item.knowledge_type in allowed_types
             )
-            if scope.repository_paths and not eligible_candidates:
+            if scope.repository_paths and not eligible_candidates and not intent.has_v2_semantics:
                 direct_candidate = _repository_source_candidate(
                     source=source,
                     repository=repository,
@@ -266,6 +274,10 @@ class LocalSemanticBackend:
             status="success",
             results=returned,
             metadata={
+                **translation_diagnostics(intent, scope, lexical={
+                    "exact_terms": list(query.exact_terms),
+                    "semantic_terms": list(query.semantic_terms), "hints": list(query.hints),
+                }),
                 "query_terms": list(query.terms),
                 "exact_terms_used": list(query.exact_terms),
                 "semantic_terms_used": list(query.semantic_terms),
@@ -772,15 +784,9 @@ def _local_query(intent: SearchIntent, settings: dict[str, object]) -> LocalSear
     max_terms = _positive_int(
         settings.get("max_expanded_query_terms", 32), "max_expanded_query_terms"
     )
-    structured_exact = tuple(
-        item.value for item in intent.signals if item.type == "exact"
-    )
-    structured_semantic = tuple(
-        item.value for item in intent.signals if item.type == "semantic"
-    )
-    structured_hints = tuple(
-        item.value for item in intent.signals if item.type == "hint"
-    )
+    structured_exact = tuple(item.value for item in intent.signals if item.type == "exact")
+    structured_semantic = tuple(item.value for item in intent.signals if item.type == "semantic")
+    structured_hints = tuple(item.value for item in intent.signals if item.type == "hint")
     exact_inputs = structured_exact or intent.exact_terms
     semantic_inputs = structured_semantic or intent.semantic_terms
     hint_inputs = structured_hints or intent.hints
@@ -789,6 +795,16 @@ def _local_query(intent: SearchIntent, settings: dict[str, object]) -> LocalSear
         semantic_inputs,
         settings,
         limit=max(0, max_terms - len(exact)),
+    )
+    # The legacy term budget must not silently discard the canonical query.
+    semantic = tuple(
+        _unique(
+            (
+                *semantic,
+                *((intent.canonical_query,) if intent.canonical_query else ()),
+                *(item.value for item in intent.expansions),
+            )
+        )
     )
     exact_keys = {item.casefold() for item in exact}
     semantic = tuple(item for item in semantic if item.casefold() not in exact_keys)
