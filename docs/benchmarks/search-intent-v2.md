@@ -21,7 +21,7 @@ The [comparison runner](../../benchmarks/search-intent-v2/run.py) invokes `Retri
 
 Expected-path hit means at least one reviewed path appears in the top 10. SourceRecall@10 is the fraction of listed expected paths recovered, averaged over scenarios. MRR uses the first expected-path rank. These are source-level metrics; they are not frozen baseline-v1 evidence-span Recall@K and do not prove that the returned content is sufficient for a consumer.
 
-The first paired run produced the following quality measurements. No Ground Truth was changed to improve the result.
+The paired run of the final implementation produced the following measurements. No Ground Truth was changed to improve the result.
 
 | Metric | Before | After |
 | --- | ---: | ---: |
@@ -30,8 +30,11 @@ The first paired run produced the following quality measurements. No Ground Trut
 | MRR | 0.1667 | 0.3889 |
 | Zero-result rate | 83.33% | 0% |
 | Mean candidates examined | 0.1667 | 10 |
+| Application latency p50 | 1018.595 ms | 941.376 ms |
+| Application latency p95 | 1035.537 ms | 1029.254 ms |
+| Application latency p99 | 1069.847 ms | 1041.460 ms |
 
-The existing MCP smoke independently reproduced those expected-path and MRR results: [before](../../benchmarks/search-intent-v2/artifacts/mcp-before.json), [after](../../benchmarks/search-intent-v2/artifacts/mcp-after.json). The full repeated [before observations](../../benchmarks/search-intent-v2/artifacts/serving-before.json) preserve every measured rank, path and latency.
+The existing MCP smoke independently reproduced those expected-path and MRR results: [before](../../benchmarks/search-intent-v2/artifacts/mcp-before.json), [after](../../benchmarks/search-intent-v2/artifacts/mcp-after.json). The full repeated [before observations](../../benchmarks/search-intent-v2/artifacts/serving-before.json) and [after observations](../../benchmarks/search-intent-v2/artifacts/serving-after.json) preserve every measured rank, path and latency. Source-tree hashes identify the exact measured implementations; the final after artifact matches the committed runtime source. Latency differences are not promoted as a performance improvement because the environment was not isolated.
 
 The authority-boundary scenario regressed from rank 1 to rank 2 even though aggregate MRR improved. The incremental-sync scenario still misses the reviewed top-10 paths. Its expected paths point to compatibility modules; implementation modules moved during earlier decomposition. That Ground Truth should be reviewed separately, not changed inside this experiment to raise the score.
 
@@ -82,3 +85,38 @@ PYTHONPATH=/path/to/source/src python benchmarks/baseline-v1/run.py \
 ```
 
 See the [SearchIntent contract](../concepts/search-intent.md) for the design, compatibility mapping, channel behavior and explicit unsupported policy.
+
+## Implementation and verification inventory
+
+The minimal model uses one expression tree rather than separate alternatives and conjunction registries. Legacy fields stay in the same dataclass; there is one reader/translator path, with deterministic compatibility behavior. The [contract document](../concepts/search-intent.md) specifies every field and backend/channel behavior.
+
+| File | Responsibility |
+| --- | --- |
+| `src/fetchcore/retrieval/contracts.py` | Immutable canonical/structured intent, bounded declared expression, provenance for expansions, versioned reader and legacy serialization. |
+| `src/fetchcore/retrieval/config.py` | Two capabilities: canonical query consumption and lexical requirements. |
+| `src/fetchcore/retrieval/translation.py` | Typed translation observations, reject policy and opt-in existing response diagnostics. |
+| `src/fetchcore/retrieval/embedding.py` | Canonical encoder input; unchanged legacy/document bytes; explicit rejection of unsupported structure/expansions. |
+| `src/fetchcore/application/service.py` | Preserve the original query and check the receiving backend's capability. |
+| `src/fetchcore/adapters/retrieval/local/backend.py` | Feed canonical text into existing matching, preserve it past the legacy term budget, reject unsupported structure, expose diagnostics. |
+| `src/fetchcore/adapters/retrieval/solr/query.py` | Native eDisMax canonical query, required field/boolean filters and optional hints/expansions. |
+| `src/fetchcore/adapters/retrieval/solr/backend.py` | Pre-execution gate and actual lexical/dense translation diagnostics. |
+| `src/fetchcore/adapters/retrieval/opensearch/query.py` | Native multi-match canonical query, nested bool filters and optional hints/expansions. |
+| `src/fetchcore/adapters/retrieval/opensearch/backend.py` | Pre-execution gate and lexical/dense diagnostics. |
+| `src/fetchcore/adapters/retrieval/qdrant/backend.py` | Validate all participating channels; expose dense/sparse representations. |
+| `src/fetchcore/adapters/retrieval/qdrant/sparse.py` | Pass canonical text through the existing sparse analyzer; reject groups instead of dropping them. |
+| `src/fetchcore/baseline.py` | Use the canonical intent reader so benchmark input cannot silently lose v2 fields. |
+| `tests/test_application_service.py` | Update the serving expectation and test exact original text plus unsupported-backend rejection. |
+| `tests/test_search_intent_v2.py` | Serialization, invariants, invalid inputs, bounded structure, capability rejection, native requests, optional diagnostics and frozen v1 equivalence. |
+| `tests/test_search_intent_v2_integration.py` | Real Solr/OpenSearch branch semantics, required anchors, escaping, native text analysis and optional hints. |
+| `benchmarks/search-intent-v2/run.py` | Repeatable application-serving measurement on one immutable projection. |
+| `benchmarks/search-intent-v2/artifacts/` | Raw before/after MCP and repeated serving observations, plus frozen local comparison evidence. |
+| `docs/concepts/search-intent.md` | Canonical design, exact migration rules, backend matrix, bounds and limitations. |
+| `docs/reference/contracts.md`, `docs/reference/capabilities.md` | Public contract/capability references. |
+| `docs/architecture/retrieval.md`, `docs/README.md` | Current architectural status and discoverable documentation links. |
+| `docs/benchmarks/search-intent-v2.md` | Hypothesis, measurements, regressions, commands and implementation report. |
+
+Validation on the implementation: 340 tests passed with both native integration fixtures enabled; Ruff, strict mypy over `src`, documentation checks, and sdist/wheel build passed. The regular suite skips the two opt-in integration tests unless services are explicitly supplied. The all-channel frozen translation digest is a compatibility check, not a claim of measured v2 dense/hybrid retrieval quality.
+
+No generic NLP, generic query parser, synonym engine, core stemming/tokenization, learned planner, automatic expansion, authority/satisfaction model or targeted fast path was added. Scope/configuration, provenance, persisted identities, BM25 weights, fusion and reranking boundaries remain separate.
+
+The concrete follow-up discovered is reviewing incremental-sync dogfood Ground Truth against the moved implementation modules. The remaining miss and rank regression are retained in the evidence; they were not used to justify additional tuning here.
