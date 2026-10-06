@@ -1,0 +1,161 @@
+{
+  "arm_attempts": {
+    "opensearch-dense": 1,
+    "opensearch-hybrid": 1,
+    "opensearch-lexical": 1,
+    "qdrant-dense": 1,
+    "qdrant-hybrid": 1
+  },
+  "arms": [
+    "local-lexical",
+    "solr-lexical",
+    "solr-dense",
+    "solr-hybrid",
+    "opensearch-lexical",
+    "opensearch-dense",
+    "opensearch-hybrid",
+    "qdrant-dense",
+    "qdrant-hybrid"
+  ],
+  "baseline_manifest_fingerprint": "sha256:c6edcb980d0c96e0ac4dd18073f7cef445fd514fa7131ed39304189e04503af8",
+  "canonical_query_set_fingerprint": "sha256:3c41c6a64b9c87033321f968fed6ccc30c0bcc216d779ceffb8d9e8e1ba3a9e7",
+  "completed_arms": [
+    "local-lexical",
+    "solr-lexical",
+    "solr-dense",
+    "solr-hybrid",
+    "opensearch-lexical",
+    "opensearch-dense",
+    "opensearch-hybrid",
+    "qdrant-dense",
+    "qdrant-hybrid"
+  ],
+  "completed_at": "2026-10-06T22:06:41.008730+00:00",
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+  },
+  "embedding_identity": {
+    "dimensions": 768,
+    "model": "embeddinggemma",
+    "provider": "ollama"
+  },
+  "environment": {
+    "cpu_count": 8,
+    "embedding": {
+      "dimensions": 768,
+      "model": "embeddinggemma",
+      "provider": "ollama"
+    },
+    "embedding_model_digest": "85462619ee721b466c5927d109d4cb765861907d5417b9109caebc4e614679f1",
+    "machine": "x86_64",
+    "platform_release": "6.18.33.2-microsoft-standard-WSL2",
+    "platform_system": "Linux",
+    "profile_id": "fetchcore-local-benchmark-v1",
+    "python_version": "3.12.3",
+    "services": {
+      "ollama": "0.35.1",
+      "opensearch": "3.8.0",
+      "qdrant": "1.19.0",
+      "solr": "9.10.1"
+    }
+  },
+  "fetchcore_revision": "30eaf7ed1b744d8e9577caccd8252963c7f0c8e4",
+  "full_protocol": true,
+  "fusion_identity": "rrf; unchanged runtime defaults",
+  "ground_truth_fingerprint": "sha256:a03733d1601097afcba5e32dc4b04834471758919300457fb88925fce481c29a",
+  "initial_fetchcore_revision": "279acf23d361c4cbc1cc829fd8a38954d7405ba8",
+  "k": 20,
+  "measurement_contract_fingerprint": "sha256:abd79e8f7a40d957126f7fdb94dcaf47f853fa88ca1888e430554e04da84f72f",
+  "protocol": "fetchcore.search-intent-v2-evidence",
+  "repetitions": 20,
+  "representations": [
+    "legacy",
+    "canonical"
+  ],
+  "resume_history": [
+    {
+      "fetchcore_revision": "30eaf7ed1b744d8e9577caccd8252963c7f0c8e4",
+      "previous_error": "KnowledgeSearchError: embedding provider is unavailable",
+      "previous_status": "failed",
+      "resumed_at": "2026-10-06T21:07:55.073380+00:00",
+      "runner_source_fingerprint": "sha256:9bd61f2b60e8486a1abfaddb811b19877f64fc6131cf86196460e110cc301545"
+    },
+    {
+      "fetchcore_revision": "30eaf7ed1b744d8e9577caccd8252963c7f0c8e4",
+      "previous_error": "BaselineConfigurationError: resume checkpoint identity mismatch: opensearch-hybrid",
+      "previous_status": "failed",
+      "resumed_at": "2026-10-06T21:08:43.803351+00:00",
+      "runner_source_fingerprint": "sha256:9bd61f2b60e8486a1abfaddb811b19877f64fc6131cf86196460e110cc301545"
+    },
+    {
+      "fetchcore_revision": "30eaf7ed1b744d8e9577caccd8252963c7f0c8e4",
+      "previous_error": null,
+      "previous_status": "running",
+      "resumed_at": "2026-10-06T21:10:44.212778+00:00",
+      "runner_source_fingerprint": "sha256:9bd61f2b60e8486a1abfaddb811b19877f64fc6131cf86196460e110cc301545"
+    },
+    {
+      "fetchcore_revision": "30eaf7ed1b744d8e9577caccd8252963c7f0c8e4",
+      "previous_error": "BaselineConfigurationError: resume checkpoint identity mismatch: opensearch-hybrid",
+      "previous_status": "failed",
+      "resumed_at": "2026-10-06T21:12:15.186564+00:00",
+      "runner_source_fingerprint": "sha256:9bd61f2b60e8486a1abfaddb811b19877f64fc6131cf86196460e110cc301545"
+    },
+    {
+      "fetchcore_revision": "30eaf7ed1b744d8e9577caccd8252963c7f0c8e4",
+      "previous_error": "BaselineConfigurationError: resume checkpoint identity mismatch: opensearch-hybrid",
+      "previous_status": "failed",
+      "resumed_at": "2026-10-06T21:14:06.141880+00:00",
+      "runner_source_fingerprint": "sha256:9bd61f2b60e8486a1abfaddb811b19877f64fc6131cf86196460e110cc301545"
+    },
+    {
+      "fetchcore_revision": "30eaf7ed1b744d8e9577caccd8252963c7f0c8e4",
+      "previous_error": "BaselineConfigurationError: serving retrieval results differ from direct canonical",
+      "previous_status": "failed",
+      "resumed_at": "2026-10-06T21:17:04.600100+00:00",
+      "runner_source_fingerprint": "sha256:9bd61f2b60e8486a1abfaddb811b19877f64fc6131cf86196460e110cc301545"
+    },
+    {
+      "fetchcore_revision": "30eaf7ed1b744d8e9577caccd8252963c7f0c8e4",
+      "previous_error": "BaselineConfigurationError: resume checkpoint identity mismatch: opensearch-hybrid",
+      "previous_status": "failed",
+      "resumed_at": "2026-10-06T21:20:01.478410+00:00",
+      "runner_source_fingerprint": "sha256:9bd61f2b60e8486a1abfaddb811b19877f64fc6131cf86196460e110cc301545"
+    },
+    {
+      "fetchcore_revision": "30eaf7ed1b744d8e9577caccd8252963c7f0c8e4",
+      "previous_error": "BaselineConfigurationError: resume checkpoint identity mismatch: opensearch-hybrid",
+      "previous_status": "failed",
+      "resumed_at": "2026-10-06T21:24:35.516418+00:00",
+      "runner_source_fingerprint": "sha256:9bd61f2b60e8486a1abfaddb811b19877f64fc6131cf86196460e110cc301545"
+    },
+    {
+      "fetchcore_revision": "30eaf7ed1b744d8e9577caccd8252963c7f0c8e4",
+      "previous_error": "BaselineConfigurationError: resume checkpoint identity mismatch: qdrant-dense",
+      "previous_status": "failed",
+      "resumed_at": "2026-10-06T21:26:51.569576+00:00",
+      "runner_source_fingerprint": "sha256:9bd61f2b60e8486a1abfaddb811b19877f64fc6131cf86196460e110cc301545"
+    },
+    {
+      "fetchcore_revision": "30eaf7ed1b744d8e9577caccd8252963c7f0c8e4",
+      "previous_error": null,
+      "previous_status": "running",
+      "resumed_at": "2026-10-06T21:29:47.102144+00:00",
+      "runner_source_fingerprint": "sha256:9bd61f2b60e8486a1abfaddb811b19877f64fc6131cf86196460e110cc301545"
+    }
+  ],
+  "run_version": "V0.2",
+  "runner_source_fingerprint": "sha256:9bd61f2b60e8486a1abfaddb811b19877f64fc6131cf86196460e110cc301545",
+  "runner_source_fingerprints": [
+    "sha256:508d81502d2dcd1d683f28bee1de91fb378e1ba4ffb224e770a06ac56d1febe8",
+    "sha256:9bd61f2b60e8486a1abfaddb811b19877f64fc6131cf86196460e110cc301545"
+  ],
+  "runtime_source_fingerprint": "sha256:f3e9556c868f086fdb9d11ecbfd620a3862261108e185fa85f85428ed8c4f6a6",
+  "schema_version": 1,
+  "status": "complete",
+  "transient_failures": [],
+  "warmups": 1,
+  "working_tree_dirty": true
+}
