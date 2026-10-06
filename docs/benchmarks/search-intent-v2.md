@@ -209,6 +209,8 @@ post-fusion enforcement or planner was added.
 
 ## Evidence-aware multi-backend evaluation
 
+For executable commands, prerequisites, index reuse and full-protocol promotion rules, see [the benchmark README](../../benchmarks/search-intent-v2/README.md).
+
 Issue #19 now has three distinct levels of evidence:
 
 1. **Contract tests**: explicit semantics, compatibility and fail-closed capability handling.
