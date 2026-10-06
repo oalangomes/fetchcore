@@ -12,7 +12,7 @@ import pytest
 
 from fetchcore import baseline
 from fetchcore.retrieval import RetrievalBackendCapabilities
-from fetchcore.retrieval.contracts import KnowledgeSearchResponse, SearchIntent, SearchScope
+from fetchcore.retrieval.contracts import (\n    KnowledgeSearchError,\n    KnowledgeSearchResponse,\n    SearchIntent,\n    SearchScope,\n)
 from fetchcore.telemetry import RetrievalTelemetry
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -270,3 +270,157 @@ def test_embedding_endpoint_is_explicit_in_current_composition(backend_id):
         provider = backend.embedding_factory(retrieval)
     assert provider.url == context.endpoints["ollama"]
     assert provider.model_id == "embeddinggemma"
+
+
+def _resume_run_fixture():
+    return {
+        "protocol": MODULE.PROTOCOL,
+        "schema_version": MODULE.SCHEMA_VERSION,
+        "status": "failed",
+        "full_protocol": True,
+        "arms": [arm.id for arm in baseline.BASELINE_V1_ARMS],
+        "representations": list(MODULE.REPRESENTATIONS),
+        "warmups": 1,
+        "repetitions": 20,
+        "k": 20,
+        "corpus": {"repository": "repo", "revision": "rev"},
+        "ground_truth_fingerprint": "sha256:gt",
+        "canonical_query_set_fingerprint": "sha256:queries",
+        "baseline_manifest_fingerprint": "sha256:manifest",
+        "runtime_source_fingerprint": "sha256:runtime",
+        "embedding_identity": {
+            "provider": "ollama",
+            "model": "embeddinggemma",
+            "dimensions": 768,
+        },
+        "fusion_identity": "rrf; unchanged runtime defaults",
+        "environment": {"profile_id": "test", "services": {"ollama": "test"}},
+        "fetchcore_revision": "old-revision",
+        "runner_source_fingerprint": "sha256:old-runner",
+        "working_tree_dirty": False,
+    }
+
+
+def test_resume_contract_ignores_orchestration_only_provenance_changes():
+    existing = _resume_run_fixture()
+    expected = copy.deepcopy(existing)
+    expected.update(
+        status="running",
+        fetchcore_revision="new-revision",
+        runner_source_fingerprint="sha256:new-runner",
+        working_tree_dirty=True,
+    )
+    MODULE.validate_resume_run(existing, expected)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("runtime_source_fingerprint", "sha256:different-runtime"),
+        ("ground_truth_fingerprint", "sha256:different-gt"),
+        ("canonical_query_set_fingerprint", "sha256:different-queries"),
+        ("repetitions", 19),
+        ("environment", {"profile_id": "different"}),
+    ],
+)
+def test_resume_contract_fails_closed_when_measurement_identity_changes(field, value):
+    existing = _resume_run_fixture()
+    expected = copy.deepcopy(existing)
+    expected["status"] = "running"
+    expected[field] = value
+    with pytest.raises(baseline.BaselineConfigurationError, match="measurement contract"):
+        MODULE.validate_resume_run(existing, expected)
+
+
+def test_resume_rejects_completed_run():
+    existing = _resume_run_fixture()
+    existing["status"] = "complete"
+    with pytest.raises(baseline.BaselineConfigurationError, match="does not need resume"):
+        MODULE.validate_resume_run(existing, copy.deepcopy(existing))
+
+
+def test_transient_arm_retry_restarts_whole_operation():
+    calls = []
+
+    def operation():
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            raise KnowledgeSearchError("provider reset", category="unavailable")
+        return ["complete-arm"]
+
+    result, attempts = MODULE.run_with_transient_arm_retry(
+        operation,
+        arm_id="opensearch-hybrid",
+        retries=1,
+        backoff_seconds=0,
+    )
+    assert result == ["complete-arm"]
+    assert attempts == 2
+    assert calls == [1, 2]
+
+
+def test_non_transient_arm_failure_is_not_retried():
+    calls = []
+
+    def operation():
+        calls.append(1)
+        raise KnowledgeSearchError("schema mismatch", category="schema_mismatch")
+
+    with pytest.raises(KnowledgeSearchError):
+        MODULE.run_with_transient_arm_retry(
+            operation,
+            arm_id="opensearch-hybrid",
+            retries=3,
+            backoff_seconds=0,
+        )
+    assert len(calls) == 1
+
+
+def test_resume_loads_only_complete_compatible_arm_checkpoint(tmp_path):
+    _, _, pair = measured_pair(tmp_path)
+    for artifact in pair:
+        artifact["snapshot_unchanged_after_measurement"] = True
+        MODULE.write_json(
+            tmp_path / f"local-lexical-{artifact['representation']}.json.gz",
+            artifact,
+        )
+    loaded = MODULE.load_arm_checkpoint(
+        tmp_path,
+        baseline.BASELINE_V1_ARMS[0],
+        MODULE.REPRESENTATIONS,
+        snapshot={"revision": "test"},
+        identity={
+            "canonical_query_set_fingerprint": pair[0]["canonical_query_set_fingerprint"],
+            "runtime_source_fingerprint": pair[0]["runtime_source_fingerprint"],
+            "runner_source_fingerprint": "ignored-for-resume",
+        },
+        environment={"test": True},
+        warmups=1,
+        repetitions=2,
+    )
+    assert loaded is not None
+    assert [artifact["representation"] for artifact in loaded] == ["legacy", "canonical"]
+
+
+def test_resume_checkpoint_fails_closed_on_snapshot_change(tmp_path):
+    _, _, pair = measured_pair(tmp_path)
+    for artifact in pair:
+        artifact["snapshot_unchanged_after_measurement"] = True
+        MODULE.write_json(
+            tmp_path / f"local-lexical-{artifact['representation']}.json.gz",
+            artifact,
+        )
+    with pytest.raises(baseline.BaselineConfigurationError, match="checkpoint identity"):
+        MODULE.load_arm_checkpoint(
+            tmp_path,
+            baseline.BASELINE_V1_ARMS[0],
+            MODULE.REPRESENTATIONS,
+            snapshot={"revision": "different"},
+            identity={
+                "canonical_query_set_fingerprint": pair[0]["canonical_query_set_fingerprint"],
+                "runtime_source_fingerprint": pair[0]["runtime_source_fingerprint"],
+            },
+            environment={"test": True},
+            warmups=1,
+            repetitions=2,
+        )
