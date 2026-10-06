@@ -805,6 +805,7 @@ def main():
         environment["embedding_model_digest"] = model["digest"]
     identity = {
         **source_identity(),
+        "ground_truth_fingerprint": suite.fingerprint,
         "canonical_query_set_fingerprint": query_fingerprint,
         "baseline_manifest_fingerprint": mapping_fingerprint(manifest),
         "embedding_identity": context.embedding_identity,
