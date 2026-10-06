@@ -255,3 +255,18 @@ def test_response_validation_rejects_missing_remote_fingerprints(tmp_path):
         baseline.BaselineConfigurationError, match="missing applicable fingerprints"
     ):
         MODULE.validate_response(response, baseline.BASELINE_V1_ARMS[1], scope)
+
+
+@pytest.mark.parametrize("backend_id", ["solr", "opensearch", "qdrant-vector"])
+def test_embedding_endpoint_is_explicit_in_current_composition(backend_id):
+    context = SimpleNamespace(endpoints={"ollama": "http://manifest-ollama:11434"})
+    backend = MODULE.backend_registry(context).create(backend_id)
+    retrieval = MODULE.setup._retrieval_for_mode("dense", provider="ollama", model="embeddinggemma")
+    if backend_id == "qdrant-vector":
+        provider = backend.embedding_factory(
+            MODULE.setup.QdrantVectorSettings(), retrieval.dense.embedding
+        )
+    else:
+        provider = backend.embedding_factory(retrieval)
+    assert provider.url == context.endpoints["ollama"]
+    assert provider.model_id == "embeddinggemma"

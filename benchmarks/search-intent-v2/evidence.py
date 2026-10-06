@@ -20,6 +20,7 @@ from fetchcore.application import (
     RetrievalApplicationService,
     SearchRequest,
 )
+from fetchcore.application.composition import EmbeddingProviderRegistry
 from fetchcore.baseline import (
     BASELINE_CONTEXT_YIELD_METRICS_SPEC,
     BASELINE_LINE_BUDGETS,
@@ -86,6 +87,16 @@ def controlled_intent(query, representation):
     if representation == "canonical":
         return SearchIntent(canonical_query=query)
     raise BaselineConfigurationError(f"unknown representation: {representation}")
+
+
+def backend_registry(context):
+    # Current application composition resolves provider settings explicitly.
+    # OLLAMA_URL alone is only consumed by the reused indexing helpers.
+    return BackendRegistry(
+        providers=EmbeddingProviderRegistry(
+            settings={"ollama": {"url": context.endpoints["ollama"]}}
+        )
+    )
 
 
 def source_identity():
@@ -697,7 +708,7 @@ def main():
             )
             snapshot = snapshot_identity(arm, scope)
             measured = run_arm(
-                BackendRegistry().create(arm.backend),
+                backend_registry(context).create(arm.backend),
                 arm,
                 scope,
                 suite,
