@@ -92,8 +92,8 @@ def main():
                     "scenario": scenario["id"],
                     "repetition": repetition,
                     "hit": bool(matched),
-                    "source_recall_at_10": len(matched) / len(set(expected)),
-                    "reciprocal_rank": 1 / rank if rank else 0,
+                    "expected_path_recall_at_10": len(matched) / len(set(expected)),
+                    "expected_path_reciprocal_rank": 1 / rank if rank else 0,
                     "first_expected_rank": rank,
                     "zero_results": not sources,
                     "duration_ms": round(duration_ms, 3),
@@ -113,7 +113,7 @@ def main():
         tree.update(path.read_bytes())
     result = {
         "protocol": "fetchcore.search-intent-v2.serving-comparison",
-        "schema_version": 1,
+        "schema_version": 2,
         "label": args.label,
         "source_tree_sha256": tree.hexdigest(),
         "corpus_revision": git(workspace, "rev-parse", "HEAD"),
@@ -128,8 +128,8 @@ def main():
         "k": 10,
         "summary": {
             "expected_path_hit_rate": statistics.mean(x["hit"] for x in observations),
-            "source_recall_at_10": statistics.mean(x["source_recall_at_10"] for x in observations),
-            "mrr": statistics.mean(x["reciprocal_rank"] for x in observations),
+            "expected_path_recall_at_10": statistics.mean(x["expected_path_recall_at_10"] for x in observations),
+            "expected_path_mrr": statistics.mean(x["expected_path_reciprocal_rank"] for x in observations),
             "zero_result_rate": statistics.mean(x["zero_results"] for x in observations),
             "latency_ms": {
                 "p50": percentile(durations, 0.5),

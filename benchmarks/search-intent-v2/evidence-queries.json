@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "queries": [
+    {"query_id": "medication-update-owner-service", "canonical_query": "Where is updateMedication implemented so that a medication can only be updated by its owning user?"},
+    {"query_id": "medication-create-controller-validation", "canonical_query": "Where does the createMedication controller validate the medication payload and authenticated user id?"},
+    {"query_id": "medication-controller-tests", "canonical_query": "Where are the medication controller tests for create, update and delete, including service mocks?"},
+    {"query_id": "mfa-totp-service", "canonical_query": "Where does the MFA service set up and verify the authenticator secret and one-time token, using MfaServiceError?"},
+    {"query_id": "mfa-http-routes", "canonical_query": "Where are the MFA setup, verify and disable HTTP routes, including /auth/mfa/verify?"},
+    {"query_id": "mfa-controller-errors", "canonical_query": "Where does the controller validate MFA token requests and map MFA service errors?"},
+    {"query_id": "mfa-route-tests", "canonical_query": "Where are the integration tests for MFA setup, verify and disable endpoints?"},
+    {"query_id": "health-resource-collection", "canonical_query": "Where does collectHealthMetrics collect memory, disk, CPU, MongoDB, Redis and crash risk health metrics?"},
+    {"query_id": "health-controller", "canonical_query": "Where does the health endpoint controller return collected infrastructure metrics?"},
+    {"query_id": "health-controller-tests", "canonical_query": "Where are the tests for health controller metrics and the friendly health response?"},
+    {"query_id": "home-active-subject-data", "canonical_query": "Where does getHomeData load home data for an active holder or dependent subject with a context window?"},
+    {"query_id": "home-prompt-controller", "canonical_query": "Where does the home controller build an AI prompt and generate a completion?"},
+    {"query_id": "ai-controller-queue", "canonical_query": "Where does the AI controller queue asynchronous generation jobs with BullMQ?"},
+    {"query_id": "ai-queue-subject-context", "canonical_query": "Where does the aiQueue BullMQ producer preserve subject metadata and the context hash?"},
+    {"query_id": "ai-worker-processing", "canonical_query": "Where does aiWorker consume AI queue jobs, generate a completion, emit a socket response and persist the interaction?"},
+    {"query_id": "runtime-config-queue-concurrency", "canonical_query": "Where is the central environment configuration for queue retry, timeout and worker concurrency?"},
+    {"query_id": "docker-local-runtime", "canonical_query": "Where is the local Docker topology for the API, Mongo, Redis and workers, including queue configuration?"},
+    {"query_id": "architecture-overview", "canonical_query": "Where is the backend architecture documented for modules, shared services, queues, workers, MongoDB and Redis?"},
+    {"query_id": "ai-component-architecture", "canonical_query": "Where is the C4 AI flow documented across the controller, queue, worker, LLM provider, socket and database?"},
+    {"query_id": "agent-development-rules", "canonical_query": "Where are the development rules requiring high test coverage, layered controllers and services, and no direct database access from controllers?"}
+  ]
+}

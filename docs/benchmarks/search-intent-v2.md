@@ -19,22 +19,22 @@ The [comparison runner](../../benchmarks/search-intent-v2/run.py) invokes `Retri
 
 ## Metrics and results
 
-Expected-path hit means at least one reviewed path appears in the top 10. SourceRecall@10 is the fraction of listed expected paths recovered, averaged over scenarios. MRR uses the first expected-path rank. These are source-level metrics; they are not frozen baseline-v1 evidence-span Recall@K and do not prove that the returned content is sufficient for a consumer.
+Expected-path hit means at least one reviewed path appears in the top 10. ExpectedPathRecall@10 is the fraction of listed expected paths recovered, averaged over scenarios. ExpectedPathMRR uses the first expected-path rank. These are source-level metrics; they are not frozen baseline-v1 evidence-span Recall@K and do not prove that the returned content is sufficient for a consumer.
 
 The paired run of the final implementation produced the following measurements. No Ground Truth was changed to improve the result.
 
 | Metric | Before | After |
 | --- | ---: | ---: |
-| Expected-path hit@10 | 1/6 (16.67%) | 5/6 (83.33%) |
-| SourceRecall@10 | 0.0833 | 0.8333 |
-| MRR | 0.1667 | 0.3889 |
+| ExpectedPathHit@10 | 1/6 (16.67%) | 5/6 (83.33%) |
+| ExpectedPathRecall@10 | 0.0833 | 0.8333 |
+| ExpectedPathMRR | 0.1667 | 0.3889 |
 | Zero-result rate | 83.33% | 0% |
 | Mean candidates examined | 0.1667 | 10 |
 | Application latency p50 | 1018.595 ms | 1022.137 ms |
 | Application latency p95 | 1035.537 ms | 1039.453 ms |
 | Application latency p99 | 1069.847 ms | 1048.027 ms |
 
-The existing MCP smoke independently reproduced those expected-path and MRR results: [before](../../benchmarks/search-intent-v2/artifacts/mcp-before.json), [after](../../benchmarks/search-intent-v2/artifacts/mcp-after.json). The full repeated [before observations](../../benchmarks/search-intent-v2/artifacts/serving-before.json) and [after observations](../../benchmarks/search-intent-v2/artifacts/serving-after.json) preserve every measured rank, path and latency. Source-tree hashes identify the exact measured implementations; the final after artifact matches the committed runtime source. The small p50/p95 increases are retained; latency differences are not promoted as an improvement because the environment was not isolated.
+The existing MCP smoke independently reproduced those expected-path and ExpectedPathMRR results: [before](../../benchmarks/search-intent-v2/artifacts/mcp-before.json), [after](../../benchmarks/search-intent-v2/artifacts/mcp-after.json). The full repeated [before observations](../../benchmarks/search-intent-v2/artifacts/serving-before.json) and [after observations](../../benchmarks/search-intent-v2/artifacts/serving-after.json) preserve every measured rank, path and latency. Source-tree hashes identify the exact measured implementations; the final after artifact matches the committed runtime source. The small p50/p95 increases are retained; latency differences are not promoted as an improvement because the environment was not isolated.
 
 The authority-boundary scenario regressed from rank 1 to rank 2 even though aggregate MRR improved. The incremental-sync scenario still misses the reviewed top-10 paths. Its expected paths point to compatibility modules; implementation modules moved during earlier decomposition. The actual `src/fetchcore/adapters/retrieval/solr/incremental_persistence.py` implementation appears at rank 9, while the reviewed `backends/` compatibility paths remain absent. That Ground Truth should be reviewed separately, not changed inside this experiment to raise the score.
 
@@ -153,8 +153,8 @@ scenario. This is a regression smoke, not a statistically powered latency study.
 
 | Measurement | Before correction | After correction |
 | --- | --- | --- |
-| Expected-path hit@10 | 5/6 | 5/6 |
-| MRR | 0.3889 | 0.3889 |
+| ExpectedPathHit@10 | 5/6 | 5/6 |
+| ExpectedPathMRR | 0.3889 | 0.3889 |
 | Zero-result rate | 0% | 0% |
 | Ordered source paths | Baseline | Identical in all six scenarios |
 | p50 / p95 latency, ms | 942.164 / 1022.589 | 937.758 / 940.519 |
@@ -206,3 +206,140 @@ All 20 v1 translations retain the original frozen digest
 `4a3b18e742c447e878b1bf35ef4b78370c98e1f1db5b110269ae04c4882ccc12`.
 Required constraints after hybrid fusion remain deliberately unsupported; no
 post-fusion enforcement or planner was added.
+
+## Evidence-aware multi-backend evaluation
+
+Issue #19 now has three distinct levels of evidence:
+
+1. **Contract tests**: explicit semantics, compatibility and fail-closed capability handling.
+2. **Translation/native smoke**: actual adapter translation and serving acquisition.
+3. **Evidence-aware retrieval benchmark**: paired evidence recovery on reviewed code regions.
+
+The third level uses the separate `fetchcore.search-intent-v2-evidence` protocol,
+artifact schema 1. The frozen `fetchcore.baseline-v1` remains independent and
+immutable: its manifest, Ground Truth, runner, metric definitions and artifacts
+are not edited. The new [runner](../../benchmarks/search-intent-v2/evidence.py)
+imports its setup adapters and calls `evaluate_retrieval`,
+`evaluate_line_budgeted_evidence` and the existing aggregate builder; it does not
+implement a second metric engine. The aggregate builder's output is explicitly
+emitted under the new protocol, never as a new frozen-baseline observation.
+
+### Controlled variable and query review
+
+Experiment A compares exactly these two intents for the **same string Q**:
+
+```python
+SearchIntent(semantic_terms=(Q,))
+SearchIntent(canonical_query=Q)
+```
+
+Neither arm carries exact terms, hints, signals, anchors or expansions. This
+isolates representation; it does **not** compare the full original v1 intents
+(which also carry exact terms/hints) with richer natural-language queries.
+
+The [query set](../../benchmarks/search-intent-v2/evidence-queries.json) contains
+20/20 canonical queries reviewed against the existing v1 meanings and 42 GT
+requirements, with 20/20 IDs mapping to the frozen cases. Queries were fixed
+before executing retrieval. They contain no GT file paths or answer details;
+`/auth/mfa/verify` is the route already explicitly supplied by its v1 intent.
+No query is adjusted after seeing scores. The canonical-query-set fingerprint is:
+
+```text
+sha256:3c41c6a64b9c87033321f968fed6ccc30c0bcc216d779ceffb8d9e8e1ba3a9e7
+```
+
+Corpus: `oalangomes/NeuroTrack_MS` at
+`74ce3244956a65baed61f1dae6f498cb2be4f3b7`. GT cases, regions and alternatives are
+loaded by ID from the frozen file, without copying the regions. Its fingerprint
+remains `sha256:a03733d1601097afcba5e32dc4b04834471758919300457fb88925fce481c29a`.
+
+### Execution and comparison contract
+
+The full measurement protocol is one warmup and 20 measured repetitions, K=20,
+max_results=20 and diagnostic_candidate_window=80. It runs nine arms and two
+representations: local lexical; Solr and OpenSearch lexical/dense/hybrid;
+Qdrant dense/hybrid. Qdrant lexical is explicitly unsupported. Dense uses
+Ollama/embeddinggemma/768 and hybrid uses the unchanged RRF configuration.
+
+Each backend is prepared once, with all its required modes, before either
+representation executes. Both representations share the same backend instance,
+SearchScope, RetrievalConfig and persisted snapshot. The runner alternates which
+representation runs first by query and repetition. It checks snapshot metadata
+before and after each pair, checks response revisions and applicable fingerprints,
+and validates the clean corpus revision. No rebuild occurs between representations.
+The services must remain exclusive to this experiment while it runs; endpoint
+metadata checks are not a transactional lock against external index writers.
+
+Experiment B executes all 20 canonical queries once per arm through real
+`SearchRequest → RetrievalApplicationService → backend` calls. A delegating
+backend checks exact intent/scope/configuration equality, then performs real
+retrieval. The gate compares ordered result IDs, coordinates, checksums, content
+hashes, scores, candidate counts and translation diagnostics against the direct
+canonical call. The direct experiment uses the application's result namespace
+so equality requires no normalization. This gate runs after the last measured
+canonical observation per query and is excluded from query metrics.
+
+Artifacts separately retain shared evaluator observations (including runtime
+stage telemetry), translation diagnostics and line-budget observations. Translation
+records preserve channel, status, canonical consumption, unsupported required and
+optional semantics, expansions and supplied/consumed hints/signals. The runtime's
+`expansions` field means supplied expansions. Artifact provenance includes runtime
+and runner source hashes in addition to Git revision, dirty-tree status, observed
+service versions, model digest, query-set/GT/configuration/metric fingerprints and
+snapshot identity. Projection and embedding serializer fingerprints are required
+where applicable; hybrid preserves fusion input/output fingerprints. Local safe
+scanning has no projection fingerprint. Time-to-first-candidate is unavailable;
+this work adds no runtime instrumentation.
+
+Every arm reports SourceRecall@20, EvidenceRecall@20, SpanCoverage@20, EvidenceMRR,
+EvidenceNDCG@20 and UsefulContextLineRatio. ContextYield and budgeted EvidenceRecall
+use the existing whole-span prefix packing at 100/250/500/1000 lines. Operational
+metrics include zero-result rate, candidates examined/returned, returned lines and
+characters, and p50/p95/p99 of backend-reported end-to-end duration. Indexing remains
+a separate artifact. Returned private source content is not persisted.
+
+The generated report includes arm/representation rows, absolute costs before and
+after, paired deltas, all line budgets and per-query regressions. Delta always
+means canonical minus legacy. Any decrease in EvidenceRecall, SpanCoverage or
+EvidenceMRR classifies the query as regressed, including mixed gains/losses;
+otherwise a gain is improved, otherwise unchanged. No combined quality score or
+global cross-backend average hides tradeoffs.
+
+### Evidence benchmark reproduction
+
+Use the exact clean corpus checkout and the service endpoints in the frozen
+manifest. Start the existing local benchmark services and ensure the frozen
+embedding model is available before running:
+
+```bash
+python benchmarks/search-intent-v2/evidence.py \
+  --workspace /path/to/NeuroTrack_MS \
+  --compare-representations --prepare-index
+
+python benchmarks/search-intent-v2/evidence.py \
+  --workspace /path/to/NeuroTrack_MS \
+  --arm solr-hybrid --compare-representations
+
+python benchmarks/search-intent-v2/evidence.py \
+  --workspace /path/to/NeuroTrack_MS \
+  --arm solr-hybrid --representation canonical
+```
+
+`--arm` is repeatable; omission selects all nine. `--warmups` and `--repetitions`
+are explicit overrides. Reduced or subset runs are labeled **SMOKE / partial
+protocol** and never advertised as the full protocol. Versioned output directories
+contain `run.json`, a query-set record, compressed coordinate/metric artifacts,
+`comparison.json`, a generated `README.md`, and optional `indexing.json`. Failure
+leaves `run.json` marked failed and propagates the exception; no backend fallback
+or partial-success promotion occurs. Paired comparison rejects incompatible
+corpus, GT, queries, metrics, configuration, environment, source or snapshot
+identities and mismatched query/iteration coverage.
+
+### Historical path-level terminology
+
+The original six-scenario experiment is **ExpectedPathHit@10**,
+**ExpectedPathRecall@10**, and **ExpectedPathMRR**. Its historical JSON fields
+`source_recall_at_10`, `reciprocal_rank` and `mrr` are retained in the archived
+artifacts without rewriting history. New output from `run.py` uses schema 2 and
+explicit expected-path field names. Those proxy metrics are never treated as the
+frozen evidence metrics above.
