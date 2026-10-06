@@ -942,7 +942,7 @@ def main():
                     write_json(output / "run.json", run)
                     continue
 
-            def execute_arm():
+            def execute_arm(arm=arm, scope=scope, snapshot=snapshot):
                 if snapshot_identity(arm, scope) != snapshot:
                     raise BaselineConfigurationError(
                         f"snapshot changed before measurement: {arm.id}"
@@ -966,7 +966,7 @@ def main():
                     )
                 return measured_artifacts
 
-            def record_retry(attempt, exc):
+            def record_retry(attempt, exc, arm=arm):
                 run["arm_attempts"][arm.id] = attempt
                 run["failed_arm"] = arm.id
                 run["transient_failures"].append(
