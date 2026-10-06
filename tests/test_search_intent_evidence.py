@@ -12,7 +12,12 @@ import pytest
 
 from fetchcore import baseline
 from fetchcore.retrieval import RetrievalBackendCapabilities
-from fetchcore.retrieval.contracts import (\n    KnowledgeSearchError,\n    KnowledgeSearchResponse,\n    SearchIntent,\n    SearchScope,\n)
+from fetchcore.retrieval.contracts import (
+    KnowledgeSearchError,
+    KnowledgeSearchResponse,
+    SearchIntent,
+    SearchScope,
+)
 from fetchcore.telemetry import RetrievalTelemetry
 
 ROOT = Path(__file__).resolve().parents[1]
