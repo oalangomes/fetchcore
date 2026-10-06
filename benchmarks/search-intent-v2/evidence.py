@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Issue #19 paired evidence experiment. The frozen baseline is read-only."""
 
 from __future__ import annotations
