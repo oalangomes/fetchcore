@@ -1,0 +1,511 @@
+[
+  {
+    "arm": "local-lexical",
+    "cost_before_after": {
+      "candidates_examined_mean": [
+        0.0,
+        0.0
+      ],
+      "candidates_returned_mean": [
+        0.0,
+        0.0
+      ],
+      "duration_ms": [
+        {
+          "p50": 3883,
+          "p95": 4486,
+          "p99": 4718
+        },
+        {
+          "p50": 3955,
+          "p95": 4306,
+          "p99": 4539
+        }
+      ],
+      "returned_chars_mean": [
+        0.0,
+        0.0
+      ],
+      "returned_line_count_mean": [
+        0.0,
+        0.0
+      ]
+    },
+    "counts": {
+      "improved": 0,
+      "regressed": 0,
+      "unchanged": 20
+    },
+    "delta_definition": "canonical - legacy",
+    "deltas": {
+      "candidates_examined_mean": 0.0,
+      "evidence_mrr_mean": 0.0,
+      "evidence_recall_at_k_mean": 0.0,
+      "p50_ms": 72,
+      "span_coverage_at_k_mean": 0.0,
+      "useful_context_line_ratio_mean": 0.0
+    },
+    "per_query": [
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "agent-development-rules",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "ai-component-architecture",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "ai-controller-queue",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "ai-queue-subject-context",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "ai-worker-processing",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "architecture-overview",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "docker-local-runtime",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "health-controller",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "health-controller-tests",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "health-resource-collection",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "home-active-subject-data",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "home-prompt-controller",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "medication-controller-tests",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "medication-create-controller-validation",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "medication-update-owner-service",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "mfa-controller-errors",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "mfa-http-routes",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "mfa-route-tests",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "mfa-totp-service",
+        "status": "unchanged"
+      },
+      {
+        "before_after": {
+          "evidence_recall_at_k": [
+            0.0,
+            0.0
+          ],
+          "evidence_reciprocal_rank": [
+            0.0,
+            0.0
+          ],
+          "span_coverage_at_k": [
+            0.0,
+            0.0
+          ]
+        },
+        "deltas": {
+          "evidence_recall_at_k": 0.0,
+          "evidence_reciprocal_rank": 0.0,
+          "span_coverage_at_k": 0.0
+        },
+        "query_id": "runtime-config-queue-concurrency",
+        "status": "unchanged"
+      }
+    ]
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "fingerprint": "sha256:3c41c6a64b9c87033321f968fed6ccc30c0bcc216d779ceffb8d9e8e1ba3a9e7",
+  "queries": {
+    "agent-development-rules": "Where are the development rules requiring high test coverage, layered controllers and services, and no direct database access from controllers?",
+    "ai-component-architecture": "Where is the C4 AI flow documented across the controller, queue, worker, LLM provider, socket and database?",
+    "ai-controller-queue": "Where does the AI controller queue asynchronous generation jobs with BullMQ?",
+    "ai-queue-subject-context": "Where does the aiQueue BullMQ producer preserve subject metadata and the context hash?",
+    "ai-worker-processing": "Where does aiWorker consume AI queue jobs, generate a completion, emit a socket response and persist the interaction?",
+    "architecture-overview": "Where is the backend architecture documented for modules, shared services, queues, workers, MongoDB and Redis?",
+    "docker-local-runtime": "Where is the local Docker topology for the API, Mongo, Redis and workers, including queue configuration?",
+    "health-controller": "Where does the health endpoint controller return collected infrastructure metrics?",
+    "health-controller-tests": "Where are the tests for health controller metrics and the friendly health response?",
+    "health-resource-collection": "Where does collectHealthMetrics collect memory, disk, CPU, MongoDB, Redis and crash risk health metrics?",
+    "home-active-subject-data": "Where does getHomeData load home data for an active holder or dependent subject with a context window?",
+    "home-prompt-controller": "Where does the home controller build an AI prompt and generate a completion?",
+    "medication-controller-tests": "Where are the medication controller tests for create, update and delete, including service mocks?",
+    "medication-create-controller-validation": "Where does the createMedication controller validate the medication payload and authenticated user id?",
+    "medication-update-owner-service": "Where is updateMedication implemented so that a medication can only be updated by its owning user?",
+    "mfa-controller-errors": "Where does the controller validate MFA token requests and map MFA service errors?",
+    "mfa-http-routes": "Where are the MFA setup, verify and disable HTTP routes, including /auth/mfa/verify?",
+    "mfa-route-tests": "Where are the integration tests for MFA setup, verify and disable endpoints?",
+    "mfa-totp-service": "Where does the MFA service set up and verify the authenticator secret and one-time token, using MfaServiceError?",
+    "runtime-config-queue-concurrency": "Where is the central environment configuration for queue retry, timeout and worker concurrency?"
+  }
+}

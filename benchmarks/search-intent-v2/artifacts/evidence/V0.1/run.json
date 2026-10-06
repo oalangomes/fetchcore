@@ -1,0 +1,50 @@
+{
+  "arms": [
+    "local-lexical"
+  ],
+  "baseline_manifest_fingerprint": "sha256:c6edcb980d0c96e0ac4dd18073f7cef445fd514fa7131ed39304189e04503af8",
+  "canonical_query_set_fingerprint": "sha256:3c41c6a64b9c87033321f968fed6ccc30c0bcc216d779ceffb8d9e8e1ba3a9e7",
+  "completed_at": "2026-10-06T16:32:49.011284+00:00",
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+  },
+  "embedding_identity": {
+    "dimensions": 768,
+    "model": "embeddinggemma",
+    "provider": "ollama"
+  },
+  "environment": {
+    "cpu_count": 8,
+    "embedding": {
+      "dimensions": 768,
+      "model": "embeddinggemma",
+      "provider": "ollama"
+    },
+    "machine": "x86_64",
+    "platform_release": "6.18.33.2-microsoft-standard-WSL2",
+    "platform_system": "Linux",
+    "profile_id": "fetchcore-local-benchmark-v1",
+    "python_version": "3.12.3",
+    "services": {}
+  },
+  "fetchcore_revision": "c4095314f1d4bdff65c682524c42aa03aff5ebfb",
+  "full_protocol": false,
+  "fusion_identity": "rrf; unchanged runtime defaults",
+  "ground_truth_fingerprint": "sha256:a03733d1601097afcba5e32dc4b04834471758919300457fb88925fce481c29a",
+  "k": 20,
+  "protocol": "fetchcore.search-intent-v2-evidence",
+  "repetitions": 1,
+  "representations": [
+    "legacy",
+    "canonical"
+  ],
+  "run_version": "V0.1",
+  "runner_source_fingerprint": "sha256:c985fa0ca31eced3fe85c3a9282e763871eeab6ef1d87bdb9fea7a17344ee6e5",
+  "runtime_source_fingerprint": "sha256:f3e9556c868f086fdb9d11ecbfd620a3862261108e185fa85f85428ed8c4f6a6",
+  "schema_version": 1,
+  "status": "complete",
+  "warmups": 1,
+  "working_tree_dirty": true
+}

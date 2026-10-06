@@ -1,0 +1,72 @@
+{
+  "protocol": "fetchcore.search-intent-v2.frozen-local-comparison",
+  "schema_version": 1,
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+  },
+  "same_config_ground_truth_and_metric_fingerprints": true,
+  "all_ranked_spans_quality_and_candidate_counts_equal": true,
+  "compared_observations": 400,
+  "arms": {
+    "before": {
+      "raw_artifact": "frozen-local-before.json.gz",
+      "uncompressed_sha256": "c708284d31c88b0d920305d299fa08f864038cf9bc52c5f17aa53cc688cf036e",
+      "config_fingerprint": "sha256:ff2efeac2d844d05f56a9af5ff05f0448f1c7197f30e9306357bd9b9846e11a2",
+      "ground_truth_fingerprint": "sha256:a03733d1601097afcba5e32dc4b04834471758919300457fb88925fce481c29a",
+      "metrics_fingerprint": "sha256:3adba6b1021b0f16624d4759e642fcb1616cd00469aba8abcf7e5d2d0281e894",
+      "aggregate": {
+        "candidates_examined_mean": 13.1,
+        "candidates_returned_mean": 7.4,
+        "duration_ms": {
+          "p50": 3347,
+          "p95": 4273,
+          "p99": 4595
+        },
+        "evidence_ground_truth_recovered": 0,
+        "evidence_mrr_mean": 0.118333,
+        "evidence_ndcg_at_k_mean": 0.158484,
+        "evidence_recall_at_k_mean": 0.0,
+        "fingerprints": {},
+        "query_count": 20,
+        "returned_chars_mean": 1031.45,
+        "returned_line_count_mean": 24.6,
+        "run_count": 400,
+        "source_recall_at_k_mean": 0.35,
+        "span_coverage_at_k_mean": 0.070563,
+        "useful_context_line_ratio_mean": 0.023448
+      },
+      "zero_result_rate": 0.6
+    },
+    "after": {
+      "raw_artifact": "frozen-local-after.json.gz",
+      "uncompressed_sha256": "146952e54372ed1767b3aee32e64a69c2f279a347cad6a0caddcff15a99f872f",
+      "config_fingerprint": "sha256:ff2efeac2d844d05f56a9af5ff05f0448f1c7197f30e9306357bd9b9846e11a2",
+      "ground_truth_fingerprint": "sha256:a03733d1601097afcba5e32dc4b04834471758919300457fb88925fce481c29a",
+      "metrics_fingerprint": "sha256:3adba6b1021b0f16624d4759e642fcb1616cd00469aba8abcf7e5d2d0281e894",
+      "aggregate": {
+        "candidates_examined_mean": 13.1,
+        "candidates_returned_mean": 7.4,
+        "duration_ms": {
+          "p50": 3333,
+          "p95": 4316,
+          "p99": 4616
+        },
+        "evidence_ground_truth_recovered": 0,
+        "evidence_mrr_mean": 0.118333,
+        "evidence_ndcg_at_k_mean": 0.158484,
+        "evidence_recall_at_k_mean": 0.0,
+        "fingerprints": {},
+        "query_count": 20,
+        "returned_chars_mean": 1031.45,
+        "returned_line_count_mean": 24.6,
+        "run_count": 400,
+        "source_recall_at_k_mean": 0.35,
+        "span_coverage_at_k_mean": 0.070563,
+        "useful_context_line_ratio_mean": 0.023448
+      },
+      "zero_result_rate": 0.6
+    }
+  }
+}

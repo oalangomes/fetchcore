@@ -138,6 +138,12 @@ class ProjectionV3EmbeddingSerializer:
 
     def serialize_query(self, intent: SearchIntent) -> str:
         """Serialize search intent into deterministic embedding query text."""
+        from fetchcore.retrieval.config import RetrievalBackendCapabilities
+        from fetchcore.retrieval.translation import validate_intent_translation
+        validate_intent_translation(intent, channel="dense",
+                                    capabilities=RetrievalBackendCapabilities(canonical_query=True))
+        if intent.canonical_query:
+            return intent.canonical_query
         groups: dict[str, list[str]] = {
             "exact": [],
             "reference": [],

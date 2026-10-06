@@ -10,7 +10,8 @@ from fetchcore.projection.semantics import (
     query_field_boost, typed_query_entries,
 )
 from fetchcore.retrieval.contracts import (
-    KnowledgeSearchError, SearchIntent, SearchScope as KnowledgeSearchScope,
+    AllOf, Anchor, Term, SearchExpression, KnowledgeSearchError, SearchIntent,
+    SearchScope as KnowledgeSearchScope,
 )
 
 if TYPE_CHECKING:
@@ -42,6 +43,7 @@ def _search_body(
     settings: OpenSearchSettings,
 ) -> dict[str, object]:
     clauses: list[dict[str, object]] = []
+    hints: list[dict[str, object]] = []
     for signal_type, value, multiplier in typed_query_entries(intent):
         field_names = (
             *tuple(SIGNAL_FIELD_FACTORS[signal_type]),
@@ -57,9 +59,7 @@ def _search_body(
             )
             query_value = value.casefold()
             if field_name in _EXACT_FIELDS:
-                field_clauses.append(
-                    {"term": {field_name: {"value": query_value, "boost": boost}}}
-                )
+                field_clauses.append({"term": {field_name: {"value": query_value, "boost": boost}}})
             else:
                 field_clauses.append(
                     {
@@ -72,7 +72,8 @@ def _search_body(
                     }
                 )
         if field_clauses:
-            clauses.append(
+            target = hints if intent.has_v2_semantics and signal_type == "hint" else clauses
+            target.append(
                 {
                     "bool": {
                         "should": field_clauses,
@@ -81,6 +82,25 @@ def _search_body(
                 }
             )
 
+    if intent.canonical_query:
+        clauses.insert(
+            0,
+            {
+                "multi_match": {
+                    "query": intent.canonical_query,
+                    "fields": [
+                        f"{field}^{query_field_boost('semantic', field, 1.0, settings):g}"
+                        for field in (
+                            *SIGNAL_FIELD_FACTORS["semantic"],
+                            *QUERY_FIELDS_BY_SIGNAL_TYPE["semantic"],
+                        )
+                    ],
+                }
+            },
+        )
+    if not clauses and (intent.anchors or intent.expression):
+        clauses.append({"match_all": {}})
+    clauses.extend({"match_phrase": {"content": {"query": x.value}}} for x in intent.expansions)
     filters: list[dict[str, object]] = [
         {"term": {"record_kind": "knowledge"}},
         {"term": {"repository": snapshot.repository}},
@@ -121,8 +141,11 @@ def _search_body(
         if values:
             filters.append({"terms": {field_name: values}})
 
+    filters.extend(_expression_query(anchor) for anchor in intent.anchors)
+    if intent.expression is not None:
+        filters.append(_expression_query(intent.expression))
     query: dict[str, object]
-    if scope.repository_paths:
+    if scope.repository_paths and not intent.has_v2_semantics:
         query = {"bool": {"filter": filters}}
     else:
         query = {
@@ -132,6 +155,8 @@ def _search_body(
                 "minimum_should_match": 1,
             }
         }
+    if hints:
+        query = {"bool": {"must": [query], "should": hints, "minimum_should_match": 0}}
     return {
         "size": max(
             scope.max_results,
@@ -191,3 +216,31 @@ def _search_documents(
             category="response_parsing_failure",
         ) from exc
     return docs, total
+
+
+def _expression_query(expression: SearchExpression) -> dict[str, object]:
+    if isinstance(expression, Term):
+        return {"match_phrase": {"content": expression.value}}
+    if isinstance(expression, Anchor):
+        fields = {
+            "identifier": ("identifiers_exact", "content_identifiers_exact"),
+            "qualified_symbol": ("symbols",),
+            "path": ("path",),
+            "route": ("route_paths",),
+            "source_ref": ("source_ref",),
+        }[expression.kind]
+        value = (
+            expression.value
+            if expression.kind in ("path", "source_ref")
+            else expression.value.casefold()
+        )
+        return {
+            "bool": {
+                "should": [{"term": {field: value}} for field in fields],
+                "minimum_should_match": 1,
+            }
+        }
+    children = [_expression_query(child) for child in expression.children]
+    if isinstance(expression, AllOf):
+        return {"bool": {"must": children}}
+    return {"bool": {"should": children, "minimum_should_match": 1}}

@@ -13,6 +13,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
+from fetchcore.retrieval.translation import validate_intent_translation, translation_diagnostics
+
 from fetchcore.adapters.retrieval.opensearch.query import (
     OPENSEARCH_VECTOR_FIELD, _EXACT_FIELDS, _search_body, _search_documents,
 )
@@ -930,6 +932,8 @@ class OpenSearchBackend:
 
     backend_id = "opensearch"
     retrieval_capabilities = RetrievalBackendCapabilities(
+        canonical_query=True,
+        structured_anchors=True, boolean_expressions=True,
         lexical=True,
         dense=True,
         hybrid=True,
@@ -958,6 +962,12 @@ class OpenSearchBackend:
         requirements: tuple[SearchRequirement, ...],
     ) -> KnowledgeSearchResponse:
         """Execute retrieval for the supplied intent, scope, and requirements."""
+        mode = scope.retrieval.mode if scope.retrieval else "lexical"
+        channels = ("lexical", "dense") if mode == "hybrid" else (mode,)
+        for channel in channels:
+            validate_intent_translation(
+                intent, channel=channel, capabilities=self.retrieval_capabilities,
+            )
         started = self.timer()
         if scope.max_results < 1:
             raise KnowledgeSearchError(
@@ -1181,6 +1191,7 @@ class OpenSearchBackend:
                     settings,
                 ),
                 "opensearch_query": body,
+                **translation_diagnostics(intent, scope, lexical=body),
                 "candidates_found": num_found,
                 "candidates_considered": len(docs),
                 "candidates_returned": len(results),
@@ -1332,6 +1343,7 @@ def _dense_or_hybrid_search(
                 "embedding_serializer_mode": serializer.mode.value,
                 "embedding_serializer_fingerprint": serializer.serializer_fingerprint,
                 "retrieval_mode": "dense",
+                **translation_diagnostics(intent, scope, dense=query_text),
                 "vector_only": True,
                 "lexical_fallback": False,
                 "hybrid_fusion": False,
@@ -1373,6 +1385,7 @@ def _dense_or_hybrid_search(
     lexical_ms = elapsed_ms(lexical_started, backend.timer())
     return _hybrid_response(
         backend=backend,
+        intent=intent,
         started=started,
         scope=scope,
         requirements=requirements,
@@ -1657,6 +1670,7 @@ def _dense_search_result(
 
 def _hybrid_response(
     *,
+    intent: SearchIntent,
     backend: OpenSearchBackend,
     started: float,
     scope: KnowledgeSearchScope,
@@ -1965,6 +1979,7 @@ def _hybrid_response(
             "embedding_serializer_mode": serializer.mode.value,
             "embedding_serializer_fingerprint": serializer.serializer_fingerprint,
             "retrieval_mode": "hybrid",
+            **translation_diagnostics(intent, scope, lexical=lexical_body, dense=query_text),
             "vector_only": False,
             "lexical_fallback": False,
             "hybrid_fusion": True,

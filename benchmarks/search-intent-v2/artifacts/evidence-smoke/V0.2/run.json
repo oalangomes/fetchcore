@@ -1,0 +1,64 @@
+{
+  "arms": [
+    "local-lexical",
+    "solr-lexical",
+    "solr-dense",
+    "solr-hybrid",
+    "opensearch-lexical",
+    "opensearch-dense",
+    "opensearch-hybrid",
+    "qdrant-dense",
+    "qdrant-hybrid"
+  ],
+  "baseline_manifest_fingerprint": "sha256:c6edcb980d0c96e0ac4dd18073f7cef445fd514fa7131ed39304189e04503af8",
+  "canonical_query_set_fingerprint": "sha256:3c41c6a64b9c87033321f968fed6ccc30c0bcc216d779ceffb8d9e8e1ba3a9e7",
+  "completed_at": "2026-10-06T17:05:30.005988+00:00",
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+  },
+  "embedding_identity": {
+    "dimensions": 768,
+    "model": "embeddinggemma",
+    "provider": "ollama"
+  },
+  "environment": {
+    "cpu_count": 8,
+    "embedding": {
+      "dimensions": 768,
+      "model": "embeddinggemma",
+      "provider": "ollama"
+    },
+    "embedding_model_digest": "85462619ee721b466c5927d109d4cb765861907d5417b9109caebc4e614679f1",
+    "machine": "x86_64",
+    "platform_release": "6.18.33.2-microsoft-standard-WSL2",
+    "platform_system": "Linux",
+    "profile_id": "fetchcore-local-benchmark-v1",
+    "python_version": "3.12.3",
+    "services": {
+      "ollama": "0.35.1",
+      "opensearch": "3.8.0",
+      "qdrant": "1.19.0",
+      "solr": "9.10.1"
+    }
+  },
+  "fetchcore_revision": "56daf37677981236eb5b9e3a8ac79ea186e14589",
+  "full_protocol": false,
+  "fusion_identity": "rrf; unchanged runtime defaults",
+  "ground_truth_fingerprint": "sha256:a03733d1601097afcba5e32dc4b04834471758919300457fb88925fce481c29a",
+  "k": 20,
+  "protocol": "fetchcore.search-intent-v2-evidence",
+  "repetitions": 1,
+  "representations": [
+    "legacy",
+    "canonical"
+  ],
+  "run_version": "V0.2",
+  "runner_source_fingerprint": "sha256:1dcd33124ab0fe52068a939dc0cd082dc4db6c71641455a2fa4e4e60e7f3da28",
+  "runtime_source_fingerprint": "sha256:f3e9556c868f086fdb9d11ecbfd620a3862261108e185fa85f85428ed8c4f6a6",
+  "schema_version": 1,
+  "status": "complete",
+  "warmups": 1,
+  "working_tree_dirty": false
+}

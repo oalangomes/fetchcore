@@ -18,6 +18,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
+from fetchcore.retrieval.translation import validate_intent_translation, translation_diagnostics
+
 from fetchcore.adapters.retrieval.solr.query import (
     _configured_filter_values,
     _quote_query,
@@ -1745,6 +1747,8 @@ class SolrBackend:
 
     backend_id = "solr"
     retrieval_capabilities = RetrievalBackendCapabilities(
+        canonical_query=True,
+        structured_anchors=True, boolean_expressions=True,
         lexical=True,
         dense=True,
         hybrid=True,
@@ -1780,6 +1784,12 @@ class SolrBackend:
         requirements: tuple[SearchRequirement, ...],
     ) -> KnowledgeSearchResponse:
         """Execute retrieval for the supplied intent, scope, and requirements."""
+        mode = scope.retrieval.mode if scope.retrieval else "lexical"
+        channels = ("lexical", "dense") if mode == "hybrid" else (mode,)
+        for channel in channels:
+            validate_intent_translation(
+                intent, channel=channel, capabilities=self.retrieval_capabilities,
+            )
         started = self.timer()
         if scope.max_results < 1:
             raise KnowledgeSearchError(
@@ -1970,6 +1980,7 @@ class SolrBackend:
                 "query_signals": [item.to_mapping() for item in intent.signals],
                 "typed_query_mapping": _typed_query_mapping_telemetry(intent, settings),
                 "solr_query": _safe_query_telemetry(params),
+                **translation_diagnostics(intent, scope, lexical=params),
                 "candidates_found": num_found,
                 "candidates_considered": len(docs),
                 "candidates_returned": len(results),
@@ -2126,6 +2137,7 @@ def _dense_or_hybrid_search(
                 "embedding_serializer_mode": serializer.mode.value,
                 "embedding_serializer_fingerprint": serializer.serializer_fingerprint,
                 "retrieval_mode": "dense",
+                **translation_diagnostics(intent, scope, dense=query_text),
                 "vector_only": True,
                 "lexical_fallback": False,
                 "hybrid_fusion": False,
@@ -2730,6 +2742,7 @@ def _hybrid_response(
             "embedding_serializer_mode": serializer.mode.value,
             "embedding_serializer_fingerprint": serializer.serializer_fingerprint,
             "retrieval_mode": "hybrid",
+            **translation_diagnostics(intent, scope, lexical=lexical_params, dense=query_text),
             "vector_only": False,
             "lexical_fallback": False,
             "hybrid_fusion": True,

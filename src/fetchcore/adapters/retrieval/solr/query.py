@@ -12,7 +12,8 @@ from fetchcore.projection.semantics import (
     query_field_boost, typed_query_entries,
 )
 from fetchcore.retrieval.contracts import (
-    KnowledgeSearchError, SearchIntent, SearchScope as KnowledgeSearchScope,
+    AllOf, Anchor, Term, SearchExpression, KnowledgeSearchError, SearchIntent,
+    SearchScope as KnowledgeSearchScope,
 )
 
 if TYPE_CHECKING:
@@ -35,10 +36,18 @@ def _search_params(
     typed_clauses = [
         _typed_query_clause(signal_type, value, multiplier, settings)
         for signal_type, value, multiplier in typed_entries
+        if not intent.has_v2_semantics or signal_type != "hint"
     ]
+    if intent.canonical_query:
+        typed_clauses.insert(0, '_query_:"{!edismax qf=$canonical_qf uf=-* v=$canonical_query}"')
+    if not typed_clauses and (intent.anchors or intent.expression):
+        typed_clauses.append("*:*")
+    typed_clauses.extend(
+        _typed_query_clause("semantic", x.value, 1.0, settings) for x in intent.expansions
+    )
     q = (
         "*:*"
-        if scope.repository_paths
+        if scope.repository_paths and not intent.has_v2_semantics
         else " OR ".join(item for item in typed_clauses if item) or "*:*"
     )
     filters = ["record_kind:knowledge", _term_filter("repository", snapshot.repository)]
@@ -60,13 +69,16 @@ def _search_params(
             filters.append(
                 f"{field_name}:(" + " OR ".join(_quote_query(item) for item in values) + ")"
             )
+    filters.extend(_expression_query(anchor) for anchor in intent.anchors)
+    if intent.expression is not None:
+        filters.append(_expression_query(intent.expression))
     params: dict[str, object] = {
         "defType": "edismax",
         "q": q,
         "q.op": "OR",
         # Every query term is already fielded by signal type. Keeping qf lexical-only
         # avoids granting structural boosts to semantic or hint values.
-        "qf": f'content^{settings.field_boosts["content"]:g}',
+        "qf": f"content^{settings.field_boosts['content']:g}",
         "fq": filters,
         "rows": max(
             scope.max_results,
@@ -83,6 +95,26 @@ def _search_params(
         "sort": "score desc,id asc",
         "wt": "json",
     }
+    if intent.canonical_query:
+        params["canonical_query"] = intent.canonical_query
+        params["canonical_qf"] = " ".join(
+            f"{field}^{_query_field_boost('semantic', field, 1.0, settings):g}"
+            for field in (
+                *_SIGNAL_FIELD_FACTORS["semantic"],
+                *_V3_QUERY_FIELDS_BY_SIGNAL_TYPE["semantic"],
+            )
+        )
+        # Only adapter-generated text can use the nested parser; the canonical
+        # subquery itself has uf=-* and cannot inject field/parser syntax.
+        params["uf"] = "* _query_"
+    if intent.has_v2_semantics:
+        hints = [
+            _typed_query_clause(kind, value, multiplier, settings)
+            for kind, value, multiplier in typed_entries
+            if kind == "hint"
+        ]
+        if hints:
+            params["bq"] = hints
     return params
 
 
@@ -247,3 +279,24 @@ def _quote_query(value: str) -> str:
 
 def _escape_query(value: str) -> str:
     return re.sub(r'([+\-!(){}\[\]^"~*?:\\/])', r"\\\1", value)
+
+
+def _expression_query(expression: SearchExpression) -> str:
+    if isinstance(expression, Term):
+        return "content:" + _quote_query(expression.value)
+    if isinstance(expression, Anchor):
+        fields = {
+            "identifier": ("identifiers_exact", "content_identifiers_exact"),
+            "qualified_symbol": ("symbols",),
+            "path": ("path",),
+            "route": ("route_paths",),
+            "source_ref": ("source_ref",),
+        }[expression.kind]
+        value = (
+            expression.value
+            if expression.kind in ("path", "source_ref")
+            else expression.value.casefold()
+        )
+        return "(" + " OR ".join(f"{field}:" + _quote_query(value) for field in fields) + ")"
+    operator = " AND " if isinstance(expression, AllOf) else " OR "
+    return "(" + operator.join(_expression_query(child) for child in expression.children) + ")"

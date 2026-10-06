@@ -16,6 +16,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
+from fetchcore.retrieval.translation import validate_intent_translation, translation_diagnostics
+
 from fetchcore.retrieval.signals import QuerySignal
 from fetchcore.retrieval.evidence import EvidenceObservation, QueryMatchEvidence
 from fetchcore.retrieval.config import EmbeddingConfig
@@ -896,7 +898,7 @@ class QdrantVectorBackend:
     """Qdrant dense retrieval with an opt-in native sparse hybrid channel."""
 
     backend_id = "qdrant-vector"
-    retrieval_capabilities = RetrievalBackendCapabilities(dense=True, hybrid=True)
+    retrieval_capabilities = RetrievalBackendCapabilities(dense=True, hybrid=True, canonical_query=True)
 
     def __init__(
         self,
@@ -921,6 +923,12 @@ class QdrantVectorBackend:
         requirements: tuple[SearchRequirement, ...],
     ) -> KnowledgeSearchResponse:
         """Execute retrieval for the supplied intent, scope, and requirements."""
+        mode = scope.retrieval.mode if scope.retrieval else "dense"
+        channels = ("sparse", "dense") if mode == "hybrid" else (mode,)
+        for channel in channels:
+            validate_intent_translation(
+                intent, channel=channel, capabilities=self.retrieval_capabilities,
+            )
         started = self.timer()
         if scope.max_results < 1:
             raise KnowledgeSearchError(
@@ -1114,6 +1122,7 @@ class QdrantVectorBackend:
             "embedding_serializer_mode": snapshot.serializer_mode.value,
             "embedding_serializer_fingerprint": snapshot.serializer_fingerprint,
             "retrieval_mode": "dense_vector_only",
+            **translation_diagnostics(intent, scope, dense=query_text),
             "lexical_fallback": False,
             "sparse_retrieval": False,
             "hybrid_fusion": False,
@@ -1521,6 +1530,7 @@ def _qdrant_hybrid_response(
         "embedding_serializer_mode": snapshot.serializer_mode.value,
         "embedding_serializer_fingerprint": snapshot.serializer_fingerprint,
         "retrieval_mode": "hybrid",
+        **translation_diagnostics(intent, scope, dense=query_text, sparse=list(sparse_query.terms)),
         "lexical_fallback": False,
         "sparse_retrieval": True,
         "hybrid_fusion": True,

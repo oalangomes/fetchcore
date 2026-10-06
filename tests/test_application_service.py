@@ -27,7 +27,7 @@ from fetchcore.search import (
 
 class FixtureBackend:
     backend_id = "fixture"
-    retrieval_capabilities = RetrievalBackendCapabilities(lexical=True)
+    retrieval_capabilities = RetrievalBackendCapabilities(lexical=True, canonical_query=True)
 
     def __init__(self) -> None:
         self.calls: list[tuple[SearchIntent, SearchScope, tuple[SearchRequirement, ...]]] = []
@@ -89,7 +89,8 @@ def test_search_routes_through_backend_neutral_application_boundary(tmp_path: Pa
     assert response.status == "success"
     assert response.results[0].source_ref == "repository://owner/repo/src/demo.py"
     intent, scope, requirements = backend.calls[0]
-    assert intent.semantic_terms == ("medication history",)
+    assert intent.canonical_query == "medication history"
+    assert intent.semantic_terms == ()
     assert scope.repository == "owner/repo"
     assert scope.max_results == 7
     assert scope.knowledge_types == ("code",)
@@ -197,3 +198,23 @@ def test_fixture_backend_satisfies_search_protocol() -> None:
     backend: KnowledgeSearchBackend = FixtureBackend()
 
     assert backend.backend_id == "fixture"
+
+
+def test_serving_preserves_unmodified_canonical_query_and_explicit_legacy_inputs(tmp_path: Path) -> None:
+    backend = FixtureBackend()
+    query = "  Where is the repository-local .fetchcore/indexing.yaml policy loaded and validated?\n"
+    _service(tmp_path, backend).search(SearchRequest(query=query, exact_terms=(" IndexPolicy ",)))
+    intent, _, _ = backend.calls[0]
+    assert intent.canonical_query == query
+    assert intent.semantic_terms == ()
+    assert intent.exact_terms == ("IndexPolicy",)
+    assert intent.anchors == () and intent.expression is None
+
+
+def test_serving_rejects_backend_that_cannot_consume_canonical_query(tmp_path: Path) -> None:
+    backend = FixtureBackend()
+    backend.retrieval_capabilities = RetrievalBackendCapabilities(lexical=True)
+    with pytest.raises(KnowledgeSearchError) as caught:
+        _service(tmp_path, backend).search(SearchRequest(query="canonical query"))
+    assert caught.value.category == "unsupported_semantics"
+    assert backend.calls == []

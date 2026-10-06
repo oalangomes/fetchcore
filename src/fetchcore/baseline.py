@@ -19,7 +19,6 @@ from typing import Literal, cast
 from urllib.parse import quote, unquote
 
 from fetchcore.retrieval import RetrievalBackendCapabilities
-from fetchcore.retrieval.signals import QuerySignal
 from fetchcore.retrieval.contracts import (
     KnowledgeSearchBackend,
     KnowledgeSearchResponse,
@@ -440,15 +439,10 @@ class BaselineSuite:
                 raise BaselineConfigurationError(
                     f"baseline suite query {query_id!r} intent must be an object"
                 )
-            intent = SearchIntent(
-                exact_terms=_string_tuple(raw_intent.get("exact_terms")),
-                semantic_terms=_string_tuple(raw_intent.get("semantic_terms")),
-                hints=_string_tuple(raw_intent.get("hints")),
-                signals=tuple(
-                    QuerySignal.from_mapping(item)
-                    for item in _object_list(raw_intent.get("signals"))
-                ),
-            )
+            try:
+                intent = SearchIntent.from_mapping(dict(raw_intent))
+            except ValueError as exc:
+                raise BaselineConfigurationError(f"invalid intent for {query_id!r}: {exc}") from exc
             raw_requirements = raw_query.get("required_evidence")
             if not isinstance(raw_requirements, list) or not raw_requirements:
                 raise BaselineConfigurationError(
