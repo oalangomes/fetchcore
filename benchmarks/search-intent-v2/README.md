@@ -135,6 +135,65 @@ python benchmarks/search-intent-v2/evidence.py \
 
 `--prepare-index` prepares each selected remote backend once for all required modes. Indexing metrics remain separate from query-quality metrics.
 
+## Resume a failed run
+
+Long multi-backend runs checkpoint only **completed arms**. A transient provider failure does not promote partial observations for the arm that failed.
+
+Resume the existing version directory instead of starting a new run:
+
+```bash
+python benchmarks/search-intent-v2/evidence.py \
+  --workspace /path/to/NeuroTrack_MS \
+  --compare-representations \
+  --resume benchmarks/search-intent-v2/artifacts/evidence/V0.N
+```
+
+Resume is fail-closed. Before reusing any completed arm, the runner validates the measurement contract, runtime source fingerprint, corpus/GT/query identities, environment, persisted snapshot, arm configuration and artifact pair.
+
+Completed compatible arms are reported as:
+
+```text
+[evidence] solr-dense checkpoint valid; skipping completed arm
+```
+
+The first missing or incomplete arm starts again from iteration 0. Partial arm observations are never merged with a later attempt.
+
+An orchestration-only harness change may resume an older compatible run when the measurement contract and runtime source are unchanged. The run records every runner-source fingerprint in `runner_source_fingerprints` plus a `resume_history`; it does not pretend the harness SHA remained identical.
+
+Do not combine `--resume` with `--prepare-index`. Rebuilding an index would invalidate the snapshot identity used by completed arms.
+
+## Transient arm retry
+
+By default the harness allows one retry of an arm after a FetchCore embedding/search error categorized as:
+
+```text
+timeout
+unavailable
+```
+
+The failed attempt is discarded completely. After the backoff, the entire arm restarts at iteration 0 with a fresh backend instance.
+
+Defaults:
+
+```text
+--arm-retries 1
+--retry-backoff-seconds 5
+```
+
+They can be changed explicitly:
+
+```bash
+python benchmarks/search-intent-v2/evidence.py \
+  --workspace /path/to/NeuroTrack_MS \
+  --compare-representations \
+  --arm-retries 2 \
+  --retry-backoff-seconds 10
+```
+
+Retry is intentionally narrow. Schema mismatches, incompatible fingerprints, invalid snapshots, unsupported semantics and other non-transient failures abort immediately.
+
+Failed attempts and backoff time are not included in the promoted arm latency observations. They are recorded separately in `run.json` under `transient_failures` and `arm_attempts`.
+
 ## Full promoted protocol
 
 After the nine-arm smoke succeeds:
