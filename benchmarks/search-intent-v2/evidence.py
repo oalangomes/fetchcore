@@ -12,6 +12,7 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 from statistics import mean
+from time import sleep
 
 from fetchcore.application import (
     BackendRegistry,
@@ -32,12 +33,30 @@ from fetchcore.baseline import (
     load_baseline_suite,
     mapping_fingerprint,
 )
-from fetchcore.retrieval.contracts import SearchIntent, SearchScope
+from fetchcore.retrieval.contracts import KnowledgeSearchError, SearchIntent, SearchScope
 
 ROOT = Path(__file__).resolve().parent
 PROTOCOL = "fetchcore.search-intent-v2-evidence"
 SCHEMA_VERSION = 1
 REPRESENTATIONS = ("legacy", "canonical")
+TRANSIENT_ARM_FAILURE_CATEGORIES = frozenset({"timeout", "unavailable"})
+MEASUREMENT_CONTRACT_FIELDS = (
+    "protocol",
+    "schema_version",
+    "arms",
+    "representations",
+    "warmups",
+    "repetitions",
+    "k",
+    "corpus",
+    "ground_truth_fingerprint",
+    "canonical_query_set_fingerprint",
+    "baseline_manifest_fingerprint",
+    "runtime_source_fingerprint",
+    "embedding_identity",
+    "fusion_identity",
+    "environment",
+)
 FROZEN_FILES = {
     "manifest.json": "d5f1a7f28c605fe54a2113c0b0d041b8004b0892b6d9ba6f27f4008289ae96d5",
     "ground-truth.json": "16a60143cd161e9d14d0a28016eb4ea58173a5e478b1ec6651210cdb3df0469f",
@@ -601,6 +620,137 @@ def write_json(path, payload):
     path.write_bytes(gzip.compress(data, mtime=0) if path.suffix == ".gz" else data)
 
 
+def read_json(path):
+    raw = path.read_bytes()
+    if path.suffix == ".gz":
+        raw = gzip.decompress(raw)
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise BaselineConfigurationError(f"invalid benchmark artifact JSON: {path}") from exc
+    if not isinstance(value, dict):
+        raise BaselineConfigurationError(f"benchmark artifact must be an object: {path}")
+    return {str(key): item for key, item in value.items()}
+
+
+def measurement_contract_fingerprint(run):
+    return mapping_fingerprint({key: run.get(key) for key in MEASUREMENT_CONTRACT_FIELDS})
+
+
+def validate_resume_run(existing, expected):
+    if existing.get("protocol") != PROTOCOL or existing.get("schema_version") != SCHEMA_VERSION:
+        raise BaselineConfigurationError("resume protocol/schema mismatch")
+    if existing.get("status") == "complete":
+        raise BaselineConfigurationError("completed benchmark run does not need resume")
+    recorded = existing.get("measurement_contract_fingerprint")
+    observed = measurement_contract_fingerprint(existing)
+    if recorded is not None and recorded != observed:
+        raise BaselineConfigurationError("resume run measurement contract fingerprint is invalid")
+    if observed != measurement_contract_fingerprint(expected):
+        raise BaselineConfigurationError("resume measurement contract mismatch")
+
+
+def _checkpoint_identity_matches(artifact, *, arm, representation, snapshot, identity, environment):
+    if artifact.get("protocol") != PROTOCOL or artifact.get("schema_version") != SCHEMA_VERSION:
+        return False
+    artifact_arm = artifact.get("arm")
+    if not isinstance(artifact_arm, dict) or artifact_arm.get("id") != arm.id:
+        return False
+    if artifact.get("representation") != representation:
+        return False
+    for key in (
+        "ground_truth_fingerprint",
+        "canonical_query_set_fingerprint",
+        "baseline_manifest_fingerprint",
+        "runtime_source_fingerprint",
+        "embedding_identity",
+        "fusion_identity",
+    ):
+        if key in identity and artifact.get(key) != identity[key]:
+            return False
+    if artifact.get("snapshot_fingerprint") != mapping_fingerprint(snapshot):
+        return False
+    if artifact.get("environment_fingerprint") != mapping_fingerprint(environment):
+        return False
+    return artifact.get("snapshot_unchanged_after_measurement") is True
+
+
+def load_arm_checkpoint(
+    output,
+    arm,
+    representations,
+    *,
+    snapshot,
+    identity,
+    environment,
+    warmups,
+    repetitions,
+):
+    paths = [output / f"{arm.id}-{representation}.json.gz" for representation in representations]
+    existing = [path.exists() for path in paths]
+    if not any(existing):
+        return None
+    if not all(existing):
+        print(f"[evidence] {arm.id} partial checkpoint ignored; restarting arm", flush=True)
+        return None
+    artifacts = [read_json(path) for path in paths]
+    for representation, artifact in zip(representations, artifacts, strict=True):
+        if not _checkpoint_identity_matches(
+            artifact,
+            arm=arm,
+            representation=representation,
+            snapshot=snapshot,
+            identity=identity,
+            environment=environment,
+        ):
+            raise BaselineConfigurationError(f"resume checkpoint identity mismatch: {arm.id}")
+        config = artifact.get("config")
+        if (
+            not isinstance(config, dict)
+            or config.get("warmups") != warmups
+            or config.get("repetitions") != repetitions
+            or config.get("k") != 20
+        ):
+            raise BaselineConfigurationError(f"resume checkpoint config mismatch: {arm.id}")
+    if len(artifacts) == 2:
+        compare_pair(*artifacts)
+    return artifacts
+
+
+def is_transient_arm_failure(exc):
+    return (
+        isinstance(exc, KnowledgeSearchError)
+        and exc.category in TRANSIENT_ARM_FAILURE_CATEGORIES
+    )
+
+
+def run_with_transient_arm_retry(
+    operation,
+    *,
+    arm_id,
+    retries,
+    backoff_seconds,
+    on_retry=None,
+):
+    attempt = 1
+    while True:
+        try:
+            return operation(), attempt
+        except Exception as exc:
+            if not is_transient_arm_failure(exc) or attempt > retries:
+                raise
+            if on_retry is not None:
+                on_retry(attempt, exc)
+            print(
+                f"[evidence] {arm_id} transient failure on attempt {attempt}; "
+                f"restarting whole arm after {backoff_seconds:.1f}s",
+                flush=True,
+            )
+            if backoff_seconds:
+                sleep(backoff_seconds)
+            attempt += 1
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, required=True)
@@ -609,12 +759,19 @@ def main():
     group.add_argument("--representation", choices=REPRESENTATIONS)
     group.add_argument("--compare-representations", action="store_true")
     parser.add_argument("--prepare-index", action="store_true")
+    parser.add_argument("--resume", type=Path)
+    parser.add_argument("--arm-retries", type=int, default=1)
+    parser.add_argument("--retry-backoff-seconds", type=float, default=5.0)
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--repetitions", type=int, default=20)
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/evidence")
     args = parser.parse_args()
     if args.warmups < 0 or args.repetitions < 1:
         parser.error("warmups must be nonnegative; repetitions must be positive")
+    if args.arm_retries < 0 or args.retry_backoff_seconds < 0:
+        parser.error("arm retries and retry backoff must be nonnegative")
+    if args.resume is not None and args.prepare_index:
+        parser.error("--resume cannot be combined with --prepare-index")
     suite, queries, query_fingerprint = load_inputs()
     manifest = setup._load_json(setup.MANIFEST_PATH)
     workspace = args.workspace.resolve(strict=True)
@@ -653,13 +810,10 @@ def main():
         "embedding_identity": context.embedding_identity,
         "fusion_identity": "rrf; unchanged runtime defaults",
     }
-    version, output = setup._allocate_run_output_dir(args.output.resolve())
-    write_json(output / "queries.json", {"queries": queries, "fingerprint": query_fingerprint})
     full = len(arms) == 9 and len(reps) == 2 and args.repetitions == 20 and args.warmups == 1
-    run = {
+    expected_run = {
         "protocol": PROTOCOL,
         "schema_version": SCHEMA_VERSION,
-        "run_version": version,
         "status": "running",
         "full_protocol": full,
         "arms": [a.id for a in arms],
@@ -672,7 +826,62 @@ def main():
         "environment": environment,
         **identity,
     }
+    expected_run["measurement_contract_fingerprint"] = measurement_contract_fingerprint(
+        expected_run
+    )
+    if args.resume is None:
+        version, output = setup._allocate_run_output_dir(args.output.resolve())
+        run = {
+            **expected_run,
+            "run_version": version,
+            "runner_source_fingerprints": [identity["runner_source_fingerprint"]],
+            "completed_arms": [],
+            "arm_attempts": {},
+            "transient_failures": [],
+        }
+        write_json(output / "queries.json", {"queries": queries, "fingerprint": query_fingerprint})
+    else:
+        output = args.resume.resolve(strict=True)
+        if not output.is_dir():
+            parser.error("--resume must point to an existing run directory")
+        run = read_json(output / "run.json")
+        validate_resume_run(run, expected_run)
+        query_record = read_json(output / "queries.json")
+        if query_record.get("fingerprint") != query_fingerprint:
+            raise BaselineConfigurationError("resume canonical query fingerprint mismatch")
+        version = str(run.get("run_version") or output.name)
+        previous_runner = run.get("runner_source_fingerprint")
+        runner_fingerprints = list(run.get("runner_source_fingerprints") or [])
+        if isinstance(previous_runner, str):
+            runner_fingerprints.append(previous_runner)
+        runner_fingerprints.append(identity["runner_source_fingerprint"])
+        run.setdefault("initial_fetchcore_revision", run.get("fetchcore_revision"))
+        run.setdefault("resume_history", []).append(
+            {
+                "resumed_at": setup._utc_now(),
+                "previous_status": run.get("status"),
+                "previous_error": run.get("error"),
+                "runner_source_fingerprint": identity["runner_source_fingerprint"],
+                "fetchcore_revision": identity["fetchcore_revision"],
+            }
+        )
+        run.update(
+            status="running",
+            full_protocol=full,
+            fetchcore_revision=identity["fetchcore_revision"],
+            runner_source_fingerprint=identity["runner_source_fingerprint"],
+            runner_source_fingerprints=sorted(set(runner_fingerprints)),
+            working_tree_dirty=identity["working_tree_dirty"],
+            measurement_contract_fingerprint=expected_run["measurement_contract_fingerprint"],
+        )
+        run.pop("error", None)
+        run.pop("completed_at", None)
+        run.setdefault("completed_arms", [])
+        run.setdefault("arm_attempts", {})
+        run.setdefault("transient_failures", [])
+        print(f"[evidence] resuming run {version} from {output}", flush=True)
     write_json(output / "run.json", run)
+    current_arm = None
     try:
         if args.prepare_index:
             print(f"[evidence] preparing indexes once; output={output}", flush=True)
@@ -690,6 +899,7 @@ def main():
             write_json(output / "indexing.json", indexing)
         artifacts, pairs = [], []
         for arm in arms:
+            current_arm = arm.id
             retrieval = setup._retrieval_for_mode(
                 arm.mode, provider="ollama", model="embeddinggemma"
             )
@@ -706,33 +916,99 @@ def main():
                 result_namespace="fetchcore-serving",
             )
             snapshot = snapshot_identity(arm, scope)
-            measured = run_arm(
-                backend_registry(context).create(arm.backend),
-                arm,
-                scope,
-                suite,
-                queries,
-                representations=reps,
-                warmups=args.warmups,
-                repetitions=args.repetitions,
-                identity=identity,
-                environment=environment,
-                snapshot=snapshot,
+            if args.resume is not None:
+                checkpoint = load_arm_checkpoint(
+                    output,
+                    arm,
+                    reps,
+                    snapshot=snapshot,
+                    identity=identity,
+                    environment=environment,
+                    warmups=args.warmups,
+                    repetitions=args.repetitions,
+                )
+                if checkpoint is not None:
+                    print(f"[evidence] {arm.id} checkpoint valid; skipping completed arm", flush=True)
+                    artifacts.extend(checkpoint)
+                    if len(checkpoint) == 2:
+                        pairs.append(compare_pair(*checkpoint))
+                    if arm.id not in run["completed_arms"]:
+                        run["completed_arms"].append(arm.id)
+                    write_json(output / "comparison.json", pairs)
+                    (output / "README.md").write_text(
+                        render_report(artifacts, pairs, full=full)
+                    )
+                    write_json(output / "run.json", run)
+                    continue
+
+            def execute_arm():
+                if snapshot_identity(arm, scope) != snapshot:
+                    raise BaselineConfigurationError(
+                        f"snapshot changed before measurement: {arm.id}"
+                    )
+                measured_artifacts = run_arm(
+                    backend_registry(context).create(arm.backend),
+                    arm,
+                    scope,
+                    suite,
+                    queries,
+                    representations=reps,
+                    warmups=args.warmups,
+                    repetitions=args.repetitions,
+                    identity=identity,
+                    environment=environment,
+                    snapshot=snapshot,
+                )
+                if snapshot_identity(arm, scope) != snapshot:
+                    raise BaselineConfigurationError(
+                        f"snapshot changed during paired measurement: {arm.id}"
+                    )
+                return measured_artifacts
+
+            def record_retry(attempt, exc):
+                run["arm_attempts"][arm.id] = attempt
+                run["failed_arm"] = arm.id
+                run["transient_failures"].append(
+                    {
+                        "arm": arm.id,
+                        "attempt": attempt,
+                        "category": exc.category,
+                        "message": str(exc),
+                        "discarded": True,
+                        "observed_at": setup._utc_now(),
+                    }
+                )
+                write_json(output / "run.json", run)
+
+            measured, attempts = run_with_transient_arm_retry(
+                execute_arm,
+                arm_id=arm.id,
+                retries=args.arm_retries,
+                backoff_seconds=args.retry_backoff_seconds,
+                on_retry=record_retry,
             )
-            if snapshot_identity(arm, scope) != snapshot:
-                raise BaselineConfigurationError("snapshot changed during paired measurement")
+            run["arm_attempts"][arm.id] = attempts
             for artifact in measured:
                 artifact["snapshot_unchanged_after_measurement"] = True
                 write_json(output / f"{arm.id}-{artifact['representation']}.json.gz", artifact)
             if len(measured) == 2:
                 pairs.append(compare_pair(*measured))
             artifacts.extend(measured)
+            if arm.id not in run["completed_arms"]:
+                run["completed_arms"].append(arm.id)
+            run.pop("failed_arm", None)
             write_json(output / "comparison.json", pairs)
             (output / "README.md").write_text(render_report(artifacts, pairs, full=full))
+            write_json(output / "run.json", run)
         setup._validate_workspace(workspace, suite.corpus["revision"])
         run.update(status="complete", completed_at=setup._utc_now())
+        run.pop("failed_arm", None)
     except Exception as exc:
-        run.update(status="failed", error=f"{type(exc).__name__}: {exc}")
+        run.update(
+            status="failed",
+            error=f"{type(exc).__name__}: {exc}",
+            failed_arm=current_arm,
+        )
         raise
     finally:
         write_json(output / "run.json", run)
