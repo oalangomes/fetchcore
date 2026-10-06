@@ -1,0 +1,64 @@
+{
+  "arms": [
+    "local-lexical",
+    "solr-lexical",
+    "solr-dense",
+    "solr-hybrid",
+    "opensearch-lexical",
+    "opensearch-dense",
+    "opensearch-hybrid",
+    "qdrant-dense",
+    "qdrant-hybrid"
+  ],
+  "baseline_manifest_fingerprint": "sha256:c6edcb980d0c96e0ac4dd18073f7cef445fd514fa7131ed39304189e04503af8",
+  "canonical_query_set_fingerprint": "sha256:3c41c6a64b9c87033321f968fed6ccc30c0bcc216d779ceffb8d9e8e1ba3a9e7",
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+  },
+  "embedding_identity": {
+    "dimensions": 768,
+    "model": "embeddinggemma",
+    "provider": "ollama"
+  },
+  "environment": {
+    "cpu_count": 8,
+    "embedding": {
+      "dimensions": 768,
+      "model": "embeddinggemma",
+      "provider": "ollama"
+    },
+    "embedding_model_digest": "85462619ee721b466c5927d109d4cb765861907d5417b9109caebc4e614679f1",
+    "machine": "x86_64",
+    "platform_release": "6.18.33.2-microsoft-standard-WSL2",
+    "platform_system": "Linux",
+    "profile_id": "fetchcore-local-benchmark-v1",
+    "python_version": "3.12.3",
+    "services": {
+      "ollama": "0.35.1",
+      "opensearch": "3.8.0",
+      "qdrant": "1.19.0",
+      "solr": "9.10.1"
+    }
+  },
+  "error": "KeyError: 'fingerprints'",
+  "fetchcore_revision": "8d1e0261765c5f3f3bf81fe14b321c86306610a3",
+  "full_protocol": false,
+  "fusion_identity": "rrf; unchanged runtime defaults",
+  "ground_truth_fingerprint": "sha256:a03733d1601097afcba5e32dc4b04834471758919300457fb88925fce481c29a",
+  "k": 20,
+  "protocol": "fetchcore.search-intent-v2-evidence",
+  "repetitions": 1,
+  "representations": [
+    "legacy",
+    "canonical"
+  ],
+  "run_version": "V0.1",
+  "runner_source_fingerprint": "sha256:807616996cffec700f551cd459305bd7e347628ed77e2efc0b93d8da2bbf34a1",
+  "runtime_source_fingerprint": "sha256:f3e9556c868f086fdb9d11ecbfd620a3862261108e185fa85f85428ed8c4f6a6",
+  "schema_version": 1,
+  "status": "failed",
+  "warmups": 1,
+  "working_tree_dirty": true
+}
