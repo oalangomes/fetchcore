@@ -924,7 +924,7 @@ class QdrantVectorBackend:
     ) -> KnowledgeSearchResponse:
         """Execute retrieval for the supplied intent, scope, and requirements."""
         mode = scope.retrieval.mode if scope.retrieval else "dense"
-        channels = ("lexical", "dense") if mode == "hybrid" else (mode,)
+        channels = ("sparse", "dense") if mode == "hybrid" else (mode,)
         for channel in channels:
             validate_intent_translation(
                 intent, channel=channel, capabilities=self.retrieval_capabilities,

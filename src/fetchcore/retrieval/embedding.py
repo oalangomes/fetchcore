@@ -142,6 +142,8 @@ class ProjectionV3EmbeddingSerializer:
         from fetchcore.retrieval.translation import validate_intent_translation
         validate_intent_translation(intent, channel="dense",
                                     capabilities=RetrievalBackendCapabilities(canonical_query=True))
+        if intent.canonical_query:
+            return intent.canonical_query
         groups: dict[str, list[str]] = {
             "exact": [],
             "reference": [],
@@ -174,8 +176,6 @@ class ProjectionV3EmbeddingSerializer:
                 lines.append(f"{signal_type}:")
                 lines.extend(serialized_values)
         rendered = "\n".join(lines).strip()
-        if intent.canonical_query:
-            rendered = intent.canonical_query + ("\n" + rendered if rendered else "")
         if not rendered:
             raise KnowledgeSearchError(
                 "vector search requires at least one query signal",

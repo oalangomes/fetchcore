@@ -134,3 +134,75 @@ Validation on the implementation: 341 tests passed with both native integration 
 No generic NLP, generic query parser, synonym engine, core stemming/tokenization, learned planner, automatic expansion, authority/satisfaction model or targeted fast path was added. Scope/configuration, provenance, persisted identities, BM25 weights, fusion and reranking boundaries remain separate.
 
 The concrete follow-up discovered is reviewing incremental-sync dogfood Ground Truth against the moved implementation modules. The remaining miss and rank regression are retained in the evidence; they were not used to justify additional tuning here.
+
+## Corrective slice: required versus optional semantics
+
+The original policy above rejected dense/hybrid expansions. The corrective slice
+compares `f3b5651` with the corrected translation/capability policy. Required
+anchors/expressions still fail closed outside capable lexical channels; optional
+expansions/hints no longer invalidate dense or hybrid. Dense uses canonical text
+alone when supplied; v1-only embedding serialization stays byte-identical. No
+weights, candidate budgets, RRF, analyzer, projection or embedding model changed.
+The current behavior is documented in [SearchIntent](../concepts/search-intent.md).
+
+[Raw before/after evidence](../../benchmarks/search-intent-v2/artifacts/corrective-smoke.json.gz)
+contains source fingerprints, ranked paths, per-channel diagnostics and the MCP
+smoke. Lexical used the same 2,202-document projection of corpus `32fb976`, the
+unchanged six dogfood scenarios, k=10, one warmup and one measured repetition per
+scenario. This is a regression smoke, not a statistically powered latency study.
+
+| Measurement | Before correction | After correction |
+| --- | --- | --- |
+| Expected-path hit@10 | 5/6 | 5/6 |
+| MRR | 0.3889 | 0.3889 |
+| Zero-result rate | 0% | 0% |
+| Ordered source paths | Baseline | Identical in all six scenarios |
+| p50 / p95 latency, ms | 942.164 / 1022.589 | 937.758 / 940.519 |
+| Mean candidates examined | 10 | 10 |
+
+Native acquisition smoke used disposable Solr 9.10.1, OpenSearch 3.8.0 and Qdrant
+1.19.0 services with the existing Ollama `embeddinggemma` model, 768 dimensions.
+One three-document fixture projection per backend was built with baseline code
+and reused unchanged by both arms. Its corpus checksum is
+`fbeb01bc0549153f16a5322ebd8d7c51fbc4a35b09feedce4778028592187ada`.
+The fixture checks actual acquisition, fusion, diagnostics and source provenance;
+it does not establish dense/hybrid quality on a representative corpus.
+
+- 40 requests per arm: canonical, expansion, hint, anchor and expression across
+  Solr/OpenSearch lexical/dense/hybrid and Qdrant dense/hybrid.
+- Successful retrievals: 22 → 28. All six dense/hybrid expansion requests changed
+  from `unsupported_semantics` to nonempty results.
+- All 12 hard-constraint dense/hybrid requests still reject explicitly.
+- Canonical and hint requests succeeded in both arms. All 22 previously successful
+  requests retained identical ordered source paths in this fixture.
+- Lexical expansion translations changed `broadened` → `preserved`; dense optional
+  omissions report `partially_unsupported`, including original expansion provenance.
+- Real MCP smoke passed 1/1 with source access. The remaining incremental-sync
+  dogfood miss is unchanged; Ground Truth was not edited.
+
+Reproduce the lexical comparison with the existing `run.py` protocol above and
+`--warmups 1 --repetitions 1`. For native acquisition, provision disposable
+services and run [corrective_smoke.py](../../benchmarks/search-intent-v2/corrective_smoke.py)
+first with baseline source, then corrected source against the same projections:
+
+```bash
+PYTHONPATH=/tmp/fetchcore-corrective-before/src .venv/bin/python \
+  benchmarks/search-intent-v2/corrective_smoke.py \
+  --workspace /tmp/fetchcore-corrective-fixture --index --expect-optional-rejection \
+  --output /tmp/corrective-native-before.json \
+  --ollama-url http://172.21.32.1:11434 \
+  --solr-url http://127.0.0.1:18983/solr \
+  --opensearch-url http://127.0.0.1:19200 --qdrant-url http://127.0.0.1:16333
+```
+
+Use the existing FetchCore Solr configset with a core named `corrective`. The
+baseline worktree is at `f3b5651`. On the second arm use `PYTHONPATH=src`, omit
+`--index --expect-optional-rejection`, and change only the output filename.
+The Ollama endpoint is environment-specific; keep the same model in both arms.
+
+Validation: 375 tests passed including both native lexical integration tests;
+Ruff 0.16.10, strict mypy (158 files), docs checks and sdist/wheel build passed.
+All 20 v1 translations retain the original frozen digest
+`4a3b18e742c447e878b1bf35ef4b78370c98e1f1db5b110269ae04c4882ccc12`.
+Required constraints after hybrid fusion remain deliberately unsupported; no
+post-fusion enforcement or planner was added.

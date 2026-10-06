@@ -277,6 +277,10 @@ class LocalSemanticBackend:
                 **translation_diagnostics(
                     intent,
                     scope,
+                    consumed_hints=tuple(
+                        hint for hint in intent.hints
+                        if hint.strip().casefold() in {value.casefold() for value in query.hints}
+                    ),
                     consumed_signals=tuple(
                         signal
                         for signal in intent.signals

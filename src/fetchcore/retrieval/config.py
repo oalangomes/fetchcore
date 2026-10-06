@@ -368,7 +368,8 @@ class RetrievalBackendCapabilities:
     reranking: bool = False
     ltr: bool = False
     canonical_query: bool = False
-    lexical_requirements: bool = False
+    structured_anchors: bool = False
+    boolean_expressions: bool = False
 
     def to_mapping(self) -> dict[str, bool]:
         """Return a stable mapping representation of this value."""
@@ -379,7 +380,8 @@ class RetrievalBackendCapabilities:
             "reranking": self.reranking,
             "ltr": self.ltr,
             "canonical_query": self.canonical_query,
-            "lexical_requirements": self.lexical_requirements,
+            "structured_anchors": self.structured_anchors,
+            "boolean_expressions": self.boolean_expressions,
         }
 
 

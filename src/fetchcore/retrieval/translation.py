@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 from fetchcore.retrieval.config import RetrievalBackendCapabilities
-from fetchcore.retrieval.contracts import KnowledgeSearchError, SearchIntent, SearchScope
+from fetchcore.retrieval.contracts import (
+    AllOf, Anchor, AnyOf, KnowledgeSearchError, SearchExpression, SearchIntent, SearchScope,
+)
 from fetchcore.retrieval.signals import QuerySignal
 
 
@@ -37,6 +39,8 @@ class IntentTranslation:
             "status": self.status,
             "reasons": list(self.reasons),
             "unsupported": list(self.unsupported),
+            "unsupported_required": list(self.unsupported) if self.status == "rejected" else [],
+            "unsupported_optional": list(self.unsupported) if self.status != "rejected" else [],
         }
 
     @classmethod
@@ -61,18 +65,23 @@ def validate_intent_translation(
     channel: str,
     capabilities: RetrievalBackendCapabilities,
 ) -> None:
-    """The initial translation policy is reject; no implicit lossy fallback."""
+    """Reject unguaranteed required semantics; optional omissions are diagnostic.
+
+    Structured capabilities apply to lexical acquisition only. The current dense
+    and fusion paths cannot enforce hard constraints on their final candidates.
+    """
     unsupported = []
     if intent.canonical_query and not capabilities.canonical_query:
         unsupported.append("canonical_query")
-    if channel != "lexical" or not capabilities.lexical_requirements:
-        if intent.anchors:
-            unsupported.append("anchors")
-        if intent.expression is not None:
-            unsupported.append("expression")
-    # A single embedding cannot guarantee recall-union expansion semantics.
-    if channel == "dense" and intent.expansions:
-        unsupported.append("expansions")
+    supports_anchors = channel == "lexical" and capabilities.structured_anchors
+    supports_expression = channel == "lexical" and capabilities.boolean_expressions
+    if intent.anchors and not supports_anchors:
+        unsupported.append("anchors")
+    if intent.expression is not None and (
+        not supports_expression
+        or (not supports_anchors and _contains_anchor(intent.expression))
+    ):
+        unsupported.append("expression")
     if unsupported:
         observation = IntentTranslation(
             channel,
@@ -90,39 +99,64 @@ def validate_intent_translation(
         )
 
 
+def _contains_anchor(expression: SearchExpression) -> bool:
+    if isinstance(expression, Anchor):
+        return True
+    return isinstance(expression, (AllOf, AnyOf)) and any(
+        _contains_anchor(child) for child in expression.children
+    )
+
+
 def translation_diagnostics(
     intent: SearchIntent,
     scope: SearchScope,
     *,
     consumed_signals: tuple[QuerySignal, ...] | None = None,
+    consumed_hints: tuple[str, ...] | None = None,
     **representations: object,
 ) -> dict[str, object]:
     """Reuse response diagnostics, with full query text only on explicit opt-in."""
     if scope.settings.get("diagnostic_candidate_window") is None:
         return {}
-    consumed = intent.signals if consumed_signals is None else consumed_signals
-    unsupported = tuple(
-        f"signals[{index}]" for index, signal in enumerate(intent.signals) if signal not in consumed
-    )
     observations = []
     for channel, representation in representations.items():
+        canonical_dense = channel == "dense" and bool(intent.canonical_query)
+        consumed = () if canonical_dense else (
+            intent.signals if consumed_signals is None else consumed_signals
+        )
+        expansions = () if channel == "dense" else intent.expansions
+        hints = () if canonical_dense else (
+            intent.hints if consumed_hints is None else consumed_hints
+        )
+        unsupported = tuple(
+            f"signals[{index}]"
+            for index, signal in enumerate(intent.signals) if signal not in consumed
+        ) + tuple(
+            name for name, supplied, used in (
+                ("expansions", intent.expansions, expansions),
+                ("exact_terms", intent.exact_terms, () if canonical_dense else intent.exact_terms),
+                ("semantic_terms", intent.semantic_terms,
+                 () if canonical_dense else intent.semantic_terms),
+            ) if supplied and not used
+        ) + tuple(f"hints[{index}]" for index, hint in enumerate(intent.hints) if hint not in hints)
         observation = IntentTranslation(
             channel,
-            "partially_unsupported"
-            if unsupported
-            else ("broadened" if intent.expansions else "preserved"),
-            (("caller_supplied_expansions",) if intent.expansions else ())
-            + (("legacy_signals_not_consumed",) if unsupported else ()),
+            "partially_unsupported" if unsupported else "preserved",
+            ("optional_semantics_not_consumed",) if unsupported else (),
             unsupported,
         ).to_mapping()
         observation.update(
             canonical_query=intent.canonical_query,
+            canonical_query_consumed=bool(intent.canonical_query),
             representation=representation,
             anchors_consumed=[x.to_mapping() for x in intent.anchors],
             expression_consumed=intent.expression.to_mapping() if intent.expression else None,
             signals_supplied=[x.to_mapping() for x in intent.signals],
             signals_consumed=[x.to_mapping() for x in consumed],
             expansions=[x.to_mapping() for x in intent.expansions],
+            expansions_consumed=[x.to_mapping() for x in expansions],
+            hints_supplied=list(intent.hints),
+            hints_consumed=list(hints),
             translation_policy="reject",
         )
         observations.append(observation)

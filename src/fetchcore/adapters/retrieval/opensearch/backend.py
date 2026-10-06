@@ -933,7 +933,7 @@ class OpenSearchBackend:
     backend_id = "opensearch"
     retrieval_capabilities = RetrievalBackendCapabilities(
         canonical_query=True,
-        lexical_requirements=True,
+        structured_anchors=True, boolean_expressions=True,
         lexical=True,
         dense=True,
         hybrid=True,

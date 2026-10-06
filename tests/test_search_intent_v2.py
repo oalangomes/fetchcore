@@ -17,7 +17,7 @@ from fetchcore.adapters.retrieval.qdrant.backend import QdrantVectorBackend
 from fetchcore.adapters.retrieval.qdrant.sparse import intent_sparse_terms
 from fetchcore.adapters.retrieval.solr.backend import SolrBackend, SolrSettings
 from fetchcore.adapters.retrieval.solr.query import _search_params
-from fetchcore.retrieval.config import RetrievalConfig
+from fetchcore.retrieval.config import RetrievalBackendCapabilities, RetrievalConfig
 from fetchcore.retrieval.contracts import (
     AllOf,
     Anchor,
@@ -31,7 +31,9 @@ from fetchcore.retrieval.contracts import (
 )
 from fetchcore.retrieval.embedding import ProjectionV3EmbeddingSerializer
 from fetchcore.retrieval.signals import QuerySignal
-from fetchcore.retrieval.translation import IntentTranslation, translation_diagnostics
+from fetchcore.retrieval.translation import (
+    IntentTranslation, translation_diagnostics, validate_intent_translation,
+)
 
 QUERY = "Where is the repository-local .fetchcore/indexing.yaml policy loaded and validated?"
 BRANCHES = AnyOf(
@@ -257,8 +259,8 @@ def test_translation_observations_are_optional_and_native_analysis_is_preserved(
     item = translation_diagnostics(expanded, scope(tmp_path, diagnostics=True), lexical={})[
         "intent_translation"
     ][0]
-    assert item["status"] == "broadened"
-    assert item["reasons"] == ["caller_supplied_expansions"]
+    assert item["status"] == "preserved"
+    assert item["reasons"] == []
     assert item["unsupported"] == []
 
 
@@ -269,6 +271,101 @@ def test_translation_observation_round_trip(status):
         IntentTranslation.from_mapping(json.loads(json.dumps(observation.to_mapping())))
         == observation
     )
+
+
+@pytest.mark.parametrize("channel", ["lexical", "dense", "sparse"])
+@pytest.mark.parametrize("fields", [
+    {}, {"expansions": (QueryExpansion("auth", "caller"),)},
+    {"hints": ("auth",)}, {"signals": (signal(),)},
+])
+def test_optional_semantics_do_not_reject_canonical_acquisition(tmp_path, channel, fields):
+    intent = SearchIntent(canonical_query="authentication", **fields)
+    validate_intent_translation(
+        intent, channel=channel, capabilities=RetrievalBackendCapabilities(canonical_query=True)
+    )
+    if channel == "dense":
+        assert ProjectionV3EmbeddingSerializer().serialize_query(intent) == "authentication"
+    observation = translation_diagnostics(
+        intent, scope(tmp_path, diagnostics=True), **{channel: "authentication"}
+    )["intent_translation"][0]
+    assert observation["canonical_query_consumed"] is True
+    assert observation["unsupported_required"] == []
+    assert observation["status"] == (
+        "partially_unsupported" if fields and channel == "dense" else "preserved"
+    )
+    assert bool(observation["unsupported_optional"]) == (bool(fields) and channel == "dense")
+
+
+def test_hybrid_reports_each_channels_optional_consumption(tmp_path):
+    intent = SearchIntent(
+        canonical_query="authentication", expansions=(QueryExpansion("auth", "caller"),),
+        hints=("login",), signals=(signal(),),
+    )
+    lexical, dense = translation_diagnostics(
+        intent, scope(tmp_path, diagnostics=True), lexical={}, dense="authentication"
+    )["intent_translation"]
+    assert lexical["status"] == "preserved"
+    assert lexical["expansions_consumed"] == [intent.expansions[0].to_mapping()]
+    assert lexical["hints_consumed"] == ["login"]
+    assert dense["status"] == "partially_unsupported"
+    assert dense["expansions"] == lexical["expansions"]
+    assert dense["expansions_consumed"] == dense["hints_consumed"] == []
+    assert dense["signals_supplied"] == [signal().to_mapping()]
+    assert dense["signals_consumed"] == []
+    assert dense["unsupported_optional"] == ["signals[0]", "expansions", "hints[0]"]
+    assert translation_diagnostics(intent, scope(tmp_path), lexical={}, dense="authentication") == {}
+
+
+@pytest.mark.parametrize("backend", [SolrBackend, OpenSearchBackend, QdrantVectorBackend])
+@pytest.mark.parametrize("mode", ["dense", "hybrid"])
+@pytest.mark.parametrize("fields", [
+    {}, {"expansions": (QueryExpansion("auth", "caller"),)}, {"hints": ("auth",)},
+])
+def test_optional_intent_reaches_acquisition_in_all_dense_and_hybrid_backends(
+    tmp_path, backend, mode, fields,
+):
+    class AcquisitionReached(Exception):
+        pass
+
+    def transport(settings):
+        raise AcquisitionReached
+
+    with pytest.raises(AcquisitionReached):
+        backend(transport_factory=transport).search(
+            SearchIntent(canonical_query="authentication", **fields),
+            scope(tmp_path, mode=mode), (),
+        )
+
+
+def test_partial_structured_capabilities_are_independent():
+    caps = RetrievalBackendCapabilities(canonical_query=True, structured_anchors=True)
+    validate_intent_translation(
+        SearchIntent(canonical_query=QUERY, anchors=(Anchor("identifier", "ProductService"),)),
+        channel="lexical", capabilities=caps,
+    )
+    with pytest.raises(KnowledgeSearchError) as caught:
+        validate_intent_translation(
+            SearchIntent(expression=BRANCHES), channel="lexical", capabilities=caps,
+        )
+    assert caught.value.metadata["intent_translation"]["unsupported_required"] == ["expression"]
+    caps = RetrievalBackendCapabilities(boolean_expressions=True)
+    validate_intent_translation(
+        SearchIntent(expression=AllOf((Term("A"), Term("B")))),
+        channel="lexical", capabilities=caps,
+    )
+    with pytest.raises(KnowledgeSearchError):
+        validate_intent_translation(
+            SearchIntent(expression=BRANCHES), channel="lexical", capabilities=caps,
+        )
+
+
+def test_canonical_support_is_still_required():
+    with pytest.raises(KnowledgeSearchError) as caught:
+        validate_intent_translation(
+            SearchIntent(canonical_query=QUERY), channel="dense",
+            capabilities=RetrievalBackendCapabilities(),
+        )
+    assert caught.value.metadata["intent_translation"]["unsupported_required"] == ["canonical_query"]
 
 
 def test_embedding_uses_canonical_query_directly_and_preserves_v1_bytes():
@@ -283,14 +380,13 @@ def test_embedding_uses_canonical_query_directly_and_preserves_v1_bytes():
     )
     assert (
         serializer.serialize_query(SearchIntent(canonical_query=QUERY, exact_terms=("A",)))
-        == QUERY + "\nexact:\nA"
+        == QUERY
     )
     with pytest.raises(KnowledgeSearchError):
         serializer.serialize_query(SearchIntent(canonical_query=QUERY, expression=BRANCHES))
-    with pytest.raises(KnowledgeSearchError):
-        serializer.serialize_query(
-            SearchIntent(canonical_query=QUERY, expansions=(QueryExpansion("auth", "caller"),))
-        )
+    assert serializer.serialize_query(
+        SearchIntent(canonical_query=QUERY, expansions=(QueryExpansion("auth", "caller"),))
+    ) == QUERY
 
 
 def test_qdrant_uses_existing_sparse_analyzer_for_canonical_query():
@@ -413,4 +509,18 @@ def test_local_diagnostics_do_not_claim_unconsumed_legacy_reference_signal(tmp_p
     assert observation["signals_consumed"] == []
     assert observation["signals_supplied"] == [reference.to_mapping()]
     assert observation["unsupported"] == ["signals[0]"]
-    assert observation["reasons"] == ["legacy_signals_not_consumed"]
+    assert observation["reasons"] == ["optional_semantics_not_consumed"]
+
+
+def test_local_reports_hint_displaced_by_legacy_signal_precedence(tmp_path):
+    hint_signal = replace(signal(), type="hint", value="preferred", required=False)
+    response = LocalSemanticBackend().search(
+        SearchIntent(canonical_query="authentication", hints=("ignored",), signals=(hint_signal,)),
+        scope(tmp_path, diagnostics=True), (),
+    )
+    observation = response.metadata["intent_translation"][0]
+    assert observation["hints_supplied"] == ["ignored"]
+    assert observation["hints_consumed"] == []
+    assert observation["signals_consumed"] == [hint_signal.to_mapping()]
+    assert observation["unsupported_optional"] == ["hints[0]"]
+    assert observation["status"] == "partially_unsupported"
