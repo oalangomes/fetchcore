@@ -21,6 +21,8 @@ from fetchcore.adapters.retrieval.solr.incremental_persistence import (
 )
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 from fetchcore.repository.index_policy import RepositoryIndexPolicyError
+from fetchcore.application.repositories import RepositoryApplicationService
+from fetchcore.repository.registry import RepositoryRegistryError
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,72 @@ class _IndexCommandContext:
 @click.group()
 def main() -> None:
     """FetchCore repository knowledge and retrieval utilities."""
+
+
+@main.group("repo")
+@click.option("--cache-root", type=click.Path(path_type=Path, file_okay=False),
+              help="Operator repository cache; defaults to FETCHCORE_REPOSITORY_CACHE.")
+@click.option("--allowed-root", multiple=True, type=click.Path(path_type=Path, file_okay=False),
+              help="Authorized local source root (repeatable; defaults to current directory).")
+@click.pass_context
+def repo_group(ctx: click.Context, cache_root: Path | None, allowed_root: tuple[Path, ...]) -> None:
+    """Register and inspect repository sources without indexing them."""
+    ctx.obj = RepositoryApplicationService(cache_root=cache_root, allowed_roots=allowed_root or None)
+
+
+@repo_group.command("add")
+@click.argument("source")
+@click.option("--provider", type=click.Choice(("local-workspace", "git")),
+              help="Defaults to local-workspace for paths, git for URLs/SSH remotes.")
+@click.option("--json", "as_json", is_flag=True, help="Emit deterministic JSON.")
+@click.pass_obj
+def repo_add(service: RepositoryApplicationService, source: str,
+             provider: str | None, as_json: bool) -> None:
+    """Materialize and register SOURCE; an existing source is never refreshed."""
+    _run_repo_operation("add", as_json, lambda: service.present(service.add(source, provider=provider)))
+
+
+@repo_group.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Emit deterministic JSON.")
+@click.pass_obj
+def repo_list(service: RepositoryApplicationService, as_json: bool) -> None:
+    """List only known registrations, ordered by canonical identity."""
+    _run_repo_operation("list", as_json, lambda: [service.present(r) for r in service.list()])
+
+
+@repo_group.command("inspect")
+@click.argument("repository")
+@click.option("--json", "as_json", is_flag=True, help="Emit deterministic JSON.")
+@click.pass_obj
+def repo_inspect(service: RepositoryApplicationService, repository: str, as_json: bool) -> None:
+    """Resolve a canonical identity or an unambiguous repository leaf name."""
+    _run_repo_operation("inspect", as_json, lambda: service.present(service.inspect(repository)))
+
+
+def _run_repo_operation(
+    operation: str, as_json: bool,
+    execute: Callable[[], dict[str, object] | list[dict[str, object]]],
+) -> None:
+    try:
+        result = execute()
+    except RepositoryRegistryError as exc:
+        if as_json:
+            click.echo(json.dumps({
+                "operation": operation, "status": "failed",
+                "error": {"category": exc.category, "message": str(exc)},
+            }, sort_keys=True, indent=2))
+            raise click.exceptions.Exit(1) from exc
+        raise click.ClickException(_error_message(exc)) from exc
+    if as_json:
+        click.echo(json.dumps({"operation": operation, "status": "succeeded", "result": result},
+                              sort_keys=True, indent=2))
+        return
+    records = result if isinstance(result, list) else [result]
+    if not records:
+        click.echo("No registered repositories.")
+    for record in records:
+        click.echo(" | ".join(f"{key}={value if value is not None else 'unavailable'}"
+                              for key, value in record.items()))
 
 
 @main.group("index")

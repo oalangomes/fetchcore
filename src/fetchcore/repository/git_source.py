@@ -60,9 +60,23 @@ class GitRepositorySourceProvider:
             if configured_root
             else DEFAULT_REPOSITORY_CACHE
         )
+        self._configured_cache_root = root.expanduser().absolute()
         self.cache_root = root.expanduser().resolve() / "git"
         self.environment = dict(environment or {})
         self.timeout_seconds = timeout_seconds
+
+    def cache_path_for(self, source: str) -> Path:
+        """Return the existing mirror identity without acquiring or refreshing it."""
+        return self.cache_root / f"{_cache_key(_safe_remote(source))}.git"
+
+    def validate_cache_paths(self, source: str) -> None:
+        """Reject redirected provider-owned cache paths before any Git mutation."""
+        paths = (
+            self._configured_cache_root, *self._configured_cache_root.parents,
+            self.cache_root, self.cache_path_for(source), self.cache_root / "worktrees",
+        )
+        if any(path.is_symlink() for path in paths):
+            raise GitRepositorySourceError("Git cache paths must not contain symlinks")
 
     @contextmanager
     def materialize(
@@ -74,12 +88,13 @@ class GitRepositorySourceProvider:
             raise GitRepositorySourceError("Git repository source must not be empty")
 
         safe_remote = _safe_remote(remote)
+        self.validate_cache_paths(remote)
         repository = request.repository or repository_identity_from_remote(
             safe_remote,
             fallback="repository",
         )
         self.cache_root.mkdir(parents=True, exist_ok=True)
-        mirror = self.cache_root / f"{_cache_key(safe_remote)}.git"
+        mirror = self.cache_path_for(remote)
         self._ensure_mirror(remote, safe_remote=safe_remote, mirror=mirror)
         self._fetch_mirror(mirror, safe_remote=safe_remote)
 
@@ -154,6 +169,18 @@ class GitRepositorySourceProvider:
                 raise GitRepositorySourceError(
                     f"Git mirror cache is not a bare repository: {mirror}"
                 )
+            origin = self._git(
+                ("--git-dir", str(mirror), "remote", "get-url", "origin"),
+                operation="validate mirror origin",
+            )
+            # Git stores local clone origins as absolute paths, even when the caller
+            # supplied a relative path. Compare those without changing persisted cache keys.
+            same_local_source = (
+                ":" not in remote and ":" not in origin
+                and Path(remote).resolve() == Path(origin).resolve()
+            )
+            if not same_local_source and _cache_key(_safe_remote(origin)) != _cache_key(safe_remote):
+                raise GitRepositorySourceError("Git mirror origin does not match requested source")
             return
 
         try:
