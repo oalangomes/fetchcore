@@ -6,13 +6,14 @@ import hashlib
 import json
 import time
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import replace, dataclass, field
 from pathlib import Path
 from typing import Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
+from fetchcore.retrieval.contracts import Anchor
 from fetchcore.retrieval.translation import validate_intent_translation, translation_diagnostics
 
 from fetchcore.adapters.retrieval.opensearch.query import (
@@ -932,7 +933,7 @@ class OpenSearchBackend:
 
     backend_id = "opensearch"
     retrieval_capabilities = RetrievalBackendCapabilities(
-        canonical_query=True,
+        canonical_query=True, targeted_lookup=True,
         structured_anchors=True, boolean_expressions=True,
         lexical=True,
         dense=True,
@@ -954,6 +955,13 @@ class OpenSearchBackend:
         self.transport_factory = transport_factory
         self.embedding_factory = embedding_factory
         self.timer = timer
+
+    def lookup_exact(self, anchor: Anchor, scope: KnowledgeSearchScope) -> KnowledgeSearchResponse:
+        # Reuse the exact keyword translator and snapshot/provenance checks.
+        # Two records suffice to detect ambiguity; diagnostics must not enlarge it.
+        exact_scope = replace(scope, max_results=2, retrieval=None,
+                              settings={**scope.settings, "diagnostic_candidate_window": 2})
+        return self.search(SearchIntent(anchors=(anchor,)), exact_scope, ())
 
     def search(
         self,

@@ -282,12 +282,17 @@ class RetrievalConfig:
     hybrid: HybridRetrievalConfig = HybridRetrievalConfig()
     reranking: RerankingConfig = RerankingConfig()
     ltr: RetrievalToggleConfig = RetrievalToggleConfig()
+    targeted: Literal["exact_unique", "disabled"] = "exact_unique"
+
+    def __post_init__(self) -> None:
+        if self.targeted not in ("exact_unique", "disabled"):
+            raise RetrievalConfigurationError("retrieval.targeted must be exact_unique or disabled")
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object] | None) -> RetrievalConfig:
         """Build the value from a mapping while validating its public contract."""
         data = _configuration_mapping(value, "retrieval")
-        allowed = {"dense", "hybrid", "reranking", "ltr", "mode"}
+        allowed = {"dense", "hybrid", "reranking", "ltr", "mode", "targeted"}
         unknown = sorted(set(data) - allowed)
         if unknown:
             raise RetrievalConfigurationError(
@@ -308,7 +313,10 @@ class RetrievalConfig:
             _mapping_value(data.get("ltr"), "retrieval.ltr", allow_none=True),
             path="retrieval.ltr",
         )
-        config = cls(dense=dense, hybrid=hybrid, reranking=reranking, ltr=ltr)
+        targeted = data.get("targeted", "exact_unique")
+        if targeted not in ("exact_unique", "disabled"):
+            raise RetrievalConfigurationError("retrieval.targeted must be exact_unique or disabled")
+        config = cls(dense=dense, hybrid=hybrid, reranking=reranking, ltr=ltr, targeted=targeted)
         config.validate_semantics()
         if "mode" not in data:
             return config
@@ -350,6 +358,7 @@ class RetrievalConfig:
             "reranking": self.reranking.to_mapping(),
             "ltr": self.ltr.to_mapping(),
             "mode": self.mode,
+            **({"targeted": self.targeted} if self.targeted != "exact_unique" else {}),
         }
 
 
@@ -370,6 +379,7 @@ class RetrievalBackendCapabilities:
     canonical_query: bool = False
     structured_anchors: bool = False
     boolean_expressions: bool = False
+    targeted_lookup: bool = False
 
     def to_mapping(self) -> dict[str, bool]:
         """Return a stable mapping representation of this value."""
@@ -382,6 +392,7 @@ class RetrievalBackendCapabilities:
             "canonical_query": self.canonical_query,
             "structured_anchors": self.structured_anchors,
             "boolean_expressions": self.boolean_expressions,
+            **({"targeted_lookup": True} if self.targeted_lookup else {}),
         }
 
 

@@ -14,10 +14,11 @@
 | `SearchRelationship` | `fetchcore.retrieval.contracts` | Normalized type, target, confidence, and discovery source for a hit. |
 | `KnowledgeSearchResponse` | `fetchcore.retrieval.contracts` | Backend, status, results, metadata, duration and optional telemetry. |
 | `KnowledgeSearchBackend` | `fetchcore.retrieval.contracts` | Port with `backend_id`, `retrieval_capabilities`, and `search(intent, scope, requirements)`. |
+| `ExactLookupBackend` | `fetchcore.retrieval.contracts` | Optional bounded exact-acquisition port negotiated through `targeted_lookup`; see [targeted retrieval](../concepts/targeted-retrieval.md). |
 | `EvidenceObservation` | `fetchcore.retrieval.evidence` | Validated source-derived category/subtype/value and source trace. |
 | `QueryMatchEvidence` | `fetchcore.retrieval.evidence` | Signal, match type, channels, values, source and bounded contribution details. |
 | `EmbeddingProvider` | `fetchcore.retrieval.embedding` | Provider ID and embedding operations independent of Ollama transport. |
-| `RetrievalConfig` | `fetchcore.retrieval.config` | Dense, hybrid, reranking and LTR settings; effective mode is lexical, dense or hybrid. |
+| `RetrievalConfig` | `fetchcore.retrieval.config` | Targeted early-return policy, dense, hybrid, reranking and LTR settings; effective mode is lexical, dense or hybrid. |
 | `RetrievalBackendCapabilities` | `fetchcore.retrieval.config` | Advertised lexical, dense, hybrid, LTR, direct canonical-query and lexical requirement support. The serialized reranking flag is retained for compatibility; reranking is post-acquisition. |
 
 `SearchResult.to_mapping()` omits empty/absent fields and validates alignment score and capability source identity. `SearchScope.to_mapping()` excludes runtime-only `settings`. `KnowledgeSearchResponse.to_mapping()` includes telemetry when present. Consult the dataclasses and round-trip tests before changing serialized meaning. See [capabilities](capabilities.md) and [evidence vocabulary](../concepts/evidence-and-provenance.md).
