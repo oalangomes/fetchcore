@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import hashlib
 import json
 import math
@@ -81,7 +82,9 @@ def main():
     parser.add_argument("--repetitions", type=int, default=20)
     parser.add_argument("--query", action="append", default=[])
     parser.add_argument("--warmups", type=int, default=1)
+    parser.add_argument("--representation", choices=("canonical", "legacy"), default="canonical")
     args = parser.parse_args()
+    runtime_before = runtime_fingerprint()
     if args.repetitions < 1 or args.warmups < 1:
         parser.error("positive repetitions/warmups required")
     suite = load_baseline_suite(ROOT / "benchmarks/baseline-v1/ground-truth.json")
@@ -116,11 +119,16 @@ def main():
                     (
                         case,
                         kind,
-                        SearchIntent(
-                            canonical_query=queries[case.query_id], anchors=(Anchor(kind, value),)
+                        replace(
+                            case.intent
+                            if args.representation == "legacy"
+                            else SearchIntent(canonical_query=queries[case.query_id]),
+                            anchors=(Anchor(kind, value),),
                         ),
                     )
                 )
+    if not cases:
+        parser.error("no selected single-source evidence cases")
     observations = []
     services = {}
     for policy in ("disabled", "exact_unique"):
@@ -218,6 +226,8 @@ def main():
     before = backend.broad_calls
     dense_response = dense_service.search(SearchRequest(intent=intent))
     assert dense_response.results and backend.broad_calls == before
+    if runtime_before != runtime_fingerprint():
+        raise RuntimeError("runtime source changed during benchmark")
     payload = {
         "schema_version": 1,
         "protocol": "fetchcore.targeted-exact-v1",
@@ -226,7 +236,9 @@ def main():
         "ground_truth_fingerprint": suite.fingerprint,
         "query_set_sha256": fingerprint(ROOT / "benchmarks/search-intent-v2/evidence-queries.json"),
         "base_revision": git(ROOT, "merge-base", "HEAD", "origin/master"),
-        "runtime_source_sha256": runtime_fingerprint(),
+        "runtime_source_sha256": runtime_before,
+        "measured_runtime_commit": git(ROOT, "rev-parse", "HEAD"),
+        "representation": args.representation,
         "runner_sha256": fingerprint(Path(__file__)),
         "python": platform.python_version(),
         "platform": platform.platform(),

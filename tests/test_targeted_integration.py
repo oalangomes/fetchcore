@@ -62,7 +62,9 @@ def test_native_exact_and_fallback(tmp_path: Path, vendor, kind):
         config = {"url": endpoint, "collection": settings.collection}
     else:
         settings = OpenSearchSettings.from_mapping({"url": endpoint})
-        store = OpenSearchIndexStore(UrllibOpenSearchTransport(settings), settings)
+        store = OpenSearchIndexStore(
+            UrllibOpenSearchTransport(settings), settings, clock=lambda: "2026-10-07T00:00:00+00:00"
+        )
         backend = OpenSearchBackend(embedding_factory=no_embedding)
         config = {"url": endpoint}
     store.full_rebuild(corpus)

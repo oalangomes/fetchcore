@@ -302,3 +302,41 @@ def test_mismatched_backend_identity_or_revision_rejected(tmp_path, source):
         )
         with pytest.raises(KnowledgeSearchError):
             app.search(request())
+
+
+def test_mcp_transports_v2_intent_through_application(tmp_path, source):
+    import asyncio
+    from fetchcore.mcp_server import create_mcp_server
+
+    app, backend = service(tmp_path)
+    server = create_mcp_server(app)
+    result = asyncio.run(server.call_tool("search", {"intent": request().intent.to_mapping()}))
+    assert not result.is_error
+    assert (
+        result.structured_content["results"][0]["source_ref"]
+        == "repository://owner/repo/src/service.py"
+    )
+    assert result.structured_content["metadata"]["targeted"]["outcome"] == "exact_unique"
+    assert not backend.calls
+
+
+def test_multiple_exact_anchors_are_all_enforced_on_fallback(tmp_path, source):
+    app, backend = service(tmp_path)
+    intent = SearchIntent(
+        canonical_query="product",
+        anchors=(
+            Anchor("path", "src/service.py"),
+            Anchor("source_ref", "repository://owner/repo/other.py"),
+        ),
+    )
+    response = app.search(SearchRequest(intent=intent))
+    assert len(backend.calls) == 1 and not response.results
+    assert response.metadata["targeted"]["fallback_reason"] == "additional_required_semantics"
+
+
+def test_empty_intent_and_mixed_convenience_fields_rejected(tmp_path):
+    app, backend = service(tmp_path)
+    for req in (SearchRequest(intent=SearchIntent()), replace(request(), query="product")):
+        with pytest.raises(KnowledgeSearchError):
+            app.search(req)
+    assert not backend.calls
