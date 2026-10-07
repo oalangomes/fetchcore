@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import subprocess
 from pathlib import Path
 from fetchcore.baseline import load_baseline_suite, evaluate_retrieval
 from fetchcore.adapters.retrieval.local.backend import LocalSemanticBackend
@@ -13,6 +14,14 @@ args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
 x = json.loads((root / "benchmarks/baseline-v1/artifacts/V0.1/local-lexical.json").read_text())
 suite = load_baseline_suite(root / "benchmarks/baseline-v1/ground-truth.json")
+revision = subprocess.check_output(
+    ["git", "-C", str(args.workspace), "rev-parse", "HEAD"], text=True
+).strip()
+dirty = subprocess.check_output(
+    ["git", "-C", str(args.workspace), "status", "--porcelain"], text=True
+).strip()
+if revision != suite.corpus["revision"] or dirty:
+    parser.error("workspace must be clean and at the frozen corpus revision")
 scope_data = x["config"]["scope"].copy()
 scope_data.pop("retrieval", None)
 scope_data.update(workspace=args.workspace, settings=x["config"]["identity"]["backend_settings"])

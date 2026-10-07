@@ -2,6 +2,9 @@
 
 Issue #34 compares `RetrievalConfig(targeted="exact_unique")` against `disabled`
 through the same application service. Only this policy changes within each pair.
+Hypothesis: a declared exact source identity avoids corpus-wide acquisition while
+preserving or increasing reviewed evidence recovery.
+
 The disabled arm executes the current broad backend search and the same exact
 post-filter, so a required anchor never becomes an optional hint. Backend search
 algorithms, RRF, projection/indexing and embeddings are unchanged.
@@ -80,6 +83,47 @@ four cells. p95 is descriptive. Raw nearest-rank p99 is retained for audit but
 is not a reliable tail estimate at this sample size. No time-to-first-candidate
 is fabricated. Measurements are from one host, not a remote backend latency
 comparison or a general claim about all repositories.
+
+## Legacy-query measurements
+
+The companion [legacy artifact](artifacts/legacy.json.gz) uses the **unchanged
+original baseline terms** and identical paired policy controls. The
+[comparison artifact](artifacts/comparison.json) collects both experiments,
+checksums and per-query summaries. Runtime source fingerprints match in both.
+
+| Metric | Broad, disabled policy | Targeted, exact unique |
+| --- | ---: | ---: |
+| EvidenceRecall@20 mean | 0.000 | 1.000 |
+| Candidate records examined, mean | 9.5 | 1 |
+| Repository files read, mean | 964 | 1 |
+| Broad search calls per query | 1 | 0 |
+| Wall p50, ms | 6,253.646 | 13.575 |
+| Wall p95, ms | 8,168.383 | 24.646 |
+| Targeted stage mean, ms | 0.188 | 15.180 |
+| Returned lines, mean | 2.5 | 87.5 |
+| Returned characters, mean | 90.5 | 3,917 |
+| Fallback rate | 100% (policy disabled) | 0% |
+
+Here candidate records as well as file reads decrease. Original broad lexical
+snippets do not cover complete required evidence regions; exact source prefixes
+do. The larger returned context is a measured tradeoff, not an efficiency win
+on every axis. These averages cover 80 samples per policy, but only two distinct
+queries. The same sample-size/tail and generalization limitations apply.
+Differences between canonical and legacy runs are not used as a representation
+performance claim: only within-run policy pairs are controlled.
+
+## Broad retrieval equivalence
+
+[The recorded check](artifacts/broad-equivalence.json) re-executes **all 20**
+original unanchored legacy queries on the frozen corpus. Ranked result spans/IDs,
+EvidenceRecall, source recall, candidates examined, returned characters and
+returned line counts equal V0.1 for every query. Timing is deliberately excluded
+from deterministic equivalence. Reproduce with:
+
+```bash
+python benchmarks/targeted-exact/check_broad_equivalence.py \
+  --workspace /path/to/frozen/NeuroTrack_MS
+```
 
 ## Failure and dense-avoidance controls
 

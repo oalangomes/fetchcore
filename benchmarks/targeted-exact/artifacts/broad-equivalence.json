@@ -1,0 +1,112 @@
+{
+  "protocol": "fetchcore.targeted-exact-v1.broad-equivalence",
+  "baseline": "benchmarks/baseline-v1/artifacts/V0.1/local-lexical.json",
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+  },
+  "checks": [
+    {
+      "query_id": "medication-update-owner-service",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "medication-create-controller-validation",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "medication-controller-tests",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "mfa-totp-service",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "mfa-http-routes",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "mfa-controller-errors",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "mfa-route-tests",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "health-resource-collection",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "health-controller",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "health-controller-tests",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "home-active-subject-data",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "home-prompt-controller",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "ai-controller-queue",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "ai-queue-subject-context",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "ai-worker-processing",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "runtime-config-queue-concurrency",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "docker-local-runtime",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "architecture-overview",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "ai-component-architecture",
+      "equivalent": true,
+      "different_fields": []
+    },
+    {
+      "query_id": "agent-development-rules",
+      "equivalent": true,
+      "different_fields": []
+    }
+  ],
+  "all_equivalent": true
+}

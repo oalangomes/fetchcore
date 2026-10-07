@@ -1,0 +1,638 @@
+{
+  "protocol": "fetchcore.targeted-exact-v1.comparison",
+  "runtime_source_sha256": "c6447f229a32d5b6aa4b1abdba4edc16217a311d8115cde3d52a98d70ac0f957",
+  "representations": {
+    "canonical": {
+      "artifact": "canonical.json.gz",
+      "uncompressed_sha256": "f3442ce3539751b8516d5e9007dc6757c204c3b6910359d4b504b05180fe3098",
+      "summary": {
+        "disabled": {
+          "samples": 80,
+          "duration_ms": {
+            "p50": 12420.009,
+            "p95": 16911.19,
+            "p99": 19279.577
+          },
+          "evidence_recall_at_k_mean": 0.0,
+          "candidates_examined_mean": 0,
+          "returned_chars_mean": 0,
+          "returned_line_count_mean": 0,
+          "targeted_ms_mean": 0.4832375,
+          "broad_calls_mean": 1,
+          "files_read_mean": 964,
+          "fallback_rate": 1
+        },
+        "exact_unique": {
+          "samples": 80,
+          "duration_ms": {
+            "p50": 29.374,
+            "p95": 43.226,
+            "p99": 138.147
+          },
+          "evidence_recall_at_k_mean": 1.0,
+          "candidates_examined_mean": 1,
+          "returned_chars_mean": 3917,
+          "returned_line_count_mean": 87.5,
+          "targeted_ms_mean": 28.3906,
+          "broad_calls_mean": 0,
+          "files_read_mean": 1,
+          "fallback_rate": 0
+        }
+      },
+      "per_query": {
+        "medication-update-owner-service:path": {
+          "disabled": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 16087.542,
+              "p95": 18632.235,
+              "p99": 19279.577
+            },
+            "evidence_recall_at_k_mean": 0.0,
+            "candidates_examined_mean": 0,
+            "returned_chars_mean": 0,
+            "returned_line_count_mean": 0,
+            "targeted_ms_mean": 0.7143,
+            "broad_calls_mean": 1,
+            "files_read_mean": 964,
+            "fallback_rate": 1
+          },
+          "exact_unique": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 30.724,
+              "p95": 43.406,
+              "p99": 138.147
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 2102,
+            "returned_line_count_mean": 60,
+            "targeted_ms_mean": 34.3482,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        },
+        "medication-update-owner-service:source_ref": {
+          "disabled": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 12019.512,
+              "p95": 13678.782,
+              "p99": 13733.324
+            },
+            "evidence_recall_at_k_mean": 0.0,
+            "candidates_examined_mean": 0,
+            "returned_chars_mean": 0,
+            "returned_line_count_mean": 0,
+            "targeted_ms_mean": 0.60785,
+            "broad_calls_mean": 1,
+            "files_read_mean": 964,
+            "fallback_rate": 1
+          },
+          "exact_unique": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 32.495,
+              "p95": 43.226,
+              "p99": 44.39
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 2102,
+            "returned_line_count_mean": 60,
+            "targeted_ms_mean": 28.0418,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        },
+        "architecture-overview:path": {
+          "disabled": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 13101.387,
+              "p95": 15001.404,
+              "p99": 15278.195
+            },
+            "evidence_recall_at_k_mean": 0.0,
+            "candidates_examined_mean": 0,
+            "returned_chars_mean": 0,
+            "returned_line_count_mean": 0,
+            "targeted_ms_mean": 0.2879,
+            "broad_calls_mean": 1,
+            "files_read_mean": 964,
+            "fallback_rate": 1
+          },
+          "exact_unique": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 30.1,
+              "p95": 39.717,
+              "p99": 41.713
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 5732,
+            "returned_line_count_mean": 115,
+            "targeted_ms_mean": 27.6148,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        },
+        "architecture-overview:source_ref": {
+          "disabled": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 11960.601,
+              "p95": 13435.002,
+              "p99": 13918.309
+            },
+            "evidence_recall_at_k_mean": 0.0,
+            "candidates_examined_mean": 0,
+            "returned_chars_mean": 0,
+            "returned_line_count_mean": 0,
+            "targeted_ms_mean": 0.3229,
+            "broad_calls_mean": 1,
+            "files_read_mean": 964,
+            "fallback_rate": 1
+          },
+          "exact_unique": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 22.092,
+              "p95": 41.514,
+              "p99": 45.636
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 5732,
+            "returned_line_count_mean": 115,
+            "targeted_ms_mean": 23.5576,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        }
+      },
+      "controls": [
+        {
+          "kind": "path",
+          "value": "missing-for-issue-34.py",
+          "outcome": "not_found",
+          "broad_calls": 1,
+          "telemetry": {
+            "mode": "lexical",
+            "duration_ms": 6328,
+            "candidates_examined": 633,
+            "candidates_returned": 0,
+            "returned_chars": 0,
+            "stages": [
+              {
+                "name": "targeted",
+                "duration_ms": 4,
+                "candidates_out": 0,
+                "metadata": {
+                  "schema_version": 1,
+                  "targeted_attempted": true,
+                  "targeted_signal_kind": "path",
+                  "targeted_hits": 0,
+                  "targeted_ms": 4.142,
+                  "fallback_used": true,
+                  "fallback_reason": "not_found",
+                  "outcome": "not_found",
+                  "lookup_candidates_examined": 0,
+                  "anchor_enforcement": "exact_post_filter",
+                  "post_filter_removed": 10,
+                  "post_filter_may_underfill": true,
+                  "candidates_examined": 633
+                }
+              },
+              {
+                "name": "lexical",
+                "duration_ms": 6320,
+                "candidates_out": 633,
+                "metadata": {
+                  "files_scanned": 964,
+                  "files_with_matches": 117
+                }
+              }
+            ],
+            "budget": {
+              "max_results": 10,
+              "output_truncated": true
+            },
+            "metadata": {
+              "targeted": {
+                "schema_version": 1,
+                "targeted_attempted": true,
+                "targeted_signal_kind": "path",
+                "targeted_hits": 0,
+                "targeted_ms": 4.142,
+                "fallback_used": true,
+                "fallback_reason": "not_found",
+                "outcome": "not_found",
+                "lookup_candidates_examined": 0,
+                "anchor_enforcement": "exact_post_filter",
+                "post_filter_removed": 10,
+                "post_filter_may_underfill": true,
+                "candidates_examined": 633
+              }
+            }
+          }
+        },
+        {
+          "kind": "source_ref",
+          "value": "repository://oalangomes/NeuroTrack_MS/missing-for-issue-34.py",
+          "outcome": "not_found",
+          "broad_calls": 1,
+          "telemetry": {
+            "mode": "lexical",
+            "duration_ms": 6318,
+            "candidates_examined": 633,
+            "candidates_returned": 0,
+            "returned_chars": 0,
+            "stages": [
+              {
+                "name": "targeted",
+                "duration_ms": 9,
+                "candidates_out": 0,
+                "metadata": {
+                  "schema_version": 1,
+                  "targeted_attempted": true,
+                  "targeted_signal_kind": "source_ref",
+                  "targeted_hits": 0,
+                  "targeted_ms": 8.725,
+                  "fallback_used": true,
+                  "fallback_reason": "not_found",
+                  "outcome": "not_found",
+                  "lookup_candidates_examined": 0,
+                  "anchor_enforcement": "exact_post_filter",
+                  "post_filter_removed": 10,
+                  "post_filter_may_underfill": true,
+                  "candidates_examined": 633
+                }
+              },
+              {
+                "name": "lexical",
+                "duration_ms": 6307,
+                "candidates_out": 633,
+                "metadata": {
+                  "files_scanned": 964,
+                  "files_with_matches": 117
+                }
+              }
+            ],
+            "budget": {
+              "max_results": 10,
+              "output_truncated": true
+            },
+            "metadata": {
+              "targeted": {
+                "schema_version": 1,
+                "targeted_attempted": true,
+                "targeted_signal_kind": "source_ref",
+                "targeted_hits": 0,
+                "targeted_ms": 8.725,
+                "fallback_used": true,
+                "fallback_reason": "not_found",
+                "outcome": "not_found",
+                "lookup_candidates_examined": 0,
+                "anchor_enforcement": "exact_post_filter",
+                "post_filter_removed": 10,
+                "post_filter_may_underfill": true,
+                "candidates_examined": 633
+              }
+            }
+          }
+        },
+        {
+          "kind": "path",
+          "value": "../outside.py",
+          "outcome": "unauthorized_source",
+          "broad_calls": 0,
+          "telemetry": null
+        }
+      ],
+      "measured_runtime_commit": "17846ee0377b8f77f74de9eb55bfaeb811f9da99"
+    },
+    "legacy": {
+      "artifact": "legacy.json.gz",
+      "uncompressed_sha256": "a52f5b193e3446d141dd7f100607fbd9d60b0f23da68dc5a6a88b48faa8cf98c",
+      "summary": {
+        "disabled": {
+          "samples": 80,
+          "duration_ms": {
+            "p50": 6253.646,
+            "p95": 8168.383,
+            "p99": 9332.838
+          },
+          "evidence_recall_at_k_mean": 0.0,
+          "candidates_examined_mean": 9.5,
+          "returned_chars_mean": 90.5,
+          "returned_line_count_mean": 2.5,
+          "targeted_ms_mean": 0.188475,
+          "broad_calls_mean": 1,
+          "files_read_mean": 964,
+          "fallback_rate": 1
+        },
+        "exact_unique": {
+          "samples": 80,
+          "duration_ms": {
+            "p50": 13.575,
+            "p95": 24.646,
+            "p99": 38.312
+          },
+          "evidence_recall_at_k_mean": 1.0,
+          "candidates_examined_mean": 1,
+          "returned_chars_mean": 3917,
+          "returned_line_count_mean": 87.5,
+          "targeted_ms_mean": 15.18035,
+          "broad_calls_mean": 0,
+          "files_read_mean": 1,
+          "fallback_rate": 0
+        }
+      },
+      "per_query": {
+        "medication-update-owner-service:path": {
+          "disabled": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 6356.268,
+              "p95": 8168.383,
+              "p99": 9332.838
+            },
+            "evidence_recall_at_k_mean": 0.0,
+            "candidates_examined_mean": 19,
+            "returned_chars_mean": 181,
+            "returned_line_count_mean": 5,
+            "targeted_ms_mean": 0.1563,
+            "broad_calls_mean": 1,
+            "files_read_mean": 964,
+            "fallback_rate": 1
+          },
+          "exact_unique": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 11.845,
+              "p95": 15.124,
+              "p99": 20.744
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 2102,
+            "returned_line_count_mean": 60,
+            "targeted_ms_mean": 12.76955,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        },
+        "medication-update-owner-service:source_ref": {
+          "disabled": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 7132.101,
+              "p95": 8857.516,
+              "p99": 9290.292
+            },
+            "evidence_recall_at_k_mean": 0.0,
+            "candidates_examined_mean": 19,
+            "returned_chars_mean": 181,
+            "returned_line_count_mean": 5,
+            "targeted_ms_mean": 0.2253,
+            "broad_calls_mean": 1,
+            "files_read_mean": 964,
+            "fallback_rate": 1
+          },
+          "exact_unique": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 14.767,
+              "p95": 22.258,
+              "p99": 23.493
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 2102,
+            "returned_line_count_mean": 60,
+            "targeted_ms_mean": 15.99035,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        },
+        "architecture-overview:path": {
+          "disabled": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 5302.927,
+              "p95": 6830.003,
+              "p99": 7000.103
+            },
+            "evidence_recall_at_k_mean": 0.0,
+            "candidates_examined_mean": 0,
+            "returned_chars_mean": 0,
+            "returned_line_count_mean": 0,
+            "targeted_ms_mean": 0.1742,
+            "broad_calls_mean": 1,
+            "files_read_mean": 964,
+            "fallback_rate": 1
+          },
+          "exact_unique": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 13.093,
+              "p95": 23.118,
+              "p99": 24.646
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 5732,
+            "returned_line_count_mean": 115,
+            "targeted_ms_mean": 14.06495,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        },
+        "architecture-overview:source_ref": {
+          "disabled": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 5290.273,
+              "p95": 6616.86,
+              "p99": 7541.885
+            },
+            "evidence_recall_at_k_mean": 0.0,
+            "candidates_examined_mean": 0,
+            "returned_chars_mean": 0,
+            "returned_line_count_mean": 0,
+            "targeted_ms_mean": 0.1981,
+            "broad_calls_mean": 1,
+            "files_read_mean": 964,
+            "fallback_rate": 1
+          },
+          "exact_unique": {
+            "samples": 20,
+            "duration_ms": {
+              "p50": 14.113,
+              "p95": 28.774,
+              "p99": 38.312
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 5732,
+            "returned_line_count_mean": 115,
+            "targeted_ms_mean": 17.89655,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        }
+      },
+      "controls": [
+        {
+          "kind": "path",
+          "value": "missing-for-issue-34.py",
+          "outcome": "not_found",
+          "broad_calls": 1,
+          "telemetry": {
+            "mode": "lexical",
+            "duration_ms": 3021,
+            "candidates_examined": 633,
+            "candidates_returned": 0,
+            "returned_chars": 0,
+            "stages": [
+              {
+                "name": "targeted",
+                "duration_ms": 2,
+                "candidates_out": 0,
+                "metadata": {
+                  "schema_version": 1,
+                  "targeted_attempted": true,
+                  "targeted_signal_kind": "path",
+                  "targeted_hits": 0,
+                  "targeted_ms": 2.313,
+                  "fallback_used": true,
+                  "fallback_reason": "not_found",
+                  "outcome": "not_found",
+                  "lookup_candidates_examined": 0,
+                  "anchor_enforcement": "exact_post_filter",
+                  "post_filter_removed": 10,
+                  "post_filter_may_underfill": true,
+                  "candidates_examined": 633
+                }
+              },
+              {
+                "name": "lexical",
+                "duration_ms": 3017,
+                "candidates_out": 633,
+                "metadata": {
+                  "files_scanned": 964,
+                  "files_with_matches": 117
+                }
+              }
+            ],
+            "budget": {
+              "max_results": 10,
+              "output_truncated": true
+            },
+            "metadata": {
+              "targeted": {
+                "schema_version": 1,
+                "targeted_attempted": true,
+                "targeted_signal_kind": "path",
+                "targeted_hits": 0,
+                "targeted_ms": 2.313,
+                "fallback_used": true,
+                "fallback_reason": "not_found",
+                "outcome": "not_found",
+                "lookup_candidates_examined": 0,
+                "anchor_enforcement": "exact_post_filter",
+                "post_filter_removed": 10,
+                "post_filter_may_underfill": true,
+                "candidates_examined": 633
+              }
+            }
+          }
+        },
+        {
+          "kind": "source_ref",
+          "value": "repository://oalangomes/NeuroTrack_MS/missing-for-issue-34.py",
+          "outcome": "not_found",
+          "broad_calls": 1,
+          "telemetry": {
+            "mode": "lexical",
+            "duration_ms": 2821,
+            "candidates_examined": 633,
+            "candidates_returned": 0,
+            "returned_chars": 0,
+            "stages": [
+              {
+                "name": "targeted",
+                "duration_ms": 2,
+                "candidates_out": 0,
+                "metadata": {
+                  "schema_version": 1,
+                  "targeted_attempted": true,
+                  "targeted_signal_kind": "source_ref",
+                  "targeted_hits": 0,
+                  "targeted_ms": 2.438,
+                  "fallback_used": true,
+                  "fallback_reason": "not_found",
+                  "outcome": "not_found",
+                  "lookup_candidates_examined": 0,
+                  "anchor_enforcement": "exact_post_filter",
+                  "post_filter_removed": 10,
+                  "post_filter_may_underfill": true,
+                  "candidates_examined": 633
+                }
+              },
+              {
+                "name": "lexical",
+                "duration_ms": 2816,
+                "candidates_out": 633,
+                "metadata": {
+                  "files_scanned": 964,
+                  "files_with_matches": 117
+                }
+              }
+            ],
+            "budget": {
+              "max_results": 10,
+              "output_truncated": true
+            },
+            "metadata": {
+              "targeted": {
+                "schema_version": 1,
+                "targeted_attempted": true,
+                "targeted_signal_kind": "source_ref",
+                "targeted_hits": 0,
+                "targeted_ms": 2.438,
+                "fallback_used": true,
+                "fallback_reason": "not_found",
+                "outcome": "not_found",
+                "lookup_candidates_examined": 0,
+                "anchor_enforcement": "exact_post_filter",
+                "post_filter_removed": 10,
+                "post_filter_may_underfill": true,
+                "candidates_examined": 633
+              }
+            }
+          }
+        },
+        {
+          "kind": "path",
+          "value": "../outside.py",
+          "outcome": "unauthorized_source",
+          "broad_calls": 0,
+          "telemetry": null
+        }
+      ],
+      "measured_runtime_commit": "5f2bf93a7cde4e4e288f1483082da896bbe9f15b"
+    }
+  }
+}
