@@ -173,7 +173,13 @@ class GitRepositorySourceProvider:
                 ("--git-dir", str(mirror), "remote", "get-url", "origin"),
                 operation="validate mirror origin",
             )
-            if _cache_key(_safe_remote(origin)) != _cache_key(safe_remote):
+            # Git stores local clone origins as absolute paths, even when the caller
+            # supplied a relative path. Compare those without changing persisted cache keys.
+            same_local_source = (
+                ":" not in remote and ":" not in origin
+                and Path(remote).resolve() == Path(origin).resolve()
+            )
+            if not same_local_source and _cache_key(_safe_remote(origin)) != _cache_key(safe_remote):
                 raise GitRepositorySourceError("Git mirror origin does not match requested source")
             return
 

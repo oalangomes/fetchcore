@@ -394,3 +394,17 @@ def test_inspect_git_file_source_rechecks_allowed_roots(service, tmp_path):
     with pytest.raises(RepositoryRegistryError) as error:
         restricted.inspect(record.repository)
     assert error.value.category == "unsafe_source"
+
+
+def test_existing_git_provider_relative_local_source_remains_reusable(tmp_path, monkeypatch):
+    from fetchcore.repository.git_source import GitRepositorySourceProvider
+    from fetchcore.repository.sources import RepositorySourceRequest
+
+    repository(tmp_path / "source")
+    monkeypatch.chdir(tmp_path)
+    provider = GitRepositorySourceProvider(cache_root=tmp_path / "cache")
+    request = RepositorySourceRequest(source="source")
+    with provider.materialize(request) as first:
+        revision = first.revision
+    with provider.materialize(request) as second:
+        assert second.revision == revision
