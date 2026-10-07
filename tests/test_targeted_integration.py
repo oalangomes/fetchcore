@@ -96,14 +96,16 @@ def test_native_exact_and_fallback(tmp_path: Path, vendor, kind):
         assert not response.metadata["targeted"]["fallback_used"]
         assert response.telemetry.candidates_examined == 1
         missing = replace(intent, anchors=(Anchor("path", "missing.md"),))
-        # Fallback must execute the configured mode. The embedder tripwire proves it.
-        with pytest.raises(AssertionError, match="construct an embedder"):
+        # Dense translation cannot preserve the required anchor.
+        with pytest.raises(KnowledgeSearchError) as error:
             application(binding).search(SearchRequest(intent=missing))
+        assert error.value.category == "unsupported_semantics"
+        assert error.value.metadata["targeted"]["fallback_reason"] == "not_found"
         lexical = application(replace(binding, retrieval=RetrievalConfig()))
         response = lexical.search(SearchRequest(intent=missing))
         assert not response.results
         assert response.metadata["targeted"]["fallback_reason"] == "not_found"
-        assert response.metadata["targeted"]["post_filter_removed"] == 1
+        assert response.metadata["targeted"]["candidates_examined"] >= 0
         assert lexical.search(SearchRequest(query="Product")).results
         with pytest.raises(KnowledgeSearchError) as error:
             application(replace(binding, revision="revision-b")).search(

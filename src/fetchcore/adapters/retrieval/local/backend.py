@@ -166,13 +166,10 @@ class LocalSemanticBackend:
         if scan.sources:
             source = scan.sources[0]
             if scope.revision is not None:
-                blob = subprocess.run(["git", "rev-parse", f"HEAD:{target.path}"],
-                                      cwd=scope.workspace, capture_output=True, text=True,
+                blob = subprocess.run(["git", "cat-file", "blob", f"HEAD:{target.path}"],
+                                      cwd=scope.workspace, capture_output=True,
                                       check=False, timeout=10)
-                digest = subprocess.run(["git", "hash-object", "--stdin"],
-                                        cwd=scope.workspace, input=source.content.encode("utf-8"),
-                                        capture_output=True, check=False, timeout=10)
-                if blob.returncode or digest.returncode or blob.stdout.strip() != digest.stdout.decode().strip():
+                if blob.returncode or "sha256:" + hashlib.sha256(blob.stdout).hexdigest() != source.checksum:
                     raise KnowledgeSearchError("source differs from bound revision",
                                                category="snapshot_revision_mismatch")
             result = _repository_source_candidate(

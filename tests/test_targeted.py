@@ -91,13 +91,11 @@ def test_exact_hit_preserves_provenance_and_never_opens_dense(tmp_path, source, 
 @pytest.mark.parametrize("kind", ["path", "source_ref"])
 def test_missing_runs_normal_retrieval_and_preserves_required_key(tmp_path, source, kind):
     app, backend = service(tmp_path)
-    response = app.search(request(kind, "src/missing.py"))
-    assert len(backend.calls) == 1
-    assert response.results == ()  # product in another file cannot satisfy a required path.
-    assert response.metadata["targeted"]["fallback_reason"] == "not_found"
-    assert response.metadata["targeted"]["anchor_enforcement"] == "exact_post_filter"
-    assert response.metadata["targeted"]["post_filter_removed"] == 1
-    assert response.telemetry.candidates_examined == 1
+    with pytest.raises(KnowledgeSearchError) as error:
+        app.search(request(kind, "src/missing.py"))
+    assert error.value.category == "unsupported_semantics"
+    assert error.value.metadata["targeted"]["fallback_reason"] == "not_found"
+    assert not backend.calls
 
 
 @pytest.mark.parametrize(
@@ -146,7 +144,9 @@ def test_symlink_and_path_scope_cannot_escape(tmp_path, source):
 
 def test_knowledge_type_scope_cannot_be_widened(tmp_path, source):
     app, _ = service(tmp_path, knowledge_types=("documentation",))
-    assert app.search(request()).results == ()
+    with pytest.raises(KnowledgeSearchError) as error:
+        app.search(request())
+    assert error.value.category == "unsupported_semantics"
     with pytest.raises(KnowledgeSearchError):
         app.search(replace(request(), knowledge_types=("code",)))
 
@@ -170,6 +170,22 @@ def test_revision_checked_against_head_and_source_bytes(tmp_path, source):
         app.search(request())
 
 
+def test_revision_verification_uses_original_non_utf8_bytes(tmp_path, source):
+    source.write_bytes(b"def product():\n    return '\xff'\n")
+    def git(*args):
+        return subprocess.check_output(["git", "-C", str(tmp_path), *args], text=True).strip()
+    git("init", "-q")
+    git("add", ".")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-qm", "fixture")
+    revision = git("rev-parse", "HEAD")
+    app, _ = service(tmp_path, revision=revision)
+    assert app.search(request()).results[0].revision == revision
+    source.write_bytes(b"def product():\n    return '\xfe'\n")
+    with pytest.raises(KnowledgeSearchError) as error:
+        app.search(request())
+    assert error.value.category == "snapshot_revision_mismatch"
+
+
 def test_classification_does_not_infer_from_query_signals_or_nested_expression():
     assert targetable_anchors(SearchIntent(canonical_query="src/service.py")) == ()
     assert targetable_anchors(SearchIntent(expression=Anchor("path", "src/service.py"))) == ()
@@ -178,10 +194,12 @@ def test_classification_does_not_infer_from_query_signals_or_nested_expression()
 
 def test_disabled_policy_legacy_and_ambiguous_lookup_keep_broad_path(tmp_path, source):
     app, backend = service(tmp_path, retrieval=RetrievalConfig(targeted="disabled"))
-    assert app.search(request()).results
-    assert len(backend.calls) == 1
+    with pytest.raises(KnowledgeSearchError) as error:
+        app.search(request())
+    assert error.value.category == "unsupported_semantics"
+    assert not backend.calls
     assert app.search(SearchRequest(intent=SearchIntent(semantic_terms=("product",)))).results
-    assert len(backend.calls) == 2
+    assert len(backend.calls) == 1
     original = backend.lookup_exact
 
     def ambiguous(anchor, scope):
@@ -190,9 +208,10 @@ def test_disabled_policy_legacy_and_ambiguous_lookup_keep_broad_path(tmp_path, s
 
     backend.lookup_exact = ambiguous
     app, _ = service(tmp_path, backend)
-    response = app.search(request())
-    assert response.metadata["targeted"]["fallback_reason"] == "exact_ambiguous"
-    assert len(backend.calls) == 3
+    with pytest.raises(KnowledgeSearchError) as error:
+        app.search(request())
+    assert error.value.metadata["targeted"]["fallback_reason"] == "exact_ambiguous"
+    assert len(backend.calls) == 1
 
 
 def test_other_required_semantics_not_silently_removed(tmp_path, source):
@@ -210,10 +229,11 @@ def test_optional_lookup_capability_falls_back(tmp_path, source):
         lexical=True, canonical_query=True
     )
     app, _ = service(tmp_path, backend)
-    response = app.search(request())
-    assert len(backend.calls) == 1
-    assert response.metadata["targeted"]["fallback_reason"] == "unsupported"
-    assert not response.metadata["targeted"]["targeted_attempted"]
+    with pytest.raises(KnowledgeSearchError) as error:
+        app.search(request())
+    assert not backend.calls
+    assert error.value.metadata["targeted"]["fallback_reason"] == "unsupported"
+    assert not error.value.metadata["targeted"]["targeted_attempted"]
     assert not QdrantVectorBackend.retrieval_capabilities.targeted_lookup
 
 
@@ -280,7 +300,9 @@ def test_admission_and_content_bounds_preserved(tmp_path, source):
     assert response.results[0].content.count("\n") == 2
     assert response.results[0].metadata["content_truncated"]
     app, _ = service(tmp_path, settings={"exclude_dirs": ["src"]})
-    assert not app.search(request()).results
+    with pytest.raises(KnowledgeSearchError) as error:
+        app.search(request())
+    assert error.value.category == "unsupported_semantics"
 
 
 def test_mismatched_backend_identity_or_revision_rejected(tmp_path, source):
@@ -329,9 +351,71 @@ def test_multiple_exact_anchors_are_all_enforced_on_fallback(tmp_path, source):
             Anchor("source_ref", "repository://owner/repo/other.py"),
         ),
     )
-    response = app.search(SearchRequest(intent=intent))
-    assert len(backend.calls) == 1 and not response.results
-    assert response.metadata["targeted"]["fallback_reason"] == "additional_required_semantics"
+    with pytest.raises(KnowledgeSearchError) as error:
+        app.search(SearchRequest(intent=intent))
+    assert error.value.category == "unsupported_semantics"
+    assert error.value.metadata["targeted"]["fallback_reason"] == "additional_required_semantics"
+    assert not backend.calls
+
+
+def test_fallback_passes_original_intent_to_capable_lexical_backend(tmp_path, source):
+    backend = RecordingLocal()
+    backend.retrieval_capabilities = RetrievalBackendCapabilities(
+        lexical=True, canonical_query=True, structured_anchors=True
+    )
+    received = []
+
+    def search(intent, scope, requirements):
+        received.append(intent)
+        return KnowledgeSearchResponse(backend.backend_id, "success")
+
+    backend.search = search
+    intent = request().intent
+    app, _ = service(tmp_path, backend, retrieval=RetrievalConfig(targeted="disabled"))
+    app.search(SearchRequest(intent=intent))
+    assert received == [intent]
+    app, _ = service(tmp_path, backend)
+    app.search(SearchRequest(intent=intent))
+    assert received[-1] is intent
+    backend.retrieval_capabilities = RetrievalBackendCapabilities(
+        lexical=True, canonical_query=True, structured_anchors=True, targeted_lookup=True
+    )
+    original_lookup = backend.lookup_exact
+
+    def ambiguous(anchor, scope):
+        found = original_lookup(anchor, scope)
+        return replace(found, results=found.results * 2)
+
+    backend.lookup_exact = ambiguous
+    app.search(SearchRequest(intent=intent))
+    assert received[-1] is intent
+    assert len(received) == 3
+
+
+@pytest.mark.parametrize("kind", ["path", "source_ref"])
+def test_dense_without_exact_capability_rejects_required_anchor(tmp_path, source, kind):
+    backend = RecordingLocal()
+    backend.retrieval_capabilities = RetrievalBackendCapabilities(
+        dense=True, canonical_query=True
+    )
+    app, _ = service(tmp_path, backend, retrieval=RetrievalConfig(
+        dense=DenseRetrievalConfig(enabled=True)
+    ))
+    with pytest.raises(KnowledgeSearchError) as error:
+        app.search(request(kind))
+    assert error.value.category == "unsupported_semantics"
+    assert error.value.metadata["targeted"]["fallback_reason"] == "unsupported"
+    assert not backend.calls
+
+
+def test_qdrant_required_anchor_rejects_before_backend_search(tmp_path, source):
+    app, _ = service(tmp_path, QdrantVectorBackend(), retrieval=RetrievalConfig(
+        dense=DenseRetrievalConfig(enabled=True)
+    ))
+    with pytest.raises(KnowledgeSearchError) as error:
+        app.search(request())
+    assert error.value.category == "unsupported_semantics"
+    assert error.value.metadata["targeted"]["fallback_reason"] == "unsupported"
 
 
 def test_empty_intent_and_mixed_convenience_fields_rejected(tmp_path):

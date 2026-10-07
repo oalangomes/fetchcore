@@ -42,15 +42,27 @@ def runtime_fingerprint():
 
 
 def summarize(rows):
-    values = sorted(x["wall_ms"] for x in rows)
+    accepted = [x for x in rows if x["status"] == "success"]
+    rejected = [x for x in rows if x["status"] == "rejected"]
+    if not accepted:
+        return {
+            "samples": len(rows),
+            "successful_samples": 0,
+            "rejected_samples": len(rejected),
+            "rejection_categories": sorted({x["error_category"] for x in rejected}),
+            "quality": "not measured: required semantics rejected",
+        }
+    values = sorted(x["wall_ms"] for x in accepted)
     return {
         "samples": len(rows),
+        "successful_samples": len(accepted),
+        "rejected_samples": len(rejected),
         "duration_ms": {
             name: values[max(0, math.ceil(len(values) * q) - 1)]
             for name, q in [("p50", 0.5), ("p95", 0.95), ("p99", 0.99)]
         },
         **{
-            key + "_mean": statistics.mean(x[key] for x in rows)
+            key + "_mean": statistics.mean(x[key] for x in accepted)
             for key in (
                 "evidence_recall_at_k",
                 "candidates_examined",
@@ -61,7 +73,7 @@ def summarize(rows):
                 "files_read",
             )
         },
-        "fallback_rate": statistics.mean(x["fallback_used"] for x in rows),
+        "fallback_rate": statistics.mean(x["fallback_used"] for x in accepted),
     }
 
 
@@ -159,7 +171,25 @@ def main():
                 app, backend = services[policy]
                 before = backend.broad_calls
                 started = time.perf_counter()
-                response = app.search(SearchRequest(intent=intent, limit=20))
+                try:
+                    response = app.search(SearchRequest(intent=intent, limit=20))
+                except KnowledgeSearchError as exc:
+                    if exc.category != "unsupported_semantics":
+                        raise
+                    if iteration >= 0:
+                        observations.append({
+                            "query_id": case.query_id,
+                            "iteration": iteration + 1,
+                            "policy": policy,
+                            "signal_kind": kind,
+                            "intent": intent.to_mapping(),
+                            "status": "rejected",
+                            "error_category": exc.category,
+                            "error_metadata": exc.metadata,
+                            "wall_ms": round((time.perf_counter() - started) * 1000, 3),
+                            "broad_calls": backend.broad_calls - before,
+                        })
+                    continue
                 wall_ms = (time.perf_counter() - started) * 1000
                 if iteration < 0:
                     continue
@@ -168,6 +198,7 @@ def main():
                     response, case.truth, iteration=iteration + 1, k=20
                 ).to_mapping()
                 row.update(
+                    status="success",
                     policy=policy,
                     signal_kind=kind,
                     intent=intent.to_mapping(),
@@ -197,9 +228,12 @@ def main():
             outcome = response.metadata["targeted"]["fallback_reason"]
             telemetry = response.telemetry.to_mapping()
         except KnowledgeSearchError as exc:
-            outcome, telemetry = exc.category, None
-        assert outcome == expected
-        assert backend.broad_calls - before == (1 if expected == "not_found" else 0)
+            outcome, telemetry = exc.category, {"error_metadata": exc.metadata}
+        if expected == "not_found":
+            assert outcome == "unsupported_semantics"
+        else:
+            assert outcome == expected
+        assert backend.broad_calls == before
         safety.append(
             {
                 "kind": kind,
@@ -230,7 +264,7 @@ def main():
         raise RuntimeError("runtime source changed during benchmark")
     payload = {
         "schema_version": 1,
-        "protocol": "fetchcore.targeted-exact-v1",
+        "protocol": "fetchcore.targeted-exact-v2",
         "status": "complete",
         "corpus": suite.corpus,
         "ground_truth_fingerprint": suite.fingerprint,
@@ -249,6 +283,10 @@ def main():
         "warmups": args.warmups,
         "projection": None,
         "embedding_identity": None,
+        "policy_semantics": {
+            "disabled": "normal retrieval with original SearchIntent",
+            "exact_unique": "bounded exact acquisition; fallback uses original SearchIntent",
+        },
         "subset_rule": "all evidence alternatives/requirements refer to exactly one source",
         "excluded_cases": [
             c.query_id for c in suite.cases if c.query_id not in {x[0].query_id for x in cases}

@@ -42,8 +42,9 @@ translation checks. FetchCore retrieves evidence; consumers decide satisfaction
 and authority.
 
 Outcomes are `exact_unique`, `exact_ambiguous`, `not_found` and `unsupported`.
-Disabled policy and additional required semantics have separate fallback
-reasons. Errors in snapshots, revision, scope or backend protocol propagate;
+Disabled policy bypasses exact acquisition and sends the original intent through
+normal translation validation and backend search. Additional required semantics
+have a separate fallback reason. Errors in snapshots, revision, scope or backend protocol propagate;
 they do not turn into misses or trigger fallback.
 
 ## Capability and adapters
@@ -60,10 +61,11 @@ not changed.
 | Local | Direct safe read of one source; no corpus enumeration or lexical scoring. Existing include/exclude patterns, git-ignore admission and knowledge-type rules apply. |
 | Solr | Existing exact keyword translation and snapshot validation, with a two-record probe and dense disabled for that probe. |
 | OpenSearch | Existing exact keyword translation and snapshot validation, with a two-record probe and dense disabled for that probe. |
-| Qdrant | Capability unavailable in this slice; explicit fallback to configured acquisition and exact post-filtering. |
+| Qdrant | Capability unavailable in this slice; normal retrieval receives the original intent and rejects unsupported hard semantics. |
 
-Local revision-bound lookup verifies HEAD and the selected file's Git blob
-identity before attaching the revision. A changed/untracked file cannot receive
+Local revision-bound lookup verifies HEAD and compares the selected file's
+byte checksum against the committed Git blob before attaching the revision.
+A changed/untracked file cannot receive
 a committed revision. Without a bound revision, current working-tree bytes have
 an explicitly absent revision. Local content retains existing redaction and
 source-checksum semantics; `document_checksum` identifies the complete source.
@@ -79,27 +81,20 @@ canonical knowledge schema is changed.
 
 ## Explicit fallback
 
-Fallback calls the original backend search with the same text, scope, mode and
-candidate budget. Supported top-level exact anchors move to an observable
-`exact_post_filter`: each returned record must still match **every** required
-path/reference. All other anchors and expressions remain in the translator's
-existing rejection policy. This permits dense acquisition without pretending
-that the vector query enforced a required anchor.
-
-Filtering a bounded candidate window may underfill it or miss relevant evidence
-outside that window. `post_filter_may_underfill=true` makes this limitation
-explicit; there is no adaptive budget, mode substitution or removal of scope.
-A missing required path normally produces no final results even if the broad
-query finds text in other files. Missing source-reference-only requests may
-still fail if the configured broad channel cannot accept empty query text.
+When lookup is unsupported, ambiguous or missing, normal retrieval receives the
+**original SearchIntent** with every required anchor intact. The existing
+translation policy checks the configured lexical, dense or hybrid channel.
+If the channel cannot preserve a required anchor, it raises
+`KnowledgeSearchError(category="unsupported_semantics")`. In particular, local
+and dense-only fallback cannot enforce path/source-reference anchors. There is
+no post-filter, adaptive budget, mode substitution or removal of scope.
 
 ## Evidence and telemetry
 
 Exact results use the existing `QueryMatchEvidence` (`exact_structural`) and
 `EvidenceObservation` vocabulary. No strength or confidence is synthesized.
-Anchor origin is retained in its `QuerySignal`. Acquisition through broad
-fallback also preserves the original channel evidence and adds the exact
-identity observation after filtering.
+Anchor origin is retained in its `QuerySignal`. Normal fallback preserves the
+backend's own evidence without synthesizing a targeted match.
 
 `response.metadata.targeted` and `response.telemetry.metadata.targeted` carry
 the same additive, version-1 audit mapping:
@@ -107,10 +102,9 @@ the same additive, version-1 audit mapping:
 - `targeted_attempted`, `targeted_signal_kind`, `targeted_hits`, `targeted_ms`;
 - `outcome`, `fallback_used`, `fallback_reason`;
 - `lookup_candidates_examined`, total `candidates_examined`;
-- fallback `anchor_enforcement`, `post_filter_removed`, `post_filter_may_underfill`.
 
 A `targeted` stage precedes existing stages on fallback. Total duration/candidate
-counts include both operations; returned counts/chars describe the filtered
+counts include both operations; returned counts/chars describe the backend
 results. High-resolution `targeted_ms` is in milliseconds; existing integer
 stage/response duration contracts remain unchanged. Backend response metadata
 still describes raw backend acquisition where applicable. Queries without a

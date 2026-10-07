@@ -80,30 +80,25 @@ def search_with_targeted(
     intent: SearchIntent,
     scope: SearchScope,
 ) -> KnowledgeSearchResponse:
-    """Preserve required anchors by exact post-filtering on broad fallback.
-
-    Post-filtering cannot enlarge the backend candidate budget. It can therefore
-    underfill the result window; this is recorded, not hidden by adaptive retrieval.
-    """
+    """Return a unique exact source or search with the original intent."""
     started = time.monotonic()
+    mode = scope.retrieval.mode if scope.retrieval else "lexical"
+    if scope.retrieval is not None and scope.retrieval.targeted == "disabled":
+        _validate_broad(intent, mode, backend)
+        return backend.search(intent, scope, ())
     anchors = targetable_anchors(intent)
     targets = tuple(validate_target(anchor, scope) for anchor in anchors)
-    mode = scope.retrieval.mode if scope.retrieval else "lexical"
     if not targets:
-        validate_intent_translation(
-            intent, channel=mode, capabilities=backend.retrieval_capabilities
-        )
+        _validate_broad(intent, mode, backend)
         return backend.search(intent, scope, ())
 
     attempted = False
     lookup = None
     examined = 0
-    reason: TargetedOutcome | Literal["policy_disabled", "additional_required_semantics"] = (
+    reason: TargetedOutcome | Literal["additional_required_semantics"] = (
         "unsupported"
     )
-    if scope.retrieval is not None and scope.retrieval.targeted == "disabled":
-        reason = "policy_disabled"
-    elif len(intent.anchors) != 1 or intent.expression is not None:
+    if len(intent.anchors) != 1 or intent.expression is not None:
         reason = "additional_required_semantics"
     elif backend.retrieval_capabilities.targeted_lookup:
         if not isinstance(backend, ExactLookupBackend):
@@ -146,39 +141,20 @@ def search_with_targeted(
         "fallback_reason": None if early else reason,
         "outcome": reason,
         "lookup_candidates_examined": examined,
+        "candidates_examined": examined,
     }
     if early:
         assert lookup is not None
         response = replace(lookup, results=tuple(_annotate(x, targets) for x in lookup.results))
     else:
-        # Only the supported exact keys move to an explicit post-filter. All other
-        # required semantics remain in the original translator's reject policy.
-        broad_intent = replace(intent, anchors=tuple(a for a in intent.anchors if a not in anchors))
-        audit["anchor_enforcement"] = "exact_post_filter"
         try:
-            validate_intent_translation(
-                broad_intent, channel=mode, capabilities=backend.retrieval_capabilities
-            )
-            response = backend.search(broad_intent, scope, ())
+            _validate_broad(intent, mode, backend)
+            response = backend.search(intent, scope, ())
         except KnowledgeSearchError as exc:
             exc.metadata["targeted"] = audit
             raise
         broad_examined = (
             response.telemetry.candidates_examined if response.telemetry else len(response.results)
-        )
-        kept = []
-        for result in response.results:
-            if all(matches_target(result, target) for target in targets):
-                _validate_hit(result, targets, scope)
-                kept.append(_annotate(result, targets))
-        audit["post_filter_removed"] = len(response.results) - len(kept)
-        audit["post_filter_may_underfill"] = True
-        response = replace(
-            response,
-            results=tuple(kept),
-            status=("found" if kept else "not_found")
-            if response.status in ("found", "not_found")
-            else response.status,
         )
     duration = elapsed_ms(started, time.monotonic())
     original = response.telemetry
@@ -208,6 +184,14 @@ def search_with_targeted(
         duration_ms=duration,
         metadata={**response.metadata, "targeted": audit},
     )
+
+
+def _validate_broad(intent: SearchIntent, mode: str, backend: KnowledgeSearchBackend) -> None:
+    channels = ("lexical", "dense") if mode == "hybrid" else (mode,)
+    for channel in channels:
+        validate_intent_translation(
+            intent, channel=channel, capabilities=backend.retrieval_capabilities
+        )
 
 
 def _validate_hit(
