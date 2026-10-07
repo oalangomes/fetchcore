@@ -101,6 +101,8 @@ This keeps runner affinity outside FetchCore domain contracts.
 
 `managed_solr: true` starts pinned Solr `9.10.1` on the selected self-hosted runner, creates the requested collection from the FetchCore configset in `infra/solr/configset`, and mounts a named Docker volume.
 
+By default, Docker assigns an available localhost port for the managed container. The workflow uses that port for readiness checks, indexing, and evaluation. Set `solr_port` to a nonzero port only when the host needs a fixed port; the named volume preserves the index independently of the port.
+
 ```text
 workflow run N
     ↓

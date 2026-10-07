@@ -44,10 +44,10 @@ on:
         type: string
         default: http://127.0.0.1:8983/solr
       solr_port:
-        description: Host port for managed Solr.
+        description: Host port for managed Solr; 0 assigns an available port.
         required: false
         type: string
-        default: "8983"
+        default: "0"
       solr_volume:
         description: Persistent Docker volume for managed Solr state.
         required: false
@@ -117,10 +117,10 @@ on:
         type: string
         default: http://127.0.0.1:8983/solr
       solr_port:
-        description: Host port for managed Solr.
+        description: Host port for managed Solr; 0 assigns an available port.
         required: false
         type: string
-        default: "8983"
+        default: "0"
       solr_volume:
         description: Persistent Docker volume.
         required: false
@@ -216,17 +216,25 @@ jobs:
             *[!A-Za-z0-9_.-]*|"") echo "solr_volume contains unsupported characters" >&2; exit 2 ;;
           esac
           container="fetchcore-solr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          publish="127.0.0.1:${SOLR_PORT}:8983"
+          if [ "$SOLR_PORT" = "0" ]; then
+            publish="127.0.0.1::8983"
+          fi
           docker rm -f "$container" >/dev/null 2>&1 || true
           docker volume create "$SOLR_VOLUME" >/dev/null
           docker run -d \
             --name "$container" \
-            -p "127.0.0.1:${SOLR_PORT}:8983" \
+            -p "$publish" \
             -v "${SOLR_VOLUME}:/var/solr" \
             -v "$GITHUB_WORKSPACE/.fetchcore-runtime/infra/solr/configset:/fetchcore-configset:ro" \
             solr:9.10.1 \
             solr-precreate "$COLLECTION" /fetchcore-configset >/dev/null
-          printf 'FETCHCORE_SOLR_CONTAINER=%s\n' "$container" >> "$GITHUB_ENV"
-          printf 'FETCHCORE_SOLR_URL=http://127.0.0.1:%s/solr\n' "$SOLR_PORT" >> "$GITHUB_ENV"
+          published="$(docker port "$container" 8983/tcp)"
+          host_port="${published##*:}"
+          case "$host_port" in
+            *[!0-9]*|"") echo "Could not determine managed Solr host port: $published" >&2; exit 1 ;;
+          esac
+          printf 'FETCHCORE_SOLR_URL=http://127.0.0.1:%s/solr\n' "$host_port" >> "$GITHUB_ENV"
 
       - name: Use external Solr
         if: ${{ !inputs.managed_solr }}
@@ -347,6 +355,5 @@ jobs:
       - name: Stop managed Solr
         if: ${{ always() && inputs.managed_solr }}
         run: |
-          if [ -n "${FETCHCORE_SOLR_CONTAINER:-}" ]; then
-            docker rm -f "$FETCHCORE_SOLR_CONTAINER" >/dev/null 2>&1 || true
-          fi
+          container="fetchcore-solr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker rm -f "$container" >/dev/null 2>&1 || true
