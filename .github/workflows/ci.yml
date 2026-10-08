@@ -28,6 +28,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: python -m ruff check .
       - run: python scripts/check_docs.py
+      - run: python scripts/docs/localize.py check
 
   typecheck:
     name: typecheck
