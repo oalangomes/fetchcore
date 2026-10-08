@@ -33,6 +33,7 @@ def test_defaults_and_explicit_sdk_bootstrap(tmp_path: Path) -> None:
     default = load_runtime_config(environ={})
     assert default.backend == "local-semantic"
     assert default.ollama.url == "http://localhost:11434"
+    assert "backends.local-semantic" not in default.sources
     config = FetchCoreRuntimeConfig(workspace=tmp_path, repository="owner/repo")
     service = service_from_runtime_config(config)
     assert service.repositories == ("owner/repo",)
@@ -56,6 +57,11 @@ def test_yaml_env_and_explicit_precedence(tmp_path: Path) -> None:
         "url": "http://caller:8983/solr", "collection": "from-file"
     }
     assert config.ollama.url == "http://env:11434"
+    assert config.sources["runtime.backend"] == "config_file"
+    assert config.sources["backends.solr.url"] == "explicit"
+    assert config.sources["backends.solr.collection"] == "config_file"
+    assert config.sources["embedding.ollama.url"] == "environment"
+    assert "runtime.workspace" not in config.sources
     assert load_runtime_config(path=path, environ={}).backend_settings["url"] == "http://file:8983/solr"
 
 
@@ -117,6 +123,8 @@ def test_legacy_mcp_and_qdrant_embedding_inputs(tmp_path: Path) -> None:
     )
     assert config.ollama.url == "http://legacy:11434"
     assert config.backend_settings["embedding_model"] == "new-model"
+    assert config.sources["embedding.ollama.url"] == "environment"
+    assert config.sources["backends.qdrant-vector.embedding_url"] == "environment"
     assert service_from_runtime_config(config).repositories == ("owner/repo",)
 
 

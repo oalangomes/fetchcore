@@ -138,6 +138,36 @@ jobs:
                   time.sleep(2)
           raise SystemExit(f"Solr did not become ready: {error}")
           PY
+      - name: Inspect the live Solr runtime
+        env:
+          FETCHCORE_BACKEND: solr
+          FETCHCORE_SOLR_URL: http://127.0.0.1:8983/solr
+          FETCHCORE_SOLR_COLLECTION: fetchcore-ci
+        run: |
+          set -o pipefail
+          output="$RUNNER_TEMP/fetchcore-runtime-inspection"
+          mkdir -p "$output"
+          fetchcore doctor --json > "$output/doctor.json"
+          fetchcore capabilities --json > "$output/capabilities.json"
+          fetchcore config show --json > "$output/config.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "fetchcore-runtime-inspection"
+          doctor = json.loads((root / "doctor.json").read_text(encoding="utf-8"))
+          capabilities = json.loads((root / "capabilities.json").read_text(encoding="utf-8"))
+          config = json.loads((root / "config.json").read_text(encoding="utf-8"))
+          assert doctor["result"]["status"] == "healthy", doctor
+          assert capabilities["result"]["backend"] == "solr", capabilities
+          assert capabilities["result"]["indexing"] == {
+              "incremental": True,
+              "rebuild": True,
+          }, capabilities
+          assert config["result"]["config"]["backends"]["solr"]["collection"] == "fetchcore-ci"
+          assert config["result"]["sources"]["backends.solr.collection"] == "environment"
+          PY
       - name: Validate native targeted retrieval contract
         env:
           FETCHCORE_TARGETED_SOLR_URL: http://127.0.0.1:8983/solr
