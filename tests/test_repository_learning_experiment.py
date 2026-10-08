@@ -19,6 +19,12 @@ assert SPEC is not None and SPEC.loader is not None
 module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
 
+WRAPPER = RUNNER.parent / "wrappers" / "codex_harness.py"
+WRAPPER_SPEC = importlib.util.spec_from_file_location("repository_learning_codex", WRAPPER)
+assert WRAPPER_SPEC is not None and WRAPPER_SPEC.loader is not None
+wrapper_module = importlib.util.module_from_spec(WRAPPER_SPEC)
+WRAPPER_SPEC.loader.exec_module(wrapper_module)
+
 import protocol as protocol_module
 
 
@@ -129,3 +135,80 @@ def test_rendered_study_prompt_does_not_include_ground_truth_patterns() -> None:
     )
     assert "required_patterns" not in prompt
     assert "vector score is authority" not in prompt
+
+
+def test_checked_in_prompt_templates_render_literal_json_examples() -> None:
+    root = RUNNER.parent
+    scenario = minimal_scenario()
+    study = module.render_study_prompt(
+        (root / "prompts" / "study.md").read_text(encoding="utf-8"),
+        scenario,
+        arm_name="direct",
+        memory_workspace="w",
+        memory_project_name="p",
+    )
+    evaluation = module.render_evaluation_prompt(
+        (root / "prompts" / "evaluate.md").read_text(encoding="utf-8"),
+        scenario,
+        arm_name="direct",
+        memory_workspace="w",
+        memory_project_name="p",
+        recalled={"q1": {"content": []}},
+    )
+
+    assert '"status": "success"' in study
+    assert '"answers": [' in evaluation
+
+
+def test_codex_wrapper_uses_fetchcore_evidence_character_telemetry() -> None:
+    item = {
+        "type": "mcp_tool_call",
+        "result": {
+            "structuredContent": {
+                "results": [{"content": "small"}],
+                "telemetry": {"returned_chars": 123},
+                "diagnostics": "x" * 1000,
+            }
+        },
+    }
+    assert wrapper_module._returned_chars([item]) == 123
+
+
+def test_codex_wrapper_rejects_non_exploration_direct_command() -> None:
+    with pytest.raises(wrapper_module.HarnessError, match="forbidden command"):
+        wrapper_module._audit_direct_commands(
+            [{"type": "command_execution", "command": "python -m fetchcore.cli search x"}]
+        )
+
+
+def test_codex_wrapper_audits_commands_inside_shell_wrapper() -> None:
+    wrapper_module._audit_direct_commands(
+        [
+            {
+                "type": "command_execution",
+                "command": '/bin/bash -lc "rg --files | sed -n \'1,20p\'"',
+            }
+        ]
+    )
+
+
+def test_codex_wrapper_does_not_split_quoted_regex_alternation() -> None:
+    wrapper_module._audit_direct_commands(
+        [
+            {
+                "type": "command_execution",
+                "command": 'rg -n "SearchIntent|SearchScope|RRF" . | sed -n \'1,20p\'',
+            }
+        ]
+    )
+
+
+def test_codex_wrapper_ignores_long_prose_when_counting_paths(tmp_path: Path) -> None:
+    items = [
+        {
+            "type": "command_execution",
+            "command": "rg canonical",
+            "aggregated_output": "prose " * 200,
+        }
+    ]
+    assert wrapper_module._direct_paths(items, tmp_path) == set()

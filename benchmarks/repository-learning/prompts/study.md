@@ -29,25 +29,25 @@ Do not write to ai-memory directly. Do not include benchmark Ground Truth or spe
 Return exactly one JSON object on stdout and nothing else:
 
 ```json
-{
+{{
   "status": "success",
   "memory_pages": [
-    {
+    {{
       "path": "knowledge/topic.md",
       "body": "# Topic\n\nDurable, source-grounded facts..."
-    }
+    }}
   ],
-  "metrics": {
+  "metrics": {{
     "tool_calls": 0,
     "files_read": 0,
     "evidence_items": 0,
     "returned_chars": 0,
     "input_tokens": 0,
     "output_tokens": 0
-  },
+  }},
   "tool_events_verified": false,
   "tool_events": []
-}
+}}
 ```
 
 `memory_pages` must contain at least one page. Every body starts with one `# H1`. Keep pages fact-like and useful to a future agent; preserve paths/source references when they materially support a fact.

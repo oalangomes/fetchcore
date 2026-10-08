@@ -21,14 +21,14 @@ Answer every question from the recalled memory only. If memory does not support 
 Return exactly one JSON object on stdout and nothing else:
 
 ```json
-{
+{{
   "answers": [
-    {
+    {{
       "question_id": "question-id",
       "answer": "memory-grounded answer"
-    }
+    }}
   ]
-}
+}}
 ```
 
 Return exactly one answer for every supplied question ID and no extra IDs.
