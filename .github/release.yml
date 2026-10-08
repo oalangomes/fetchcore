@@ -1,0 +1,17 @@
+changelog:
+  exclude:
+    labels:
+      - release:skip
+    authors:
+      - dependabot[bot]
+  categories:
+    - title: "Breaking changes"
+      labels: [release:major]
+    - title: "Features"
+      labels: [enhancement, feature, release:minor]
+    - title: "Fixes"
+      labels: [bug, fix]
+    - title: "Documentation"
+      labels: [documentation, docs]
+    - title: "Other changes"
+      labels: ["*"]
