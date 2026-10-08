@@ -1,0 +1,95 @@
+schema_version: 1
+id: fetchcore-self-architecture
+repository:
+  identity: oalangomes/fetchcore
+  revision: e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c
+study:
+  objective: >-
+    Learn FetchCore's current repository-knowledge, retrieval and serving boundaries well
+    enough that a fresh agent can explain the canonical source of truth, SearchIntent/
+    SearchScope responsibilities, unsupported required-semantics policy, current retrieval
+    channels/backends, hybrid fusion baseline, and MCP serving boundary.
+arms:
+  direct:
+    tool_policy: >-
+      Use ordinary repository exploration only (for example repository file listing,
+      lexical search and bounded file reads). Do not call FetchCore search/get_source,
+      FetchCore MCP, or another prebuilt repository retrieval/indexing service.
+    budget: {}
+  fetchcore:
+    tool_policy: >-
+      Acquire repository evidence through FetchCore search/get_source only. Do not read or
+      grep repository files directly. FetchCore retrieval scores are candidate signals, not
+      truth; inspect returned source evidence before writing durable facts.
+    budget: {}
+  fetchcore_bounded:
+    tool_policy: >-
+      Acquire repository evidence through FetchCore search/get_source only. Do not read or
+      grep repository files directly. Stop within the explicit tool/context budget and
+      prioritize the smallest evidence set that supports durable facts.
+    budget:
+      max_tool_calls: 24
+      max_returned_chars: 20000
+facts:
+  - id: canonical-knowledge
+    evidence:
+      - path: docs/architecture/repository-knowledge.md
+      - path: README.md
+  - id: intent-scope-boundary
+    evidence:
+      - path: docs/concepts/search-intent.md
+      - path: docs/architecture/retrieval.md
+  - id: required-semantics-reject
+    evidence:
+      - path: docs/concepts/search-intent.md
+  - id: retrieval-backends
+    evidence:
+      - path: README.md
+      - path: docs/architecture/retrieval.md
+  - id: hybrid-rrf
+    evidence:
+      - path: docs/architecture/retrieval.md
+  - id: serving-boundary
+    evidence:
+      - path: docs/architecture/serving.md
+questions:
+  - id: q-canonical-knowledge
+    fact_id: canonical-knowledge
+    prompt: What remains canonical truth in FetchCore, and how should backend search/vector stores be treated?
+    required_patterns:
+      - '(?i)canonical\s+repository\s+knowledge'
+      - '(?i)(rebuildable|replaceable).*(projection|store)|(projection|store).*(rebuildable|replaceable)'
+  - id: q-intent-scope
+    fact_id: intent-scope-boundary
+    prompt: What is the responsibility split between SearchIntent and SearchScope?
+    required_patterns:
+      - '(?i)SearchIntent.*(meaning|query|intent)'
+      - '(?i)SearchScope.*(repository|revision|path|scope|knowledge type|result)'
+  - id: q-required-semantics
+    fact_id: required-semantics-reject
+    prompt: What happens when a retrieval channel cannot preserve a required anchor or boolean structure?
+    required_patterns:
+      - '(?i)(reject|rejected|unsupported_semantics)'
+      - '(?i)(required|anchor|boolean)'
+    forbidden_patterns:
+      - '(?i)silently\s+(drop|ignore|flatten)'
+  - id: q-backends
+    fact_id: retrieval-backends
+    prompt: Which retrieval adapters are currently named by FetchCore?
+    required_patterns:
+      - '(?i)local'
+      - '(?i)Solr'
+      - '(?i)OpenSearch'
+      - '(?i)Qdrant'
+  - id: q-hybrid
+    fact_id: hybrid-rrf
+    prompt: What is the current baseline fusion strategy for hybrid retrieval?
+    required_patterns:
+      - '(?i)RRF|reciprocal\s+rank\s+fusion'
+      - '(?i)(lexical|sparse).*(dense)|dense.*(lexical|sparse)'
+  - id: q-serving
+    fact_id: serving-boundary
+    prompt: What is the MCP serving path and where are backend-specific protocol details allowed?
+    required_patterns:
+      - '(?i)MCP.*RetrievalApplicationService.*KnowledgeSearchBackend'
+      - '(?i)(MCP|transport).*(does not|not).*(Solr|OpenSearch|Qdrant)|backend.*(adapter|protocol)'
