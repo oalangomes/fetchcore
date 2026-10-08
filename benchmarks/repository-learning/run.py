@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Repository Learning Benchmark orchestration."""
 
 from __future__ import annotations
@@ -42,8 +41,10 @@ def markdown_report(payload: dict[str, object]) -> str:
         f"- Repository: `{payload['repository']['identity']}`",
         f"- Revision: `{payload['repository']['revision']}`",
         "",
-        "| Arm | FactRecall | FactPrecision | Questions | Memory pages | Tool calls | "
-        "Returned chars | Wall ms |",
+        (
+            "| Arm | FactRecall | FactPrecision | Questions | Memory pages | Tool calls | "
+            "Returned chars | Wall ms |"
+        ),
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     arms = payload["arms"]
@@ -72,8 +73,10 @@ def markdown_report(payload: dict[str, object]) -> str:
     lines.extend(
         [
             "",
-            "FactRecall/FactPrecision measure the durable-memory evaluation only. "
-            "They are not retrieval authority scores.",
+            (
+                "FactRecall/FactPrecision measure the durable-memory evaluation only. "
+                "They are not retrieval authority scores."
+            ),
             "",
         ]
     )
