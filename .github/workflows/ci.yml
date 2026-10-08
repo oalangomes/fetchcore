@@ -192,6 +192,66 @@ jobs:
           payload = json.loads(path.read_text(encoding="utf-8"))
           assert payload["result"]["noop"] is True, payload
           PY
+      - name: Exercise CLI search and source journey
+        env:
+          FETCHCORE_BACKEND: solr
+          FETCHCORE_SOLR_URL: http://127.0.0.1:8983/solr
+          FETCHCORE_SOLR_COLLECTION: fetchcore-ci
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          workspace = Path(os.environ["GITHUB_WORKSPACE"])
+          registry = Path(os.environ["RUNNER_TEMP"]) / "fetchcore-cli-registry"
+          common = [
+              "--cache-root", str(registry),
+              "--allowed-root", str(workspace),
+          ]
+
+          def run(arguments: list[str]) -> dict[str, object]:
+              completed = subprocess.run(
+                  arguments,
+                  check=True,
+                  capture_output=True,
+                  text=True,
+              )
+              return json.loads(completed.stdout)
+
+          registration = run([
+              "fetchcore", "repo", "--cache-root", str(registry),
+              "--allowed-root", str(workspace), "add", str(workspace), "--json",
+          ])
+          assert registration["result"]["repository"] == os.environ["FETCHCORE_INDEX_REPOSITORY"]
+
+          search = run([
+              "fetchcore", "search",
+              "where is runtime configuration resolved?",
+              "--repo", os.environ["FETCHCORE_INDEX_REPOSITORY"],
+              "--limit", "10", "--knowledge-type", "code",
+              *common, "--json",
+          ])
+          assert search["status"] == "succeeded", search
+          expected = [
+              hit for hit in search["result"]["results"]
+              if hit["source"].endswith("src/fetchcore/application/runtime_config.py")
+          ]
+          assert expected, search
+          hit = expected[0]
+          assert hit["revision"] == os.environ["FETCHCORE_INDEX_REVISION"], hit
+
+          source = run([
+              "fetchcore", "source", hit["source_ref"],
+              "--revision", hit["revision"],
+              *common, "--json",
+          ])
+          assert source["status"] == "succeeded", source
+          assert source["result"]["repository"] == search["result"]["repository"]
+          assert source["result"]["revision"] == hit["revision"]
+          assert "def load_runtime_config" in source["result"]["content"]
+          PY
       - name: Smoke real MCP search and source access
         run: |
           python scripts/dogfood_mcp_eval.py \
