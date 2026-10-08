@@ -138,6 +138,11 @@ jobs:
                   time.sleep(2)
           raise SystemExit(f"Solr did not become ready: {error}")
           PY
+      - name: Validate native targeted retrieval contract
+        env:
+          FETCHCORE_TARGETED_SOLR_URL: http://127.0.0.1:8983/solr
+          FETCHCORE_TARGETED_SOLR_COLLECTION: fetchcore-ci
+        run: python -m pytest -q tests/test_targeted_integration.py -m solr_integration
       - name: Exercise operational indexing CLI
         run: |
           set -o pipefail
@@ -195,4 +200,3 @@ jobs:
       - name: Stop ephemeral Solr
         if: ${{ always() }}
         run: docker rm -f fetchcore-ci-solr >/dev/null 2>&1 || true
-

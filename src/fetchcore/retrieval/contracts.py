@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Literal, Protocol, TypeAlias, cast, get_args
+from typing import Literal, Protocol, TypeAlias, cast, get_args, runtime_checkable
 
 from fetchcore.retrieval.evidence import EvidenceObservation, QueryMatchEvidence
 from fetchcore.retrieval import RetrievalBackendCapabilities, RetrievalConfig
@@ -442,4 +442,17 @@ class KnowledgeSearchBackend(Protocol):
         scope: SearchScope,
         requirements: tuple[SearchRequirement, ...],
     ) -> KnowledgeSearchResponse:
+        ...
+
+
+@runtime_checkable
+class ExactLookupBackend(Protocol):
+    """Optional exact acquisition port; returns ordinary bounded search results.
+
+    Implementations must report ``output_truncated`` even for empty results.
+    At most two records are needed to distinguish unique from ambiguous lookup.
+    Errors (including revision/protocol failures) must propagate, never become misses.
+    """
+
+    def lookup_exact(self, anchor: Anchor, scope: SearchScope) -> KnowledgeSearchResponse:
         ...

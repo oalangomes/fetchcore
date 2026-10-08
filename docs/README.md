@@ -24,3 +24,5 @@ Use this index to find the current contract. Historical extraction notes and ind
 ## Documentation rules
 
 Use lowercase kebab-case filenames (except numbered ADRs), one H1 per page, relative internal links, explicit status labels for historical or proposed behavior, portable text diagrams, and copyable commands. Architecture records boundaries; concepts define vocabulary; guides give tasks; reference states current contracts; benchmarks preserve reproducible evidence; ADRs record durable decisions and alternatives. Keep marketing language out of reference pages and avoid duplicating a canonical explanation.
+
+- [Targeted exact retrieval](concepts/targeted-retrieval.md)

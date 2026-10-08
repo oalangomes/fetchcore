@@ -95,6 +95,7 @@ def scan_repository_text(
     max_files: int,
     max_file_bytes: int,
     max_total_bytes: int,
+    selected_paths: tuple[str, ...] | None = None,
 ) -> SafeScanResult:
     """Read bounded regular files without following links outside the workspace."""
 
@@ -120,7 +121,9 @@ def scan_repository_text(
     evaluated = 0
     bytes_read = 0
 
-    repository_paths = _repository_paths(root)
+    repository_paths = (
+        _repository_paths(root) if selected_paths is None else tuple(sorted(set(selected_paths)))
+    )
     discovered_by_source_kind = Counter(source_kind(item) for item in repository_paths)
     for raw_path in repository_paths:
         evaluated += 1
@@ -135,6 +138,15 @@ def scan_repository_text(
         if not _matches_file(relative, includes):
             record_skip("not_included", relative)
             continue
+        if selected_paths is not None:
+            # Match broad scan admission without enumerating the repository.
+            ignored = subprocess.run(
+                ["git", "check-ignore", "--quiet", "--", relative], cwd=root,
+                capture_output=True, check=False, timeout=10,
+            )
+            if ignored.returncode == 0:
+                record_skip("ignored", relative)
+                continue
         eligible += 1
         eligible_by_source_kind[source_kind(relative)] += 1
         if len(sources) >= max_files:
