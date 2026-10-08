@@ -20,6 +20,23 @@ from fetchcore.embedding import (
     ProjectionV3EmbeddingSerializer,
     vector_embedding_serializer_fingerprint,
 )
+from fetchcore.retrieval import RetrievalConfig, RetrievalConfigurationError
+
+
+def _retrieval_with_transport_controls() -> RetrievalConfig:
+    return RetrievalConfig.from_mapping(
+        {
+            "dense": {
+                "enabled": True,
+                "embedding": {
+                    "provider": "ollama",
+                    "model": "embeddinggemma",
+                    "request_batch_size": 7,
+                    "timeout_seconds": 45,
+                },
+            }
+        }
+    )
 
 
 def test_embedding_contract_is_backend_neutral() -> None:
@@ -135,3 +152,117 @@ def test_ollama_embedding_http_error_preserves_bounded_diagnostics(
         metadata["provider_error"]
         == "input exceeds maximum context length and cannot be truncated further"
     )
+
+
+def test_embedding_transport_controls_round_trip() -> None:
+    config = _retrieval_with_transport_controls()
+    embedding = config.dense.embedding
+
+    assert embedding.provider == "ollama"
+    assert embedding.model == "embeddinggemma"
+    assert embedding.request_batch_size == 7
+    assert embedding.timeout_seconds == 45.0
+    assert embedding.to_mapping() == {
+        "provider": "ollama",
+        "model": "embeddinggemma",
+        "timeout_seconds": 45.0,
+        "request_batch_size": 7,
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("request_batch_size", 0),
+        ("timeout_seconds", 0),
+        ("timeout_seconds", float("inf")),
+    ],
+)
+def test_embedding_transport_controls_fail_closed(
+    field: str,
+    value: object,
+) -> None:
+    with pytest.raises(RetrievalConfigurationError):
+        RetrievalConfig.from_mapping(
+            {
+                "dense": {
+                    "enabled": True,
+                    "embedding": {
+                        "provider": "ollama",
+                        "model": "embeddinggemma",
+                        field: value,
+                    },
+                }
+            }
+        )
+
+
+def test_ollama_embedding_retries_known_transient_transport_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+    sleeps: list[float] = []
+
+    class Response:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+        def read(self) -> bytes:
+            return b'{"embeddings":[[1.0,2.0]]}'
+
+    def flaky(*args: object, **kwargs: object) -> object:
+        nonlocal calls
+        del args, kwargs
+        calls += 1
+        if calls == 1:
+            raise HTTPError(
+                "http://localhost:11434/api/embed",
+                400,
+                "Bad Request",
+                hdrs=None,
+                fp=BytesIO(
+                    b'{"error":"health resp: Get \\"http://127.0.0.1:59055/health\\": connectex"}'
+                ),
+            )
+        return Response()
+
+    monkeypatch.setattr(ollama_module, "urlopen", flaky)
+    monkeypatch.setattr(ollama_module, "sleep", sleeps.append)
+
+    assert OllamaEmbeddingProvider(model="embeddinggemma").embed(("hello",)) == (
+        (1.0, 2.0),
+    )
+    assert calls == 2
+    assert sleeps == [0.25]
+
+
+def test_ollama_embedding_does_not_retry_generic_bad_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+    sleeps: list[float] = []
+
+    def fail(*args: object, **kwargs: object) -> object:
+        nonlocal calls
+        del args, kwargs
+        calls += 1
+        raise HTTPError(
+            "http://localhost:11434/api/embed",
+            400,
+            "Bad Request",
+            hdrs=None,
+            fp=BytesIO(b'{"error":"invalid embedding request"}'),
+        )
+
+    monkeypatch.setattr(ollama_module, "urlopen", fail)
+    monkeypatch.setattr(ollama_module, "sleep", sleeps.append)
+
+    with pytest.raises(Exception) as captured:
+        OllamaEmbeddingProvider(model="embeddinggemma").embed(("hello",))
+
+    assert getattr(captured.value, "category", None) == "embedding_failed"
+    assert calls == 1
+    assert sleeps == []

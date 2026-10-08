@@ -20,7 +20,7 @@ from fetchcore.retrieval.contracts import (
 )
 from fetchcore.telemetry import RetrievalTelemetry
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location(
     "intent_evidence", ROOT / "benchmarks/search-intent-v2/evidence.py"
 )

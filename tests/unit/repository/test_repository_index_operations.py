@@ -428,3 +428,43 @@ def test_dry_run_without_snapshot_plans_full_rebuild_without_write(tmp_path: Pat
     assert mutations["replace_repository"] is True
     assert mutations["upsert_documents"] == mutations["resulting_document_count"]
     assert store.transport_fixture.posts == 0
+
+
+def test_base_index_capacity_is_applied_before_knowledge_pack_treatment(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "hybris" / "bin" / "custom").mkdir(parents=True)
+    base_config = RepositoryIndexConfig(
+        max_files=65_000,
+        max_file_bytes=1_000_000,
+        max_total_bytes=512_000_000,
+    )
+
+    generic = prepare_repository_index_runtime(
+        tmp_path,
+        repository="acme/sap-commerce",
+        branch="main",
+        revision="rev-a",
+        knowledge_packs=(),
+        base_config=base_config,
+    )
+    treated = prepare_repository_index_runtime(
+        tmp_path,
+        repository="acme/sap-commerce",
+        branch="main",
+        revision="rev-a",
+        knowledge_packs=(SapCommerceKnowledgePack(),),
+        base_config=base_config,
+    )
+
+    expected = (65_000, 1_000_000, 512_000_000)
+    for runtime in (generic, treated):
+        assert (
+            runtime.indexer.config.max_files,
+            runtime.indexer.config.max_file_bytes,
+            runtime.indexer.config.max_total_bytes,
+        ) == expected
+
+    assert generic.active_knowledge_packs == ()
+    assert treated.active_knowledge_packs == (("sap.commerce", "8"),)
+    assert generic.fingerprint != treated.fingerprint

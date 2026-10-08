@@ -17,7 +17,7 @@ from fetchcore.repository.indexing import RepositoryIndexConfig, RepositoryIndex
 from fetchcore.repository.structure import default_structural_symbol_extractors
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "src" / "fetchcore"
 
 
