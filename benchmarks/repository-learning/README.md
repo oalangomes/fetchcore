@@ -101,12 +101,21 @@ The workspace must be clean and exactly match the scenario revision.
 
 ## Opt-in end-to-end run
 
-Start ai-memory with a **fresh data directory**, expose its Streamable HTTP MCP endpoint, and set:
+Start ai-memory with a **fresh data directory** and its stateless Streamable HTTP MCP endpoint. One loopback example is:
 
 ```bash
-export AI_MEMORY_SERVER_URL=http://127.0.0.1:PORT
+export AI_MEMORY_DATA_DIR="$(mktemp -d)"
+ai-memory serve --transport http --bind 127.0.0.1:49374
+```
+
+In the shell running the benchmark:
+
+```bash
+export AI_MEMORY_SERVER_URL=http://127.0.0.1:49374
 export AI_MEMORY_AUTH_TOKEN=...   # omit only for intentional unauthenticated loopback
 ```
+
+Do not add `--http-stateful` for this runner: its minimal MCP client intentionally uses stateless requests.
 
 Then provide wrapper commands for all study arms plus one fresh evaluator command:
 
