@@ -24,6 +24,10 @@
 - Expected effect on recall/precision/latency/cost:
 - Regression evidence:
 
+## Release classification
+
+<!-- After v0.0.1: default patch release. Apply release:minor/major only deliberately; use release:skip only for strictly administrative changes with no product or contract impact. See docs/release-policy.md. Do not combine labels. -->
+
 ## Notes for reviewers
 
 <!-- Risks, migration notes, follow-ups, or areas that deserve extra attention. -->
