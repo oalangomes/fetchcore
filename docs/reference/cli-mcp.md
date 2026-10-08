@@ -2,6 +2,9 @@
 
 | Entry point | Current operation |
 | --- | --- |
+| `fetchcore doctor` | Read-only operational checks for the resolved runtime. |
+| `fetchcore capabilities` | Show typed retrieval, intent-translation, and indexing capabilities. |
+| `fetchcore config show` | Show resolved operator runtime configuration and known source layers. |
 | `fetchcore repo add <source>` | Materialize and persist a canonical repository registration; repeated add does not refresh. |
 | `fetchcore repo list` | Read known registrations in canonical identity order. |
 | `fetchcore repo inspect <repo>` | Resolve a canonical identity or unique leaf name and inspect registration facts. |
@@ -22,6 +25,23 @@ registration and materialization facts. Group options `--cache-root` and
 repeatable `--allowed-root` precede the subcommand; `add` accepts an optional
 `--provider local-workspace|git`. See the [repository registry guide](../guides/repository-registry.md)
 for identity, persistence, source safety, output fields, and failure categories.
+
+`doctor`, `capabilities`, and `config show` accept `--json` and an optional
+`--config <path>`. Doctor checks resolve the selected backend/provider and use
+only available non-mutating probes. Solr schema validation, OpenSearch cluster
+health, and Qdrant collection listing are read-only; no command bootstraps,
+indexes, refreshes repositories, or creates embeddings. A healthy result does
+not claim schema compatibility where the selected adapter has no safe schema
+probe. Embedding provider resolution is required only when the resolved
+retrieval configuration needs dense retrieval. Doctor exits 1 for failed
+operational checks; Click usage errors retain exit code 2.
+
+Capabilities are read from the selected adapter's declarations and the
+operational `IndexingCapabilities` boundary. Retrieval support does not imply
+operational indexing support: only the currently proven Solr indexing
+composition advertises incremental and rebuild capabilities. `config show`
+uses the #65 runtime loader's final resolved values and source tracking; it
+masks credentials and does not inspect repository-owned `.fetchcore/*` policy.
 
 The legacy index command takes `--workspace`, required `--repository`, optional `--branch`/`--revision`, `--backend` (currently `solr`), and JSON `--backend-settings`; matching `FETCHCORE_INDEX_*` variables are accepted. MCP runtime settings use [operator configuration](configuration.md). MCP has one authorized repository binding per process today. See the [indexing guide](../guides/self-hosted-indexing.md) and [MCP guide](../guides/mcp.md).
 

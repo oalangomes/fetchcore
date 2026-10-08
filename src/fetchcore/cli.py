@@ -7,6 +7,7 @@ from pathlib import Path
 from collections.abc import Callable
 
 import click
+import yaml
 
 from fetchcore.application.indexing import (
     IndexContext as _IndexCommandContext,
@@ -16,12 +17,56 @@ from fetchcore.application.indexing import (
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 from fetchcore.repository.index_policy import RepositoryIndexPolicyError
 from fetchcore.application.repositories import RepositoryApplicationService
+from fetchcore.application.runtime_inspection import (
+    RuntimeInspectionService,
+)
 from fetchcore.repository.registry import RepositoryRegistryError
 
 
 @click.group()
 def main() -> None:
     """FetchCore repository knowledge and retrieval utilities."""
+
+
+@main.command("doctor")
+@click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--json", "as_json", is_flag=True, help="Emit deterministic JSON.")
+def doctor(config_path: Path | None, as_json: bool) -> None:
+    """Run read-only checks against the resolved runtime composition."""
+    report = RuntimeInspectionService.doctor_from_sources(path=config_path)
+    payload = report.to_mapping()
+    _emit_runtime_result("doctor", payload, as_json)
+    if not report.healthy:
+        raise click.exceptions.Exit(1)
+
+
+@main.command("capabilities")
+@click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--json", "as_json", is_flag=True, help="Emit deterministic JSON.")
+def capabilities(config_path: Path | None, as_json: bool) -> None:
+    """Show capabilities declared by the selected runtime composition."""
+    _run_runtime_operation(
+        "capabilities",
+        as_json,
+        lambda: RuntimeInspectionService.from_sources(path=config_path).capabilities(),
+    )
+
+
+@main.group("config")
+def config_group() -> None:
+    """Inspect operator-owned runtime configuration."""
+
+
+@config_group.command("show")
+@click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--json", "as_json", is_flag=True, help="Emit deterministic JSON.")
+def config_show(config_path: Path | None, as_json: bool) -> None:
+    """Show resolved runtime values and their known source layers."""
+    _run_runtime_operation(
+        "config show",
+        as_json,
+        lambda: RuntimeInspectionService.from_sources(path=config_path).resolved_config(),
+    )
 
 
 @main.group("repo")
@@ -88,6 +133,80 @@ def _run_repo_operation(
     for record in records:
         click.echo(" | ".join(f"{key}={value if value is not None else 'unavailable'}"
                               for key, value in record.items()))
+
+
+def _run_runtime_operation(
+    operation: str,
+    as_json: bool,
+    execute: Callable[[], dict[str, object]],
+) -> None:
+    try:
+        result = execute()
+    except (KnowledgeSearchError, OSError, ValueError, yaml.YAMLError) as exc:
+        category = getattr(exc, "category", "invalid_runtime_configuration")
+        payload = {
+            "operation": operation,
+            "status": "failed",
+            "error": {
+                "category": category,
+            },
+        }
+        if as_json:
+            click.echo(json.dumps(payload, sort_keys=True, indent=2))
+        else:
+            click.echo(f"{operation}: failed")
+            click.echo(f"category={category}")
+        raise click.exceptions.Exit(1) from exc
+    _emit_runtime_result(operation, result, as_json)
+
+
+def _emit_runtime_result(
+    operation: str,
+    result: dict[str, object],
+    as_json: bool,
+) -> None:
+    payload = {"operation": operation, "status": "succeeded", "result": result}
+    if as_json:
+        click.echo(json.dumps(payload, sort_keys=True, indent=2))
+        return
+    if operation == "doctor":
+        status = result.get("status", "unknown")
+        click.echo(f"doctor: {status}")
+        checks = result.get("checks", [])
+        if isinstance(checks, list):
+            for check in checks:
+                if isinstance(check, dict):
+                    category = check.get("category")
+                    suffix = f" category={category}" if category else ""
+                    click.echo(f"{check.get('name')}={check.get('status')}{suffix}")
+        return
+    if operation == "capabilities":
+        for group, values in sorted(result.items()):
+            if isinstance(values, dict):
+                for name, value in sorted(values.items()):
+                    click.echo(f"{group}.{name}={str(value).lower()}")
+            else:
+                click.echo(f"{group}={values}")
+        return
+    config = result.get("config")
+    sources = result.get("sources")
+    if isinstance(config, dict):
+        source_values = sources if isinstance(sources, dict) else {}
+        for key, value in sorted(_flatten_values(config).items()):
+            source = source_values.get(key)
+            suffix = f" source={source}" if source else ""
+            click.echo(f"{key}={value}{suffix}")
+
+
+def _flatten_values(value: dict[str, object], prefix: str = "") -> dict[str, str]:
+    flattened: dict[str, str] = {}
+    for key, item in value.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(item, dict):
+            flattened.update(_flatten_values(item, path))
+        else:
+            flattened[path] = json.dumps(item, sort_keys=True, separators=(",", ":"))
+    return flattened
 
 
 @main.group("index")

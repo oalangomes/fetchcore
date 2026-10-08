@@ -85,3 +85,10 @@ The built-in backend catalog (`local-semantic`, `solr`, `opensearch`,
 `qdrant-vector`) and embedding provider catalog (`ollama`) stay in code.
 Provider and backend factories can be injected for tests or SDK composition;
 factory identity mismatches fail explicitly.
+
+`fetchcore config show` displays the resolved operator runtime values rather
+than the input YAML or environment. Its source map records `default`,
+`config_file`, `environment`, or `explicit` only where the loader can establish
+that origin. Secret values such as Qdrant API keys are masked. An optional
+`--config <path>` selects the operator file explicitly; no `.fetchcore/*`
+repository policy file is searched or treated as runtime configuration.
