@@ -19,6 +19,8 @@ assert SPEC is not None and SPEC.loader is not None
 module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
 
+import protocol as protocol_module
+
 
 def minimal_scenario() -> dict[str, object]:
     return {
@@ -109,9 +111,11 @@ def test_ai_memory_response_decoder_supports_json_and_sse() -> None:
 
 
 def test_external_output_is_fail_closed() -> None:
-    assert module.parse_json_output('{"status":"success"}', "study") == {"status": "success"}
+    assert protocol_module.parse_json_output('{"status":"success"}', "study") == {
+        "status": "success"
+    }
     with pytest.raises(module.ProtocolError, match="exactly one JSON object"):
-        module.parse_json_output("log line\n{}", "study")
+        protocol_module.parse_json_output("log line\n{}", "study")
 
 
 def test_rendered_study_prompt_does_not_include_ground_truth_patterns() -> None:
