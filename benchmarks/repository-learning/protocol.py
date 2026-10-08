@@ -7,7 +7,6 @@ ai-memory isolation, deterministic scoring, provenance, and artifacts only.
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import os
@@ -15,12 +14,7 @@ from pathlib import Path
 import re
 import shlex
 import subprocess
-import sys
-import tempfile
 import time
-from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 import yaml
 
