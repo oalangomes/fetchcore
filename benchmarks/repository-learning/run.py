@@ -21,7 +21,6 @@ from protocol import (
     file_sha256,
     git_value,
     load_scenario,
-    parse_json_output,
     render_evaluation_prompt,
     render_study_prompt,
     run_external,
@@ -185,6 +184,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             },
         )
         study = validate_study_result(raw_study, arm)
+        validate_repository(args.workspace, scenario)
         written: list[dict[str, object]] = []
         for page in study["memory_pages"]:  # type: ignore[index]
             assert isinstance(page, dict)
