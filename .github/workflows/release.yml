@@ -1,0 +1,178 @@
+name: Publish FetchCore release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Release increment (bootstrap is v0.0.1)
+        required: true
+        default: patch
+        type: choice
+        options: [patch, minor, major]
+
+permissions:
+  contents: write
+  pull-requests: read
+  actions: write
+
+concurrency:
+  group: fetchcore-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'master')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Decide next action
+        id: decide
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          CI_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+          REQUESTED_BUMP: ${{ inputs.bump || 'patch' }}
+        run: |
+          set -euo pipefail
+          git fetch origin master --tags
+          current="$(git rev-parse HEAD)"
+          if [[ "$EVENT" == workflow_run && "$CI_SHA" != "$current" ]]; then
+            echo "Stale CI result; newer master must pass CI first."
+            echo "action=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Release commits only publish after their own CI is green.
+          if [[ "$EVENT" == workflow_run ]] &&
+             [[ "$(git log -1 --format=%s)" =~ ^chore\(release\):\ (v[0-9]+\.[0-9]+\.[0-9]+)\ \[release-publish\]$ ]]; then
+            echo "action=publish" >> "$GITHUB_OUTPUT"
+            echo "tag=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)"
+          if [[ -z "$latest" && "$EVENT" == workflow_run ]]; then
+            echo "Bootstrap not approved yet. No automatic release."
+            echo "action=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$EVENT" == workflow_run ]]; then
+            prs="$(gh api "repos/$GITHUB_REPOSITORY/commits/$current/pulls")"
+            count="$(jq '[.[] | select(.merged_at != null)] | length' <<< "$prs")"
+            if [[ "$count" != 1 ]]; then
+              echo "No unambiguous merged PR for this master commit."
+              echo "action=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            labels="$(jq -r '[.[] | select(.merged_at != null)][0].labels[].name' <<< "$prs")"
+            if grep -Fxq 'release:skip' <<< "$labels"; then
+              echo "action=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if grep -Fxq 'release:major' <<< "$labels" && grep -Fxq 'release:minor' <<< "$labels"; then
+              echo "::error::Conflicting release labels"
+              exit 1
+            fi
+            bump=patch
+            if grep -Fxq 'release:major' <<< "$labels"; then bump=major;
+            elif grep -Fxq 'release:minor' <<< "$labels"; then bump=minor; fi
+          else
+            bump="$REQUESTED_BUMP"
+          fi
+
+          if [[ -z "$latest" ]]; then
+            tag=v0.0.1
+          else
+            version="${latest#v}"
+            IFS=. read -r major minor patch <<< "$version"
+            case "$bump" in
+              major) tag="v$((major+1)).0.0";;
+              minor) tag="v$major.$((minor+1)).0";;
+              patch) tag="v$major.$minor.$((patch+1))";;
+              *) echo "::error::Unsupported bump"; exit 1;;
+            esac
+          fi
+          echo "action=prepare" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare versioned source
+        if: steps.decide.outputs.action == 'prepare'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+          version = os.environ["TAG"].removeprefix("v")
+          pyproject = Path("pyproject.toml")
+          original = pyproject.read_text()
+          updated, count = re.subn(r'(?m)^version = "[^"]+"$', f'version = "{version}"', original, count=1)
+          assert count == 1, "Could not identify project version"
+          pyproject.write_text(updated)
+          readme = Path("README.md")
+          content = readme.read_text()
+          content, count = re.subn(r'FetchCore is at `[^`]+`\.', f'FetchCore is at `{version}`.', content, count=1)
+          assert count == 1, "Could not identify README version"
+          readme.write_text(content)
+          PY
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml README.md
+          git commit -m "chore(release): $TAG [release-publish]"
+          # Concurrent merges are rejected; never force a release commit.
+          git push origin HEAD:master
+          # GITHUB_TOKEN push does not trigger CI; dispatch it explicitly.
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref master
+
+      - name: Publish validated version
+        if: steps.decide.outputs.action == 'publish'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+          declared="$(python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+          print(tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"])
+          PY
+          )"
+          [[ "$TAG" == "v$declared" ]] || { echo "::error::Project version does not match $TAG"; exit 1; }
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            [[ "$(git rev-list -n 1 "$TAG")" == "$(git rev-parse HEAD)" ]] || exit 1
+          else
+            git tag -a "$TAG" -m "FetchCore $TAG"
+            git push origin "$TAG"
+          fi
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "FetchCore $TAG" --generate-notes
+          fi
+
+      - name: Summary
+        if: always()
+        env:
+          ACTION: ${{ steps.decide.outputs.action }}
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          echo "### FetchCore release" >> "$GITHUB_STEP_SUMMARY"
+          echo "- action: ${ACTION:-not-decided}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- version: ${TAG:-not-decided}" >> "$GITHUB_STEP_SUMMARY"
