@@ -1,0 +1,572 @@
+{
+  "memory_scope": {
+    "workspace": "fetchcore-rlb",
+    "project": "rlb-codex-20261008-001-fetchcore-self-architecture-fetchcore"
+  },
+  "tool_policy": "Acquire repository evidence through FetchCore search/get_source only. Do not read or grep repository files directly. FetchCore retrieval scores are candidate signals, not truth; inspect returned source evidence before writing durable facts.",
+  "budget": {},
+  "study": {
+    "status": "success",
+    "memory_pages": [
+      {
+        "path": "knowledge/fetchcore-architecture.md",
+        "body": "# FetchCore Repository Knowledge, Retrieval, and Serving Boundaries\n\n## Canonical source of truth\n\nThe architecture flows from repository sources through registry/collections and `RepositoryIndexer` into canonical Repository Knowledge, then through KnowledgePacks/typed relationships into projections and retrieval. Canonical Repository Knowledge carries source identity and provenance. Search indexes, vector stores, and graph stores are rebuildable, replaceable projections—not canonical truth. Backend storage models must not define canonical domain behavior. Sources: `AGENTS.md:77-113`, `README.md:27-37` at revision `e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c`.\n\n## Retrieval contracts\n\nThe backend-neutral port accepts `SearchIntent`, `SearchScope`, and `SearchRequirement`, returning `KnowledgeSearchResponse` containing `SearchResult` evidence. These values are acquisition inputs, not consumer-satisfaction rules (`docs/architecture/retrieval.md:1-7`).\n\nKeep three concerns separate:\n\n- `SearchIntent` is what the consumer means to retrieve.\n- `SearchScope` is where FetchCore may look and the bounded candidate budget.\n- `RetrievalConfig`/policy is how retrieval executes.\n\n`SearchIntent` is immutable declared meaning. Its fields are `canonical_query`, required `anchors`, an optional required expression tree (`Term | Anchor | AllOf | AnyOf`), optional recall `expansions`, weak `hints`, typed `signals`, and v1-compatible `exact_terms`/`semantic_terms`. Natural-language canonical text does not implicitly create phrases, anchors, or boolean expressions. Expansions may add recall but cannot mutate canonical identity; hints cannot become requirements. Source: `src/fetchcore/retrieval/contracts.py:176-285` and `AGENTS.md:225-259`.\n\n`SearchScope` is explicitly documented as “Authorized corpus scope plus retrieval candidate budget.” It carries workspace, revision, repository, knowledge types, maximum results, mode, repository paths, result namespace, settings, and optional retrieval configuration. Source: `src/fetchcore/retrieval/contracts.py:306-336`.\n\n`SearchRequirement` is only a bounded retrieval-allocation hint, never a satisfaction decision (`src/fetchcore/retrieval/contracts.py:287-303`). FetchCore does not own consumer satisfaction, work planning, agent lifecycle, executor orchestration, artifact approval, canonical work state, or autonomous task-completion semantics (`AGENTS.md:38-76`).\n\n## Required-semantics policy\n\nUnsupported required semantics are rejected; there is no configurable flattening fallback. Participating channels validate before backend I/O, scanning, or embedding. Canonical text requires canonical-query support. Anchors and expressions require effective support from the participating channel. Failure raises `KnowledgeSearchError(category=\"unsupported_semantics\")` and records the channel, unsupported constructs, reason, and `translation_policy: reject`.\n\nOptional expansions, hints, and signals may remain unconsumed without rejecting acquisition. Translation observations distinguish `preserved`, `partially_unsupported`, `rejected`, and `broadened`; no current successful path emits `broadened`. Rejected structure is never concatenated into embedding input.\n\nDense channels accept canonical text but cannot enforce anchors or boolean expressions. Solr/OpenSearch lexical channels support canonical text, required field filters, and nested boolean filters. Local lexical does not support required anchors/groups. Qdrant hybrid consumes canonical text in dense and sparse processing but does not support required anchors/groups. Solr/OpenSearch hybrid also rejects anchors/groups because dense candidates plus current fusion cannot guarantee them; there is no post-fusion constraint engine. Source: `docs/concepts/search-intent.md:57-83`.\n\n## Current retrieval paths and backends\n\nCurrent acquisition paths are local lexical scanning, backend lexical/BM25 retrieval, dense-vector retrieval, and backend hybrid retrieval where advertised capabilities permit them. Unsupported requested modes fail rather than silently substituting another mode. Current adapters are:\n\n- `local-semantic`: local scanning and lexical acquisition.\n- `solr`: lexical, dense, and hybrid retrieval plus the current operational indexing integration.\n- `opensearch`: lexical, dense, and hybrid retrieval.\n- `qdrant-vector`: dense and hybrid vector/sparse retrieval.\n- `ollama`: embedding provider, separate from retrieval backends.\n\nOperational CLI indexing currently targets Solr. Graph projection, graph expansion, adaptive budgets, a general identifier-first targeted router, and federated search/fusion remain future work. Sources: `README.md:27-37`, `docs/architecture/retrieval.md:1-7`, `docs/reference/capabilities.md:1-17`.\n\nRetrieval channels have distinct roles: targeted/structured lookup is for strong identifiers when an exact route exists; lexical/BM25 handles textual and structured lexical relevance; dense supports semantic discovery and yields a signal rather than truth; hybrid combines independent lexical/sparse and dense acquisition (`AGENTS.md:260-309`).\n\n## Hybrid fusion baseline\n\nThe preferred baseline is independent/parallel lexical and dense acquisition, followed by Reciprocal Rank Fusion (RRF), then optional bounded reranking. RRF remains the baseline unless a controlled benchmark establishes a better alternative. Reranking may only reorder the already acquired bounded candidate set; it cannot retrieve, synthesize, or admit candidates. Sources: `AGENTS.md:292-309`, `docs/architecture/retrieval.md:1-7`, `docs/history/extraction/projection-ranking-core.md:56-75`.\n\n## MCP serving boundary\n\nMCP is a thin transport adapter over the application service:\n\n`MCP client → MCPServer adapter → runtime bootstrap/operator config → RetrievalApplicationService → RepositoryBinding/authorization scope → KnowledgeSearchBackend → configured backend`.\n\nThe adapter never calls vendor backend APIs directly. It exposes only:\n\n- `search(query, repository?, limit=10, knowledge_types?)`, which creates a `SearchRequest` and searches authorized repository knowledge.\n- `get_source(source_ref, repository?, line_start?, line_end?, context_lines=0)`, which creates a `SourceReadRequest` and performs a bounded source read.\n\nSearch results are evidence. MCP does not make lifecycle or approval decisions and does not own AgentsOrch lifecycle concepts. Sources: `src/fetchcore/serving/mcp.py:19-78`, `docs/guides/mcp.md:1-24`."
+      }
+    ],
+    "metrics": {
+      "tool_calls": 20,
+      "files_read": 7,
+      "evidence_items": 43,
+      "returned_chars": 129785,
+      "input_tokens": 187791,
+      "output_tokens": 2975
+    },
+    "tool_events_verified": true,
+    "tool_events": [
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "search",
+        "arguments": {
+          "query": "canonical source of truth repository knowledge architecture SearchIntent SearchScope",
+          "limit": 10
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/AGENTS.md",
+          "repository://oalangomes/fetchcore/docs/README.md",
+          "repository://oalangomes/fetchcore/docs/adr/ADR-0001-backend-neutral-knowledge.md",
+          "repository://oalangomes/fetchcore/docs/architecture/overview.md",
+          "repository://oalangomes/fetchcore/docs/architecture/repository-knowledge.md",
+          "repository://oalangomes/fetchcore/docs/benchmarks/results/baseline-v1.md",
+          "repository://oalangomes/fetchcore/docs/concepts/repository-identity.md",
+          "repository://oalangomes/fetchcore/src/fetchcore/repository/semantic_indexing.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 9452
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "search",
+        "arguments": {
+          "query": "unsupported required semantics policy SearchIntent required capabilities",
+          "limit": 10
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/.github/workflows/repository-index.yml",
+          "repository://oalangomes/fetchcore/AGENTS.md",
+          "repository://oalangomes/fetchcore/docs/architecture/retrieval.md",
+          "repository://oalangomes/fetchcore/docs/benchmarks/results/baseline-v1.md",
+          "repository://oalangomes/fetchcore/docs/concepts/search-intent.md",
+          "repository://oalangomes/fetchcore/scripts/dogfood_mcp_eval.py",
+          "repository://oalangomes/fetchcore/src/fetchcore/repository/knowledge_pack.py",
+          "repository://oalangomes/fetchcore/src/fetchcore/retrieval/config.py",
+          "repository://oalangomes/fetchcore/src/fetchcore/retrieval/contracts.py",
+          "repository://oalangomes/fetchcore/src/fetchcore/retrieval/translation.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 17096
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "search",
+        "arguments": {
+          "query": "retrieval channels backends lexical semantic hybrid fusion RRF",
+          "limit": 10
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/AGENTS.md",
+          "repository://oalangomes/fetchcore/docs/architecture/retrieval.md",
+          "repository://oalangomes/fetchcore/docs/benchmarks/results/baseline-v1.md",
+          "repository://oalangomes/fetchcore/docs/reference/capabilities.md",
+          "repository://oalangomes/fetchcore/src/fetchcore/baseline.py",
+          "repository://oalangomes/fetchcore/src/fetchcore/retrieval/config.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 9464
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "search",
+        "arguments": {
+          "query": "MCP serving boundary search get_source lifecycle approval decisions",
+          "limit": 10
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/AGENTS.md",
+          "repository://oalangomes/fetchcore/benchmarks/search-intent-v2/artifacts/serving-before.json",
+          "repository://oalangomes/fetchcore/docs/architecture/overview.md",
+          "repository://oalangomes/fetchcore/docs/architecture/serving.md",
+          "repository://oalangomes/fetchcore/docs/guides/getting-started.md",
+          "repository://oalangomes/fetchcore/docs/guides/mcp.md",
+          "repository://oalangomes/fetchcore/docs/guides/searching.md",
+          "repository://oalangomes/fetchcore/docs/guides/self-hosted-indexing.md",
+          "repository://oalangomes/fetchcore/src/fetchcore/serving/mcp.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 16966
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "search",
+        "arguments": {
+          "query": "SearchIntent SearchScope class required_semantics",
+          "limit": 6
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/src/fetchcore/retrieval/contracts.py",
+          "repository://oalangomes/fetchcore/tests/test_application_service.py",
+          "repository://oalangomes/fetchcore/tests/test_backend_extraction.py",
+          "repository://oalangomes/fetchcore/tests/test_baseline.py",
+          "repository://oalangomes/fetchcore/tests/test_search_intent_evidence.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 4046
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "search",
+        "arguments": {
+          "query": "unsupported required semantics error policy",
+          "limit": 6
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/AGENTS.md",
+          "repository://oalangomes/fetchcore/benchmarks/search-intent-v2/README.md",
+          "repository://oalangomes/fetchcore/docs/concepts/search-intent.md",
+          "repository://oalangomes/fetchcore/src/fetchcore/repository/index_policy.py",
+          "repository://oalangomes/fetchcore/src/fetchcore/retrieval/fusion.py",
+          "repository://oalangomes/fetchcore/src/fetchcore/retrieval/translation.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 8008
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "search",
+        "arguments": {
+          "query": "Reciprocal Rank Fusion hybrid fusion lexical vector",
+          "limit": 6
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/AGENTS.md",
+          "repository://oalangomes/fetchcore/benchmarks/baseline-v1/manifest.json",
+          "repository://oalangomes/fetchcore/docs/benchmarks/results/baseline-v1.md",
+          "repository://oalangomes/fetchcore/src/fetchcore/baseline.py",
+          "repository://oalangomes/fetchcore/src/fetchcore/retrieval/fusion.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 3814
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "search",
+        "arguments": {
+          "query": "retrieval channel backend Solr Qdrant graph current implementation",
+          "limit": 6
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/AGENTS.md",
+          "repository://oalangomes/fetchcore/README.md",
+          "repository://oalangomes/fetchcore/docs/architecture/module-boundaries.md",
+          "repository://oalangomes/fetchcore/docs/history/extraction/projection-ranking-core.md",
+          "repository://oalangomes/fetchcore/docs/reference/capabilities.md",
+          "repository://oalangomes/fetchcore/tests/test_adapter_composition.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 7135
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "search",
+        "arguments": {
+          "query": "MCP server search get_source serving boundary lifecycle approval",
+          "limit": 6
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/AGENTS.md",
+          "repository://oalangomes/fetchcore/docs/guides/getting-started.md",
+          "repository://oalangomes/fetchcore/docs/guides/mcp.md",
+          "repository://oalangomes/fetchcore/docs/guides/searching.md",
+          "repository://oalangomes/fetchcore/docs/guides/self-hosted-indexing.md",
+          "repository://oalangomes/fetchcore/src/fetchcore/serving/mcp.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 5867
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "search",
+        "arguments": {
+          "query": "SearchIntent canonical_query anchors expression expansions hints signals exact terms definition",
+          "limit": 8
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/docs/benchmarks/search-intent-v2.md",
+          "repository://oalangomes/fetchcore/docs/concepts/search-intent.md",
+          "repository://oalangomes/fetchcore/src/fetchcore/retrieval/contracts.py",
+          "repository://oalangomes/fetchcore/tests/test_search_intent_v2.py",
+          "repository://oalangomes/fetchcore/tests/test_search_intent_v2_integration.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 12633
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "search",
+        "arguments": {
+          "query": "SearchScope workspace revision repository knowledge_types max_results settings definition",
+          "limit": 8
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/benchmarks/baseline-v1/compare_rankings.py",
+          "repository://oalangomes/fetchcore/src/fetchcore/application/runtime_config.py",
+          "repository://oalangomes/fetchcore/src/fetchcore/retrieval/contracts.py",
+          "repository://oalangomes/fetchcore/tests/test_application_service.py",
+          "repository://oalangomes/fetchcore/tests/test_backend_extraction.py",
+          "repository://oalangomes/fetchcore/tests/test_baseline.py",
+          "repository://oalangomes/fetchcore/tests/test_retrieval_contracts.py",
+          "repository://oalangomes/fetchcore/tests/test_search_intent_evidence.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 10444
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "search",
+        "arguments": {
+          "query": "retrieval architecture channels candidate acquisition reranking fusion",
+          "limit": 8
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/AGENTS.md",
+          "repository://oalangomes/fetchcore/docs/architecture/retrieval.md",
+          "repository://oalangomes/fetchcore/docs/history/extraction/projection-ranking-core.md",
+          "repository://oalangomes/fetchcore/src/fetchcore/retrieval/config.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 5035
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "get_source",
+        "arguments": {
+          "source_ref": "repository://oalangomes/fetchcore/AGENTS.md",
+          "line_start": 38,
+          "line_end": 113,
+          "revision": "e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c"
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/AGENTS.md"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 1955
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "get_source",
+        "arguments": {
+          "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/retrieval/contracts.py",
+          "line_start": 176,
+          "line_end": 336,
+          "revision": "e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c"
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/src/fetchcore/retrieval/contracts.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 6395
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "get_source",
+        "arguments": {
+          "source_ref": "repository://oalangomes/fetchcore/docs/concepts/search-intent.md",
+          "line_start": 57,
+          "line_end": 83,
+          "revision": "e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c"
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/docs/concepts/search-intent.md"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 4672
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "get_source",
+        "arguments": {
+          "source_ref": "repository://oalangomes/fetchcore/docs/architecture/retrieval.md",
+          "line_start": 1,
+          "line_end": 7,
+          "revision": "e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c"
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/docs/architecture/retrieval.md"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 1457
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "get_source",
+        "arguments": {
+          "source_ref": "repository://oalangomes/fetchcore/README.md",
+          "line_start": 27,
+          "line_end": 37,
+          "revision": "e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c"
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/README.md"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 1043
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "get_source",
+        "arguments": {
+          "source_ref": "repository://oalangomes/fetchcore/AGENTS.md",
+          "line_start": 225,
+          "line_end": 309,
+          "revision": "e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c"
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/AGENTS.md"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 1733
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "get_source",
+        "arguments": {
+          "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/serving/mcp.py",
+          "line_start": 19,
+          "line_end": 78,
+          "revision": "e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c"
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/src/fetchcore/serving/mcp.py"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 2095
+      },
+      {
+        "type": "mcp_tool_call",
+        "server": "fetchcore",
+        "tool": "get_source",
+        "arguments": {
+          "source_ref": "repository://oalangomes/fetchcore/docs/guides/mcp.md",
+          "line_start": 1,
+          "line_end": 24,
+          "revision": "e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c"
+        },
+        "source_refs": [
+          "repository://oalangomes/fetchcore/docs/guides/mcp.md"
+        ],
+        "status": "completed",
+        "error": null,
+        "returned_chars": 475
+      }
+    ]
+  },
+  "study_execution": {
+    "command_sha256": "422c42e679234b46862b188a8a853e159cde1cfbe1228dda7f93bbb642532278",
+    "duration_ms": 61392.397,
+    "stderr_tail": "2026-10-08T22:05:31.740503Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n2026-10-08T22:05:31.761171Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n2026-10-08T22:05:31.775388Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n2026-10-08T22:05:31.802493Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n2026-10-08T22:05:31.816285Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n"
+  },
+  "memory_writes": [
+    {
+      "path": "knowledge/fetchcore-architecture.md",
+      "result": {
+        "page_id": "01a11d8d-ce0f-7700-9ddc-153a28a08ccb",
+        "path": "knowledge/fetchcore-architecture.md",
+        "checkpoint": "4cc1659267e5fb5ee5e186986473c555f10b3005"
+      }
+    }
+  ],
+  "memory_recall": {
+    "q-canonical-knowledge": {
+      "hits": [
+        {
+          "id": "01a11d8d-ce0f-7700-9ddc-153a28a08ccb",
+          "path": "knowledge/fetchcore-architecture.md",
+          "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+          "snippet": "# <mark>FetchCore</mark> Repository Knowledge, Retrieval, and Serving Boundaries\n\n## <mark>Canonical</mark> source of <mark>truth</mark>\n\nThe architecture flows from repository sources through registry/collections and `RepositoryIndexer` into <mark>canonical</mark> Repository…",
+          "rank": -0.018032786885245903
+        }
+      ]
+    },
+    "q-intent-scope": {
+      "hits": [
+        {
+          "id": "01a11d8d-ce0f-7700-9ddc-153a28a08ccb",
+          "path": "knowledge/fetchcore-architecture.md",
+          "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+          "snippet": "…Sources: `AGENTS.md:77-113`, `README.md:27-37` at revision `e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c`.\n\n## Retrieval contracts\n\nThe backend-neutral port accepts `<mark>SearchIntent</mark>`, `<mark>SearchScope</mark>`, and `SearchRequirement`, returning `KnowledgeSearchResponse` containing `SearchResult…",
+          "rank": -0.018032786885245903
+        }
+      ]
+    },
+    "q-required-semantics": {
+      "hits": [
+        {
+          "id": "01a11d8d-ce0f-7700-9ddc-153a28a08ccb",
+          "path": "knowledge/fetchcore-architecture.md",
+          "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+          "snippet": "…Rejected <mark>structure</mark> is never concatenated into embedding input.\n\nDense channels accept canonical text but <mark>cannot</mark> enforce anchors or <mark>boolean</mark> expressions. Solr/OpenSearch lexical channels support…",
+          "rank": -0.018032786885245903
+        }
+      ]
+    },
+    "q-backends": {
+      "hits": [
+        {
+          "id": "01a11d8d-ce0f-7700-9ddc-153a28a08ccb",
+          "path": "knowledge/fetchcore-architecture.md",
+          "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+          "snippet": "# <mark>FetchCore</mark> Repository Knowledge, <mark>Retrieval</mark>, and Serving Boundaries\n\n## Canonical source of truth\n\nThe architecture flows from repository sources through registry/collections and `RepositoryIndexer` into canonical Repository…",
+          "rank": -0.018032786885245903
+        }
+      ]
+    },
+    "q-hybrid": {
+      "hits": [
+        {
+          "id": "01a11d8d-ce0f-7700-9ddc-153a28a08ccb",
+          "path": "knowledge/fetchcore-architecture.md",
+          "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+          "snippet": "…Source: `docs/concepts/search-intent.md:57-83`.\n\n## <mark>Current</mark> <mark>retrieval</mark> paths and backends\n\n<mark>Current</mark> acquisition paths are local lexical scanning, backend lexical/BM25 <mark>retrieval</mark>, dense-vector <mark>retrieval</mark>, and backend <mark>hybrid</mark>…",
+          "rank": -0.018032786885245903
+        }
+      ]
+    },
+    "q-serving": {
+      "hits": [
+        {
+          "id": "01a11d8d-ce0f-7700-9ddc-153a28a08ccb",
+          "path": "knowledge/fetchcore-architecture.md",
+          "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+          "snippet": "…Sources: `AGENTS.md:292-309`, `docs/architecture/retrieval.md:1-7`, `docs/history/extraction/projection-ranking-core.md:56-75`.\n\n## <mark>MCP</mark> <mark>serving</mark> boundary\n\n<mark>MCP</mark> is a thin transport adapter over the application service:\n\n`<mark>MCP</mark>…",
+          "rank": -0.018032786885245903
+        }
+      ]
+    }
+  },
+  "evaluation": {
+    "answers": {
+      "q-canonical-knowledge": "Canonical Repository knowledge produced from repository sources through the registry/collections and RepositoryIndexer remains the source of truth. Backend search and vector stores are derived retrieval projections, not canonical truth.",
+      "q-intent-scope": "UNKNOWN",
+      "q-required-semantics": "A channel that cannot preserve required semantics must not silently weaken them. In particular, dense retrieval cannot enforce anchors or boolean expressions, and rejected structure is never concatenated into embedding input. The recalled memory does not specify the exact failure/omission response.",
+      "q-backends": "The recalled memory explicitly names local lexical scanning, Solr, and OpenSearch. It also mentions dense-vector and backend-hybrid retrieval, but does not expose the names of any additional adapters.",
+      "q-hybrid": "UNKNOWN",
+      "q-serving": "MCP is a thin transport adapter over the application service. The exact full serving path is not present in the recalled snippet; backend-specific protocol details belong behind the backend adapter boundary, not in MCP or the backend-neutral application contract."
+    }
+  },
+  "evaluation_execution": {
+    "command_sha256": "7e78c5f01e2b95189fe46e51e466193e4953e2cb552b112781c478b3cfea128d",
+    "duration_ms": 10165.854,
+    "stderr_tail": "2026-10-08T22:06:35.469755Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n2026-10-08T22:06:35.479272Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n2026-10-08T22:06:35.492070Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n2026-10-08T22:06:35.499127Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n2026-10-08T22:06:35.506848Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n"
+  },
+  "score": {
+    "fact_recall": 0.16666666666666666,
+    "fact_precision": 0.16666666666666666,
+    "questions_correct": 1,
+    "questions_total": 6,
+    "unsupported_or_incorrect_answers": 5,
+    "per_question": [
+      {
+        "question_id": "q-canonical-knowledge",
+        "fact_id": "canonical-knowledge",
+        "passed": false,
+        "missing_required_patterns": [
+          "(?i)(rebuildable|replaceable).*(projection|store)|(projection|store).*(rebuildable|replaceable)"
+        ],
+        "forbidden_pattern_hits": []
+      },
+      {
+        "question_id": "q-intent-scope",
+        "fact_id": "intent-scope-boundary",
+        "passed": false,
+        "missing_required_patterns": [
+          "(?i)SearchIntent.*(meaning|query|intent)",
+          "(?i)SearchScope.*(repository|revision|path|scope|knowledge type|result)"
+        ],
+        "forbidden_pattern_hits": []
+      },
+      {
+        "question_id": "q-required-semantics",
+        "fact_id": "required-semantics-reject",
+        "passed": true,
+        "missing_required_patterns": [],
+        "forbidden_pattern_hits": []
+      },
+      {
+        "question_id": "q-backends",
+        "fact_id": "retrieval-backends",
+        "passed": false,
+        "missing_required_patterns": [
+          "(?i)Qdrant"
+        ],
+        "forbidden_pattern_hits": []
+      },
+      {
+        "question_id": "q-hybrid",
+        "fact_id": "hybrid-rrf",
+        "passed": false,
+        "missing_required_patterns": [
+          "(?i)RRF|reciprocal\\s+rank\\s+fusion",
+          "(?i)(lexical|sparse).*(dense)|dense.*(lexical|sparse)"
+        ],
+        "forbidden_pattern_hits": []
+      },
+      {
+        "question_id": "q-serving",
+        "fact_id": "serving-boundary",
+        "passed": false,
+        "missing_required_patterns": [
+          "(?i)MCP.*RetrievalApplicationService.*KnowledgeSearchBackend"
+        ],
+        "forbidden_pattern_hits": []
+      }
+    ]
+  },
+  "duration_ms": 71592.064
+}
