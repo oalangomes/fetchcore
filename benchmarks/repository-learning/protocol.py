@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Repository Learning Benchmark runner.
 
 External study/evaluator commands remain consumers. This harness owns protocol,
