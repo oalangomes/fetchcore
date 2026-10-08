@@ -30,10 +30,12 @@ for identity, persistence, source safety, output fields, and failure categories.
 `--config <path>`. Doctor checks resolve the selected backend/provider and use
 only available non-mutating probes. Solr schema validation, OpenSearch cluster
 health, and Qdrant collection listing are read-only; no command bootstraps,
-indexes, refreshes repositories, or creates embeddings. A healthy result does
-not claim schema compatibility where the selected adapter has no safe schema
-probe. Embedding provider resolution is required only when the resolved
-retrieval configuration needs dense retrieval. Doctor exits 1 for failed
+indexes, refreshes repositories, or persists embeddings. Qdrant's canonical
+health probe also executes a transient embedding and validates its vector
+shape. Embedding provider resolution is required when dense retrieval is
+configured and for Qdrant's implicit dense runtime when retrieval configuration
+is absent. A healthy result does not claim schema compatibility where the
+selected adapter has no safe schema probe. Doctor exits 1 for failed
 operational checks; Click usage errors retain exit code 2.
 
 Capabilities are read from the selected adapter's declarations and the

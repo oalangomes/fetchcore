@@ -16,6 +16,7 @@ from fetchcore.adapters.retrieval.opensearch.backend import (
     UrllibOpenSearchTransport,
 )
 from fetchcore.adapters.retrieval.qdrant.backend import (
+    QdrantVectorIndexStore,
     QdrantVectorSettings,
     UrllibQdrantTransport,
 )
@@ -34,6 +35,7 @@ from fetchcore.application.runtime_config import (
 )
 from fetchcore.retrieval.config import EmbeddingConfig, validate_backend_retrieval
 from fetchcore.retrieval.contracts import KnowledgeSearchError
+from fetchcore.retrieval.embedding import EmbeddingProvider
 
 
 CheckStatus = Literal["ok", "failed", "not_required", "not_checked"]
@@ -247,6 +249,7 @@ class RuntimeInspectionService:
     def doctor(self) -> DoctorReport:
         checks = [RuntimeCheck("runtime_config", "ok")]
         backend = None
+        embedding_provider: EmbeddingProvider | None = None
         try:
             backend = self.backends.create(self.config.backend)
         except (KnowledgeSearchError, OSError, ValueError) as exc:
@@ -259,7 +262,7 @@ class RuntimeInspectionService:
         embedding = self._required_embedding()
         if embedding is not None:
             try:
-                self.providers.create(
+                embedding_provider = self.providers.create(
                     embedding,
                     backend_id=self.config.backend,
                     backend_name=self.config.backend,
@@ -293,17 +296,27 @@ class RuntimeInspectionService:
                 RuntimeCheck("schema_compatibility", "not_checked"),
             ))
         else:
-            checks.extend(self._probe_backend())
+            checks.extend(self._probe_backend(embedding_provider=embedding_provider))
         return DoctorReport(tuple(checks))
 
     def _required_embedding(self) -> EmbeddingConfig | None:
         if self.config.retrieval is not None and self.config.retrieval.dense.enabled:
             return self.config.retrieval.dense.embedding
         if self.config.backend == "qdrant-vector" and self.config.retrieval is None:
-            return EmbeddingConfig()
+            model = self.config.backend_settings.get("embedding_model", EmbeddingConfig.model)
+            if not isinstance(model, str):
+                raise KnowledgeSearchError(
+                    "Qdrant embedding model is invalid",
+                    category="schema_mismatch",
+                )
+            return EmbeddingConfig(model=model)
         return None
 
-    def _probe_backend(self) -> tuple[RuntimeCheck, ...]:
+    def _probe_backend(
+        self,
+        *,
+        embedding_provider: EmbeddingProvider | None = None,
+    ) -> tuple[RuntimeCheck, ...]:
         backend_id = self.config.backend
         if backend_id == "local-semantic":
             available = self.config.workspace.is_dir()
@@ -328,17 +341,18 @@ class RuntimeInspectionService:
             qdrant_settings = QdrantVectorSettings.from_mapping(
                 dict(self.config.backend_settings)
             )
-            try:
-                UrllibQdrantTransport(qdrant_settings).request("GET", "collections")
-            except (KnowledgeSearchError, OSError, ValueError) as exc:
+            if embedding_provider is None:
                 return (
-                    RuntimeCheck("backend_connectivity", "failed", _connection_category(exc)),
+                    RuntimeCheck("backend_connectivity", "not_checked"),
                     RuntimeCheck("schema_compatibility", "not_checked"),
                 )
-            return (
-                RuntimeCheck("backend_connectivity", "ok"),
-                RuntimeCheck("schema_compatibility", "not_checked"),
+            qdrant_store = QdrantVectorIndexStore(
+                UrllibQdrantTransport(qdrant_settings),
+                qdrant_settings,
+                embedding_provider,
+                clock=lambda: "",
             )
+            return self._probe_health(qdrant_store.health)
         raise KnowledgeSearchError(
             "Runtime inspection has no safe probe for the selected backend",
             category="unsupported_backend",
