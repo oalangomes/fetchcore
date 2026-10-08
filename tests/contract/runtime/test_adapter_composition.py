@@ -130,3 +130,37 @@ def test_historical_embedding_factory_exports_remain_available() -> None:
     assert old_ollama is configured_ollama_provider
     assert old_opensearch is opensearch_embedding_provider
     assert old_solr is solr_embedding_provider
+
+
+def test_solr_and_opensearch_honor_embedding_transport_controls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fetchcore.application.composition import (
+        opensearch_embedding_provider,
+        solr_embedding_provider,
+    )
+
+    monkeypatch.setenv("OLLAMA_URL", "http://127.0.0.1:11434")
+    retrieval = RetrievalConfig.from_mapping(
+        {
+            "dense": {
+                "enabled": True,
+                "embedding": {
+                    "provider": "ollama",
+                    "model": "embeddinggemma",
+                    "request_batch_size": 7,
+                    "timeout_seconds": 45,
+                },
+            }
+        }
+    )
+
+    for provider in (
+        solr_embedding_provider(retrieval),
+        opensearch_embedding_provider(retrieval),
+    ):
+        assert isinstance(provider, OllamaEmbeddingProvider)
+        assert provider.url == "http://127.0.0.1:11434"
+        assert provider.model_id == "embeddinggemma"
+        assert provider.request_batch_size == 7
+        assert provider.timeout_seconds == 45.0

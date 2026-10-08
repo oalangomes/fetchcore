@@ -447,7 +447,7 @@ def test_all_twenty_frozen_v1_translations_match_pre_change_digest():
     from dataclasses import asdict
     from fetchcore.adapters.retrieval.local.backend import _local_query
 
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[3]
     cases = json.loads((root / "benchmarks/baseline-v1/ground-truth.json").read_text())["queries"]
     scoped = SearchScope(Path("."), None, "owner/repo", (), 20)
     snapshot = SimpleNamespace(repository="owner/repo")
@@ -474,7 +474,7 @@ def test_all_twenty_frozen_v1_translations_match_pre_change_digest():
 def test_baseline_reader_preserves_v2_instead_of_dropping_new_fields():
     from fetchcore.baseline import BaselineConfigurationError, BaselineSuite
 
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[3]
     payload = json.loads((root / "benchmarks/baseline-v1/ground-truth.json").read_text())
     intent = SearchIntent(canonical_query=QUERY, expression=BRANCHES)
     payload["queries"][0]["intent"] = intent.to_mapping()

@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def test_operational_modules_do_not_import_agentsorch() -> None:
-    root = Path(__file__).resolve().parents[1] / "src" / "fetchcore" / "repository"
+    root = Path(__file__).resolve().parents[3] / "src" / "fetchcore" / "repository"
     for relative in (
         "index_contract.py",
         "index_operations.py",

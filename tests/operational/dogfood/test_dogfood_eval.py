@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "dogfood_mcp_eval.py"
 SPEC = importlib.util.spec_from_file_location("dogfood_mcp_eval", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 RUN_PATH = ROOT / "benchmarks" / "baseline-v1" / "run.py"
 SPEC = importlib.util.spec_from_file_location("fetchcore_baseline_v1_run", RUN_PATH)
 assert SPEC is not None

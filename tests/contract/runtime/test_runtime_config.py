@@ -314,7 +314,7 @@ def test_repository_policy_is_not_runtime_config(tmp_path: Path) -> None:
 
 
 def test_adapters_do_not_discover_environment() -> None:
-    root = Path(__file__).resolve().parents[1] / "src" / "fetchcore" / "adapters"
+    root = Path(__file__).resolve().parents[3] / "src" / "fetchcore" / "adapters"
     for module in (*root.joinpath("retrieval").rglob("*.py"), *root.joinpath("embedding").rglob("*.py")):
         tree = ast.parse(module.read_text(encoding="utf-8"))
         for node in ast.walk(tree):

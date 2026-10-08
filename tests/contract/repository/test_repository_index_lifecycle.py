@@ -1,13 +1,17 @@
-"""Registered CLI -> canonical runtime -> actual adapter, with observable writes."""
+"""Registered CLI -> canonical runtime -> mocked adapter, with observable writes.
+
+The opt-in real-Solr case lives separately in
+``tests/integration/repository/test_repository_index_lifecycle_integration.py``
+because it exercises a real external backend rather than this file's
+deterministic ``LifecycleTransport`` fake.
+"""
 from __future__ import annotations
 
 import copy
 import json
-import os
 import shutil
 import subprocess
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 from click.testing import CliRunner
@@ -15,10 +19,10 @@ from click.testing import CliRunner
 from fetchcore import cli
 from fetchcore.application import indexing
 from fetchcore.application.repositories import RepositoryApplicationService
-from fetchcore.adapters.retrieval.solr.backend import SolrIndexStore, SolrSettings, UrllibSolrTransport
+from fetchcore.adapters.retrieval.solr.backend import SolrIndexStore
 from fetchcore.repository.git_source import GitRepositorySourceProvider
 from fetchcore.retrieval.contracts import KnowledgeSearchError
-from test_repository_incremental_persistence import MemoryTransport
+from memory_solr_transport import MemoryTransport
 
 
 class LifecycleTransport(MemoryTransport):
@@ -73,7 +77,8 @@ def workspace(tmp_path):
 def backend(monkeypatch):
     transport = LifecycleTransport()
     monkeypatch.setattr(indexing, "UrllibSolrTransport", lambda settings: transport)
-    # Native schema validation is exercised by the opt-in real-backend case below.
+    # Native schema validation is exercised by the opt-in real-backend case in
+    # tests/integration/repository/test_repository_index_lifecycle_integration.py.
     monkeypatch.setattr(SolrIndexStore, "validate_schema", lambda *a, **k: None)
     return transport
 
@@ -259,35 +264,6 @@ def test_registered_target_ignores_legacy_identity_environment(workspace, tmp_pa
     result = invoke("plan")["result"]
     assert result["repository"] == "acme/widgets"
     assert result["target_revision"] == git(workspace, "rev-parse", "HEAD")
-
-
-@pytest.mark.solr_integration
-def test_native_registered_lifecycle(workspace, tmp_path):
-    url = os.environ.get("FETCHCORE_TARGETED_SOLR_URL")
-    collection = os.environ.get("FETCHCORE_TARGETED_SOLR_COLLECTION")
-    if not url or not collection:
-        pytest.skip("requires opt-in disposable Solr")
-    git(workspace, "remote", "set-url", "origin", f"https://example.test/lifecycle/{uuid4().hex}.git")
-    repositories = RepositoryApplicationService(cache_root=tmp_path / "cache", allowed_roots=(tmp_path,))
-    registered = repositories.add(str(workspace))
-    service = indexing.RepositoryIndexApplicationService(repositories, backend_settings={
-        "url": url, "collection": collection,
-    })
-    settings = SolrSettings.from_mapping({"url": url, "collection": collection})
-    store = SolrIndexStore(UrllibSolrTransport(settings), settings)
-    try:
-        assert service.run("plan", registered.repository)["mode"] == "initial"
-        service.run("rebuild", registered.repository)
-        assert service.run("status", registered.repository)["currentness"] == "current"
-        assert service.run("sync", registered.repository)["mode"] == "noop"
-        (workspace / "a.py").write_text("def first():\n    return 42\n")
-        commit(workspace, "delta")
-        assert service.run("plan", registered.repository)["mode"] == "incremental"
-        assert service.run("sync", registered.repository)["mode"] == "incremental"
-        assert service.run("status", registered.repository)["currentness"] == "current"
-    finally:
-        store._delete_repository(registered.repository)
-        store._commit()
 
 
 def test_explicit_rebuild_repairs_indexing_fingerprint(workspace, tmp_path, backend, invoke):
