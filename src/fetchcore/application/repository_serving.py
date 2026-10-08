@@ -85,7 +85,11 @@ class RepositoryRetrievalApplicationService:
 
     def get_source(self, request: SourceReadRequest) -> SourceReadResult:
         registered = self._resolve_source_repository(request)
-        with self._retrieval_service(registered, materialize=True) as service:
+        with self._retrieval_service(
+            registered,
+            materialize=True,
+            expected_revision=request.revision,
+        ) as service:
             return service.get_source(replace(request, repository=registered.repository))
 
     def _resolve_repository(self, reference: str) -> RegisteredRepository:
@@ -135,6 +139,7 @@ class RepositoryRetrievalApplicationService:
         registered: RegisteredRepository,
         *,
         materialize: bool,
+        expected_revision: str | None = None,
     ) -> Iterator[RetrievalApplicationService]:
         with ExitStack() as stack:
             if materialize:
@@ -158,6 +163,11 @@ class RepositoryRetrievalApplicationService:
                 workspace = Path(registered.cache_path or registered.workspace or "")
                 revision = registered.revision
 
+            if expected_revision is not None and expected_revision != revision:
+                raise KnowledgeSearchError(
+                    "source revision does not match the authorized materialization",
+                    category="source_revision_mismatch",
+                )
             if self._runtime.revision is not None and self._runtime.revision != revision:
                 raise KnowledgeSearchError(
                     "runtime revision conflicts with the registered source revision",

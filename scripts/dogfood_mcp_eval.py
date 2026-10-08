@@ -137,6 +137,7 @@ async def evaluate(args: argparse.Namespace, scenarios: tuple[Scenario, ...]) ->
             {
                 "source_ref": smoke_source_ref,
                 "repository": args.repository,
+                **({"revision": args.revision} if args.revision else {}),
             },
         )
         smoke_payload = tool_payload(smoke_result)
@@ -183,12 +184,16 @@ async def evaluate(args: argparse.Namespace, scenarios: tuple[Scenario, ...]) ->
                 raw_ref = matched.get("source_ref")
                 if isinstance(raw_ref, str) and raw_ref.strip():
                     source_ref = raw_ref
+                    source_arguments: dict[str, object] = {
+                        "source_ref": source_ref,
+                        "repository": args.repository,
+                    }
+                    source_revision = matched.get("revision")
+                    if isinstance(source_revision, str) and source_revision:
+                        source_arguments["revision"] = source_revision
                     source_result = await session.call_tool(
                         "get_source",
-                        {
-                            "source_ref": source_ref,
-                            "repository": args.repository,
-                        },
+                        source_arguments,
                     )
                     source_payload = tool_payload(source_result)
                     source_verified = bool(

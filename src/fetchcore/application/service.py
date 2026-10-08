@@ -91,13 +91,14 @@ class SearchRequest:
 
 @dataclass(frozen=True)
 class SourceReadRequest:
-    """Bounded request to read one source from an authorized repository."""
+    """Bounded source read; optional revision requires an exact materialized match."""
 
     source_ref: str
     repository: str | None = None
     line_start: int | None = None
     line_end: int | None = None
     context_lines: int = 0
+    revision: str | None = None
 
 
 @dataclass(frozen=True)
@@ -218,6 +219,11 @@ class RetrievalApplicationService:
             requested_repository=request.repository,
         )
         binding = self._bindings[repository]
+        if request.revision is not None and request.revision != binding.revision:
+            raise KnowledgeSearchError(
+                "source revision does not match the authorized materialization",
+                category="source_revision_mismatch",
+            )
         root = binding.workspace.resolve()
         candidate = (root / relative_path).resolve()
         try:

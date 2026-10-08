@@ -244,6 +244,7 @@ jobs:
 
           source = run([
               "fetchcore", "source", hit["source_ref"],
+              "--revision", hit["revision"],
               *common, "--json",
           ])
           assert source["status"] == "succeeded", source

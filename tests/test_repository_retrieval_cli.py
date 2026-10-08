@@ -170,6 +170,7 @@ def test_search_and_source_round_trip_use_canonical_application_contracts(tmp_pa
             line_start=3,
             line_end=3,
             context_lines=1,
+            revision=response.results[0].revision,
         )
     )
     assert source.repository == "acme/fetchcore"
@@ -180,6 +181,7 @@ def test_search_and_source_round_trip_use_canonical_application_contracts(tmp_pa
 
 def test_cli_composition_and_mcp_share_search_and_source_application_semantics(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     application, backend, workspace = _application(tmp_path)
     registered = application.resolve_repository("fetchcore")
@@ -221,12 +223,31 @@ def test_cli_composition_and_mcp_share_search_and_source_application_semantics(
     assert backend.calls[0] == backend.calls[1]
 
     source_ref = cli_response.results[0].source_ref
-    cli_source = application.get_source(SourceReadRequest(source_ref))
+    cli_source = application.get_source(
+        SourceReadRequest(source_ref, revision=revision)
+    )
+    mcp_source_requests: list[SourceReadRequest] = []
+    get_source = mcp_service.get_source
+
+    def observe_source_request(request: SourceReadRequest):
+        mcp_source_requests.append(request)
+        return get_source(request)
+
+    monkeypatch.setattr(mcp_service, "get_source", observe_source_request)
     mcp_source = asyncio.run(
-        server.call_tool("get_source", {"source_ref": source_ref})
+        server.call_tool(
+            "get_source",
+            {"source_ref": source_ref, "revision": revision},
+        )
     )
     assert mcp_source.is_error is False
     assert mcp_source.structured_content == cli_source.to_mapping()
+    assert mcp_source_requests[0].revision == revision
+    with pytest.raises(KnowledgeSearchError) as caught:
+        mcp_service.get_source(
+            SourceReadRequest(source_ref, revision="different-revision")
+        )
+    assert caught.value.category == "source_revision_mismatch"
 
 
 def test_cli_search_source_json_and_human_outputs_share_application_facts(
@@ -280,6 +301,8 @@ def test_cli_search_source_json_and_human_outputs_share_application_facts(
         "3",
         "--context-lines",
         "1",
+        "--revision",
+        hit["revision"],
     ]
     source_json = runner.invoke(cli.main, [*source_args, "--json"])
     source_repeat = runner.invoke(cli.main, [*source_args, "--json"])
@@ -348,22 +371,41 @@ def test_relative_source_requires_explicit_repository(tmp_path: Path) -> None:
     assert caught.value.category == "repository_scope_required"
 
 
-def test_local_source_reobserves_current_revision_instead_of_reusing_stale_registration(
+def test_local_source_rejects_search_revision_after_workspace_advances(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     application, _, workspace = _application(tmp_path)
     registered = application.resolve_repository("fetchcore")
+    response = application.search(
+        SearchRequest(query="needle", repository=registered.repository)
+    )
+    hit = response.results[0]
+    assert hit.revision == registered.revision
     path = workspace / "src" / "runtime_config.py"
     path.write_text("current workspace content\n", encoding="utf-8")
     _git("add", ".", cwd=workspace)
     _git("commit", "-m", "advance workspace", cwd=workspace)
     current_revision = _git("rev-parse", "HEAD", cwd=workspace)
 
-    source = application.get_source(
-        SourceReadRequest("repository://acme/fetchcore/src/runtime_config.py")
+    _use_application(monkeypatch, application)
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "source",
+            hit.source_ref,
+            "--revision",
+            hit.revision,
+            "--json",
+        ],
     )
+    assert result.exit_code == 1
+    assert json.loads(result.output)["error"]["category"] == "source_revision_mismatch"
+    assert _git("rev-parse", "HEAD", cwd=workspace) == current_revision
+    assert path.read_text(encoding="utf-8") == "current workspace content\n"
 
-    assert current_revision != registered.revision
+    source = application.get_source(SourceReadRequest(hit.source_ref))
+    assert current_revision != hit.revision
     assert source.revision == current_revision
     assert source.content == "current workspace content"
 
@@ -394,6 +436,11 @@ def test_cached_git_search_does_not_materialize_and_source_uses_pinned_revision(
     calls: list[bool] = []
     provider = repositories.git
     original_materialize = provider.materialize
+    monkeypatch.setattr(
+        provider,
+        "_fetch_mirror",
+        lambda *args, **kwargs: pytest.fail("source access must not fetch the Git mirror"),
+    )
 
     def track_materialization(request, *, refresh=True):
         calls.append(refresh)
@@ -407,11 +454,24 @@ def test_cached_git_search_does_not_materialize_and_source_uses_pinned_revision(
     assert calls == []
     assert response.results[0].revision == registered.revision
     source = application.get_source(
-        SourceReadRequest(response.results[0].source_ref)
+        SourceReadRequest(
+            response.results[0].source_ref,
+            revision=registered.revision,
+        )
     )
     assert calls == [False]
     assert source.revision == registered.revision
     assert source.content == "one\ntwo\nthree\nfour\nfive"
+
+    with pytest.raises(KnowledgeSearchError) as caught:
+        application.get_source(
+            SourceReadRequest(
+                response.results[0].source_ref,
+                revision="different-revision",
+            )
+        )
+    assert caught.value.category == "source_revision_mismatch"
+    assert calls == [False, False]
     assert list((provider.cache_root / "worktrees").iterdir()) == []
 
 
