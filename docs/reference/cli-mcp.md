@@ -12,6 +12,8 @@
 | `fetchcore index status <repo>` | Observe registered, materialized and indexed revision/currentness. |
 | `fetchcore index sync <repo>` | Incremental synchronization or no-op; never implicit rebuild. |
 | `fetchcore index rebuild <repo>` | Explicit canonical full indexing and projection replacement. |
+| `fetchcore search "<query>" --repo <repo>` | Bounded repository-scoped retrieval through the application service. |
+| `fetchcore source <source-ref>` | Bounded, authorized source read from a search result reference. |
 | `fetchcore index bootstrap` | Validate the Solr schema contract. |
 | `fetchcore index status` | Report snapshot compatibility and repository freshness. |
 | `fetchcore index dry-run` | Preview indexing changes without persistent writes. |
@@ -25,6 +27,18 @@ registration and materialization facts. Group options `--cache-root` and
 repeatable `--allowed-root` precede the subcommand; `add` accepts an optional
 `--provider local-workspace|git`. See the [repository registry guide](../guides/repository-registry.md)
 for identity, persistence, source safety, output fields, and failure categories.
+
+`search` requires `--repo` and accepts `--limit` (1..100), repeatable
+`--knowledge-type`, and `--json`. `source` accepts `--repo` for a relative
+`source_ref`, plus
+`--line-start`, `--line-end`, `--context-lines`, and `--json`. Both commands use
+the operator runtime configuration from #65 for backend/retrieval composition
+and the canonical repository registry from #68 for identity and source
+materialization. A conflicting configured repository or revision fails
+explicitly. Neither command indexes or synchronizes a repository. Source reads
+remain path-safe and bounded by the serving limits. A mutable local workspace
+reports its observed current revision; registered Git repositories are read at
+their pinned revision through a temporary cached worktree without fetching.
 
 `doctor`, `capabilities`, and `config show` accept `--json` and an optional
 `--config <path>`. Doctor checks resolve the selected backend/provider and use

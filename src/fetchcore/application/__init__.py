@@ -25,3 +25,6 @@ from .service import (
     SourceReadRequest as SourceReadRequest,
     SourceReadResult as SourceReadResult,
 )
+from .repository_serving import (
+    RepositoryRetrievalApplicationService as RepositoryRetrievalApplicationService,
+)

@@ -23,6 +23,21 @@ MAX_SOURCE_LINES = 400
 MAX_SOURCE_BYTES = 1_000_000
 
 
+def resolve_source_ref_repository_matches(
+    source_ref: str,
+    repositories: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Match a canonical repository source_ref against authorized identities."""
+    raw = unquote(source_ref.strip()).split("#", 1)[0]
+    if not raw.startswith("repository://"):
+        return ()
+    return tuple(
+        repository
+        for repository in repositories
+        if raw.startswith(f"repository://{repository}/")
+    )
+
+
 @dataclass(frozen=True)
 class ServingLimits:
     """Caller-selected safety bounds for retrieval and source serving."""
@@ -298,11 +313,10 @@ class RetrievalApplicationService:
     ) -> tuple[str, str]:
         raw = unquote(source_ref.strip()).split("#", 1)[0]
         if raw.startswith("repository://"):
-            matches = [
-                repository
-                for repository in self._bindings
-                if raw.startswith(f"repository://{repository}/")
-            ]
+            matches = resolve_source_ref_repository_matches(
+                source_ref,
+                tuple(self._bindings),
+            )
             if len(matches) != 1:
                 raise KnowledgeSearchError(
                     "repository source_ref is outside the authorized serving scope",

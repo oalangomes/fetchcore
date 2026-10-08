@@ -5,22 +5,31 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from collections.abc import Callable
+from typing import TypeVar
 
 import click
 import yaml
 
+from fetchcore.application import (
+    RepositoryRetrievalApplicationService,
+    SearchRequest,
+    SourceReadRequest,
+    SourceReadResult,
+)
 from fetchcore.application.indexing import (
     IndexContext as _IndexCommandContext,
     RepositoryIndexApplicationService,
     build_index_context as _build_index_context,
 )
-from fetchcore.retrieval.contracts import KnowledgeSearchError
+from fetchcore.retrieval.contracts import KnowledgeSearchError, KnowledgeSearchResponse
 from fetchcore.repository.index_policy import RepositoryIndexPolicyError
 from fetchcore.application.repositories import RepositoryApplicationService
 from fetchcore.application.runtime_inspection import (
     RuntimeInspectionService,
 )
 from fetchcore.repository.registry import RepositoryRegistryError
+
+_RetrievalResult = TypeVar("_RetrievalResult")
 
 
 @click.group()
@@ -109,6 +118,91 @@ def repo_inspect(service: RepositoryApplicationService, repository: str, as_json
     _run_repo_operation("inspect", as_json, lambda: service.present(service.inspect(repository)))
 
 
+@main.command("search")
+@click.argument("query")
+@click.option("--repo", "repository", required=True, help="Canonical identity or unique repository name.")
+@click.option("--limit", type=int, default=10, show_default=True)
+@click.option("--knowledge-type", "knowledge_types", multiple=True)
+@click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--cache-root", type=click.Path(path_type=Path, file_okay=False))
+@click.option("--allowed-root", multiple=True, type=click.Path(path_type=Path, file_okay=False))
+@click.option("--json", "as_json", is_flag=True, help="Emit deterministic JSON.")
+def search(
+    query: str,
+    repository: str,
+    limit: int,
+    knowledge_types: tuple[str, ...],
+    config_path: Path | None,
+    cache_root: Path | None,
+    allowed_root: tuple[Path, ...],
+    as_json: bool,
+) -> None:
+    """Search bounded repository evidence through the configured runtime."""
+    _run_repository_retrieval(
+        "search",
+        as_json,
+        lambda: _execute_search(
+            RepositoryRetrievalApplicationService.from_sources(
+                config_path=config_path,
+                cache_root=cache_root,
+                allowed_roots=allowed_root or None,
+            ),
+            query,
+            repository,
+            limit,
+            knowledge_types,
+        ),
+        lambda outcome: {
+            "repository": outcome[0],
+            **outcome[1].to_mapping(),
+        },
+        lambda outcome: _render_search(outcome[1], outcome[0]),
+    )
+
+
+@main.command("source")
+@click.argument("source_ref")
+@click.option("--repo", "repository", help="Canonical identity or unique repository name.")
+@click.option("--line-start", type=int)
+@click.option("--line-end", type=int)
+@click.option("--context-lines", type=int, default=0, show_default=True)
+@click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--cache-root", type=click.Path(path_type=Path, file_okay=False))
+@click.option("--allowed-root", multiple=True, type=click.Path(path_type=Path, file_okay=False))
+@click.option("--json", "as_json", is_flag=True, help="Emit deterministic JSON.")
+def source(
+    source_ref: str,
+    repository: str | None,
+    line_start: int | None,
+    line_end: int | None,
+    context_lines: int,
+    config_path: Path | None,
+    cache_root: Path | None,
+    allowed_root: tuple[Path, ...],
+    as_json: bool,
+) -> None:
+    """Read bounded source identified by a FetchCore source_ref."""
+    _run_repository_retrieval(
+        "source",
+        as_json,
+        lambda: RepositoryRetrievalApplicationService.from_sources(
+            config_path=config_path,
+            cache_root=cache_root,
+            allowed_roots=allowed_root or None,
+        ).get_source(
+            SourceReadRequest(
+                source_ref=source_ref,
+                repository=repository,
+                line_start=line_start,
+                line_end=line_end,
+                context_lines=context_lines,
+            )
+        ),
+        lambda result: result.to_mapping(),
+        _render_source,
+    )
+
+
 def _run_repo_operation(
     operation: str, as_json: bool,
     execute: Callable[[], dict[str, object] | list[dict[str, object]]],
@@ -133,6 +227,97 @@ def _run_repo_operation(
     for record in records:
         click.echo(" | ".join(f"{key}={value if value is not None else 'unavailable'}"
                               for key, value in record.items()))
+
+
+def _run_repository_retrieval(
+    operation: str,
+    as_json: bool,
+    execute: Callable[[], _RetrievalResult],
+    to_mapping: Callable[[_RetrievalResult], dict[str, object]],
+    render: Callable[[_RetrievalResult], None],
+) -> None:
+    try:
+        result = execute()
+    except (KnowledgeSearchError, RepositoryRegistryError, OSError, ValueError, yaml.YAMLError) as exc:
+        category = getattr(exc, "category", "invalid_runtime_configuration")
+        payload = {
+            "operation": operation,
+            "status": "failed",
+            "error": {"category": category},
+        }
+        if as_json:
+            click.echo(json.dumps(payload, sort_keys=True, indent=2))
+        else:
+            click.echo(f"{operation}: failed")
+            click.echo(f"category={category}")
+        raise click.exceptions.Exit(1) from exc
+    if as_json:
+        click.echo(json.dumps({
+            "operation": operation,
+            "status": "succeeded",
+            "result": to_mapping(result),
+        }, sort_keys=True, indent=2))
+        return
+    render(result)
+
+
+def _execute_search(
+    service: RepositoryRetrievalApplicationService,
+    query: str,
+    repository: str,
+    limit: int,
+    knowledge_types: tuple[str, ...],
+) -> tuple[str, KnowledgeSearchResponse]:
+    canonical_repository = service.resolve_repository(repository).repository
+    response = service.search(
+        SearchRequest(
+            query=query,
+            repository=canonical_repository,
+            limit=limit,
+            knowledge_types=knowledge_types,
+        )
+    )
+    return canonical_repository, response
+
+
+def _render_search(response: KnowledgeSearchResponse, repository: str) -> None:
+    click.echo(
+        f"search: backend={response.backend} status={response.status} "
+        f"repository={repository}"
+    )
+    if not response.results:
+        click.echo("No evidence returned.")
+        return
+    for rank, result in enumerate(response.results, start=1):
+        location = result.source or result.source_ref
+        if result.line_start is not None:
+            location += f":{result.line_start}"
+            if result.line_end is not None:
+                location += f"-{result.line_end}"
+        click.echo(f"{rank}. {location}")
+        click.echo(f"   repository: {repository}")
+        if result.revision is not None:
+            click.echo(f"   revision: {result.revision}")
+        click.echo(f"   knowledge_type: {result.knowledge_type}")
+        click.echo(f"   score: {result.score:g}")
+        click.echo(f"   source_ref: {result.source_ref}")
+        preview = result.content[:1000]
+        if len(result.content) > len(preview):
+            preview += "..."
+        if preview:
+            click.echo(f"   evidence:\n{preview}")
+
+
+def _render_source(result: SourceReadResult) -> None:
+    click.echo(f"source: repository={result.repository}")
+    click.echo(f"revision={result.revision or 'unavailable'}")
+    click.echo(f"path={result.path}")
+    click.echo(
+        f"lines={result.line_start}-{result.line_end}/{result.total_lines}"
+    )
+    click.echo(f"source_ref={result.source_ref}")
+    click.echo(f"truncated={str(result.truncated).lower()}")
+    click.echo(result.content)
 
 
 def _run_runtime_operation(
