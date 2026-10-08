@@ -81,13 +81,21 @@ jobs:
               exit 0
             fi
             labels="$(jq -r '[.[] | select(.merged_at != null)][0].labels[].name' <<< "$prs")"
-            if grep -Fxq 'release:skip' <<< "$labels"; then
+            has_skip=false
+            has_minor=false
+            has_major=false
+            if grep -Fxq 'release:skip' <<< "$labels"; then has_skip=true; fi
+            if grep -Fxq 'release:minor' <<< "$labels"; then has_minor=true; fi
+            if grep -Fxq 'release:major' <<< "$labels"; then has_major=true; fi
+            if [[ "$has_major" == true && "$has_minor" == true ]] ||
+               [[ "$has_skip" == true && ( "$has_minor" == true || "$has_major" == true ) ]]; then
+              echo "::error::Conflicting release labels on the merged PR"
+              exit 1
+            fi
+            if [[ "$has_skip" == true ]]; then
+              echo "Explicit release:skip: validated administrative PR does not publish."
               echo "action=skip" >> "$GITHUB_OUTPUT"
               exit 0
-            fi
-            if grep -Fxq 'release:major' <<< "$labels" && grep -Fxq 'release:minor' <<< "$labels"; then
-              echo "::error::Conflicting release labels"
-              exit 1
             fi
             bump=patch
             if grep -Fxq 'release:major' <<< "$labels"; then bump=major;
@@ -156,6 +164,23 @@ jobs:
           PY
           )"
           [[ "$TAG" == "v$declared" ]] || { echo "::error::Project version does not match $TAG"; exit 1; }
+          # Assemble the first release notes before pushing its immutable tag.
+          initial_notes=""
+          if [[ "$TAG" == "v0.0.1" ]] &&
+             ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            curated="docs/releases/initial-release.md"
+            [[ -s "$curated" ]] || { echo "::error::Missing curated v0.0.1 release notes"; exit 1; }
+            generated="$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f tag_name="$TAG" -f target_commitish="$(git rev-parse HEAD)" --jq '.body')"
+            [[ -n "$generated" && "$generated" != "null" ]] ||
+              { echo "::error::Could not generate initial PR history"; exit 1; }
+            initial_notes="$RUNNER_TEMP/fetchcore-v0.0.1-notes.md"
+            {
+              cat "$curated"
+              printf '\n\n---\n\n## Complete change history (GitHub-generated)\n\n%s\n' "$generated"
+            } > "$initial_notes"
+          fi
+
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
             [[ "$(git rev-list -n 1 "$TAG")" == "$(git rev-parse HEAD)" ]] || exit 1
           else
@@ -163,8 +188,13 @@ jobs:
             git push origin "$TAG"
           fi
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
-              --title "FetchCore $TAG" --generate-notes
+            if [[ "$TAG" == "v0.0.1" ]]; then
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+                --title "FetchCore $TAG" --notes-file "$initial_notes"
+            else
+              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+                --title "FetchCore $TAG" --generate-notes
+            fi
           fi
 
       - name: Summary
