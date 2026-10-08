@@ -87,8 +87,8 @@ obtain a `RegisteredRepository`. Its `source_request()` reconstructs the existin
 `RepositorySourceRequest` with canonical identity, ready for the corresponding
 provider and later indexing integration. Git requests pin the observed revision;
 local requests re-observe HEAD so an old observation cannot label newer workspace
-content. This slice does
-not add repository-targeted indexing commands, search, or diagnostics.
+content. Use the [repository indexing lifecycle](repository-indexing.md) to plan,
+inspect, synchronize, or explicitly rebuild a registered source.
 
 ## Output and failures
 

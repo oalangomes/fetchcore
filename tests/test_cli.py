@@ -6,6 +6,7 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from fetchcore import cli
+from fetchcore.application import indexing
 
 
 class _Runtime:
@@ -65,7 +66,7 @@ def test_index_status_emits_machine_readable_json(
         lambda **_: _context(tmp_path),
     )
     monkeypatch.setattr(  # type: ignore[attr-defined]
-        cli,
+        indexing,
         "repository_index_status",
         lambda *_: {"state": "ready", "reason": "up_to_date"},
     )
@@ -92,7 +93,7 @@ def test_index_dry_run_emits_planned_mutations(
         lambda **_: _context(tmp_path),
     )
     monkeypatch.setattr(  # type: ignore[attr-defined]
-        cli,
+        indexing,
         "dry_run_repository_index",
         lambda *_: {
             "mode": "incremental",
@@ -143,7 +144,7 @@ def test_index_sync_uses_targeted_incremental_synchronizer(
             return _Outcome()
 
     monkeypatch.setattr(  # type: ignore[attr-defined]
-        cli,
+        indexing,
         "TargetedGitAwareSolrSynchronizer",
         _Synchronizer,
     )

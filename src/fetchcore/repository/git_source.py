@@ -82,6 +82,8 @@ class GitRepositorySourceProvider:
     def materialize(
         self,
         request: RepositorySourceRequest,
+        *,
+        refresh: bool = True,
     ) -> Iterator[MaterializedRepository]:
         remote = str(request.source).strip()
         if not remote:
@@ -93,10 +95,14 @@ class GitRepositorySourceProvider:
             safe_remote,
             fallback="repository",
         )
-        self.cache_root.mkdir(parents=True, exist_ok=True)
         mirror = self.cache_path_for(remote)
-        self._ensure_mirror(remote, safe_remote=safe_remote, mirror=mirror)
-        self._fetch_mirror(mirror, safe_remote=safe_remote)
+        if not refresh and (not request.revision or not mirror.is_dir()):
+            raise GitRepositorySourceError("Cached materialization requires a mirror and pinned revision")
+        if refresh:
+            self.cache_root.mkdir(parents=True, exist_ok=True)
+        self._ensure_mirror(remote, safe_remote=safe_remote, mirror=mirror, allow_clone=refresh)
+        if refresh:
+            self._fetch_mirror(mirror, safe_remote=safe_remote)
 
         branch = request.branch or self._default_branch(mirror)
         revision_spec = request.revision or branch or "HEAD"
@@ -152,9 +158,12 @@ class GitRepositorySourceProvider:
                     )
                 except GitRepositorySourceError:
                     shutil.rmtree(workspace, ignore_errors=True)
-            self._git_best_effort(("--git-dir", str(mirror), "worktree", "prune"))
+            if refresh:
+                self._git_best_effort(("--git-dir", str(mirror), "worktree", "prune"))
 
-    def _ensure_mirror(self, remote: str, *, safe_remote: str, mirror: Path) -> None:
+    def _ensure_mirror(
+        self, remote: str, *, safe_remote: str, mirror: Path, allow_clone: bool = True,
+    ) -> None:
         if mirror.exists():
             if not mirror.is_dir():
                 raise GitRepositorySourceError(
@@ -183,6 +192,8 @@ class GitRepositorySourceProvider:
                 raise GitRepositorySourceError("Git mirror origin does not match requested source")
             return
 
+        if not allow_clone:
+            raise GitRepositorySourceError("Registered Git mirror is absent")
         try:
             self._git(
                 ("clone", "--mirror", remote, str(mirror)),
