@@ -37,6 +37,7 @@ build:
 
 docs-check:
 	$(PYTHON) scripts/check_docs.py
+	$(PYTHON) scripts/docs/localize.py check
 
 check: lint typecheck test build docs-check
 

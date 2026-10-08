@@ -1,5 +1,7 @@
 # FetchCore documentation
 
+[English](README.md) | [Português (Brasil)](pt-BR/README.md)
+
 Use this index to find the current contract. Historical extraction notes and individual experiment results are evidence of earlier work, not the current architecture.
 
 | I want to… | Start here |
@@ -14,6 +16,7 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Plan, sync or rebuild a registered repository | [Repository indexing lifecycle](guides/repository-indexing.md) |
 | Search or run MCP | [Searching](guides/searching.md) and [MCP](guides/mcp.md) |
 | Configure or add a backend | [Runtime configuration](guides/runtime-configuration.md), [configuration reference](reference/configuration.md), and [adding a backend](guides/adding-a-backend.md) |
+| Maintain PT-BR documentation | [Documentation localization](guides/documentation-localization.md) |
 | Understand release gates, labels and the initial version | [Release policy](release-policy.md) and [v0.0.1 technical overview](releases/initial-release.md) |
 | Reproduce a benchmark | [Experiment convention](benchmarks/protocol.md) and [baseline v1 protocol](benchmarks/baseline-v1.md), and [SearchIntent v2 experiment](benchmarks/search-intent-v2.md) |
 | Understand a durable decision | [ADR index](adr/README.md) |

@@ -1,5 +1,7 @@
 # FetchCore
 
+[English](README.md) | [Português (Brasil)](README.pt-BR.md)
+
 FetchCore turns software repositories into searchable, typed technical evidence with source provenance. It acquires and indexes repository knowledge, then returns retrieval candidates through backend-neutral contracts. Consumers decide whether evidence satisfies a task and what authority to assign it.
 
 FetchCore owns repository scanning, extraction, canonical knowledge, projection, retrieval contracts and adapters, incremental indexing, and CLI/MCP serving. It does not own agent planning, task completion, approval, or execution authority.
