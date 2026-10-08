@@ -73,6 +73,27 @@ def markdown_report(payload: dict[str, object]) -> str:
     lines.extend(
         [
             "",
+            "## Per-question results",
+            "",
+            "| Arm | Question | Result |",
+            "| --- | --- | --- |",
+        ]
+    )
+    for name, raw in arms.items():
+        assert isinstance(raw, dict)
+        score = raw["score"]
+        assert isinstance(score, dict)
+        rows = score["per_question"]
+        assert isinstance(rows, list)
+        for row in rows:
+            assert isinstance(row, dict)
+            lines.append(
+                f"| {name} | {row['question_id']} | "
+                f"{'PASS' if row['passed'] else 'FAIL'} |"
+            )
+    lines.extend(
+        [
+            "",
             (
                 "FactRecall/FactPrecision measure the durable-memory evaluation only. "
                 "They are not retrieval authority scores."
