@@ -22,18 +22,23 @@ def _config_file(tmp_path: Path, content: str) -> Path:
     return path
 
 
-def _qdrant_config_file(tmp_path: Path) -> Path:
-    return _config_file(
-        tmp_path,
+def _qdrant_config_file(tmp_path: Path, *, dense_configured: bool = True) -> Path:
+    content = (
         "version: 1\n"
         "runtime:\n  backend: qdrant-vector\n"
         "backends:\n  qdrant-vector:\n    url: http://qdrant:6333\n"
         "    collection: fetchcore-vector\n"
-        "embedding:\n  ollama:\n    url: http://ollama:11434\n"
-        "retrieval:\n  dense:\n    enabled: true\n"
-        "    embedding:\n      provider: ollama\n"
-        "      model: test-embedding-model\n",
     )
+    if not dense_configured:
+        content += "    embedding_model: legacy-qdrant-model\n"
+    content += "embedding:\n  ollama:\n    url: http://ollama:11434\n"
+    if dense_configured:
+        content += (
+            "retrieval:\n  dense:\n    enabled: true\n"
+            "    embedding:\n      provider: ollama\n"
+            "      model: test-embedding-model\n"
+        )
+    return _config_file(tmp_path, content)
 
 
 def _isolated_qdrant_env() -> dict[str, str | None]:
@@ -450,6 +455,7 @@ def test_qdrant_doctor_fails_when_embedding_execution_is_unavailable(
     )
 
     assert result.exit_code == 1, result.output
+    assert payload["status"] == "succeeded"
     assert payload["result"]["status"] == "unhealthy"
     checks = {check["name"]: check for check in payload["result"]["checks"]}
     assert checks["backend_resolution"]["status"] == "ok"
@@ -475,7 +481,7 @@ def test_qdrant_doctor_is_healthy_when_embedding_health_succeeds(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    path = _qdrant_config_file(tmp_path)
+    path = _qdrant_config_file(tmp_path, dense_configured=False)
     transport_calls: list[tuple[str, str]] = []
     settings_seen: list[QdrantVectorSettings] = []
     embedding_calls: list[tuple[str, str, tuple[str, ...]]] = []
@@ -502,13 +508,12 @@ def test_qdrant_doctor_is_healthy_when_embedding_health_succeeds(
     assert checks["embedding_provider"] == "ok"
     assert checks["backend_connectivity"] == "ok"
     assert checks["schema_compatibility"] == "not_checked"
-    assert checks["retrieval_compatibility"] == "ok"
     assert transport_calls == [("GET", "collections")]
-    assert provider_resolutions == [EmbeddingConfig(model="test-embedding-model")]
+    assert provider_resolutions == [EmbeddingConfig(model="legacy-qdrant-model")]
     assert len(settings_seen) == 1
     assert embedding_calls == [(
         "http://ollama:11434",
-        "test-embedding-model",
+        "legacy-qdrant-model",
         ("fetchcore embedding probe",),
     )]
 

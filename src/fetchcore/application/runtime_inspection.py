@@ -260,6 +260,14 @@ class RuntimeInspectionService:
             checks.append(RuntimeCheck("backend_resolution", "ok"))
 
         embedding = self._required_embedding()
+        if self.config.backend == "qdrant-vector" and self.config.retrieval is None:
+            model = self.config.backend_settings.get("embedding_model", EmbeddingConfig.model)
+            if not isinstance(model, str):
+                raise KnowledgeSearchError(
+                    "Qdrant embedding model is invalid",
+                    category="schema_mismatch",
+                )
+            embedding = EmbeddingConfig(model=model)
         if embedding is not None:
             try:
                 embedding_provider = self.providers.create(
@@ -303,13 +311,7 @@ class RuntimeInspectionService:
         if self.config.retrieval is not None and self.config.retrieval.dense.enabled:
             return self.config.retrieval.dense.embedding
         if self.config.backend == "qdrant-vector" and self.config.retrieval is None:
-            model = self.config.backend_settings.get("embedding_model", EmbeddingConfig.model)
-            if not isinstance(model, str):
-                raise KnowledgeSearchError(
-                    "Qdrant embedding model is invalid",
-                    category="schema_mismatch",
-                )
-            return EmbeddingConfig(model=model)
+            return EmbeddingConfig()
         return None
 
     def _probe_backend(
