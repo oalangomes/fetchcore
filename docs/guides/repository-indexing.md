@@ -78,7 +78,10 @@ compatibility and disables the synchronizer's implicit rebuild policy.
 `status` reports `current`, `stale`, `absent`, `incompatible`, or `unknown`.
 `current` requires compatible persisted state plus a clean same-revision Git delta,
 not mere presence of a workspace/mirror. Unknown local revisions remain unknown.
-Dirty workspaces are observed under the existing Git delta/content-checksum contract;
+Cheap status also reports unknown for dirty same-HEAD workspaces: Git differences
+from HEAD alone do not prove differences from indexed content. Plan performs the
+canonical comparison and can prove `canonical_noop` for already-indexed dirty
+content. Dirty workspaces follow the existing Git delta/content-checksum contract;
 a matching HEAD alone does not imply no-op or an immutable workspace snapshot.
 
 `plan` modes are `initial`, `incremental`, `noop`, and `rebuild_required`. A full

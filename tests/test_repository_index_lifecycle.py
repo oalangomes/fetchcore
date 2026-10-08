@@ -335,6 +335,7 @@ def test_dirty_workspace_same_head_is_not_noop(workspace, tmp_path, backend, inv
     (workspace / "a.py").write_text("def first():\n    return 999\n")
     plan = invoke("plan")["result"]
     assert plan["mode"] == "incremental"
+    assert invoke("status")["result"]["currentness"] == "unknown"
     assert plan["currentness"] == "stale"
     assert plan["planned_mutations"]["updated"] == 1
     assert backend.post_calls == []
@@ -388,4 +389,35 @@ def test_backend_failure_output_redacts_raw_details(workspace, tmp_path, backend
     assert result["error"]["category"] == "connection_failure"
     assert "secret" not in str(result)
     assert "private" not in str(result)
+    assert backend.post_calls == []
+
+
+def test_plan_reports_canonical_noop_for_already_indexed_dirty_content(workspace, tmp_path, backend, invoke):
+    register(workspace, tmp_path)
+    invoke("rebuild")
+    (workspace / "a.py").write_text("def first():\n    return 999\n")
+    invoke("sync")
+    backend.post_calls.clear()
+    plan = invoke("plan")["result"]
+    assert plan["mode"] == "noop"
+    assert plan["reason"] == "canonical_noop"
+    assert invoke("sync")["result"]["mode"] == "noop"
+    assert backend.post_calls == []
+
+
+def test_plan_reports_canonical_full_scan_reason(workspace, tmp_path, backend, invoke, monkeypatch):
+    from fetchcore.repository.semantic_indexing import SemanticDocumentRepositoryIndexer
+    # An active document/semantic provider can require a full canonical scan.
+    monkeypatch.setattr(SemanticDocumentRepositoryIndexer, "requires_full_scan_for_paths",
+                        lambda *args: True)
+    register(workspace, tmp_path)
+    invoke("rebuild")
+    (workspace / "README.md").write_text("# Updated repository documentation\n")
+    commit(workspace, "document changed")
+    backend.post_calls.clear()
+    plan = invoke("plan")["result"]
+    assert plan["mode"] == "incremental"
+    assert plan["discovery"]["mode"] == "full-scan"
+    assert plan["reason"] == plan["discovery"]["reason"] == "delta_scan_unsafe"
+    assert plan["planned_mutations"]["replace_repository"] is False
     assert backend.post_calls == []

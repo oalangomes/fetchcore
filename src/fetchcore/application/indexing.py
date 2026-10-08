@@ -125,7 +125,7 @@ def _observe(context: IndexContext) -> IndexObservation:
     status = repository_index_status(store, runtime)
     currentness: Literal["current", "stale", "unknown"] = (
         "current" if status["state"] == "ready" else
-        "unknown" if runtime.revision is None else "stale"
+        "unknown" if runtime.revision is None or runtime.revision == snapshot.revision else "stale"
     )
     return IndexObservation(
         "noop" if status["state"] == "ready" else "incremental",
@@ -188,6 +188,20 @@ class RepositoryIndexApplicationService:
             if operation == "plan":
                 if observation.mode != "rebuild_required":
                     preview = dry_run_repository_index(store, context.runtime)
+                    # Canonical comparison can prove no-op for already-indexed dirty
+                    # content, or require a wider scan than the cheap status observed.
+                    result["reason"] = preview["reason"]
+                    if preview["mode"] == "full_rebuild":
+                        initial = preview.get("snapshot_error") == "snapshot_missing"
+                        result["mode"] = "initial" if initial else "rebuild_required"
+                        result["currentness"] = "absent" if initial else "incompatible"
+                        result["incremental_possible"] = False
+                    else:
+                        result["mode"] = "noop" if preview["noop"] else "incremental"
+                        result["currentness"] = (
+                            "current" if preview["noop"] else
+                            "unknown" if source.revision is None else "stale"
+                        )
                     # Only expose runtime-proven quantities. Full-scan path counts are
                     # discovery placeholders, not measured changed/deleted file counts.
                     for key in ("planned_mutations", "discovery", "indexing_telemetry"):
