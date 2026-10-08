@@ -1,0 +1,26 @@
+locale: pt-BR
+preserve:
+  - FetchCore
+  - SearchIntent
+  - SearchScope
+  - SearchRequirement
+  - QuerySignal
+  - KnowledgeSearchBackend
+  - RetrievalConfig
+  - RetrievalBackendCapabilities
+  - EmbeddingProvider
+  - EvidenceObservation
+  - QueryMatchEvidence
+  - RRF
+  - BM25
+  - retrieval
+  - backend
+  - embedding
+  - reranking
+  - targeted retrieval
+  - runtime
+terms:
+  evidence: evidência
+  provenance: proveniência
+  repository: repositório
+  source of truth: fonte de verdade

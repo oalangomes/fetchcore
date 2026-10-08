@@ -23,6 +23,21 @@ MAX_SOURCE_LINES = 400
 MAX_SOURCE_BYTES = 1_000_000
 
 
+def resolve_source_ref_repository_matches(
+    source_ref: str,
+    repositories: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Match a canonical repository source_ref against authorized identities."""
+    raw = unquote(source_ref.strip()).split("#", 1)[0]
+    if not raw.startswith("repository://"):
+        return ()
+    return tuple(
+        repository
+        for repository in repositories
+        if raw.startswith(f"repository://{repository}/")
+    )
+
+
 @dataclass(frozen=True)
 class ServingLimits:
     """Caller-selected safety bounds for retrieval and source serving."""
@@ -76,13 +91,14 @@ class SearchRequest:
 
 @dataclass(frozen=True)
 class SourceReadRequest:
-    """Bounded request to read one source from an authorized repository."""
+    """Bounded source read; optional revision requires an exact materialized match."""
 
     source_ref: str
     repository: str | None = None
     line_start: int | None = None
     line_end: int | None = None
     context_lines: int = 0
+    revision: str | None = None
 
 
 @dataclass(frozen=True)
@@ -203,6 +219,11 @@ class RetrievalApplicationService:
             requested_repository=request.repository,
         )
         binding = self._bindings[repository]
+        if request.revision is not None and request.revision != binding.revision:
+            raise KnowledgeSearchError(
+                "source revision does not match the authorized materialization",
+                category="source_revision_mismatch",
+            )
         root = binding.workspace.resolve()
         candidate = (root / relative_path).resolve()
         try:
@@ -298,11 +319,10 @@ class RetrievalApplicationService:
     ) -> tuple[str, str]:
         raw = unquote(source_ref.strip()).split("#", 1)[0]
         if raw.startswith("repository://"):
-            matches = [
-                repository
-                for repository in self._bindings
-                if raw.startswith(f"repository://{repository}/")
-            ]
+            matches = resolve_source_ref_repository_matches(
+                source_ref,
+                tuple(self._bindings),
+            )
             if len(matches) != 1:
                 raise KnowledgeSearchError(
                     "repository source_ref is outside the authorized serving scope",

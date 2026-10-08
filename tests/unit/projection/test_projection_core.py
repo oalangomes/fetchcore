@@ -104,7 +104,7 @@ def test_projection_semantics_use_fetchcore_query_and_evidence_contracts() -> No
 
 
 def test_projection_ranking_core_has_no_agentsorch_imports() -> None:
-    root = Path(__file__).resolve().parents[1] / "src" / "fetchcore"
+    root = Path(__file__).resolve().parents[3] / "src" / "fetchcore"
     for relative in (
         "projection/core.py",
         "projection/semantics.py",

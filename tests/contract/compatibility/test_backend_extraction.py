@@ -70,7 +70,7 @@ def test_qdrant_sparse_analyzer_is_deterministic() -> None:
 
 
 def test_backend_modules_have_no_agentsorch_imports() -> None:
-    root = Path(__file__).resolve().parents[1] / "src" / "fetchcore"
+    root = Path(__file__).resolve().parents[3] / "src" / "fetchcore"
     relatives = (
         "adapters/retrieval/local/backend.py",
         "adapters/retrieval/solr/backend.py",

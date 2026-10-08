@@ -1,5 +1,7 @@
 # FetchCore
 
+<p align="center"><a href="README.md">English</a> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
+
 <p align="center"><strong>Repositories into evidence.</strong></p>
 <p align="center">Backend-neutral repository knowledge and retrieval for developer tools, MCP clients, and coding agents.</p>
 

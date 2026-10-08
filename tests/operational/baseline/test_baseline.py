@@ -506,7 +506,7 @@ def test_baseline_arm_manifest_mapping_fails_closed(
 
 
 def test_baseline_manifest_matches_frozen_arm_matrix() -> None:
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[3]
     manifest = json.loads(
         (root / "benchmarks/baseline-v1/manifest.json").read_text(encoding="utf-8")
     )
@@ -785,7 +785,7 @@ def test_baseline_environment_is_recorded_in_artifact() -> None:
 
 
 def test_repository_baseline_v1_suite_is_evidence_region_frozen() -> None:
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[3]
     suite = load_baseline_suite(root / "benchmarks/baseline-v1/ground-truth.json")
 
     assert suite.schema_version == 2

@@ -92,3 +92,9 @@ than the input YAML or environment. Its source map records `default`,
 that origin. Secret values such as Qdrant API keys are masked. An optional
 `--config <path>` selects the operator file explicitly; no `.fetchcore/*`
 repository policy file is searched or treated as runtime configuration.
+
+The repository-scoped CLI `search` and `source` commands use this same resolved
+runtime boundary for backend and retrieval settings. Repository identity and
+source workspace instead come from the canonical repository registry; a
+conflicting configured repository or revision fails rather than silently
+selecting another binding. These commands never trigger indexing or refresh.

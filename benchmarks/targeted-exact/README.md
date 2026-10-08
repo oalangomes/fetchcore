@@ -88,10 +88,10 @@ Run the native tests against disposable services:
 ```bash
 FETCHCORE_TARGETED_SOLR_URL=http://127.0.0.1:8983/solr \
 FETCHCORE_TARGETED_SOLR_COLLECTION=fetchcore-knowledge \
-python -m pytest -q tests/test_targeted_integration.py -m solr_integration
+python -m pytest -q tests/integration/retrieval/test_targeted_integration.py -m solr_integration
 
 FETCHCORE_TARGETED_OPENSEARCH_URL=http://127.0.0.1:9200 \
-python -m pytest -q tests/test_targeted_integration.py -m opensearch_integration
+python -m pytest -q tests/integration/retrieval/test_targeted_integration.py -m opensearch_integration
 ```
 
 ## Scope

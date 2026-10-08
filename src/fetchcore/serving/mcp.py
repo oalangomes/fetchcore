@@ -62,15 +62,17 @@ def create_mcp_server(service: RetrievalApplicationService) -> MCPServer:
     def get_source_tool(
         source_ref: str,
         repository: str | None = None,
+        revision: str | None = None,
         line_start: int | None = None,
         line_end: int | None = None,
         context_lines: int = 0,
     ) -> dict[str, object]:
-        """Read a bounded source range referenced by a FetchCore search result."""
+        """Read bounded source; optional revision is an exact materialized precondition."""
         result = service.get_source(
             SourceReadRequest(
                 source_ref=source_ref,
                 repository=repository,
+                revision=revision,
                 line_start=line_start,
                 line_end=line_end,
                 context_lines=context_lines,
