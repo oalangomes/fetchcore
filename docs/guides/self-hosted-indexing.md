@@ -49,6 +49,11 @@ Equivalent environment variables are available:
 - `FETCHCORE_INDEX_BACKEND`;
 - `FETCHCORE_INDEX_BACKEND_SETTINGS`.
 
+The repository-targeted [indexing lifecycle](repository-indexing.md) is available
+in parallel. Existing workflows retain this explicit workspace/identity surface,
+including its initial/recovery rebuild behavior. Registered `sync <repo>` requires
+an existing compatible index and never inherits that recovery policy.
+
 ## Reusable workflow
 
 The repository provides `.github/workflows/repository-index.yml` as a reusable workflow and manual workflow.

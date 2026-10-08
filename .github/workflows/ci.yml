@@ -142,7 +142,7 @@ jobs:
         env:
           FETCHCORE_TARGETED_SOLR_URL: http://127.0.0.1:8983/solr
           FETCHCORE_TARGETED_SOLR_COLLECTION: fetchcore-ci
-        run: python -m pytest -q tests/test_targeted_integration.py -m solr_integration
+        run: python -m pytest -q tests/test_targeted_integration.py tests/test_repository_index_lifecycle.py -m solr_integration
       - name: Exercise operational indexing CLI
         run: |
           set -o pipefail
