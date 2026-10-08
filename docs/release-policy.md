@@ -1,6 +1,6 @@
 # FetchCore release and versioning policy
 
-**Status:** active release automation policy; bootstrap is pending until `v0.0.1` is explicitly approved.
+**Status:** active versioning policy for the initial `v0.0.1` bootstrap and subsequent releases.
 
 ## First release: a single baseline
 
