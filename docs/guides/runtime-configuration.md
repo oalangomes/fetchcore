@@ -85,3 +85,16 @@ The built-in backend catalog (`local-semantic`, `solr`, `opensearch`,
 `qdrant-vector`) and embedding provider catalog (`ollama`) stay in code.
 Provider and backend factories can be injected for tests or SDK composition;
 factory identity mismatches fail explicitly.
+
+`fetchcore config show` displays the resolved operator runtime values rather
+than the input YAML or environment. Its source map records `default`,
+`config_file`, `environment`, or `explicit` only where the loader can establish
+that origin. Secret values such as Qdrant API keys are masked. An optional
+`--config <path>` selects the operator file explicitly; no `.fetchcore/*`
+repository policy file is searched or treated as runtime configuration.
+
+The repository-scoped CLI `search` and `source` commands use this same resolved
+runtime boundary for backend and retrieval settings. Repository identity and
+source workspace instead come from the canonical repository registry; a
+conflicting configured repository or revision fails rather than silently
+selecting another binding. These commands never trigger indexing or refresh.

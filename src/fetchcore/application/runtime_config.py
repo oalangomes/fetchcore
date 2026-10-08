@@ -8,13 +8,14 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
 import yaml
 
 from fetchcore.adapters.embedding.ollama.provider import OllamaEmbeddingSettings
 from fetchcore.retrieval.config import EmbeddingConfig, RetrievalConfig
+from fetchcore.retrieval.contracts import KnowledgeSearchError
 from .composition import BUILTIN_BACKEND_IDS, BUILTIN_EMBEDDING_PROVIDER_IDS
 
 if TYPE_CHECKING:
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
     from .service import RetrievalApplicationService
 
 RUNTIME_CONFIG_VERSION = 1
+RuntimeConfigValueSource = Literal["default", "config_file", "environment", "explicit"]
 _BACKEND_FIELDS = {
     "local-semantic": frozenset({
         "file_patterns", "exclude_dirs", "max_files_scanned", "max_file_bytes",
@@ -138,10 +140,16 @@ class FetchCoreRuntimeConfig:
     revision: str | None = None
     knowledge_types: tuple[str, ...] = ()
     repository_paths: tuple[str, ...] = ()
+    sources: Mapping[str, RuntimeConfigValueSource] = field(
+        default_factory=dict, compare=False, repr=False,
+    )
 
     def __post_init__(self) -> None:
         if self.backend not in BUILTIN_BACKEND_IDS:
-            raise ValueError(f"unsupported FetchCore backend {self.backend!r}")
+            raise KnowledgeSearchError(
+                "unsupported FetchCore backend",
+                category="unsupported_backend",
+            )
         validate_backend_settings(self.backend, self.backend_settings)
         OllamaRuntimeSettings.from_mapping(self.ollama.to_mapping())
         if self.repository is not None:
@@ -187,6 +195,22 @@ def _merge(base: dict[str, object], override: Mapping[str, object]) -> None:
             base[key] = value
 
 
+def _record_sources(
+    value: object,
+    *,
+    source: RuntimeConfigValueSource,
+    sources: dict[str, RuntimeConfigValueSource],
+    prefix: str = "",
+) -> None:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            _record_sources(item, source=source, sources=sources, prefix=path)
+        return
+    if prefix:
+        sources[prefix] = source
+
+
 def _json_mapping(raw: str, name: str) -> dict[str, object]:
     try:
         return _mapping(json.loads(raw), name)
@@ -220,7 +244,10 @@ def _env_overlay(env: Mapping[str, str], default_backend: str) -> dict[str, obje
 
     selected = runtime.get("backend", default_backend)
     if not isinstance(selected, str) or selected not in BUILTIN_BACKEND_IDS:
-        raise ValueError(f"unsupported FetchCore backend {selected!r}")
+        raise KnowledgeSearchError(
+            "unsupported FetchCore backend",
+            category="unsupported_backend",
+        )
     legacy_settings = env.get("FETCHCORE_MCP_BACKEND_SETTINGS")
     if legacy_settings is not None and legacy_settings.strip():
         backends[selected] = _json_mapping(legacy_settings, "FETCHCORE_MCP_BACKEND_SETTINGS")
@@ -279,9 +306,11 @@ def load_runtime_config(
         Path(env["FETCHCORE_CONFIG"]).expanduser() if "FETCHCORE_CONFIG" in env else None
     )
     data: dict[str, object] = {}
+    sources: dict[str, RuntimeConfigValueSource] = {}
     if config_path is not None:
         loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         data = _mapping(loaded, "runtime config")
+        _record_sources(data, source="config_file", sources=sources)
         _fields(data, {"version", "runtime", "retrieval", "backends", "embedding"}, "runtime config")
         if type(data.get("version")) is not int or data["version"] != RUNTIME_CONFIG_VERSION:
             raise ValueError("unsupported runtime config version")
@@ -301,9 +330,13 @@ def load_runtime_config(
     file_backend = file_runtime.get("backend", "local-semantic")
     if not isinstance(file_backend, str):
         raise ValueError("runtime.backend must be a string")
-    _merge(data, _env_overlay(env, file_backend))
+    environment = _env_overlay(env, file_backend)
+    _merge(data, environment)
+    _record_sources(environment, source="environment", sources=sources)
     if overrides is not None:
-        _merge(data, _mapping(overrides, "runtime overrides"))
+        explicit = _mapping(overrides, "runtime overrides")
+        _merge(data, explicit)
+        _record_sources(explicit, source="explicit", sources=sources)
     _fields(data, {"version", "runtime", "retrieval", "backends", "embedding"}, "runtime config")
     if "version" in data and (
         type(data["version"]) is not int or data["version"] != RUNTIME_CONFIG_VERSION
@@ -315,7 +348,10 @@ def load_runtime_config(
     }, "runtime")
     backend = _string(runtime.get("backend", "local-semantic"), "runtime.backend")
     if backend not in BUILTIN_BACKEND_IDS:
-        raise ValueError(f"unsupported FetchCore backend {backend!r}")
+        raise KnowledgeSearchError(
+            "unsupported FetchCore backend",
+            category="unsupported_backend",
+        )
     backends = _mapping(data.get("backends", {}), "backends")
     _fields(backends, BUILTIN_BACKEND_IDS, "backends")
     for name, settings in backends.items():
@@ -362,9 +398,19 @@ def load_runtime_config(
             ollama = OllamaRuntimeSettings.from_mapping(
                 {"url": selected_settings["embedding_url"]}
             )
+            sources["embedding.ollama.url"] = sources.get(
+                f"backends.{backend}.embedding_url", "default",
+            )
         selected_settings["embedding_url"] = ollama.url
         if retrieval is not None:
             selected_settings["embedding_model"] = retrieval.dense.embedding.model
+            sources[f"backends.{backend}.embedding_model"] = sources.get(
+                "retrieval.dense.embedding.model", "default",
+            )
+        sources[f"backends.{backend}.embedding_url"] = sources.get(
+            "embedding.ollama.url",
+            sources.get(f"backends.{backend}.embedding_url", "default"),
+        )
     return FetchCoreRuntimeConfig(
         backend=backend,
         backend_settings=selected_settings,
@@ -375,6 +421,7 @@ def load_runtime_config(
         revision=revision,
         knowledge_types=string_tuple("knowledge_types"),
         repository_paths=string_tuple("repository_paths"),
+        sources=sources,
     )
 
 
@@ -385,9 +432,11 @@ def service_from_runtime_config(
     providers: EmbeddingProviderRegistry | None = None,
 ) -> RetrievalApplicationService:
     """Compose a serving service from an already resolved in-memory config."""
-    from .composition import BackendRegistry, EmbeddingProviderRegistry
     from .service import RepositoryBinding, RetrievalApplicationService
 
+    resolved_backends, _ = _runtime_registries_for_config(
+        config, backends=backends, providers=providers,
+    )
     repository = config.repository or config.workspace.name
     binding = RepositoryBinding(
         repository=repository,
@@ -399,10 +448,22 @@ def service_from_runtime_config(
         knowledge_types=config.knowledge_types,
         repository_paths=config.repository_paths,
     )
+    return RetrievalApplicationService(
+        {repository: binding},
+        backends=resolved_backends,
+    )
+
+
+def _runtime_registries_for_config(
+    config: FetchCoreRuntimeConfig,
+    *,
+    backends: BackendRegistry | None = None,
+    providers: EmbeddingProviderRegistry | None = None,
+) -> tuple[BackendRegistry, EmbeddingProviderRegistry]:
+    from .composition import BackendRegistry, EmbeddingProviderRegistry
+
     resolved_providers = providers or EmbeddingProviderRegistry(
         settings={"ollama": config.ollama.to_mapping()}
     )
-    return RetrievalApplicationService(
-        {repository: binding},
-        backends=backends or BackendRegistry(providers=resolved_providers),
-    )
+    resolved_backends = backends or BackendRegistry(providers=resolved_providers)
+    return resolved_backends, resolved_providers

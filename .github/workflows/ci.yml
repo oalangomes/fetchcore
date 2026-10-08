@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches:
@@ -27,6 +28,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: python -m ruff check .
       - run: python scripts/check_docs.py
+      - run: python scripts/docs/localize.py check
 
   typecheck:
     name: typecheck
@@ -137,6 +139,41 @@ jobs:
                   time.sleep(2)
           raise SystemExit(f"Solr did not become ready: {error}")
           PY
+      - name: Inspect the live Solr runtime
+        env:
+          FETCHCORE_BACKEND: solr
+          FETCHCORE_SOLR_URL: http://127.0.0.1:8983/solr
+          FETCHCORE_SOLR_COLLECTION: fetchcore-ci
+        run: |
+          set -o pipefail
+          output="$RUNNER_TEMP/fetchcore-runtime-inspection"
+          mkdir -p "$output"
+          fetchcore doctor --json > "$output/doctor.json"
+          fetchcore capabilities --json > "$output/capabilities.json"
+          fetchcore config show --json > "$output/config.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "fetchcore-runtime-inspection"
+          doctor = json.loads((root / "doctor.json").read_text(encoding="utf-8"))
+          capabilities = json.loads((root / "capabilities.json").read_text(encoding="utf-8"))
+          config = json.loads((root / "config.json").read_text(encoding="utf-8"))
+          assert doctor["result"]["status"] == "healthy", doctor
+          assert capabilities["result"]["backend"] == "solr", capabilities
+          assert capabilities["result"]["indexing"] == {
+              "incremental": True,
+              "rebuild": True,
+          }, capabilities
+          assert config["result"]["config"]["backends"]["solr"]["collection"] == "fetchcore-ci"
+          assert config["result"]["sources"]["backends.solr.collection"] == "environment"
+          PY
+      - name: Validate native targeted retrieval contract
+        env:
+          FETCHCORE_TARGETED_SOLR_URL: http://127.0.0.1:8983/solr
+          FETCHCORE_TARGETED_SOLR_COLLECTION: fetchcore-ci
+        run: python -m pytest -q tests/integration/retrieval/test_targeted_integration.py tests/integration/repository/test_repository_index_lifecycle_integration.py -m solr_integration
       - name: Exercise operational indexing CLI
         run: |
           set -o pipefail
@@ -155,6 +192,66 @@ jobs:
           path = Path(os.environ["RUNNER_TEMP"]) / "fetchcore-dogfood" / "sync-noop.json"
           payload = json.loads(path.read_text(encoding="utf-8"))
           assert payload["result"]["noop"] is True, payload
+          PY
+      - name: Exercise CLI search and source journey
+        env:
+          FETCHCORE_BACKEND: solr
+          FETCHCORE_SOLR_URL: http://127.0.0.1:8983/solr
+          FETCHCORE_SOLR_COLLECTION: fetchcore-ci
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          workspace = Path(os.environ["GITHUB_WORKSPACE"])
+          registry = Path(os.environ["RUNNER_TEMP"]) / "fetchcore-cli-registry"
+          common = [
+              "--cache-root", str(registry),
+              "--allowed-root", str(workspace),
+          ]
+
+          def run(arguments: list[str]) -> dict[str, object]:
+              completed = subprocess.run(
+                  arguments,
+                  check=True,
+                  capture_output=True,
+                  text=True,
+              )
+              return json.loads(completed.stdout)
+
+          registration = run([
+              "fetchcore", "repo", "--cache-root", str(registry),
+              "--allowed-root", str(workspace), "add", str(workspace), "--json",
+          ])
+          assert registration["result"]["repository"] == os.environ["FETCHCORE_INDEX_REPOSITORY"]
+
+          search = run([
+              "fetchcore", "search",
+              "where is runtime configuration resolved?",
+              "--repo", os.environ["FETCHCORE_INDEX_REPOSITORY"],
+              "--limit", "10", "--knowledge-type", "code",
+              *common, "--json",
+          ])
+          assert search["status"] == "succeeded", search
+          expected = [
+              hit for hit in search["result"]["results"]
+              if hit["source"].endswith("src/fetchcore/application/runtime_config.py")
+          ]
+          assert expected, search
+          hit = expected[0]
+          assert hit["revision"] == os.environ["FETCHCORE_INDEX_REVISION"], hit
+
+          source = run([
+              "fetchcore", "source", hit["source_ref"],
+              "--revision", hit["revision"],
+              *common, "--json",
+          ])
+          assert source["status"] == "succeeded", source
+          assert source["result"]["repository"] == search["result"]["repository"]
+          assert source["result"]["revision"] == hit["revision"]
+          assert "def load_runtime_config" in source["result"]["content"]
           PY
       - name: Smoke real MCP search and source access
         run: |
@@ -194,4 +291,3 @@ jobs:
       - name: Stop ephemeral Solr
         if: ${{ always() }}
         run: docker rm -f fetchcore-ci-solr >/dev/null 2>&1 || true
-

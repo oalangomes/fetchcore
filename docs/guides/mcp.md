@@ -52,12 +52,15 @@ Inputs:
 
 - `source_ref`
 - optional `repository`
+- optional `revision` (expected materialized revision; mismatch fails without checkout or refresh)
 - optional `line_start` / `line_end`
 - optional `context_lines`
 
 The application service resolves the source only inside an authorized
 `RepositoryBinding`. Path traversal and resolved-path escape are rejected and
-source output is bounded.
+source output is bounded. When supplied, `revision` is a precondition on the
+authorized materialization, not an instruction to fetch or check out another
+revision; the returned `SourceReadResult.revision` remains the observed revision.
 
 ## Local stdio server
 

@@ -5,10 +5,11 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import re
+import subprocess
 import time
 from collections import Counter
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from urllib.parse import quote
 
@@ -22,6 +23,8 @@ from fetchcore.telemetry import (
     returned_chars,
 )
 from fetchcore.retrieval.contracts import (
+    Anchor,
+    KnowledgeSearchError,
     KnowledgeSearchResponse,
     SearchIntent,
     SearchCapabilitySource,
@@ -31,7 +34,7 @@ from fetchcore.retrieval.contracts import (
 )
 from fetchcore.retrieval.signals import QuerySignal
 from fetchcore.retrieval.evidence import EvidenceObservation, QueryMatchEvidence
-from fetchcore.repository.safe_scan import SafeSource, scan_repository_text
+from fetchcore.repository.safe_scan import SafeScanResult, SafeSource, scan_repository_text
 
 
 @dataclass(frozen=True)
@@ -135,7 +138,7 @@ class LocalSemanticBackend:
     """Deterministic local backend adapted from SemanticSearchExtractor ideas."""
 
     backend_id = "local-semantic"
-    retrieval_capabilities = RetrievalBackendCapabilities(lexical=True, canonical_query=True)
+    retrieval_capabilities = RetrievalBackendCapabilities(lexical=True, canonical_query=True, targeted_lookup=True)
 
     def __init__(
         self,
@@ -143,6 +146,55 @@ class LocalSemanticBackend:
         timer: Callable[[], float] = time.monotonic,
     ) -> None:
         self.timer = timer
+
+    def lookup_exact(self, anchor: Anchor, scope: SearchScope) -> KnowledgeSearchResponse:
+        from fetchcore.retrieval.targeted import validate_target
+
+        target = validate_target(anchor, scope)
+        # Never attach a caller-provided revision to unverified working-tree bytes.
+        if scope.revision is not None:
+            head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=scope.workspace,
+                                  capture_output=True, text=True, check=False, timeout=10)
+            if head.returncode or head.stdout.strip() != scope.revision:
+                raise KnowledgeSearchError("workspace revision differs from binding",
+                                           category="snapshot_revision_mismatch")
+        scan = _scan(replace(scope, settings={**scope.settings, "max_file_bytes": min(
+            int(str(scope.settings.get("max_file_bytes", 1_000_000))),
+            int(str(scope.settings.get("targeted_max_bytes", 1_000_000))),
+        )}), (target.path,))
+        results: tuple[SearchResult, ...] = ()
+        if scan.sources:
+            source = scan.sources[0]
+            if scope.revision is not None:
+                blob = subprocess.run(["git", "cat-file", "blob", f"HEAD:{target.path}"],
+                                      cwd=scope.workspace, capture_output=True,
+                                      check=False, timeout=10)
+                if blob.returncode or "sha256:" + hashlib.sha256(blob.stdout).hexdigest() != source.checksum:
+                    raise KnowledgeSearchError("source differs from bound revision",
+                                               category="snapshot_revision_mismatch")
+            result = _repository_source_candidate(
+                source=source, repository=scope.repository or "",
+                result_namespace=scope.result_namespace, revision=scope.revision,
+                settings=scope.settings,
+            )
+            if not scope.knowledge_types or result.knowledge_type in scope.knowledge_types:
+                lines = result.content.splitlines()
+                line_limit = int(str(scope.settings.get("targeted_max_lines", 400)))
+                if line_limit < 1:
+                    raise KnowledgeSearchError("targeted_max_lines must be positive",
+                                               category="schema_mismatch")
+                content = "\n".join(lines[:line_limit])
+                results = (replace(result, content=content, line_end=max(1, min(len(lines), line_limit)),
+                                   metadata={**result.metadata, "content_truncated": len(lines) > line_limit,
+                                             "repository": scope.repository},
+                                   query_alignment_score=None),)
+        return KnowledgeSearchResponse(
+            backend=self.backend_id, status="success", results=results,
+            metadata={"output_truncated": scan.truncated, "safe_scan": scan.audit_mapping()},
+            telemetry=RetrievalTelemetry(mode="targeted", duration_ms=0,
+                candidates_examined=len(scan.sources), candidates_returned=len(results),
+                returned_chars=returned_chars(x.content for x in results)),
+        )
 
     def search(
         self,
@@ -160,38 +212,7 @@ class LocalSemanticBackend:
         started = self.timer()
         settings = scope.settings
         query = _local_query(intent, settings)
-        scan = scan_repository_text(
-            scope.workspace,
-            include_patterns=_strings(
-                settings.get(
-                    "file_patterns",
-                    ["*.py", "*.md", "*.json", "*.yaml", "*.yml", "*.toml"],
-                )
-            ),
-            exclude_patterns=_strings(
-                settings.get(
-                    "exclude_dirs",
-                    [
-                        ".git",
-                        ".fetchcore",
-                        ".agentsorch",
-                        ".venv",
-                        "venv",
-                        "node_modules",
-                        "build",
-                        "dist",
-                        "__pycache__",
-                    ],
-                )
-            ),
-            max_files=_positive_int(settings.get("max_files_scanned", 800), "max_files_scanned"),
-            max_file_bytes=_positive_int(
-                settings.get("max_file_bytes", 1_000_000), "max_file_bytes"
-            ),
-            max_total_bytes=_positive_int(
-                settings.get("max_total_bytes", 32_000_000), "max_total_bytes"
-            ),
-        )
+        scan = _scan(scope)
         configured_limit = _positive_int(
             settings.get("max_matches", scope.max_results), "max_matches"
         )
@@ -1089,3 +1110,40 @@ def _unique_ints(values: Iterable[int]) -> list[int]:
 
 def _unique_ranges(values: Iterable[tuple[int, int]]) -> list[tuple[int, int]]:
     return list(dict.fromkeys(values))
+
+
+def _scan(scope: SearchScope, selected_paths: tuple[str, ...] | None = None) -> SafeScanResult:
+    settings = scope.settings
+    return scan_repository_text(
+        scope.workspace,
+        selected_paths=selected_paths,
+        include_patterns=_strings(
+            settings.get(
+                "file_patterns",
+                ["*.py", "*.md", "*.json", "*.yaml", "*.yml", "*.toml"],
+            )
+        ),
+        exclude_patterns=_strings(
+            settings.get(
+                "exclude_dirs",
+                [
+                    ".git",
+                    ".fetchcore",
+                    ".agentsorch",
+                    ".venv",
+                    "venv",
+                    "node_modules",
+                    "build",
+                    "dist",
+                    "__pycache__",
+                ],
+            )
+        ),
+        max_files=_positive_int(settings.get("max_files_scanned", 800), "max_files_scanned"),
+        max_file_bytes=_positive_int(
+            settings.get("max_file_bytes", 1_000_000), "max_file_bytes"
+        ),
+        max_total_bytes=_positive_int(
+            settings.get("max_total_bytes", 32_000_000), "max_total_bytes"
+        ),
+    )

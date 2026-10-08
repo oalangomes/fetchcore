@@ -10,7 +10,7 @@ import struct
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import replace, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import NoReturn, Protocol, TypedDict, cast
@@ -18,6 +18,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
+from fetchcore.retrieval.contracts import Anchor
 from fetchcore.retrieval.translation import validate_intent_translation, translation_diagnostics
 
 from fetchcore.adapters.retrieval.solr.query import (
@@ -1747,7 +1748,7 @@ class SolrBackend:
 
     backend_id = "solr"
     retrieval_capabilities = RetrievalBackendCapabilities(
-        canonical_query=True,
+        canonical_query=True, targeted_lookup=True,
         structured_anchors=True, boolean_expressions=True,
         lexical=True,
         dense=True,
@@ -1776,6 +1777,13 @@ class SolrBackend:
                 self._transport = self.transport_factory(settings)
                 self._transport_settings = settings
             return self._transport
+
+    def lookup_exact(self, anchor: Anchor, scope: KnowledgeSearchScope) -> KnowledgeSearchResponse:
+        # Reuse the exact keyword translator and snapshot/provenance checks.
+        # Two records suffice to detect ambiguity; diagnostics must not enlarge it.
+        exact_scope = replace(scope, max_results=2, retrieval=None,
+                              settings={**scope.settings, "diagnostic_candidate_window": 2})
+        return self.search(SearchIntent(anchors=(anchor,)), exact_scope, ())
 
     def search(
         self,

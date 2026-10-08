@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote
 
 from fetchcore.retrieval import RetrievalConfig
-from fetchcore.retrieval.translation import validate_intent_translation
+from .targeted import search_with_targeted
 from fetchcore.retrieval.contracts import (
     KnowledgeSearchError,
     KnowledgeSearchResponse,
@@ -21,6 +21,21 @@ from fetchcore.retrieval.contracts import (
 MAX_SEARCH_LIMIT = 100
 MAX_SOURCE_LINES = 400
 MAX_SOURCE_BYTES = 1_000_000
+
+
+def resolve_source_ref_repository_matches(
+    source_ref: str,
+    repositories: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Match a canonical repository source_ref against authorized identities."""
+    raw = unquote(source_ref.strip()).split("#", 1)[0]
+    if not raw.startswith("repository://"):
+        return ()
+    return tuple(
+        repository
+        for repository in repositories
+        if raw.startswith(f"repository://{repository}/")
+    )
 
 
 @dataclass(frozen=True)
@@ -65,23 +80,25 @@ class RepositoryBinding:
 class SearchRequest:
     """Consumer-neutral request accepted by the retrieval application service."""
 
-    query: str
+    query: str = ""
     repository: str | None = None
     limit: int = 10
     exact_terms: tuple[str, ...] = ()
     knowledge_types: tuple[str, ...] = ()
     mode: SearchMode = "discovery"
+    intent: SearchIntent | None = None
 
 
 @dataclass(frozen=True)
 class SourceReadRequest:
-    """Bounded request to read one source from an authorized repository."""
+    """Bounded source read; optional revision requires an exact materialized match."""
 
     source_ref: str
     repository: str | None = None
     line_start: int | None = None
     line_end: int | None = None
     context_lines: int = 0
+    revision: str | None = None
 
 
 @dataclass(frozen=True)
@@ -138,7 +155,10 @@ class RetrievalApplicationService:
     def search(self, request: SearchRequest) -> KnowledgeSearchResponse:
         query = request.query.strip()
         exact_terms = tuple(item.strip() for item in request.exact_terms if item.strip())
-        if not query and not exact_terms:
+        if request.intent is not None and (query or exact_terms):
+            raise KnowledgeSearchError("intent cannot be combined with query/exact_terms",
+                                       category="schema_mismatch")
+        if not query and not exact_terms and request.intent is None:
             raise KnowledgeSearchError(
                 "search requires query or exact_terms",
                 category="schema_mismatch",
@@ -152,7 +172,10 @@ class RetrievalApplicationService:
         binding = self._binding(request.repository)
         backend = self._backends.create(binding.backend)
         knowledge_types = request.knowledge_types or binding.knowledge_types
-        intent = SearchIntent(
+        if binding.knowledge_types and not set(knowledge_types) <= set(binding.knowledge_types):
+            raise KnowledgeSearchError("knowledge types exceed repository binding",
+                                       category="unauthorized_source")
+        intent = request.intent or SearchIntent(
             exact_terms=exact_terms,
             canonical_query=request.query,
         )
@@ -168,9 +191,16 @@ class RetrievalApplicationService:
             settings=dict(binding.settings),
             retrieval=binding.retrieval,
         )
-        mode = binding.retrieval.mode if binding.retrieval else "lexical"
-        validate_intent_translation(intent, channel=mode, capabilities=backend.retrieval_capabilities)
-        return backend.search(intent, scope, ())
+        if not (intent.canonical_query.strip() or intent.terms or intent.anchors
+                or intent.expression or intent.signals):
+            raise KnowledgeSearchError("search intent is empty", category="schema_mismatch")
+        if any(anchor.kind in ("path", "source_ref") for anchor in intent.anchors):
+            scope = replace(scope, settings={**scope.settings,
+                "targeted_max_lines": min(self._limits.source_lines,
+                    int(str(scope.settings.get("targeted_max_lines", self._limits.source_lines)))),
+                "targeted_max_bytes": self._limits.source_bytes,
+            })
+        return search_with_targeted(backend, intent, scope)
 
     def get_source(self, request: SourceReadRequest) -> SourceReadResult:
         if not request.source_ref.strip():
@@ -189,6 +219,11 @@ class RetrievalApplicationService:
             requested_repository=request.repository,
         )
         binding = self._bindings[repository]
+        if request.revision is not None and request.revision != binding.revision:
+            raise KnowledgeSearchError(
+                "source revision does not match the authorized materialization",
+                category="source_revision_mismatch",
+            )
         root = binding.workspace.resolve()
         candidate = (root / relative_path).resolve()
         try:
@@ -284,11 +319,10 @@ class RetrievalApplicationService:
     ) -> tuple[str, str]:
         raw = unquote(source_ref.strip()).split("#", 1)[0]
         if raw.startswith("repository://"):
-            matches = [
-                repository
-                for repository in self._bindings
-                if raw.startswith(f"repository://{repository}/")
-            ]
+            matches = resolve_source_ref_repository_matches(
+                source_ref,
+                tuple(self._bindings),
+            )
             if len(matches) != 1:
                 raise KnowledgeSearchError(
                     "repository source_ref is outside the authorized serving scope",

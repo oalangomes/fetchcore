@@ -51,8 +51,10 @@ class GitAwareSolrSynchronizer:
         *,
         detector: GitRepositoryChangeDetector | None = None,
         timer: Callable[[], float] = time.monotonic,
+        allow_rebuild: bool = True,
     ) -> None:
         """Initialize the Git-aware Solr synchronizer with explicit collaborators."""
+        self.allow_rebuild = allow_rebuild
         self.indexer = indexer
         self.indexing_fingerprint = indexing_contract_fingerprint(indexer)
         self.store = bind_indexing_contract_store(store, indexer)
@@ -161,6 +163,12 @@ class GitAwareSolrSynchronizer:
         previous_revision: str | None,
         reason: str,
     ) -> RepositorySyncOutcome:
+        if not self.allow_rebuild:
+            raise KnowledgeSearchError(
+                "Explicit rebuild required: " + reason,
+                category="rebuild_required",
+                metadata={"reason": reason},
+            )
         started = self.timer()
         result = self.indexer.index(workspace)
         storage = self.store.full_rebuild(result)

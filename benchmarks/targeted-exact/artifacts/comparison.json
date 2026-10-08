@@ -1,0 +1,493 @@
+{
+  "protocol": "fetchcore.targeted-exact-v2.comparison",
+  "runtime_source_sha256": "2ca1d3b8e2be0ebe0b744b0927d404607af6db2f33f9ed759875816a498cec33",
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+  },
+  "policy_semantics": {
+    "disabled": "normal retrieval with original SearchIntent",
+    "exact_unique": "bounded exact acquisition; fallback uses original SearchIntent"
+  },
+  "representations": {
+    "canonical": {
+      "artifact": "canonical.json.gz",
+      "uncompressed_sha256": "2748ab215111d9a0a547849a6b3d7283d4331aa964f0015b558b0d40cd23c059",
+      "summary": {
+        "disabled": {
+          "samples": 80,
+          "successful_samples": 0,
+          "rejected_samples": 80,
+          "rejection_categories": [
+            "unsupported_semantics"
+          ],
+          "quality": "not measured: required semantics rejected"
+        },
+        "exact_unique": {
+          "samples": 80,
+          "successful_samples": 80,
+          "rejected_samples": 0,
+          "duration_ms": {
+            "p50": 8.464,
+            "p95": 10.034,
+            "p99": 11.219
+          },
+          "evidence_recall_at_k_mean": 1.0,
+          "candidates_examined_mean": 1,
+          "returned_chars_mean": 3917,
+          "returned_line_count_mean": 87.5,
+          "targeted_ms_mean": 8.5967875,
+          "broad_calls_mean": 0,
+          "files_read_mean": 1,
+          "fallback_rate": 0
+        }
+      },
+      "per_query": {
+        "medication-update-owner-service:path": {
+          "disabled": {
+            "samples": 20,
+            "successful_samples": 0,
+            "rejected_samples": 20,
+            "rejection_categories": [
+              "unsupported_semantics"
+            ],
+            "quality": "not measured: required semantics rejected"
+          },
+          "exact_unique": {
+            "samples": 20,
+            "successful_samples": 20,
+            "rejected_samples": 0,
+            "duration_ms": {
+              "p50": 8.205,
+              "p95": 8.614,
+              "p99": 9.082
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 2102,
+            "returned_line_count_mean": 60,
+            "targeted_ms_mean": 8.20265,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        },
+        "medication-update-owner-service:source_ref": {
+          "disabled": {
+            "samples": 20,
+            "successful_samples": 0,
+            "rejected_samples": 20,
+            "rejection_categories": [
+              "unsupported_semantics"
+            ],
+            "quality": "not measured: required semantics rejected"
+          },
+          "exact_unique": {
+            "samples": 20,
+            "successful_samples": 20,
+            "rejected_samples": 0,
+            "duration_ms": {
+              "p50": 8.248,
+              "p95": 8.944,
+              "p99": 9.074
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 2102,
+            "returned_line_count_mean": 60,
+            "targeted_ms_mean": 8.31915,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        },
+        "architecture-overview:path": {
+          "disabled": {
+            "samples": 20,
+            "successful_samples": 0,
+            "rejected_samples": 20,
+            "rejection_categories": [
+              "unsupported_semantics"
+            ],
+            "quality": "not measured: required semantics rejected"
+          },
+          "exact_unique": {
+            "samples": 20,
+            "successful_samples": 20,
+            "rejected_samples": 0,
+            "duration_ms": {
+              "p50": 8.602,
+              "p95": 10.547,
+              "p99": 11.219
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 5732,
+            "returned_line_count_mean": 115,
+            "targeted_ms_mean": 8.88505,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        },
+        "architecture-overview:source_ref": {
+          "disabled": {
+            "samples": 20,
+            "successful_samples": 0,
+            "rejected_samples": 20,
+            "rejection_categories": [
+              "unsupported_semantics"
+            ],
+            "quality": "not measured: required semantics rejected"
+          },
+          "exact_unique": {
+            "samples": 20,
+            "successful_samples": 20,
+            "rejected_samples": 0,
+            "duration_ms": {
+              "p50": 8.771,
+              "p95": 10.181,
+              "p99": 11.024
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 5732,
+            "returned_line_count_mean": 115,
+            "targeted_ms_mean": 8.9803,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        }
+      },
+      "controls": [
+        {
+          "kind": "path",
+          "value": "missing-for-issue-34.py",
+          "outcome": "unsupported_semantics",
+          "broad_calls": 0,
+          "telemetry": {
+            "error_metadata": {
+              "translation_policy": "reject",
+              "intent_translation": {
+                "channel": "lexical",
+                "status": "rejected",
+                "reasons": [
+                  "channel_does_not_preserve_declared_semantics"
+                ],
+                "unsupported": [
+                  "anchors"
+                ],
+                "unsupported_required": [
+                  "anchors"
+                ],
+                "unsupported_optional": []
+              },
+              "targeted": {
+                "schema_version": 1,
+                "targeted_attempted": true,
+                "targeted_signal_kind": "path",
+                "targeted_hits": 0,
+                "targeted_ms": 2.348,
+                "fallback_used": true,
+                "fallback_reason": "not_found",
+                "outcome": "not_found",
+                "lookup_candidates_examined": 0,
+                "candidates_examined": 0
+              }
+            }
+          }
+        },
+        {
+          "kind": "source_ref",
+          "value": "repository://oalangomes/NeuroTrack_MS/missing-for-issue-34.py",
+          "outcome": "unsupported_semantics",
+          "broad_calls": 0,
+          "telemetry": {
+            "error_metadata": {
+              "translation_policy": "reject",
+              "intent_translation": {
+                "channel": "lexical",
+                "status": "rejected",
+                "reasons": [
+                  "channel_does_not_preserve_declared_semantics"
+                ],
+                "unsupported": [
+                  "anchors"
+                ],
+                "unsupported_required": [
+                  "anchors"
+                ],
+                "unsupported_optional": []
+              },
+              "targeted": {
+                "schema_version": 1,
+                "targeted_attempted": true,
+                "targeted_signal_kind": "source_ref",
+                "targeted_hits": 0,
+                "targeted_ms": 2.439,
+                "fallback_used": true,
+                "fallback_reason": "not_found",
+                "outcome": "not_found",
+                "lookup_candidates_examined": 0,
+                "candidates_examined": 0
+              }
+            }
+          }
+        },
+        {
+          "kind": "path",
+          "value": "../outside.py",
+          "outcome": "unauthorized_source",
+          "broad_calls": 0,
+          "telemetry": {
+            "error_metadata": {}
+          }
+        }
+      ],
+      "runner_sha256": "eac39f1277575b8193d4ef0e4a712561501b8d32b9a4c8dfb8e90855b2aa9203",
+      "ground_truth_fingerprint": "sha256:a03733d1601097afcba5e32dc4b04834471758919300457fb88925fce481c29a",
+      "query_set_sha256": "af69e02da946e0d4c4702270059c15eb92695d54a8bf11fbea38f456591990f0"
+    },
+    "legacy": {
+      "artifact": "legacy.json.gz",
+      "uncompressed_sha256": "f2181f8aca131620d3722e778c630d1e6e53cb235f7551e212c5996cecc3a029",
+      "summary": {
+        "disabled": {
+          "samples": 80,
+          "successful_samples": 0,
+          "rejected_samples": 80,
+          "rejection_categories": [
+            "unsupported_semantics"
+          ],
+          "quality": "not measured: required semantics rejected"
+        },
+        "exact_unique": {
+          "samples": 80,
+          "successful_samples": 80,
+          "rejected_samples": 0,
+          "duration_ms": {
+            "p50": 8.443,
+            "p95": 9.982,
+            "p99": 12.944
+          },
+          "evidence_recall_at_k_mean": 1.0,
+          "candidates_examined_mean": 1,
+          "returned_chars_mean": 3917,
+          "returned_line_count_mean": 87.5,
+          "targeted_ms_mean": 8.639100000000001,
+          "broad_calls_mean": 0,
+          "files_read_mean": 1,
+          "fallback_rate": 0
+        }
+      },
+      "per_query": {
+        "medication-update-owner-service:path": {
+          "disabled": {
+            "samples": 20,
+            "successful_samples": 0,
+            "rejected_samples": 20,
+            "rejection_categories": [
+              "unsupported_semantics"
+            ],
+            "quality": "not measured: required semantics rejected"
+          },
+          "exact_unique": {
+            "samples": 20,
+            "successful_samples": 20,
+            "rejected_samples": 0,
+            "duration_ms": {
+              "p50": 8.321,
+              "p95": 8.84,
+              "p99": 9.106
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 2102,
+            "returned_line_count_mean": 60,
+            "targeted_ms_mean": 8.27465,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        },
+        "medication-update-owner-service:source_ref": {
+          "disabled": {
+            "samples": 20,
+            "successful_samples": 0,
+            "rejected_samples": 20,
+            "rejection_categories": [
+              "unsupported_semantics"
+            ],
+            "quality": "not measured: required semantics rejected"
+          },
+          "exact_unique": {
+            "samples": 20,
+            "successful_samples": 20,
+            "rejected_samples": 0,
+            "duration_ms": {
+              "p50": 8.176,
+              "p95": 8.858,
+              "p99": 9.655
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 2102,
+            "returned_line_count_mean": 60,
+            "targeted_ms_mean": 8.26135,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        },
+        "architecture-overview:path": {
+          "disabled": {
+            "samples": 20,
+            "successful_samples": 0,
+            "rejected_samples": 20,
+            "rejection_categories": [
+              "unsupported_semantics"
+            ],
+            "quality": "not measured: required semantics rejected"
+          },
+          "exact_unique": {
+            "samples": 20,
+            "successful_samples": 20,
+            "rejected_samples": 0,
+            "duration_ms": {
+              "p50": 8.707,
+              "p95": 11.388,
+              "p99": 11.7
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 5732,
+            "returned_line_count_mean": 115,
+            "targeted_ms_mean": 8.90645,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        },
+        "architecture-overview:source_ref": {
+          "disabled": {
+            "samples": 20,
+            "successful_samples": 0,
+            "rejected_samples": 20,
+            "rejection_categories": [
+              "unsupported_semantics"
+            ],
+            "quality": "not measured: required semantics rejected"
+          },
+          "exact_unique": {
+            "samples": 20,
+            "successful_samples": 20,
+            "rejected_samples": 0,
+            "duration_ms": {
+              "p50": 8.796,
+              "p95": 11.007,
+              "p99": 12.944
+            },
+            "evidence_recall_at_k_mean": 1.0,
+            "candidates_examined_mean": 1,
+            "returned_chars_mean": 5732,
+            "returned_line_count_mean": 115,
+            "targeted_ms_mean": 9.113949999999999,
+            "broad_calls_mean": 0,
+            "files_read_mean": 1,
+            "fallback_rate": 0
+          }
+        }
+      },
+      "controls": [
+        {
+          "kind": "path",
+          "value": "missing-for-issue-34.py",
+          "outcome": "unsupported_semantics",
+          "broad_calls": 0,
+          "telemetry": {
+            "error_metadata": {
+              "translation_policy": "reject",
+              "intent_translation": {
+                "channel": "lexical",
+                "status": "rejected",
+                "reasons": [
+                  "channel_does_not_preserve_declared_semantics"
+                ],
+                "unsupported": [
+                  "anchors"
+                ],
+                "unsupported_required": [
+                  "anchors"
+                ],
+                "unsupported_optional": []
+              },
+              "targeted": {
+                "schema_version": 1,
+                "targeted_attempted": true,
+                "targeted_signal_kind": "path",
+                "targeted_hits": 0,
+                "targeted_ms": 2.366,
+                "fallback_used": true,
+                "fallback_reason": "not_found",
+                "outcome": "not_found",
+                "lookup_candidates_examined": 0,
+                "candidates_examined": 0
+              }
+            }
+          }
+        },
+        {
+          "kind": "source_ref",
+          "value": "repository://oalangomes/NeuroTrack_MS/missing-for-issue-34.py",
+          "outcome": "unsupported_semantics",
+          "broad_calls": 0,
+          "telemetry": {
+            "error_metadata": {
+              "translation_policy": "reject",
+              "intent_translation": {
+                "channel": "lexical",
+                "status": "rejected",
+                "reasons": [
+                  "channel_does_not_preserve_declared_semantics"
+                ],
+                "unsupported": [
+                  "anchors"
+                ],
+                "unsupported_required": [
+                  "anchors"
+                ],
+                "unsupported_optional": []
+              },
+              "targeted": {
+                "schema_version": 1,
+                "targeted_attempted": true,
+                "targeted_signal_kind": "source_ref",
+                "targeted_hits": 0,
+                "targeted_ms": 2.618,
+                "fallback_used": true,
+                "fallback_reason": "not_found",
+                "outcome": "not_found",
+                "lookup_candidates_examined": 0,
+                "candidates_examined": 0
+              }
+            }
+          }
+        },
+        {
+          "kind": "path",
+          "value": "../outside.py",
+          "outcome": "unauthorized_source",
+          "broad_calls": 0,
+          "telemetry": {
+            "error_metadata": {}
+          }
+        }
+      ],
+      "runner_sha256": "eac39f1277575b8193d4ef0e4a712561501b8d32b9a4c8dfb8e90855b2aa9203",
+      "ground_truth_fingerprint": "sha256:a03733d1601097afcba5e32dc4b04834471758919300457fb88925fce481c29a",
+      "query_set_sha256": "af69e02da946e0d4c4702270059c15eb92695d54a8bf11fbea38f456591990f0"
+    }
+  }
+}

@@ -1,5 +1,7 @@
 # FetchCore documentation
 
+[English](README.md) | [Português (Brasil)](pt-BR/README.md)
+
 Use this index to find the current contract. Historical extraction notes and individual experiment results are evidence of earlier work, not the current architecture.
 
 | I want to… | Start here |
@@ -11,8 +13,11 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Look up contracts and capabilities | [Contracts](reference/contracts.md) and [capabilities](reference/capabilities.md) |
 | Install and index a repository | [Getting started](guides/getting-started.md) and [self-hosted indexing](guides/self-hosted-indexing.md) |
 | Register or inspect a repository source | [Repository registry](guides/repository-registry.md) |
+| Plan, sync or rebuild a registered repository | [Repository indexing lifecycle](guides/repository-indexing.md) |
 | Search or run MCP | [Searching](guides/searching.md) and [MCP](guides/mcp.md) |
 | Configure or add a backend | [Runtime configuration](guides/runtime-configuration.md), [configuration reference](reference/configuration.md), and [adding a backend](guides/adding-a-backend.md) |
+| Maintain PT-BR documentation | [Documentation localization](guides/documentation-localization.md) |
+| Understand release gates, labels and the initial version | [Release policy](release-policy.md) and [v0.0.1 technical overview](releases/initial-release.md) |
 | Reproduce a benchmark | [Experiment convention](benchmarks/protocol.md), [baseline v1 protocol](benchmarks/baseline-v1.md), [SearchIntent v2 experiment](benchmarks/search-intent-v2.md), and [Repository Learning Benchmark](benchmarks/repository-learning.md) |
 | Understand a durable decision | [ADR index](adr/README.md) |
 | Follow a migration or inspect extraction provenance | [Namespace migration](migrations/fetchcore-namespace.md) and [historical extraction](history/extraction/README.md) |
@@ -24,3 +29,5 @@ Use this index to find the current contract. Historical extraction notes and ind
 ## Documentation rules
 
 Use lowercase kebab-case filenames (except numbered ADRs), one H1 per page, relative internal links, explicit status labels for historical or proposed behavior, portable text diagrams, and copyable commands. Architecture records boundaries; concepts define vocabulary; guides give tasks; reference states current contracts; benchmarks preserve reproducible evidence; ADRs record durable decisions and alternatives. Keep marketing language out of reference pages and avoid duplicating a canonical explanation.
+
+- [Targeted exact retrieval](concepts/targeted-retrieval.md)
