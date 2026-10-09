@@ -89,7 +89,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      FETCHCORE_SOURCE_PATH: ./tools/explorer/fixtures/demo-repo
+      COMPOSE_FILE: tools/explorer/compose.yaml
+      FETCHCORE_SOURCE_PATH: ${{ github.workspace }}/tools/explorer/fixtures/demo-repo
       FETCHCORE_REPOSITORY: demo/catalog
       FETCHCORE_SOLR_COLLECTION: fetchcore-lab
     steps:
@@ -98,13 +99,16 @@ jobs:
         run: docker compose config --quiet
       - name: Build and start web, API, MCP and Solr
         run: docker compose up -d --build --wait --wait-timeout 180
-      - name: Assert no automatic indexing on startup
+      - name: Assert Solr starts with an empty index (no automatic indexing)
         run: |
-          docker compose --profile indexing run --rm indexer fetchcore index status > /tmp/fetchcore-preindex.json
           python - <<'PY'
           import json
-          data = json.load(open("/tmp/fetchcore-preindex.json", encoding="utf-8"))
-          assert data["result"].get("snapshot") is None or data["result"].get("status") not in ("ready", "current"), data
+          from urllib.request import urlopen
+
+          url = "http://127.0.0.1:8983/solr/fetchcore-lab/select?q=*:*&rows=0&wt=json"
+          with urlopen(url, timeout=10) as response:
+              payload = json.load(response)
+          assert payload["response"]["numFound"] == 0, payload
           PY
       - name: Explicitly provision and index fixture
         run: |
@@ -115,6 +119,7 @@ jobs:
       - name: Confirm persistent Solr index survives a service restart
         run: |
           docker compose restart solr
+          docker compose up -d --wait --wait-timeout 180
           docker compose exec -T api python -m tools.explorer.docker.smoke
       - name: Collect Compose diagnostics on failure
         if: failure()
