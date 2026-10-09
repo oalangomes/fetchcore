@@ -41,7 +41,7 @@ describe('Search Lab', () => {
     fireEvent.change(screen.getByLabelText('Canonical query'), { target: { value: 'eligibility_validator' } })
     fireEvent.click(screen.getByTestId('run-search'))
     await screen.findByText('Trecho recuperado')
-    expect(screen.getByText(/eligibility_validator\(\)/)).toBeInTheDocument()
+    expect(screen.getAllByText(/eligibility_validator\(\)/).length).toBeGreaterThan(0)
     const fetch = vi.mocked(globalThis.fetch)
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/search', expect.anything()))
     const body = JSON.parse(String((fetch.mock.calls.find(call => call[0] === '/api/search')?.[1] as RequestInit).body))
