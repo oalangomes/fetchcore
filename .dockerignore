@@ -18,3 +18,10 @@ dist
 benchmarks/**/artifacts
 tests
 docs
+
+# Search Lab local build/test products
+tools/explorer/web/node_modules
+tools/explorer/web/dist
+tools/explorer/web/test-results
+tools/explorer/web/playwright-report
+node_modules
