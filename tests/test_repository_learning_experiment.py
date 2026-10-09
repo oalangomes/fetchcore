@@ -212,3 +212,104 @@ def test_codex_wrapper_ignores_long_prose_when_counting_paths(tmp_path: Path) ->
         }
     ]
     assert wrapper_module._direct_paths(items, tmp_path) == set()
+
+
+def test_repository_learning_protocol_v2_expands_memory_pages() -> None:
+    assert module.PROTOCOL == "fetchcore.repository-learning-v2"
+
+
+def test_ai_memory_client_reads_exact_page_after_query() -> None:
+    client = module.AiMemoryClient("http://memory.invalid", None)
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_call(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        return {"path": "concepts/retrieval.md", "body": "# Retrieval\n\nRRF"}
+
+    client.call_tool = fake_call
+    result = client.read_page("workspace", "project", "concepts/retrieval.md")
+
+    assert result["body"] == "# Retrieval\n\nRRF"
+    assert calls == [
+        (
+            "memory_read_page",
+            {
+                "workspace": "workspace",
+                "project": "project",
+                "path": "concepts/retrieval.md",
+            },
+        )
+    ]
+
+
+def test_memory_recall_expands_ranked_unique_hits_only() -> None:
+    client = module.AiMemoryClient("http://memory.invalid", None)
+    paths: list[str] = []
+
+    def fake_read_page(workspace: str, project: str, path: str) -> dict[str, object]:
+        assert workspace == "w"
+        assert project == "p"
+        paths.append(path)
+        return {"path": path, "body": f"# {path}\n\nfull body"}
+
+    client.read_page = fake_read_page
+    query_result = {
+        "hits": [
+            {"path": "concepts/a.md", "snippet": "a"},
+            {"path": "concepts/a.md", "snippet": "duplicate"},
+            {"path": "concepts/b.md", "snippet": "b"},
+            {"path": "concepts/c.md", "snippet": "c"},
+        ]
+    }
+
+    recalled = module.expand_memory_recall(
+        client,
+        workspace="w",
+        project="p",
+        query_result=query_result,
+        read_page_limit=2,
+    )
+
+    assert paths == ["concepts/a.md", "concepts/b.md"]
+    assert recalled["discovery"] == query_result
+    assert [page["path"] for page in recalled["expanded_pages"]] == paths
+
+
+def test_stage_scores_distinguish_stored_recalled_and_answered_facts() -> None:
+    scenario = minimal_scenario()
+    study = {
+        "memory_pages": [
+            {
+                "path": "concepts/boundary.md",
+                "body": "# Boundary\n\nCanonical Repository Knowledge is canonical.",
+            }
+        ]
+    }
+    stored = module.score_stored_memory(scenario, study)
+    assert stored["fact_recall"] == 1.0
+
+    recalled = {
+        "q1": {
+            "discovery": {"hits": [{"path": "concepts/boundary.md"}]},
+            "expanded_pages": [
+                {
+                    "path": "concepts/boundary.md",
+                    "page": {
+                        "path": "concepts/boundary.md",
+                        "body": "# Boundary\n\nCanonical Repository Knowledge is canonical.",
+                    },
+                }
+            ],
+        }
+    }
+    memory_score = module.score_memory_recall(scenario, recalled)
+    assert memory_score["fact_recall"] == 1.0
+
+    answer_score = module.score_answers(scenario, {"q1": "UNKNOWN"})
+    assert answer_score["fact_recall"] == 0.0
+
+    metrics = module.memory_recall_metrics(recalled)
+    assert metrics["queries"] == 1
+    assert metrics["full_pages_read"] == 1
+    assert metrics["distinct_pages_read"] == 1
+    assert metrics["context_chars"] > 0
