@@ -11,7 +11,7 @@ import {
   Sparkles, TerminalSquare, Workflow,
 } from 'lucide-react'
 import { Button } from './components/ui/button'
-import { getConfig, parseIntent, readSource, search } from './api'
+import { getConfig, parseIntent, readSource, search, sourcePayloadForHit } from './api'
 import type { SearchHit, SearchPayload, SearchResponse, RetrievalTelemetry } from './types'
 
 const initialQuery = 'where is authentication validated?'
@@ -140,13 +140,7 @@ function ResultDetails({ hit, repository, boundRevision }: { hit: SearchHit; rep
   const [tab, setTab] = useState('evidence')
   const source = useQuery({
     queryKey: ['source', repository, hit.source_ref, revisionPrecondition, hit.line_start, hit.line_end],
-    queryFn: () => readSource({
-      source_ref: hit.source_ref, repository,
-      ...(revisionPrecondition ? { revision: revisionPrecondition } : {}),
-      ...(hit.line_start ? { line_start: hit.line_start } : {}),
-      ...(hit.line_end ? { line_end: hit.line_end } : {}),
-      context_lines: 5,
-    }),
+    queryFn: () => readSource(sourcePayloadForHit(hit, repository, boundRevision)),
     enabled: tab === 'source',
     retry: false,
   })
