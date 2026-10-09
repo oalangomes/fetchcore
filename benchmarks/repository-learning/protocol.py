@@ -17,7 +17,7 @@ import time
 
 import yaml
 
-PROTOCOL = "fetchcore.repository-learning-v1"
+PROTOCOL = "fetchcore.repository-learning-v2"
 SCHEMA_VERSION = 1
 DEFAULT_ARMS = ("direct", "fetchcore", "fetchcore_bounded")
 
