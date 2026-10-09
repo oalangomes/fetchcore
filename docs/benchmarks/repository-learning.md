@@ -81,3 +81,8 @@ historical attempt.
 The remaining original-ruler failures are classified in the separate
 [scorer audit](repository-learning-scorer-audit.md). That audit reuses existing
 outputs and does not change retrieval, memory recall, or evaluator behavior.
+
+The subsequent full fresh V2 execution is recorded as
+`codex-20261009-003-v2-fresh` in the artifact index. It uses new study agents,
+memory projects, recall, and evaluator sessions; unlike the controlled replay, it
+does not isolate a single changed variable.
