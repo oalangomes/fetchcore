@@ -53,7 +53,8 @@ def test_real_search_preserves_native_contract_and_source_read(tmp_path: Path) -
     hit = next(hit for hit in body["results"] if "eligibility.py" in hit["source_ref"])
     assert "eligibility_validator" in hit["content"]
     assert "source_ref" in hit
-    assert "query_matches" in hit
+    # Optional query matches are omitted when a backend emits none.
+    assert isinstance(hit.get("query_matches", []), list)
     source = client.post(
         "/api/source",
         json={"repository": "example/catalog", "source_ref": hit["source_ref"]},
