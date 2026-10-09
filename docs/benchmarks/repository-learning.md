@@ -77,3 +77,7 @@ The frozen empirical result and its permitted interpretation are recorded in the
 [artifact index](../../benchmarks/repository-learning/.artifacts/repository-learning/INDEX.md)
 identifies the canonical baseline, controlled replay, reproduction, and invalid
 historical attempt.
+
+The remaining original-ruler failures are classified in the separate
+[scorer audit](repository-learning-scorer-audit.md). That audit reuses existing
+outputs and does not change retrieval, memory recall, or evaluator behavior.

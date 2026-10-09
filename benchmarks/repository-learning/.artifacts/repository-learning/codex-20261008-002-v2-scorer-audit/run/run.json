@@ -1,0 +1,1133 @@
+{
+  "protocol": "fetchcore.repository-learning-scorer-audit-v1",
+  "status": "complete",
+  "original_scorer": "scenario-required-regex-v1",
+  "revised_scorer": "fetchcore.repository-learning-ruler-v2",
+  "arms": {
+    "direct": {
+      "stored_memory": {
+        "original": {
+          "fact_recall": 0.8333333333333334,
+          "fact_precision": 0.8333333333333334,
+          "questions_correct": 5,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 1,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": false,
+              "missing_required_patterns": [
+                "(?i)canonical\\s+repository\\s+knowledge"
+              ],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        },
+        "revised": {
+          "ruler_id": "fetchcore.repository-learning-ruler-v2",
+          "fact_recall": 1.0,
+          "fact_precision": 1.0,
+          "questions_correct": 6,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 0,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        }
+      },
+      "memory_recall": {
+        "original": {
+          "fact_recall": 0.8333333333333334,
+          "fact_precision": 0.8333333333333334,
+          "questions_correct": 5,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 1,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": false,
+              "missing_required_patterns": [
+                "(?i)canonical\\s+repository\\s+knowledge"
+              ],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        },
+        "revised": {
+          "ruler_id": "fetchcore.repository-learning-ruler-v2",
+          "fact_recall": 1.0,
+          "fact_precision": 1.0,
+          "questions_correct": 6,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 0,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        }
+      },
+      "answer": {
+        "original": {
+          "fact_recall": 0.8333333333333334,
+          "fact_precision": 0.8333333333333334,
+          "questions_correct": 5,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 1,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": false,
+              "missing_required_patterns": [
+                "(?i)canonical\\s+repository\\s+knowledge"
+              ],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        },
+        "revised": {
+          "ruler_id": "fetchcore.repository-learning-ruler-v2",
+          "fact_recall": 1.0,
+          "fact_precision": 1.0,
+          "questions_correct": 6,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 0,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        }
+      }
+    },
+    "fetchcore": {
+      "stored_memory": {
+        "original": {
+          "fact_recall": 1.0,
+          "fact_precision": 1.0,
+          "questions_correct": 6,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 0,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        },
+        "revised": {
+          "ruler_id": "fetchcore.repository-learning-ruler-v2",
+          "fact_recall": 1.0,
+          "fact_precision": 1.0,
+          "questions_correct": 6,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 0,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        }
+      },
+      "memory_recall": {
+        "original": {
+          "fact_recall": 1.0,
+          "fact_precision": 1.0,
+          "questions_correct": 6,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 0,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        },
+        "revised": {
+          "ruler_id": "fetchcore.repository-learning-ruler-v2",
+          "fact_recall": 1.0,
+          "fact_precision": 1.0,
+          "questions_correct": 6,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 0,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        }
+      },
+      "answer": {
+        "original": {
+          "fact_recall": 0.8333333333333334,
+          "fact_precision": 0.8333333333333334,
+          "questions_correct": 5,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 1,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": false,
+              "missing_required_patterns": [
+                "(?i)canonical\\s+repository\\s+knowledge"
+              ],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        },
+        "revised": {
+          "ruler_id": "fetchcore.repository-learning-ruler-v2",
+          "fact_recall": 1.0,
+          "fact_precision": 1.0,
+          "questions_correct": 6,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 0,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        }
+      }
+    },
+    "fetchcore_bounded": {
+      "stored_memory": {
+        "original": {
+          "fact_recall": 0.8333333333333334,
+          "fact_precision": 0.8333333333333334,
+          "questions_correct": 5,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 1,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": false,
+              "missing_required_patterns": [
+                "(?i)MCP.*RetrievalApplicationService.*KnowledgeSearchBackend"
+              ],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        },
+        "revised": {
+          "ruler_id": "fetchcore.repository-learning-ruler-v2",
+          "fact_recall": 1.0,
+          "fact_precision": 1.0,
+          "questions_correct": 6,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 0,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        }
+      },
+      "memory_recall": {
+        "original": {
+          "fact_recall": 0.8333333333333334,
+          "fact_precision": 0.8333333333333334,
+          "questions_correct": 5,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 1,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": false,
+              "missing_required_patterns": [
+                "(?i)MCP.*RetrievalApplicationService.*KnowledgeSearchBackend"
+              ],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        },
+        "revised": {
+          "ruler_id": "fetchcore.repository-learning-ruler-v2",
+          "fact_recall": 1.0,
+          "fact_precision": 1.0,
+          "questions_correct": 6,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 0,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        }
+      },
+      "answer": {
+        "original": {
+          "fact_recall": 0.6666666666666666,
+          "fact_precision": 0.6666666666666666,
+          "questions_correct": 4,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 2,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": false,
+              "missing_required_patterns": [
+                "(?i)SearchIntent.*(meaning|query|intent)"
+              ],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_required_patterns": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": false,
+              "missing_required_patterns": [
+                "(?i)MCP.*RetrievalApplicationService.*KnowledgeSearchBackend"
+              ],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        },
+        "revised": {
+          "ruler_id": "fetchcore.repository-learning-ruler-v2",
+          "fact_recall": 1.0,
+          "fact_precision": 1.0,
+          "questions_correct": 6,
+          "questions_total": 6,
+          "unsupported_or_incorrect_answers": 0,
+          "per_question": [
+            {
+              "question_id": "q-canonical-knowledge",
+              "fact_id": "canonical-knowledge",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-intent-scope",
+              "fact_id": "intent-scope-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-required-semantics",
+              "fact_id": "required-semantics-reject",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-backends",
+              "fact_id": "retrieval-backends",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-hybrid",
+              "fact_id": "hybrid-rrf",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            },
+            {
+              "question_id": "q-serving",
+              "fact_id": "serving-boundary",
+              "passed": true,
+              "missing_requirements": [],
+              "forbidden_pattern_hits": []
+            }
+          ]
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "arm": "direct",
+      "question_id": "q-canonical-knowledge",
+      "root_cause": "ruler false negative",
+      "rationale": "The text identifies KnowledgeDocument as the canonical unit and states that vendor indexes are rebuildable projections; only the exact phrase \"Canonical Repository Knowledge\" is absent.",
+      "stages": {
+        "stored_memory": {
+          "expected_semantic_verdict": true,
+          "original_regex_verdict": false,
+          "original_classification": "false_negative",
+          "revised_ruler_verdict": true,
+          "revised_classification": "true_positive",
+          "text_sha256": "0d3c575d6ba971cefae20280ffd21d7a7ae24abb71236e22b426217d6ebec211"
+        },
+        "memory_recall": {
+          "expected_semantic_verdict": true,
+          "original_regex_verdict": false,
+          "original_classification": "false_negative",
+          "revised_ruler_verdict": true,
+          "revised_classification": "true_positive",
+          "text_sha256": "9496f20e5ff45bd418f0ebcfa9bae93137bdaeb1d640994e02eb05a7be55f803"
+        },
+        "answer": {
+          "expected_semantic_verdict": true,
+          "original_regex_verdict": false,
+          "original_classification": "false_negative",
+          "revised_ruler_verdict": true,
+          "revised_classification": "true_positive",
+          "text_sha256": "3e0e184de5cbbddfb16ae99c3d3c0bcb4c1d80627bc5a5c5a0dc3edeb71b2340",
+          "known_answer_text": "The canonical unit is KnowledgeDocument, containing typed KnowledgeEvidence and KnowledgeProvenance plus repository, revision, path, line span, and checksum. KnowledgePacks and source-derived relationships may enrich it but do not create authority. Solr, OpenSearch, Qdrant, and other indexes are rebuildable projections, not canonical storage; vendor schema changes or rebuilds must not redefine source evidence."
+        }
+      }
+    },
+    {
+      "arm": "fetchcore",
+      "question_id": "q-canonical-knowledge",
+      "root_cause": "ruler false negative",
+      "rationale": "The answer says canonical truth is backend-neutral Repository Knowledge and that search/vector stores are rebuildable projections.",
+      "stages": {
+        "stored_memory": {
+          "expected_semantic_verdict": true,
+          "original_regex_verdict": true,
+          "original_classification": "true_positive",
+          "revised_ruler_verdict": true,
+          "revised_classification": "true_positive",
+          "text_sha256": "e5ebb8eee00b44763b14a9cd7bed037de676ac73f0b2c5cdf1f7dbdb28b1aa9b"
+        },
+        "memory_recall": {
+          "expected_semantic_verdict": true,
+          "original_regex_verdict": true,
+          "original_classification": "true_positive",
+          "revised_ruler_verdict": true,
+          "revised_classification": "true_positive",
+          "text_sha256": "e8cc0c6d739500115d506815f7adf3ee0931955f9d1b1d2e389ee840d5ea594f"
+        },
+        "answer": {
+          "expected_semantic_verdict": true,
+          "original_regex_verdict": false,
+          "original_classification": "false_negative",
+          "revised_ruler_verdict": true,
+          "revised_classification": "true_positive",
+          "text_sha256": "49cc54e1656fdd3cb392123d20ebbe293030c30c1c13f659c666cd8ac49ef563",
+          "known_answer_text": "Canonical truth is backend-neutral Repository Knowledge, whose canonical unit is KnowledgeDocument with typed evidence and provenance plus repository, revision, path, line span, and checksum. Search/vector stores such as Solr, OpenSearch, and Qdrant are rebuildable projections compiled through ProjectedKnowledgeRecord; their schemas do not define source-document meaning or authority."
+        }
+      }
+    },
+    {
+      "arm": "fetchcore_bounded",
+      "question_id": "q-intent-scope",
+      "root_cause": "ruler false negative",
+      "rationale": "The answer correctly says SearchIntent expresses what the caller means and SearchScope defines where FetchCore may look; the original regex accepts \"meaning\" but not \"means\".",
+      "stages": {
+        "stored_memory": {
+          "expected_semantic_verdict": true,
+          "original_regex_verdict": true,
+          "original_classification": "true_positive",
+          "revised_ruler_verdict": true,
+          "revised_classification": "true_positive",
+          "text_sha256": "14e87b94307e0a7700e08a9cfce8550e1e0c748cf1c5d310a14b977bd552bea5"
+        },
+        "memory_recall": {
+          "expected_semantic_verdict": true,
+          "original_regex_verdict": true,
+          "original_classification": "true_positive",
+          "revised_ruler_verdict": true,
+          "revised_classification": "true_positive",
+          "text_sha256": "6f701a34d89071a987e25a68422d240ff7e108c8e6fad7e79c005175b675d435"
+        },
+        "answer": {
+          "expected_semantic_verdict": true,
+          "original_regex_verdict": false,
+          "original_classification": "false_negative",
+          "revised_ruler_verdict": true,
+          "revised_classification": "true_positive",
+          "text_sha256": "e92b3ffaa1a7f9a77a0409077ae3b3127780026dffdf81a8aa363205cb1cff92",
+          "known_answer_text": "SearchIntent expresses what the caller means to retrieve. SearchScope defines where FetchCore may look, carrying the repository and authorized workspace. Execution details belong separately in RetrievalConfig/policy."
+        }
+      }
+    },
+    {
+      "arm": "fetchcore_bounded",
+      "question_id": "q-serving",
+      "root_cause": "ruler false negative",
+      "rationale": "The text preserves the MCP-to-application-to-backend-adapter boundary and confines backend protocol details to adapters, without spelling both class names required by the original regex.",
+      "stages": {
+        "stored_memory": {
+          "expected_semantic_verdict": true,
+          "original_regex_verdict": false,
+          "original_classification": "false_negative",
+          "revised_ruler_verdict": true,
+          "revised_classification": "true_positive",
+          "text_sha256": "14e87b94307e0a7700e08a9cfce8550e1e0c748cf1c5d310a14b977bd552bea5"
+        },
+        "memory_recall": {
+          "expected_semantic_verdict": true,
+          "original_regex_verdict": false,
+          "original_classification": "false_negative",
+          "revised_ruler_verdict": true,
+          "revised_classification": "true_positive",
+          "text_sha256": "2a53bbf1dcb083fc31bf798e87ec6a05534876acf362f2883bb8c37f28e2ca42"
+        },
+        "answer": {
+          "expected_semantic_verdict": true,
+          "original_regex_verdict": false,
+          "original_classification": "false_negative",
+          "revised_ruler_verdict": true,
+          "revised_classification": "true_positive",
+          "text_sha256": "5294e2009f727e5450d367d855ffb93e02c07060cc2e2b6832c17fee5901db52",
+          "known_answer_text": "Serving is backend-neutral and flows through the application service to CLI, MCP, and SDK/API consumers. Current MCP serving binds exactly one authorized repository per process through RepositoryBinding, which is the authorization and source-access boundary; federated multi-repository ranking is future work. Backend-specific protocol details are confined to backend adapters rather than the serving/application contracts."
+        }
+      }
+    }
+  ],
+  "run_id": "codex-20261008-002-v2-scorer-audit",
+  "mode": "scorer_audit",
+  "source_run": {
+    "path": "benchmarks/repository-learning/.artifacts/repository-learning/codex-20261008-002-v2/run/run.json",
+    "sha256": "29a1a3f3f852e0283f9a8037055f747f91456941bda4cc2a71198cec56958c35",
+    "run_id": "codex-20261008-002-v2",
+    "protocol": "fetchcore.repository-learning-v2",
+    "repository": {
+      "identity": "oalangomes/fetchcore",
+      "revision": "e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c"
+    }
+  },
+  "scenario": {
+    "path": "benchmarks/repository-learning/scenarios/fetchcore-self.yaml",
+    "sha256": "2753adf17add395ae4977424c537f6aab13449bcc05327beb5130b60b319c302"
+  },
+  "ruler": {
+    "path": "benchmarks/repository-learning/scenarios/fetchcore-self-ruler-v2.yaml",
+    "sha256": "49e13f2ee86ecee804a546d0cc32538e5a0e4dacb76254033f9dadeb4b7e5251"
+  },
+  "annotations": {
+    "path": "benchmarks/repository-learning/scenarios/fetchcore-self-v2-audit.yaml",
+    "sha256": "8f70377a87562c7a5292683b9785dd023ee81f7dbfac69ede644d1d4e1fd9a61"
+  }
+}

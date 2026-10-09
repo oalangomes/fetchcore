@@ -207,6 +207,12 @@ fresh answering are no longer collapsed into one number. The deterministic ruler
 is still intentionally lexical and can have phrasing false negatives; that is a
 separate controlled variable from the v2 recall change.
 
+`scorer_audit.py` evaluates that variable without rerunning acquisition, memory
+recall, or the evaluator. It verifies the frozen source artifact, reproduces the
+original stage scores, and applies an explicitly versioned concept ruler. See the
+[scorer audit](../../docs/benchmarks/repository-learning-scorer-audit.md) for the
+canonical result and reproduction command.
+
 This is a deterministic **learning-memory** ruler, not a FetchCore retrieval metric and not an authority score. Retrievalgate can evaluate retrieval-level regressions separately.
 
 ## Initial scenario
