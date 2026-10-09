@@ -6,6 +6,8 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shlex
+import sys
 import tempfile
 import time
 
@@ -68,11 +70,105 @@ def validate_source_run(
     _required_mapping(source.get("arms"), "source.arms")
 
 
+def resolve_source_identity(
+    source: dict[str, object],
+    *,
+    harness_id: str | None,
+    provider_id: str | None,
+    model_id: str | None,
+) -> tuple[str, str, str, str]:
+    source_harness = _required_mapping(source.get("harness"), "source.harness")
+    repository = _required_mapping(source.get("repository"), "source.repository")
+
+    resolved_harness = str(source_harness.get("id", "")).strip()
+    resolved_provider = str(source_harness.get("provider", "")).strip()
+    resolved_model = str(source_harness.get("model", "")).strip()
+    resolved_revision = str(repository.get("revision", "")).strip()
+
+    for label, value in (
+        ("source.harness.id", resolved_harness),
+        ("source.harness.provider", resolved_provider),
+        ("source.harness.model", resolved_model),
+        ("source.repository.revision", resolved_revision),
+    ):
+        if not value:
+            raise ProtocolError(f"{label} must be a non-empty string")
+
+    for label, override, expected in (
+        ("--harness-id", harness_id, resolved_harness),
+        ("--provider-id", provider_id, resolved_provider),
+        ("--model-id", model_id, resolved_model),
+    ):
+        if override is not None and override != expected:
+            raise ProtocolError(
+                f"{label} override {override!r} does not match source run {expected!r}"
+            )
+
+    return resolved_harness, resolved_provider, resolved_model, resolved_revision
+
+
+def resolve_evaluate_command(
+    command: str | None,
+    *,
+    source_harness_id: str,
+    source_model_id: str,
+    source_revision: str,
+    invocation_cwd: Path,
+) -> str:
+    if command is not None:
+        argv = shlex.split(command)
+        if not argv:
+            raise ProtocolError("--evaluate-command must not be empty")
+        resolved: list[str] = []
+        for token in argv:
+            candidate = invocation_cwd / token
+            if (
+                not token.startswith("-")
+                and not Path(token).is_absolute()
+                and ("/" in token or token.endswith(".py"))
+                and candidate.exists()
+            ):
+                resolved.append(str(candidate.resolve()))
+            else:
+                resolved.append(token)
+        return shlex.join(resolved)
+
+    if not source_harness_id.startswith("codex-cli-"):
+        raise ProtocolError(
+            "--evaluate-command is required when the source harness is not codex-cli"
+        )
+    wrapper = Path(__file__).resolve().parent / "wrappers" / "codex_harness.py"
+    return shlex.join(
+        [
+            sys.executable,
+            str(wrapper),
+            "evaluate",
+            "--model",
+            source_model_id,
+            "--revision",
+            source_revision,
+        ]
+    )
+
+
 def reevaluate(args: argparse.Namespace) -> dict[str, object]:
     scenario = load_scenario(args.scenario)
     scenario_sha = file_sha256(args.scenario)
     source = _load_json(args.source_run, "source run")
     validate_source_run(source, scenario, scenario_sha256=scenario_sha)
+    harness_id, provider_id, model_id, source_revision = resolve_source_identity(
+        source,
+        harness_id=args.harness_id,
+        provider_id=args.provider_id,
+        model_id=args.model_id,
+    )
+    evaluate_command = resolve_evaluate_command(
+        args.evaluate_command,
+        source_harness_id=harness_id,
+        source_model_id=model_id,
+        source_revision=source_revision,
+        invocation_cwd=Path.cwd(),
+    )
 
     source_arms = _required_mapping(source["arms"], "source.arms")
     selected = args.arm or list(DEFAULT_ARMS)
@@ -149,7 +245,7 @@ def reevaluate(args: argparse.Namespace) -> dict[str, object]:
         )
         with tempfile.TemporaryDirectory(prefix="fetchcore-rlb-reeval-") as eval_dir:
             raw_eval, eval_exec = run_external(
-                args.evaluate_command,
+                evaluate_command,
                 eval_prompt,
                 cwd=Path(eval_dir),
                 timeout_seconds=args.timeout_seconds,
@@ -209,10 +305,10 @@ def reevaluate(args: argparse.Namespace) -> dict[str, object]:
             "harness": source.get("harness"),
         },
         "harness": {
-            "id": args.harness_id,
-            "provider": args.provider_id,
-            "model": args.model_id,
-            "evaluation_command_sha256": sha256_text(args.evaluate_command),
+            "id": harness_id,
+            "provider": provider_id,
+            "model": model_id,
+            "evaluation_command_sha256": sha256_text(evaluate_command),
         },
         "prompt_sha256": {
             "study": source.get("prompt_sha256", {}).get("study")
@@ -252,7 +348,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--arm", action="append", choices=DEFAULT_ARMS, default=[])
-    parser.add_argument("--evaluate-command", required=True)
+    parser.add_argument("--evaluate-command")
     parser.add_argument("--evaluate-prompt", type=Path, default=root / "prompts/evaluate.md")
     parser.add_argument("--memory-server-url", default=os.getenv("AI_MEMORY_SERVER_URL", ""))
     parser.add_argument("--memory-auth-token", default=os.getenv("AI_MEMORY_AUTH_TOKEN"))
@@ -260,9 +356,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--memory-query-limit", type=int, default=8)
     parser.add_argument("--memory-read-page-limit", type=int, default=3)
     parser.add_argument("--timeout-seconds", type=int, default=900)
-    parser.add_argument("--harness-id", required=True)
-    parser.add_argument("--provider-id", required=True)
-    parser.add_argument("--model-id", required=True)
+    parser.add_argument("--harness-id")
+    parser.add_argument("--provider-id")
+    parser.add_argument("--model-id")
     args = parser.parse_args(argv)
     if args.memory_query_limit < 1:
         parser.error("--memory-query-limit must be positive")
