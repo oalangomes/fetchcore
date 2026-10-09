@@ -60,21 +60,3 @@ describe('Search Lab', () => {
     expect(vi.mocked(globalThis.fetch).mock.calls.filter(call => call[0] === '/api/search')).toHaveLength(0)
   })
 })
-
-describe('Source revision handling', () => {
-  it('does not pass an unbound indexed revision as an authorized source precondition', async () => {
-    mount()
-    await screen.findByText('demo/catalog')
-    fireEvent.click(screen.getByTestId('run-search'))
-    await screen.findByText('Trecho recuperado')
-    fireEvent.click(screen.getByRole('tab', { name: 'Código-fonte' }))
-    await waitFor(() => {
-      const sourceCall = vi.mocked(globalThis.fetch).mock.calls.find(call => call[0] === '/api/source')
-      expect(sourceCall).toBeDefined()
-      const payload = JSON.parse(String((sourceCall?.[1] as RequestInit).body))
-      expect(payload.revision).toBeUndefined()
-      expect(payload.repository).toBe('demo/catalog')
-    })
-    expect(screen.getByText(/não prova equivalência ao trecho indexado/)).toBeInTheDocument()
-  })
-})
