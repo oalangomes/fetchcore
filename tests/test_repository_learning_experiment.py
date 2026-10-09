@@ -346,3 +346,74 @@ def test_reevaluation_requires_identical_scenario_and_repository() -> None:
             scenario,
             scenario_sha256="scenario-sha",
         )
+
+
+def test_reevaluation_inherits_source_harness_identity() -> None:
+    source = {
+        "harness": {
+            "id": "codex-cli-0.153.2",
+            "provider": "openai-chatgpt",
+            "model": "gpt-5.6-sol",
+        },
+        "repository": {"revision": "abc123"},
+    }
+
+    assert reevaluate_module.resolve_source_identity(
+        source,
+        harness_id=None,
+        provider_id=None,
+        model_id=None,
+    ) == ("codex-cli-0.153.2", "openai-chatgpt", "gpt-5.6-sol", "abc123")
+
+
+def test_reevaluation_rejects_source_identity_override() -> None:
+    source = {
+        "harness": {
+            "id": "codex-cli-0.153.2",
+            "provider": "openai-chatgpt",
+            "model": "gpt-5.6-sol",
+        },
+        "repository": {"revision": "abc123"},
+    }
+
+    with pytest.raises(module.ProtocolError, match="does not match source run"):
+        reevaluate_module.resolve_source_identity(
+            source,
+            harness_id=None,
+            provider_id=None,
+            model_id="different-model",
+        )
+
+
+def test_reevaluation_builds_absolute_codex_evaluator_command() -> None:
+    command = reevaluate_module.resolve_evaluate_command(
+        None,
+        source_harness_id="codex-cli-0.153.2",
+        source_model_id="gpt-5.6-sol",
+        source_revision="abc123",
+        invocation_cwd=Path("/tmp/unused"),
+    )
+
+    assert str(WRAPPER.resolve()) in command
+    assert "evaluate" in command
+    assert "--model gpt-5.6-sol" in command
+    assert "--revision abc123" in command
+
+
+def test_reevaluation_resolves_relative_script_before_temp_cwd(
+    tmp_path: Path,
+) -> None:
+    script = tmp_path / "wrappers" / "evaluate.py"
+    script.parent.mkdir()
+    script.write_text("print('ok')\n", encoding="utf-8")
+
+    command = reevaluate_module.resolve_evaluate_command(
+        "python wrappers/evaluate.py --flag value",
+        source_harness_id="custom",
+        source_model_id="model",
+        source_revision="abc123",
+        invocation_cwd=tmp_path,
+    )
+
+    assert str(script.resolve()) in command
+    assert "--flag value" in command
