@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -99,7 +99,8 @@ def create_app(context: ExplorerContext | None = None) -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/api/config")
-    def configuration(ctx: Annotated[ExplorerContext, Depends(resolved)]) -> dict[str, object]:
+    def configuration() -> dict[str, object]:
+        ctx = resolved()
         return {
             "repository": ctx.repository,
             "backend": ctx.backend,
@@ -111,10 +112,8 @@ def create_app(context: ExplorerContext | None = None) -> FastAPI:
         }
 
     @app.post("/api/search")
-    def search(
-        payload: SearchPayload,
-        ctx: Annotated[ExplorerContext, Depends(resolved)],
-    ) -> dict[str, object]:
+    def search(payload: SearchPayload) -> dict[str, object]:
+        ctx = resolved()
         try:
             intent = SearchIntent.from_mapping(payload.intent)
             response = ctx.service.search(
@@ -136,10 +135,8 @@ def create_app(context: ExplorerContext | None = None) -> FastAPI:
             ) from exc
 
     @app.post("/api/source")
-    def source(
-        payload: SourcePayload,
-        ctx: Annotated[ExplorerContext, Depends(resolved)],
-    ) -> dict[str, object]:
+    def source(payload: SourcePayload) -> dict[str, object]:
+        ctx = resolved()
         try:
             result = ctx.service.get_source(
                 SourceReadRequest(
