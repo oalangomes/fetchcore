@@ -7,9 +7,9 @@
 
 | Arm | StoredFactRecall | MemoryRecallCoverage | AnswerFactRecall | Questions | Memory pages | Tool calls | Returned chars | Wall ms |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| direct | 0.833 | 0.833 | 0.833 | 5/6 | 1 | 2 | 1079418 | 8411.1 |
-| fetchcore | 1.000 | 1.000 | 0.833 | 5/6 | 1 | 17 | 108799 | 32591.6 |
-| fetchcore_bounded | 0.833 | 0.833 | 0.667 | 4/6 | 3 | 6 | 19076 | 7347.5 |
+| direct | 0.833 | 0.833 | 0.833 | 5/6 | 1 | 2 | 1079418 | 35653.5 |
+| fetchcore | 1.000 | 1.000 | 0.833 | 5/6 | 1 | 17 | 108799 | 14859.2 |
+| fetchcore_bounded | 0.833 | 0.833 | 0.667 | 4/6 | 3 | 6 | 19076 | 28599.6 |
 
 ## Per-question stage results
 

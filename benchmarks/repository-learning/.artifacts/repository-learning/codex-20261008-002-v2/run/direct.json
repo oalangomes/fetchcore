@@ -48,9 +48,9 @@
     {
       "path": "knowledge/fetchcore-architecture.md",
       "result": {
-        "page_id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+        "page_id": "01a12150-d770-7963-8a75-d34c9c0b1dc2",
         "path": "knowledge/fetchcore-architecture.md",
-        "checkpoint": null
+        "checkpoint": "c4f0651fb2e6e072ff148d5ab0806aec23faeda4"
       }
     }
   ],
@@ -59,7 +59,7 @@
       "discovery": {
         "hits": [
           {
-            "id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+            "id": "01a12150-d770-7963-8a75-d34c9c0b1dc2",
             "path": "knowledge/fetchcore-architecture.md",
             "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
             "snippet": "# <mark>FetchCore</mark> Repository Knowledge, Retrieval, and Serving Boundaries\n\n## <mark>Canonical</mark> source of <mark>truth</mark>\n\nRepository sources pass through materialization, safe scanning, corpus/document policy, and `RepositoryIndexer` extraction. The…",
@@ -79,7 +79,7 @@
               "type": "Note",
               "generated": {
                 "by": "process:ai-memory/2.6.2",
-                "at": "2026-10-09T15:27:50Z"
+                "at": "2026-10-09T15:38:28Z"
               }
             }
           }
@@ -90,7 +90,7 @@
       "discovery": {
         "hits": [
           {
-            "id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+            "id": "01a12150-d770-7963-8a75-d34c9c0b1dc2",
             "path": "knowledge/fetchcore-architecture.md",
             "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
             "snippet": "…Expansions increase recall without relaxing required structure; hints remain preferences.\n\n`<mark>SearchScope</mark>` defines where and how broadly retrieval may operate: workspace, repository, revision, repository paths…",
@@ -110,7 +110,7 @@
               "type": "Note",
               "generated": {
                 "by": "process:ai-memory/2.6.2",
-                "at": "2026-10-09T15:27:50Z"
+                "at": "2026-10-09T15:38:28Z"
               }
             }
           }
@@ -121,7 +121,7 @@
       "discovery": {
         "hits": [
           {
-            "id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+            "id": "01a12150-d770-7963-8a75-d34c9c0b1dc2",
             "path": "knowledge/fetchcore-architecture.md",
             "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
             "snippet": "…<mark>boolean</mark> <mark>structure</mark>, or synonyms from natural language. Expansions increase recall without relaxing <mark>required</mark> <mark>structure</mark>; hints remain preferences.\n\n`SearchScope` defines where and how broadly <mark>retrieval</mark>…",
@@ -141,7 +141,7 @@
               "type": "Note",
               "generated": {
                 "by": "process:ai-memory/2.6.2",
-                "at": "2026-10-09T15:27:50Z"
+                "at": "2026-10-09T15:38:28Z"
               }
             }
           }
@@ -152,7 +152,7 @@
       "discovery": {
         "hits": [
           {
-            "id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+            "id": "01a12150-d770-7963-8a75-d34c9c0b1dc2",
             "path": "knowledge/fetchcore-architecture.md",
             "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
             "snippet": "…<mark>FetchCore</mark> does not silently substitute lexical for dense or vice versa. Sources: `docs/concepts/search-intent.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/config.py`.\n\n## Current <mark>retrieval</mark> channels and <mark>adapters</mark>\n\nCurrent…",
@@ -172,7 +172,7 @@
               "type": "Note",
               "generated": {
                 "by": "process:ai-memory/2.6.2",
-                "at": "2026-10-09T15:27:50Z"
+                "at": "2026-10-09T15:38:28Z"
               }
             }
           }
@@ -183,7 +183,7 @@
       "discovery": {
         "hits": [
           {
-            "id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+            "id": "01a12150-d770-7963-8a75-d34c9c0b1dc2",
             "path": "knowledge/fetchcore-architecture.md",
             "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
             "snippet": "…and federated multi-repository <mark>fusion</mark> are not <mark>current</mark> mandatory <mark>retrieval</mark> paths. Sources: `docs/architecture/retrieval.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/contracts.py`.\n\n## <mark>Hybrid</mark> <mark>baseline</mark>\n\n<mark>Hybrid</mark> independently acquires lexical or…",
@@ -203,7 +203,7 @@
               "type": "Note",
               "generated": {
                 "by": "process:ai-memory/2.6.2",
-                "at": "2026-10-09T15:27:50Z"
+                "at": "2026-10-09T15:38:28Z"
               }
             }
           }
@@ -214,7 +214,7 @@
       "discovery": {
         "hits": [
           {
-            "id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+            "id": "01a12150-d770-7963-8a75-d34c9c0b1dc2",
             "path": "knowledge/fetchcore-architecture.md",
             "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
             "snippet": "…Sources: `docs/architecture/retrieval.md`, `src/fetchcore/retrieval/config.py`.\n\n## <mark>MCP</mark> <mark>serving</mark> boundary\n\nThe <mark>serving</mark> <mark>path</mark> is `<mark>MCP</mark> stdio → application runtime bootstrap → RetrievalApplicationService → KnowledgeSearchBackend`. <mark>MCP</mark> is a transport adapter…",
@@ -234,7 +234,7 @@
               "type": "Note",
               "generated": {
                 "by": "process:ai-memory/2.6.2",
-                "at": "2026-10-09T15:27:50Z"
+                "at": "2026-10-09T15:38:28Z"
               }
             }
           }
@@ -250,18 +250,18 @@
   },
   "evaluation": {
     "answers": {
-      "q-canonical-knowledge": "The canonical unit of truth is the KnowledgeDocument produced from repository sources through materialization, safe scanning, corpus/document policy, and RepositoryIndexer extraction. It carries typed KnowledgeEvidence, KnowledgeProvenance, repository, revision, path, line span, and checksum. KnowledgePacks and source-derived relationships enrich this knowledge but do not confer authority. Solr, OpenSearch, Qdrant, and other indexes are rebuildable projections, not canonical storage; backend schema changes or rebuilds must not redefine source evidence.",
-      "q-intent-scope": "SearchIntent defines retrieval meaning independently of authorization and execution policy: canonical query, required anchors and optional required SearchExpression structure, caller-attributed expansions, weak hints, typed signals, and compatible exact/semantic terms. SearchScope defines where and how broadly retrieval may run: workspace, repository, revision, paths, knowledge types, result limit, mode, settings, and optional retrieval configuration.",
-      "q-required-semantics": "FetchCore fails closed. Before scanning, backend I/O, or embedding, every participating channel must be able to preserve required canonical text, anchors, and expressions. Otherwise it raises KnowledgeSearchError with category unsupported_semantics and translation policy reject; there is no flattening fallback. Hybrid currently rejects anchors or boolean groups because fusion cannot guarantee them and no post-fusion constraint engine exists. Optional expansions, hints, and signals may instead be left unconsumed and reported as partially_unsupported.",
-      "q-backends": "The named built-in retrieval adapters are local-semantic, solr, opensearch, and qdrant-vector. local-semantic performs local lexical scanning; solr and opensearch support lexical, dense, and hybrid retrieval; qdrant-vector supports dense and hybrid vector/sparse acquisition, without implying standalone lexical retrieval. Ollama is an embedding provider, not a retrieval backend.",
-      "q-hybrid": "Hybrid independently acquires lexical or sparse candidates and dense candidates, then combines their rankings with reciprocal rank fusion (RRF). RRF is currently the only hybrid strategy accepted by RetrievalConfig. Optional reranking follows acquisition within an explicit bounded candidate window.",
-      "q-serving": "The serving path is MCP stdio → application runtime bootstrap → RetrievalApplicationService → KnowledgeSearchBackend. MCP is only the transport adapter, exposing search and bounded get_source; it must not directly call Solr, OpenSearch, Qdrant, or local APIs or own retrieval translation or agent lifecycle. Backend-specific protocol and translation details belong behind the KnowledgeSearchBackend adapter boundary."
+      "q-canonical-knowledge": "The canonical unit is KnowledgeDocument, containing typed KnowledgeEvidence and KnowledgeProvenance plus repository, revision, path, line span, and checksum. KnowledgePacks and source-derived relationships may enrich it but do not create authority. Solr, OpenSearch, Qdrant, and other indexes are rebuildable projections, not canonical storage; vendor schema changes or rebuilds must not redefine source evidence.",
+      "q-intent-scope": "SearchIntent declares retrieval meaning independently of authorization and execution policy: canonical query, required anchors and optional required SearchExpression structure, caller-attributed expansions, weak hints, typed signals, and compatible exact/semantic terms. SearchScope controls where and how broadly retrieval may run, including workspace, repository, revision, paths, knowledge types, result limit, mode, settings, and optional retrieval configuration.",
+      "q-required-semantics": "FetchCore fails closed. Before scanning, backend I/O, or embedding, adapters validate that every participating channel preserves required canonical text, anchors, and expressions. If a channel cannot, retrieval is rejected with KnowledgeSearchError category unsupported_semantics and translation policy reject; required structure is never flattened. Hybrid currently rejects anchors or boolean groups because fusion cannot guarantee them. Only optional expansions, hints, and signals may go unconsumed and be reported as partially_unsupported.",
+      "q-backends": "The named built-in retrieval adapters are local-semantic, solr, opensearch, and qdrant-vector. local-semantic provides local lexical scanning; solr and opensearch support lexical, dense, and hybrid retrieval; qdrant-vector supports dense and hybrid vector/sparse acquisition, without implying standalone lexical retrieval. Ollama is an embedding provider, not a retrieval backend.",
+      "q-hybrid": "Hybrid independently acquires lexical or sparse candidates and dense candidates, then combines their rankings with reciprocal rank fusion (RRF). RRF is currently the only hybrid strategy accepted by RetrievalConfig. Optional reranking may follow within an explicit candidate window.",
+      "q-serving": "The serving path is MCP stdio → application runtime bootstrap → RetrievalApplicationService → KnowledgeSearchBackend. MCP is only the transport adapter, exposing search and bounded get_source; it must not directly call Solr, OpenSearch, Qdrant, or local backend APIs or own retrieval translation. Backend-specific protocol and translation details belong behind the KnowledgeSearchBackend adapter boundary. The application service creates repository-scoped requests, bounds reads, and enforces RepositoryBinding authorization."
     }
   },
   "evaluation_execution": {
-    "command_sha256": "9c606a4c1f810eef560a377e1cc4e19d8b809696e909c1c9e018c2ba4dd6fa67",
-    "duration_ms": 8376.383,
-    "stderr_tail": ""
+    "command_sha256": "ebc5e6774303bab2a2c7dff42e53e1026eb56030212bd7ae63ef57a692fc4f33",
+    "duration_ms": 35582.59,
+    "stderr_tail": "2026-10-09T15:38:34.795475Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit\n2026-10-09T15:38:34.839395Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit\n2026-10-09T15:38:43.530238Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit\n"
   },
   "stages": {
     "stored_memory": {
@@ -477,5 +477,5 @@
       }
     ]
   },
-  "duration_ms": 8411.134
+  "duration_ms": 35653.509
 }
