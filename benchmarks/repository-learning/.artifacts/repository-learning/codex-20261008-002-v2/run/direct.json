@@ -1,0 +1,481 @@
+{
+  "memory_scope": {
+    "workspace": "fetchcore-rlb",
+    "project": "rlb-codex-20261008-002-v2-fetchcore-self-architecture-direct"
+  },
+  "tool_policy": "Use ordinary repository exploration only (for example repository file listing, lexical search and bounded file reads). Do not call FetchCore search/get_source, FetchCore MCP, or another prebuilt repository retrieval/indexing service.",
+  "budget": {},
+  "study": {
+    "status": "success",
+    "memory_pages": [
+      {
+        "path": "knowledge/fetchcore-architecture.md",
+        "body": "# FetchCore Repository Knowledge, Retrieval, and Serving Boundaries\n\n## Canonical source of truth\n\nRepository sources pass through materialization, safe scanning, corpus/document policy, and `RepositoryIndexer` extraction. The canonical unit is `KnowledgeDocument`, carrying typed `KnowledgeEvidence`, `KnowledgeProvenance`, repository, revision, path, line span, and checksum. KnowledgePacks and source-derived relationships enrich this knowledge but do not make a source authoritative. Solr, OpenSearch, Qdrant, and other indexes are rebuildable projections, not canonical storage; changing or rebuilding a vendor schema must not redefine source evidence. Sources: `docs/architecture/repository-knowledge.md`, `docs/architecture/projection.md`.\n\n## Intent, scope, and execution policy\n\n`SearchIntent` declares retrieval meaning independently of corpus authorization and execution policy. Its v2 fields include the unchanged `canonical_query`, required `anchors`, an optional required `SearchExpression` tree (`Term`, `Anchor`, `AllOf`, `AnyOf`), caller-attributed `expansions`, weak `hints`, typed `signals`, and v1-compatible exact/semantic terms. FetchCore does not infer anchors, boolean structure, or synonyms from natural language. Expansions increase recall without relaxing required structure; hints remain preferences.\n\n`SearchScope` defines where and how broadly retrieval may operate: workspace, repository, revision, repository paths, knowledge types, maximum results, mode, settings, and optional retrieval configuration. `SearchRequirement` is a bounded allocation hint, not a satisfaction decision. `RetrievalConfig` selects acquisition behavior such as lexical, dense, or hybrid mode. Sources: `docs/concepts/search-intent.md`, `src/fetchcore/retrieval/contracts.py`, `docs/architecture/retrieval.md`.\n\n## Unsupported required semantics\n\nThe policy is fail-closed rejection. There is no configurable flattening fallback. Before scanning, backend I/O, or embedding, adapters validate whether every participating channel can preserve required canonical text, anchors, and expressions. Unsupported required constructs raise `KnowledgeSearchError` with category `unsupported_semantics` and translation policy `reject`. Optional expansions, hints, and signals may remain unconsumed and be reported as `partially_unsupported` without rejecting retrieval. Hybrid currently rejects anchors or boolean groups because fusion cannot guarantee those constraints and there is no post-fusion constraint engine. Unsupported retrieval modes likewise raise a typed `unsupported_capability` error; FetchCore does not silently substitute lexical for dense or vice versa. Sources: `docs/concepts/search-intent.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/config.py`.\n\n## Current retrieval channels and adapters\n\nCurrent acquisition paths are local lexical scanning, backend lexical/BM25, dense vector retrieval, and backend hybrid retrieval where advertised capabilities permit them. Built-in retrieval adapters are `local-semantic` (local lexical scanning), `solr` (lexical/dense/hybrid plus current operational index synchronization), `opensearch` (lexical/dense/hybrid), and `qdrant-vector` (dense and hybrid vector/sparse acquisition; standalone lexical is not implied). `ollama` is a separate embedding provider, not a retrieval backend. The backend-neutral `KnowledgeSearchBackend.search(intent, scope, requirements)` port returns `KnowledgeSearchResponse` containing provenance-preserving `SearchResult` evidence. Graph traversal, a general identifier-first targeted router, and federated multi-repository fusion are not current mandatory retrieval paths. Sources: `docs/architecture/retrieval.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/contracts.py`.\n\n## Hybrid baseline\n\nHybrid independently acquires lexical or sparse candidates and dense candidates, then fuses them with reciprocal rank fusion (RRF), the configured baseline. `RetrievalConfig` currently accepts only `rrf` as its hybrid strategy. Optional reranking occurs after acquisition and is bounded by an explicit candidate window; reranking is not a backend capability gate. Scores and fusion ranks are retrieval observations, not correctness, satisfaction, or authority. Sources: `docs/architecture/retrieval.md`, `src/fetchcore/retrieval/config.py`.\n\n## MCP serving boundary\n\nThe serving path is `MCP stdio → application runtime bootstrap → RetrievalApplicationService → KnowledgeSearchBackend`. MCP is a transport adapter: it exposes `search` and bounded `get_source`, but does not call Solr, OpenSearch, Qdrant, or local backend APIs directly and does not own retrieval translation or agent lifecycle. The application service creates repository-scoped requests, bounds result/source reads, and rejects unauthorized paths through a `RepositoryBinding`. P0 binds one authorized repository per server process; federated MCP search, HTTP/auth/ACL serving, `find_symbol`, and graph-backed `get_related` are deferred. Sources: `docs/architecture/serving.md`, `docs/guides/mcp.md`."
+      }
+    ],
+    "metrics": {
+      "tool_calls": 2,
+      "files_read": 270,
+      "evidence_items": 270,
+      "returned_chars": 1079418,
+      "input_tokens": 71523,
+      "output_tokens": 1812
+    },
+    "tool_events_verified": true,
+    "tool_events": [
+      {
+        "type": "command_execution",
+        "command": "/bin/bash -lc \"rg --files | sed -n '1,240p'\nrg -n \\\"SearchIntent|SearchScope|unsupported|required|RRF|hybrid|MCP|canonical.*knowledge|source of truth|KnowledgeSearchBackend|lexical|dense\\\" . --glob '\"'!graphify-out/**'\"' --glob '\"'!*.lock'\"' --glob '\"'!uv.lock'\"'\"",
+        "exit_code": 0,
+        "returned_chars": 1048367
+      },
+      {
+        "type": "command_execution",
+        "command": "/bin/bash -lc \"sed -n '1,240p' docs/architecture/repository-knowledge.md\nsed -n '1,260p' docs/concepts/search-intent.md\nsed -n '1,240p' docs/architecture/retrieval.md\nsed -n '1,180p' docs/reference/capabilities.md\nsed -n '1,180p' docs/architecture/serving.md\nsed -n '1,150p' docs/guides/mcp.md\nsed -n '160,470p' src/fetchcore/retrieval/contracts.py\nsed -n '380,445p' src/fetchcore/retrieval/config.py\"",
+        "exit_code": 0,
+        "returned_chars": 31051
+      }
+    ]
+  },
+  "study_reused": true,
+  "source_study_execution": {
+    "command_sha256": "6307a5ca89e4ce90ba7e3201bc177215c5f035106ed249283f0450ff4d94ac26",
+    "duration_ms": 27842.901,
+    "stderr_tail": "2026-10-08T22:10:28.779572Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n2026-10-08T22:10:28.787412Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n2026-10-08T22:10:28.800837Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n2026-10-08T22:10:28.808234Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n2026-10-08T22:10:28.815655Z  WARN codex_rollout::list: state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\n"
+  },
+  "source_duration_ms": 37247.111,
+  "memory_writes": [
+    {
+      "path": "knowledge/fetchcore-architecture.md",
+      "result": {
+        "page_id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+        "path": "knowledge/fetchcore-architecture.md",
+        "checkpoint": null
+      }
+    }
+  ],
+  "memory_recall": {
+    "q-canonical-knowledge": {
+      "discovery": {
+        "hits": [
+          {
+            "id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+            "path": "knowledge/fetchcore-architecture.md",
+            "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+            "snippet": "# <mark>FetchCore</mark> Repository Knowledge, Retrieval, and Serving Boundaries\n\n## <mark>Canonical</mark> source of <mark>truth</mark>\n\nRepository sources pass through materialization, safe scanning, corpus/document policy, and `RepositoryIndexer` extraction. The…",
+            "rank": -0.018032786885245903
+          }
+        ]
+      },
+      "expanded_pages": [
+        {
+          "path": "knowledge/fetchcore-architecture.md",
+          "page": {
+            "path": "knowledge/fetchcore-architecture.md",
+            "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+            "body": "# FetchCore Repository Knowledge, Retrieval, and Serving Boundaries\n\n## Canonical source of truth\n\nRepository sources pass through materialization, safe scanning, corpus/document policy, and `RepositoryIndexer` extraction. The canonical unit is `KnowledgeDocument`, carrying typed `KnowledgeEvidence`, `KnowledgeProvenance`, repository, revision, path, line span, and checksum. KnowledgePacks and source-derived relationships enrich this knowledge but do not make a source authoritative. Solr, OpenSearch, Qdrant, and other indexes are rebuildable projections, not canonical storage; changing or rebuilding a vendor schema must not redefine source evidence. Sources: `docs/architecture/repository-knowledge.md`, `docs/architecture/projection.md`.\n\n## Intent, scope, and execution policy\n\n`SearchIntent` declares retrieval meaning independently of corpus authorization and execution policy. Its v2 fields include the unchanged `canonical_query`, required `anchors`, an optional required `SearchExpression` tree (`Term`, `Anchor`, `AllOf`, `AnyOf`), caller-attributed `expansions`, weak `hints`, typed `signals`, and v1-compatible exact/semantic terms. FetchCore does not infer anchors, boolean structure, or synonyms from natural language. Expansions increase recall without relaxing required structure; hints remain preferences.\n\n`SearchScope` defines where and how broadly retrieval may operate: workspace, repository, revision, repository paths, knowledge types, maximum results, mode, settings, and optional retrieval configuration. `SearchRequirement` is a bounded allocation hint, not a satisfaction decision. `RetrievalConfig` selects acquisition behavior such as lexical, dense, or hybrid mode. Sources: `docs/concepts/search-intent.md`, `src/fetchcore/retrieval/contracts.py`, `docs/architecture/retrieval.md`.\n\n## Unsupported required semantics\n\nThe policy is fail-closed rejection. There is no configurable flattening fallback. Before scanning, backend I/O, or embedding, adapters validate whether every participating channel can preserve required canonical text, anchors, and expressions. Unsupported required constructs raise `KnowledgeSearchError` with category `unsupported_semantics` and translation policy `reject`. Optional expansions, hints, and signals may remain unconsumed and be reported as `partially_unsupported` without rejecting retrieval. Hybrid currently rejects anchors or boolean groups because fusion cannot guarantee those constraints and there is no post-fusion constraint engine. Unsupported retrieval modes likewise raise a typed `unsupported_capability` error; FetchCore does not silently substitute lexical for dense or vice versa. Sources: `docs/concepts/search-intent.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/config.py`.\n\n## Current retrieval channels and adapters\n\nCurrent acquisition paths are local lexical scanning, backend lexical/BM25, dense vector retrieval, and backend hybrid retrieval where advertised capabilities permit them. Built-in retrieval adapters are `local-semantic` (local lexical scanning), `solr` (lexical/dense/hybrid plus current operational index synchronization), `opensearch` (lexical/dense/hybrid), and `qdrant-vector` (dense and hybrid vector/sparse acquisition; standalone lexical is not implied). `ollama` is a separate embedding provider, not a retrieval backend. The backend-neutral `KnowledgeSearchBackend.search(intent, scope, requirements)` port returns `KnowledgeSearchResponse` containing provenance-preserving `SearchResult` evidence. Graph traversal, a general identifier-first targeted router, and federated multi-repository fusion are not current mandatory retrieval paths. Sources: `docs/architecture/retrieval.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/contracts.py`.\n\n## Hybrid baseline\n\nHybrid independently acquires lexical or sparse candidates and dense candidates, then fuses them with reciprocal rank fusion (RRF), the configured baseline. `RetrievalConfig` currently accepts only `rrf` as its hybrid strategy. Optional reranking occurs after acquisition and is bounded by an explicit candidate window; reranking is not a backend capability gate. Scores and fusion ranks are retrieval observations, not correctness, satisfaction, or authority. Sources: `docs/architecture/retrieval.md`, `src/fetchcore/retrieval/config.py`.\n\n## MCP serving boundary\n\nThe serving path is `MCP stdio → application runtime bootstrap → RetrievalApplicationService → KnowledgeSearchBackend`. MCP is a transport adapter: it exposes `search` and bounded `get_source`, but does not call Solr, OpenSearch, Qdrant, or local backend APIs directly and does not own retrieval translation or agent lifecycle. The application service creates repository-scoped requests, bounds result/source reads, and rejects unauthorized paths through a `RepositoryBinding`. P0 binds one authorized repository per server process; federated MCP search, HTTP/auth/ACL serving, `find_symbol`, and graph-backed `get_related` are deferred. Sources: `docs/architecture/serving.md`, `docs/guides/mcp.md`.",
+            "frontmatter": {
+              "tier": "semantic",
+              "type": "Note",
+              "generated": {
+                "by": "process:ai-memory/2.6.2",
+                "at": "2026-10-09T15:27:50Z"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "q-intent-scope": {
+      "discovery": {
+        "hits": [
+          {
+            "id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+            "path": "knowledge/fetchcore-architecture.md",
+            "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+            "snippet": "…Expansions increase recall without relaxing required structure; hints remain preferences.\n\n`<mark>SearchScope</mark>` defines where and how broadly retrieval may operate: workspace, repository, revision, repository paths…",
+            "rank": -0.018032786885245903
+          }
+        ]
+      },
+      "expanded_pages": [
+        {
+          "path": "knowledge/fetchcore-architecture.md",
+          "page": {
+            "path": "knowledge/fetchcore-architecture.md",
+            "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+            "body": "# FetchCore Repository Knowledge, Retrieval, and Serving Boundaries\n\n## Canonical source of truth\n\nRepository sources pass through materialization, safe scanning, corpus/document policy, and `RepositoryIndexer` extraction. The canonical unit is `KnowledgeDocument`, carrying typed `KnowledgeEvidence`, `KnowledgeProvenance`, repository, revision, path, line span, and checksum. KnowledgePacks and source-derived relationships enrich this knowledge but do not make a source authoritative. Solr, OpenSearch, Qdrant, and other indexes are rebuildable projections, not canonical storage; changing or rebuilding a vendor schema must not redefine source evidence. Sources: `docs/architecture/repository-knowledge.md`, `docs/architecture/projection.md`.\n\n## Intent, scope, and execution policy\n\n`SearchIntent` declares retrieval meaning independently of corpus authorization and execution policy. Its v2 fields include the unchanged `canonical_query`, required `anchors`, an optional required `SearchExpression` tree (`Term`, `Anchor`, `AllOf`, `AnyOf`), caller-attributed `expansions`, weak `hints`, typed `signals`, and v1-compatible exact/semantic terms. FetchCore does not infer anchors, boolean structure, or synonyms from natural language. Expansions increase recall without relaxing required structure; hints remain preferences.\n\n`SearchScope` defines where and how broadly retrieval may operate: workspace, repository, revision, repository paths, knowledge types, maximum results, mode, settings, and optional retrieval configuration. `SearchRequirement` is a bounded allocation hint, not a satisfaction decision. `RetrievalConfig` selects acquisition behavior such as lexical, dense, or hybrid mode. Sources: `docs/concepts/search-intent.md`, `src/fetchcore/retrieval/contracts.py`, `docs/architecture/retrieval.md`.\n\n## Unsupported required semantics\n\nThe policy is fail-closed rejection. There is no configurable flattening fallback. Before scanning, backend I/O, or embedding, adapters validate whether every participating channel can preserve required canonical text, anchors, and expressions. Unsupported required constructs raise `KnowledgeSearchError` with category `unsupported_semantics` and translation policy `reject`. Optional expansions, hints, and signals may remain unconsumed and be reported as `partially_unsupported` without rejecting retrieval. Hybrid currently rejects anchors or boolean groups because fusion cannot guarantee those constraints and there is no post-fusion constraint engine. Unsupported retrieval modes likewise raise a typed `unsupported_capability` error; FetchCore does not silently substitute lexical for dense or vice versa. Sources: `docs/concepts/search-intent.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/config.py`.\n\n## Current retrieval channels and adapters\n\nCurrent acquisition paths are local lexical scanning, backend lexical/BM25, dense vector retrieval, and backend hybrid retrieval where advertised capabilities permit them. Built-in retrieval adapters are `local-semantic` (local lexical scanning), `solr` (lexical/dense/hybrid plus current operational index synchronization), `opensearch` (lexical/dense/hybrid), and `qdrant-vector` (dense and hybrid vector/sparse acquisition; standalone lexical is not implied). `ollama` is a separate embedding provider, not a retrieval backend. The backend-neutral `KnowledgeSearchBackend.search(intent, scope, requirements)` port returns `KnowledgeSearchResponse` containing provenance-preserving `SearchResult` evidence. Graph traversal, a general identifier-first targeted router, and federated multi-repository fusion are not current mandatory retrieval paths. Sources: `docs/architecture/retrieval.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/contracts.py`.\n\n## Hybrid baseline\n\nHybrid independently acquires lexical or sparse candidates and dense candidates, then fuses them with reciprocal rank fusion (RRF), the configured baseline. `RetrievalConfig` currently accepts only `rrf` as its hybrid strategy. Optional reranking occurs after acquisition and is bounded by an explicit candidate window; reranking is not a backend capability gate. Scores and fusion ranks are retrieval observations, not correctness, satisfaction, or authority. Sources: `docs/architecture/retrieval.md`, `src/fetchcore/retrieval/config.py`.\n\n## MCP serving boundary\n\nThe serving path is `MCP stdio → application runtime bootstrap → RetrievalApplicationService → KnowledgeSearchBackend`. MCP is a transport adapter: it exposes `search` and bounded `get_source`, but does not call Solr, OpenSearch, Qdrant, or local backend APIs directly and does not own retrieval translation or agent lifecycle. The application service creates repository-scoped requests, bounds result/source reads, and rejects unauthorized paths through a `RepositoryBinding`. P0 binds one authorized repository per server process; federated MCP search, HTTP/auth/ACL serving, `find_symbol`, and graph-backed `get_related` are deferred. Sources: `docs/architecture/serving.md`, `docs/guides/mcp.md`.",
+            "frontmatter": {
+              "tier": "semantic",
+              "type": "Note",
+              "generated": {
+                "by": "process:ai-memory/2.6.2",
+                "at": "2026-10-09T15:27:50Z"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "q-required-semantics": {
+      "discovery": {
+        "hits": [
+          {
+            "id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+            "path": "knowledge/fetchcore-architecture.md",
+            "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+            "snippet": "…<mark>boolean</mark> <mark>structure</mark>, or synonyms from natural language. Expansions increase recall without relaxing <mark>required</mark> <mark>structure</mark>; hints remain preferences.\n\n`SearchScope` defines where and how broadly <mark>retrieval</mark>…",
+            "rank": -0.018032786885245903
+          }
+        ]
+      },
+      "expanded_pages": [
+        {
+          "path": "knowledge/fetchcore-architecture.md",
+          "page": {
+            "path": "knowledge/fetchcore-architecture.md",
+            "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+            "body": "# FetchCore Repository Knowledge, Retrieval, and Serving Boundaries\n\n## Canonical source of truth\n\nRepository sources pass through materialization, safe scanning, corpus/document policy, and `RepositoryIndexer` extraction. The canonical unit is `KnowledgeDocument`, carrying typed `KnowledgeEvidence`, `KnowledgeProvenance`, repository, revision, path, line span, and checksum. KnowledgePacks and source-derived relationships enrich this knowledge but do not make a source authoritative. Solr, OpenSearch, Qdrant, and other indexes are rebuildable projections, not canonical storage; changing or rebuilding a vendor schema must not redefine source evidence. Sources: `docs/architecture/repository-knowledge.md`, `docs/architecture/projection.md`.\n\n## Intent, scope, and execution policy\n\n`SearchIntent` declares retrieval meaning independently of corpus authorization and execution policy. Its v2 fields include the unchanged `canonical_query`, required `anchors`, an optional required `SearchExpression` tree (`Term`, `Anchor`, `AllOf`, `AnyOf`), caller-attributed `expansions`, weak `hints`, typed `signals`, and v1-compatible exact/semantic terms. FetchCore does not infer anchors, boolean structure, or synonyms from natural language. Expansions increase recall without relaxing required structure; hints remain preferences.\n\n`SearchScope` defines where and how broadly retrieval may operate: workspace, repository, revision, repository paths, knowledge types, maximum results, mode, settings, and optional retrieval configuration. `SearchRequirement` is a bounded allocation hint, not a satisfaction decision. `RetrievalConfig` selects acquisition behavior such as lexical, dense, or hybrid mode. Sources: `docs/concepts/search-intent.md`, `src/fetchcore/retrieval/contracts.py`, `docs/architecture/retrieval.md`.\n\n## Unsupported required semantics\n\nThe policy is fail-closed rejection. There is no configurable flattening fallback. Before scanning, backend I/O, or embedding, adapters validate whether every participating channel can preserve required canonical text, anchors, and expressions. Unsupported required constructs raise `KnowledgeSearchError` with category `unsupported_semantics` and translation policy `reject`. Optional expansions, hints, and signals may remain unconsumed and be reported as `partially_unsupported` without rejecting retrieval. Hybrid currently rejects anchors or boolean groups because fusion cannot guarantee those constraints and there is no post-fusion constraint engine. Unsupported retrieval modes likewise raise a typed `unsupported_capability` error; FetchCore does not silently substitute lexical for dense or vice versa. Sources: `docs/concepts/search-intent.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/config.py`.\n\n## Current retrieval channels and adapters\n\nCurrent acquisition paths are local lexical scanning, backend lexical/BM25, dense vector retrieval, and backend hybrid retrieval where advertised capabilities permit them. Built-in retrieval adapters are `local-semantic` (local lexical scanning), `solr` (lexical/dense/hybrid plus current operational index synchronization), `opensearch` (lexical/dense/hybrid), and `qdrant-vector` (dense and hybrid vector/sparse acquisition; standalone lexical is not implied). `ollama` is a separate embedding provider, not a retrieval backend. The backend-neutral `KnowledgeSearchBackend.search(intent, scope, requirements)` port returns `KnowledgeSearchResponse` containing provenance-preserving `SearchResult` evidence. Graph traversal, a general identifier-first targeted router, and federated multi-repository fusion are not current mandatory retrieval paths. Sources: `docs/architecture/retrieval.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/contracts.py`.\n\n## Hybrid baseline\n\nHybrid independently acquires lexical or sparse candidates and dense candidates, then fuses them with reciprocal rank fusion (RRF), the configured baseline. `RetrievalConfig` currently accepts only `rrf` as its hybrid strategy. Optional reranking occurs after acquisition and is bounded by an explicit candidate window; reranking is not a backend capability gate. Scores and fusion ranks are retrieval observations, not correctness, satisfaction, or authority. Sources: `docs/architecture/retrieval.md`, `src/fetchcore/retrieval/config.py`.\n\n## MCP serving boundary\n\nThe serving path is `MCP stdio → application runtime bootstrap → RetrievalApplicationService → KnowledgeSearchBackend`. MCP is a transport adapter: it exposes `search` and bounded `get_source`, but does not call Solr, OpenSearch, Qdrant, or local backend APIs directly and does not own retrieval translation or agent lifecycle. The application service creates repository-scoped requests, bounds result/source reads, and rejects unauthorized paths through a `RepositoryBinding`. P0 binds one authorized repository per server process; federated MCP search, HTTP/auth/ACL serving, `find_symbol`, and graph-backed `get_related` are deferred. Sources: `docs/architecture/serving.md`, `docs/guides/mcp.md`.",
+            "frontmatter": {
+              "tier": "semantic",
+              "type": "Note",
+              "generated": {
+                "by": "process:ai-memory/2.6.2",
+                "at": "2026-10-09T15:27:50Z"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "q-backends": {
+      "discovery": {
+        "hits": [
+          {
+            "id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+            "path": "knowledge/fetchcore-architecture.md",
+            "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+            "snippet": "…<mark>FetchCore</mark> does not silently substitute lexical for dense or vice versa. Sources: `docs/concepts/search-intent.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/config.py`.\n\n## Current <mark>retrieval</mark> channels and <mark>adapters</mark>\n\nCurrent…",
+            "rank": -0.018032786885245903
+          }
+        ]
+      },
+      "expanded_pages": [
+        {
+          "path": "knowledge/fetchcore-architecture.md",
+          "page": {
+            "path": "knowledge/fetchcore-architecture.md",
+            "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+            "body": "# FetchCore Repository Knowledge, Retrieval, and Serving Boundaries\n\n## Canonical source of truth\n\nRepository sources pass through materialization, safe scanning, corpus/document policy, and `RepositoryIndexer` extraction. The canonical unit is `KnowledgeDocument`, carrying typed `KnowledgeEvidence`, `KnowledgeProvenance`, repository, revision, path, line span, and checksum. KnowledgePacks and source-derived relationships enrich this knowledge but do not make a source authoritative. Solr, OpenSearch, Qdrant, and other indexes are rebuildable projections, not canonical storage; changing or rebuilding a vendor schema must not redefine source evidence. Sources: `docs/architecture/repository-knowledge.md`, `docs/architecture/projection.md`.\n\n## Intent, scope, and execution policy\n\n`SearchIntent` declares retrieval meaning independently of corpus authorization and execution policy. Its v2 fields include the unchanged `canonical_query`, required `anchors`, an optional required `SearchExpression` tree (`Term`, `Anchor`, `AllOf`, `AnyOf`), caller-attributed `expansions`, weak `hints`, typed `signals`, and v1-compatible exact/semantic terms. FetchCore does not infer anchors, boolean structure, or synonyms from natural language. Expansions increase recall without relaxing required structure; hints remain preferences.\n\n`SearchScope` defines where and how broadly retrieval may operate: workspace, repository, revision, repository paths, knowledge types, maximum results, mode, settings, and optional retrieval configuration. `SearchRequirement` is a bounded allocation hint, not a satisfaction decision. `RetrievalConfig` selects acquisition behavior such as lexical, dense, or hybrid mode. Sources: `docs/concepts/search-intent.md`, `src/fetchcore/retrieval/contracts.py`, `docs/architecture/retrieval.md`.\n\n## Unsupported required semantics\n\nThe policy is fail-closed rejection. There is no configurable flattening fallback. Before scanning, backend I/O, or embedding, adapters validate whether every participating channel can preserve required canonical text, anchors, and expressions. Unsupported required constructs raise `KnowledgeSearchError` with category `unsupported_semantics` and translation policy `reject`. Optional expansions, hints, and signals may remain unconsumed and be reported as `partially_unsupported` without rejecting retrieval. Hybrid currently rejects anchors or boolean groups because fusion cannot guarantee those constraints and there is no post-fusion constraint engine. Unsupported retrieval modes likewise raise a typed `unsupported_capability` error; FetchCore does not silently substitute lexical for dense or vice versa. Sources: `docs/concepts/search-intent.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/config.py`.\n\n## Current retrieval channels and adapters\n\nCurrent acquisition paths are local lexical scanning, backend lexical/BM25, dense vector retrieval, and backend hybrid retrieval where advertised capabilities permit them. Built-in retrieval adapters are `local-semantic` (local lexical scanning), `solr` (lexical/dense/hybrid plus current operational index synchronization), `opensearch` (lexical/dense/hybrid), and `qdrant-vector` (dense and hybrid vector/sparse acquisition; standalone lexical is not implied). `ollama` is a separate embedding provider, not a retrieval backend. The backend-neutral `KnowledgeSearchBackend.search(intent, scope, requirements)` port returns `KnowledgeSearchResponse` containing provenance-preserving `SearchResult` evidence. Graph traversal, a general identifier-first targeted router, and federated multi-repository fusion are not current mandatory retrieval paths. Sources: `docs/architecture/retrieval.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/contracts.py`.\n\n## Hybrid baseline\n\nHybrid independently acquires lexical or sparse candidates and dense candidates, then fuses them with reciprocal rank fusion (RRF), the configured baseline. `RetrievalConfig` currently accepts only `rrf` as its hybrid strategy. Optional reranking occurs after acquisition and is bounded by an explicit candidate window; reranking is not a backend capability gate. Scores and fusion ranks are retrieval observations, not correctness, satisfaction, or authority. Sources: `docs/architecture/retrieval.md`, `src/fetchcore/retrieval/config.py`.\n\n## MCP serving boundary\n\nThe serving path is `MCP stdio → application runtime bootstrap → RetrievalApplicationService → KnowledgeSearchBackend`. MCP is a transport adapter: it exposes `search` and bounded `get_source`, but does not call Solr, OpenSearch, Qdrant, or local backend APIs directly and does not own retrieval translation or agent lifecycle. The application service creates repository-scoped requests, bounds result/source reads, and rejects unauthorized paths through a `RepositoryBinding`. P0 binds one authorized repository per server process; federated MCP search, HTTP/auth/ACL serving, `find_symbol`, and graph-backed `get_related` are deferred. Sources: `docs/architecture/serving.md`, `docs/guides/mcp.md`.",
+            "frontmatter": {
+              "tier": "semantic",
+              "type": "Note",
+              "generated": {
+                "by": "process:ai-memory/2.6.2",
+                "at": "2026-10-09T15:27:50Z"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "q-hybrid": {
+      "discovery": {
+        "hits": [
+          {
+            "id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+            "path": "knowledge/fetchcore-architecture.md",
+            "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+            "snippet": "…and federated multi-repository <mark>fusion</mark> are not <mark>current</mark> mandatory <mark>retrieval</mark> paths. Sources: `docs/architecture/retrieval.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/contracts.py`.\n\n## <mark>Hybrid</mark> <mark>baseline</mark>\n\n<mark>Hybrid</mark> independently acquires lexical or…",
+            "rank": -0.018032786885245903
+          }
+        ]
+      },
+      "expanded_pages": [
+        {
+          "path": "knowledge/fetchcore-architecture.md",
+          "page": {
+            "path": "knowledge/fetchcore-architecture.md",
+            "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+            "body": "# FetchCore Repository Knowledge, Retrieval, and Serving Boundaries\n\n## Canonical source of truth\n\nRepository sources pass through materialization, safe scanning, corpus/document policy, and `RepositoryIndexer` extraction. The canonical unit is `KnowledgeDocument`, carrying typed `KnowledgeEvidence`, `KnowledgeProvenance`, repository, revision, path, line span, and checksum. KnowledgePacks and source-derived relationships enrich this knowledge but do not make a source authoritative. Solr, OpenSearch, Qdrant, and other indexes are rebuildable projections, not canonical storage; changing or rebuilding a vendor schema must not redefine source evidence. Sources: `docs/architecture/repository-knowledge.md`, `docs/architecture/projection.md`.\n\n## Intent, scope, and execution policy\n\n`SearchIntent` declares retrieval meaning independently of corpus authorization and execution policy. Its v2 fields include the unchanged `canonical_query`, required `anchors`, an optional required `SearchExpression` tree (`Term`, `Anchor`, `AllOf`, `AnyOf`), caller-attributed `expansions`, weak `hints`, typed `signals`, and v1-compatible exact/semantic terms. FetchCore does not infer anchors, boolean structure, or synonyms from natural language. Expansions increase recall without relaxing required structure; hints remain preferences.\n\n`SearchScope` defines where and how broadly retrieval may operate: workspace, repository, revision, repository paths, knowledge types, maximum results, mode, settings, and optional retrieval configuration. `SearchRequirement` is a bounded allocation hint, not a satisfaction decision. `RetrievalConfig` selects acquisition behavior such as lexical, dense, or hybrid mode. Sources: `docs/concepts/search-intent.md`, `src/fetchcore/retrieval/contracts.py`, `docs/architecture/retrieval.md`.\n\n## Unsupported required semantics\n\nThe policy is fail-closed rejection. There is no configurable flattening fallback. Before scanning, backend I/O, or embedding, adapters validate whether every participating channel can preserve required canonical text, anchors, and expressions. Unsupported required constructs raise `KnowledgeSearchError` with category `unsupported_semantics` and translation policy `reject`. Optional expansions, hints, and signals may remain unconsumed and be reported as `partially_unsupported` without rejecting retrieval. Hybrid currently rejects anchors or boolean groups because fusion cannot guarantee those constraints and there is no post-fusion constraint engine. Unsupported retrieval modes likewise raise a typed `unsupported_capability` error; FetchCore does not silently substitute lexical for dense or vice versa. Sources: `docs/concepts/search-intent.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/config.py`.\n\n## Current retrieval channels and adapters\n\nCurrent acquisition paths are local lexical scanning, backend lexical/BM25, dense vector retrieval, and backend hybrid retrieval where advertised capabilities permit them. Built-in retrieval adapters are `local-semantic` (local lexical scanning), `solr` (lexical/dense/hybrid plus current operational index synchronization), `opensearch` (lexical/dense/hybrid), and `qdrant-vector` (dense and hybrid vector/sparse acquisition; standalone lexical is not implied). `ollama` is a separate embedding provider, not a retrieval backend. The backend-neutral `KnowledgeSearchBackend.search(intent, scope, requirements)` port returns `KnowledgeSearchResponse` containing provenance-preserving `SearchResult` evidence. Graph traversal, a general identifier-first targeted router, and federated multi-repository fusion are not current mandatory retrieval paths. Sources: `docs/architecture/retrieval.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/contracts.py`.\n\n## Hybrid baseline\n\nHybrid independently acquires lexical or sparse candidates and dense candidates, then fuses them with reciprocal rank fusion (RRF), the configured baseline. `RetrievalConfig` currently accepts only `rrf` as its hybrid strategy. Optional reranking occurs after acquisition and is bounded by an explicit candidate window; reranking is not a backend capability gate. Scores and fusion ranks are retrieval observations, not correctness, satisfaction, or authority. Sources: `docs/architecture/retrieval.md`, `src/fetchcore/retrieval/config.py`.\n\n## MCP serving boundary\n\nThe serving path is `MCP stdio → application runtime bootstrap → RetrievalApplicationService → KnowledgeSearchBackend`. MCP is a transport adapter: it exposes `search` and bounded `get_source`, but does not call Solr, OpenSearch, Qdrant, or local backend APIs directly and does not own retrieval translation or agent lifecycle. The application service creates repository-scoped requests, bounds result/source reads, and rejects unauthorized paths through a `RepositoryBinding`. P0 binds one authorized repository per server process; federated MCP search, HTTP/auth/ACL serving, `find_symbol`, and graph-backed `get_related` are deferred. Sources: `docs/architecture/serving.md`, `docs/guides/mcp.md`.",
+            "frontmatter": {
+              "tier": "semantic",
+              "type": "Note",
+              "generated": {
+                "by": "process:ai-memory/2.6.2",
+                "at": "2026-10-09T15:27:50Z"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "q-serving": {
+      "discovery": {
+        "hits": [
+          {
+            "id": "01a12147-1c3a-70e0-85c7-f129e1745241",
+            "path": "knowledge/fetchcore-architecture.md",
+            "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+            "snippet": "…Sources: `docs/architecture/retrieval.md`, `src/fetchcore/retrieval/config.py`.\n\n## <mark>MCP</mark> <mark>serving</mark> boundary\n\nThe <mark>serving</mark> <mark>path</mark> is `<mark>MCP</mark> stdio → application runtime bootstrap → RetrievalApplicationService → KnowledgeSearchBackend`. <mark>MCP</mark> is a transport adapter…",
+            "rank": -0.018032786885245903
+          }
+        ]
+      },
+      "expanded_pages": [
+        {
+          "path": "knowledge/fetchcore-architecture.md",
+          "page": {
+            "path": "knowledge/fetchcore-architecture.md",
+            "title": "FetchCore Repository Knowledge, Retrieval, and Serving Boundaries",
+            "body": "# FetchCore Repository Knowledge, Retrieval, and Serving Boundaries\n\n## Canonical source of truth\n\nRepository sources pass through materialization, safe scanning, corpus/document policy, and `RepositoryIndexer` extraction. The canonical unit is `KnowledgeDocument`, carrying typed `KnowledgeEvidence`, `KnowledgeProvenance`, repository, revision, path, line span, and checksum. KnowledgePacks and source-derived relationships enrich this knowledge but do not make a source authoritative. Solr, OpenSearch, Qdrant, and other indexes are rebuildable projections, not canonical storage; changing or rebuilding a vendor schema must not redefine source evidence. Sources: `docs/architecture/repository-knowledge.md`, `docs/architecture/projection.md`.\n\n## Intent, scope, and execution policy\n\n`SearchIntent` declares retrieval meaning independently of corpus authorization and execution policy. Its v2 fields include the unchanged `canonical_query`, required `anchors`, an optional required `SearchExpression` tree (`Term`, `Anchor`, `AllOf`, `AnyOf`), caller-attributed `expansions`, weak `hints`, typed `signals`, and v1-compatible exact/semantic terms. FetchCore does not infer anchors, boolean structure, or synonyms from natural language. Expansions increase recall without relaxing required structure; hints remain preferences.\n\n`SearchScope` defines where and how broadly retrieval may operate: workspace, repository, revision, repository paths, knowledge types, maximum results, mode, settings, and optional retrieval configuration. `SearchRequirement` is a bounded allocation hint, not a satisfaction decision. `RetrievalConfig` selects acquisition behavior such as lexical, dense, or hybrid mode. Sources: `docs/concepts/search-intent.md`, `src/fetchcore/retrieval/contracts.py`, `docs/architecture/retrieval.md`.\n\n## Unsupported required semantics\n\nThe policy is fail-closed rejection. There is no configurable flattening fallback. Before scanning, backend I/O, or embedding, adapters validate whether every participating channel can preserve required canonical text, anchors, and expressions. Unsupported required constructs raise `KnowledgeSearchError` with category `unsupported_semantics` and translation policy `reject`. Optional expansions, hints, and signals may remain unconsumed and be reported as `partially_unsupported` without rejecting retrieval. Hybrid currently rejects anchors or boolean groups because fusion cannot guarantee those constraints and there is no post-fusion constraint engine. Unsupported retrieval modes likewise raise a typed `unsupported_capability` error; FetchCore does not silently substitute lexical for dense or vice versa. Sources: `docs/concepts/search-intent.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/config.py`.\n\n## Current retrieval channels and adapters\n\nCurrent acquisition paths are local lexical scanning, backend lexical/BM25, dense vector retrieval, and backend hybrid retrieval where advertised capabilities permit them. Built-in retrieval adapters are `local-semantic` (local lexical scanning), `solr` (lexical/dense/hybrid plus current operational index synchronization), `opensearch` (lexical/dense/hybrid), and `qdrant-vector` (dense and hybrid vector/sparse acquisition; standalone lexical is not implied). `ollama` is a separate embedding provider, not a retrieval backend. The backend-neutral `KnowledgeSearchBackend.search(intent, scope, requirements)` port returns `KnowledgeSearchResponse` containing provenance-preserving `SearchResult` evidence. Graph traversal, a general identifier-first targeted router, and federated multi-repository fusion are not current mandatory retrieval paths. Sources: `docs/architecture/retrieval.md`, `docs/reference/capabilities.md`, `src/fetchcore/retrieval/contracts.py`.\n\n## Hybrid baseline\n\nHybrid independently acquires lexical or sparse candidates and dense candidates, then fuses them with reciprocal rank fusion (RRF), the configured baseline. `RetrievalConfig` currently accepts only `rrf` as its hybrid strategy. Optional reranking occurs after acquisition and is bounded by an explicit candidate window; reranking is not a backend capability gate. Scores and fusion ranks are retrieval observations, not correctness, satisfaction, or authority. Sources: `docs/architecture/retrieval.md`, `src/fetchcore/retrieval/config.py`.\n\n## MCP serving boundary\n\nThe serving path is `MCP stdio → application runtime bootstrap → RetrievalApplicationService → KnowledgeSearchBackend`. MCP is a transport adapter: it exposes `search` and bounded `get_source`, but does not call Solr, OpenSearch, Qdrant, or local backend APIs directly and does not own retrieval translation or agent lifecycle. The application service creates repository-scoped requests, bounds result/source reads, and rejects unauthorized paths through a `RepositoryBinding`. P0 binds one authorized repository per server process; federated MCP search, HTTP/auth/ACL serving, `find_symbol`, and graph-backed `get_related` are deferred. Sources: `docs/architecture/serving.md`, `docs/guides/mcp.md`.",
+            "frontmatter": {
+              "tier": "semantic",
+              "type": "Note",
+              "generated": {
+                "by": "process:ai-memory/2.6.2",
+                "at": "2026-10-09T15:27:50Z"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "memory_recall_metrics": {
+    "queries": 6,
+    "full_pages_read": 6,
+    "distinct_pages_read": 1,
+    "context_chars": 36047
+  },
+  "evaluation": {
+    "answers": {
+      "q-canonical-knowledge": "The canonical unit of truth is the KnowledgeDocument produced from repository sources through materialization, safe scanning, corpus/document policy, and RepositoryIndexer extraction. It carries typed KnowledgeEvidence, KnowledgeProvenance, repository, revision, path, line span, and checksum. KnowledgePacks and source-derived relationships enrich this knowledge but do not confer authority. Solr, OpenSearch, Qdrant, and other indexes are rebuildable projections, not canonical storage; backend schema changes or rebuilds must not redefine source evidence.",
+      "q-intent-scope": "SearchIntent defines retrieval meaning independently of authorization and execution policy: canonical query, required anchors and optional required SearchExpression structure, caller-attributed expansions, weak hints, typed signals, and compatible exact/semantic terms. SearchScope defines where and how broadly retrieval may run: workspace, repository, revision, paths, knowledge types, result limit, mode, settings, and optional retrieval configuration.",
+      "q-required-semantics": "FetchCore fails closed. Before scanning, backend I/O, or embedding, every participating channel must be able to preserve required canonical text, anchors, and expressions. Otherwise it raises KnowledgeSearchError with category unsupported_semantics and translation policy reject; there is no flattening fallback. Hybrid currently rejects anchors or boolean groups because fusion cannot guarantee them and no post-fusion constraint engine exists. Optional expansions, hints, and signals may instead be left unconsumed and reported as partially_unsupported.",
+      "q-backends": "The named built-in retrieval adapters are local-semantic, solr, opensearch, and qdrant-vector. local-semantic performs local lexical scanning; solr and opensearch support lexical, dense, and hybrid retrieval; qdrant-vector supports dense and hybrid vector/sparse acquisition, without implying standalone lexical retrieval. Ollama is an embedding provider, not a retrieval backend.",
+      "q-hybrid": "Hybrid independently acquires lexical or sparse candidates and dense candidates, then combines their rankings with reciprocal rank fusion (RRF). RRF is currently the only hybrid strategy accepted by RetrievalConfig. Optional reranking follows acquisition within an explicit bounded candidate window.",
+      "q-serving": "The serving path is MCP stdio → application runtime bootstrap → RetrievalApplicationService → KnowledgeSearchBackend. MCP is only the transport adapter, exposing search and bounded get_source; it must not directly call Solr, OpenSearch, Qdrant, or local APIs or own retrieval translation or agent lifecycle. Backend-specific protocol and translation details belong behind the KnowledgeSearchBackend adapter boundary."
+    }
+  },
+  "evaluation_execution": {
+    "command_sha256": "9c606a4c1f810eef560a377e1cc4e19d8b809696e909c1c9e018c2ba4dd6fa67",
+    "duration_ms": 8376.383,
+    "stderr_tail": ""
+  },
+  "stages": {
+    "stored_memory": {
+      "fact_recall": 0.8333333333333334,
+      "fact_precision": 0.8333333333333334,
+      "questions_correct": 5,
+      "questions_total": 6,
+      "unsupported_or_incorrect_answers": 1,
+      "per_question": [
+        {
+          "question_id": "q-canonical-knowledge",
+          "fact_id": "canonical-knowledge",
+          "passed": false,
+          "missing_required_patterns": [
+            "(?i)canonical\\s+repository\\s+knowledge"
+          ],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-intent-scope",
+          "fact_id": "intent-scope-boundary",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-required-semantics",
+          "fact_id": "required-semantics-reject",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-backends",
+          "fact_id": "retrieval-backends",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-hybrid",
+          "fact_id": "hybrid-rrf",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-serving",
+          "fact_id": "serving-boundary",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        }
+      ]
+    },
+    "memory_recall": {
+      "fact_recall": 0.8333333333333334,
+      "fact_precision": 0.8333333333333334,
+      "questions_correct": 5,
+      "questions_total": 6,
+      "unsupported_or_incorrect_answers": 1,
+      "per_question": [
+        {
+          "question_id": "q-canonical-knowledge",
+          "fact_id": "canonical-knowledge",
+          "passed": false,
+          "missing_required_patterns": [
+            "(?i)canonical\\s+repository\\s+knowledge"
+          ],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-intent-scope",
+          "fact_id": "intent-scope-boundary",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-required-semantics",
+          "fact_id": "required-semantics-reject",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-backends",
+          "fact_id": "retrieval-backends",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-hybrid",
+          "fact_id": "hybrid-rrf",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-serving",
+          "fact_id": "serving-boundary",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        }
+      ]
+    },
+    "answer": {
+      "fact_recall": 0.8333333333333334,
+      "fact_precision": 0.8333333333333334,
+      "questions_correct": 5,
+      "questions_total": 6,
+      "unsupported_or_incorrect_answers": 1,
+      "per_question": [
+        {
+          "question_id": "q-canonical-knowledge",
+          "fact_id": "canonical-knowledge",
+          "passed": false,
+          "missing_required_patterns": [
+            "(?i)canonical\\s+repository\\s+knowledge"
+          ],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-intent-scope",
+          "fact_id": "intent-scope-boundary",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-required-semantics",
+          "fact_id": "required-semantics-reject",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-backends",
+          "fact_id": "retrieval-backends",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-hybrid",
+          "fact_id": "hybrid-rrf",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        },
+        {
+          "question_id": "q-serving",
+          "fact_id": "serving-boundary",
+          "passed": true,
+          "missing_required_patterns": [],
+          "forbidden_pattern_hits": []
+        }
+      ]
+    }
+  },
+  "score": {
+    "fact_recall": 0.8333333333333334,
+    "fact_precision": 0.8333333333333334,
+    "questions_correct": 5,
+    "questions_total": 6,
+    "unsupported_or_incorrect_answers": 1,
+    "per_question": [
+      {
+        "question_id": "q-canonical-knowledge",
+        "fact_id": "canonical-knowledge",
+        "passed": false,
+        "missing_required_patterns": [
+          "(?i)canonical\\s+repository\\s+knowledge"
+        ],
+        "forbidden_pattern_hits": []
+      },
+      {
+        "question_id": "q-intent-scope",
+        "fact_id": "intent-scope-boundary",
+        "passed": true,
+        "missing_required_patterns": [],
+        "forbidden_pattern_hits": []
+      },
+      {
+        "question_id": "q-required-semantics",
+        "fact_id": "required-semantics-reject",
+        "passed": true,
+        "missing_required_patterns": [],
+        "forbidden_pattern_hits": []
+      },
+      {
+        "question_id": "q-backends",
+        "fact_id": "retrieval-backends",
+        "passed": true,
+        "missing_required_patterns": [],
+        "forbidden_pattern_hits": []
+      },
+      {
+        "question_id": "q-hybrid",
+        "fact_id": "hybrid-rrf",
+        "passed": true,
+        "missing_required_patterns": [],
+        "forbidden_pattern_hits": []
+      },
+      {
+        "question_id": "q-serving",
+        "fact_id": "serving-boundary",
+        "passed": true,
+        "missing_required_patterns": [],
+        "forbidden_pattern_hits": []
+      }
+    ]
+  },
+  "duration_ms": 8411.134
+}
