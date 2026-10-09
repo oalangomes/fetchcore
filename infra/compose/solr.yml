@@ -1,7 +1,7 @@
 # Standalone Solr service; included by the root FetchCore Compose.
 services:
   solr:
-    image: solr:9.10.1
+    image: ${FETCHCORE_SOLR_IMAGE:-solr:9.10.1@sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb}
     command: ["solr-precreate", "${FETCHCORE_SOLR_COLLECTION:-fetchcore-lab}", "/fetchcore-configset"]
     ports:
       - "127.0.0.1:${FETCHCORE_SOLR_PORT:-8983}:8983"

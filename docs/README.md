@@ -12,6 +12,7 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Understand serving | [Serving boundary](architecture/serving.md) |
 | Look up contracts and capabilities | [Contracts](reference/contracts.md) and [capabilities](reference/capabilities.md) |
 | Install and index a repository | [Getting started](guides/getting-started.md) and [self-hosted indexing](guides/self-hosted-indexing.md) |
+| Understand CI triggers, runners and container reliability | [CI workflows](guides/ci-workflows.md) |
 | Register or inspect a repository source | [Repository registry](guides/repository-registry.md) |
 | Plan, sync or rebuild a registered repository | [Repository indexing lifecycle](guides/repository-indexing.md) |
 | Search or run MCP | [Searching](guides/searching.md) and [MCP](guides/mcp.md) |

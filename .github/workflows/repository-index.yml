@@ -53,6 +53,11 @@ on:
         required: false
         type: string
         default: fetchcore-index-solr
+      solr_image:
+        description: Digest-pinned Solr image used when managed_solr is true.
+        required: false
+        type: string
+        default: solr:9.10.1@sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb
       evaluate:
         description: Run MCP dogfood scenarios after indexing.
         required: false
@@ -126,6 +131,11 @@ on:
         required: false
         type: string
         default: fetchcore-self-solr
+      solr_image:
+        description: Digest-pinned managed Solr image.
+        required: false
+        type: string
+        default: solr:9.10.1@sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb
       evaluate:
         description: Run MCP dogfood scenarios.
         required: false
@@ -205,6 +215,7 @@ jobs:
         if: ${{ inputs.managed_solr }}
         env:
           COLLECTION: ${{ inputs.collection }}
+          SOLR_IMAGE: ${{ inputs.solr_image }}
           SOLR_PORT: ${{ inputs.solr_port }}
           SOLR_VOLUME: ${{ inputs.solr_volume }}
         run: |
@@ -215,6 +226,16 @@ jobs:
           case "$SOLR_VOLUME" in
             *[!A-Za-z0-9_.-]*|"") echo "solr_volume contains unsupported characters" >&2; exit 2 ;;
           esac
+          pull_helper="$GITHUB_WORKSPACE/.fetchcore-runtime/scripts/ci/docker-pull.sh"
+          if [[ -x "$pull_helper" ]]; then
+            "$pull_helper" "$SOLR_IMAGE"
+          else
+            [[ "$SOLR_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]] || {
+              echo "solr_image must be pinned by sha256 digest" >&2
+              exit 2
+            }
+            docker pull "$SOLR_IMAGE"
+          fi
           container="fetchcore-solr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           docker rm -f "$container" >/dev/null 2>&1 || true
           docker volume create "$SOLR_VOLUME" >/dev/null
@@ -223,7 +244,7 @@ jobs:
             -p "127.0.0.1:${SOLR_PORT}:8983" \
             -v "${SOLR_VOLUME}:/var/solr" \
             -v "$GITHUB_WORKSPACE/.fetchcore-runtime/infra/solr/configset:/fetchcore-configset:ro" \
-            solr:9.10.1 \
+            "$SOLR_IMAGE" \
             solr-precreate "$COLLECTION" /fetchcore-configset >/dev/null
           printf 'FETCHCORE_SOLR_CONTAINER=%s\n' "$container" >> "$GITHUB_ENV"
           printf 'FETCHCORE_SOLR_URL=http://127.0.0.1:%s/solr\n' "$SOLR_PORT" >> "$GITHUB_ENV"

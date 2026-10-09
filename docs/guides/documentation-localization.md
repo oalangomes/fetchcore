@@ -27,8 +27,32 @@ Run `python scripts/docs/localize.py check` in ordinary CI. It validates generat
 
 ## Automation and recovery
 
-After a canonical change reaches `master`, the dedicated workflow restores any unmerged PT-BR files from `automation/docs-pt-br`, recomputes against current `master`, and pushes one review branch. It creates or updates one PR titled `docs: sync PT-BR translations`. PT-BR-only paths do not trigger the workflow. A no-op makes no commit. Manual `workflow_dispatch` runs incrementally by default; its `force` input rebuilds all included translations. The workflow needs repository Actions permission to create pull requests; enable **Allow GitHub Actions to create and approve pull requests** in repository settings if GitHub rejects PR creation. It explicitly dispatches ordinary CI for the review branch because GitHub limits workflows triggered by `GITHUB_TOKEN` activity; this is the reason for `actions: write` permission.
+After a canonical change reaches `master`, the dedicated workflow runs only
+when repository variable `FETCHCORE_DOCS_LOCALIZATION_ENABLED` is exactly
+`true`. When disabled or absent, the push-triggered job is visibly skipped and
+canonical CI remains unaffected. The workflow restores any unmerged PT-BR files
+from `automation/docs-pt-br`, recomputes against current `master`, and pushes one
+review branch. It creates or updates one PR titled `docs: sync PT-BR
+translations`. PT-BR-only paths do not trigger the workflow. A no-op makes no
+commit. Manual `workflow_dispatch` bypasses the enable flag, runs incrementally
+by default, and its `force` input rebuilds all included translations. Both paths
+fail during preflight if the required secret or variables are missing, or if the
+translation endpoint is not HTTPS. The workflow needs repository Actions
+permission to create pull requests; enable **Allow GitHub Actions to create and
+approve pull requests** in repository settings if GitHub rejects PR creation.
+It explicitly dispatches ordinary CI for the review branch because GitHub
+limits workflows triggered by `GITHUB_TOKEN` activity; this is the reason for
+`actions: write` permission.
 
-Configure repository secret `FETCHCORE_DOCS_TRANSLATION_API_KEY` and variables `FETCHCORE_DOCS_TRANSLATION_API_URL` (HTTPS Chat Completions endpoint) and `FETCHCORE_DOCS_TRANSLATION_MODEL`. The endpoint and model are explicit so provider/model changes invalidate old fingerprints. The request contains only bounded protected document prose, translation instructions, and the glossary; it never includes GitHub credentials or the process environment. External calls have a 60-second timeout and at most three attempts for transient network, 429, or 5xx failures. A provider or validation failure fails the workflow; canonical CI and release remain independent.
+Configure repository secret `FETCHCORE_DOCS_TRANSLATION_API_KEY` and variables
+`FETCHCORE_DOCS_TRANSLATION_API_URL` (HTTPS Chat Completions endpoint) and
+`FETCHCORE_DOCS_TRANSLATION_MODEL`, then set
+`FETCHCORE_DOCS_LOCALIZATION_ENABLED=true`. The endpoint and model are explicit
+so provider/model changes invalidate old fingerprints. The request contains
+only bounded protected document prose, translation instructions, and the
+glossary; it never includes GitHub credentials or the process environment.
+External calls have a 60-second timeout and at most three attempts for transient
+network, 429, or 5xx failures. A provider or validation failure fails the
+workflow; canonical CI and release remain independent.
 
 Review the PR for semantic fidelity, technical terms, natural PT-BR, links, and formatting. Generated output is evidence for review, not automatically trusted. Correct ambiguous English in the canonical file; correct recurring translation errors through the glossary or translation instructions, then regenerate. Do not maintain PT-BR files independently. A provider outage leaves the canonical docs valid and the localization run visibly failed. For offline pipeline testing, `python scripts/docs/localize.py sync --fake --root <temporary-copy>` uses a deterministic identity translator; it is not suitable for a published PT-BR translation.

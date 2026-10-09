@@ -138,10 +138,12 @@ From the repository root:
 python -m pip install -e .
 python -m pip install -r tools/explorer/api/requirements.txt
 
+source infra/images.lock
+scripts/ci/docker-pull.sh "$FETCHCORE_SOLR_IMAGE"
 docker run -d --name fetchcore-search-lab-solr \
   -p 127.0.0.1:8983:8983 \
   -v "$PWD/infra/solr/configset:/fetchcore-configset:ro" \
-  solr:9.10.1 solr-precreate fetchcore-lab /fetchcore-configset
+  "$FETCHCORE_SOLR_IMAGE" solr-precreate fetchcore-lab /fetchcore-configset
 ```
 
 After Solr has started, bootstrap and index this repository (or point at a separately provisioned and indexed collection):

@@ -35,6 +35,9 @@ concurrency:
 
 jobs:
   localize:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      vars.FETCHCORE_DOCS_LOCALIZATION_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -51,6 +54,22 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      - name: Validate localization configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$FETCHCORE_DOCS_TRANSLATION_API_KEY" ]] || missing+=(FETCHCORE_DOCS_TRANSLATION_API_KEY)
+          [[ -n "$FETCHCORE_DOCS_TRANSLATION_API_URL" ]] || missing+=(FETCHCORE_DOCS_TRANSLATION_API_URL)
+          [[ -n "$FETCHCORE_DOCS_TRANSLATION_MODEL" ]] || missing+=(FETCHCORE_DOCS_TRANSLATION_MODEL)
+          if (( ${#missing[@]} )); then
+            printf 'Missing localization configuration: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+          [[ "$FETCHCORE_DOCS_TRANSLATION_API_URL" == https://* ]] || {
+            echo "FETCHCORE_DOCS_TRANSLATION_API_URL must use HTTPS" >&2
+            exit 1
+          }
       - run: python -m pip install "pyyaml>=6.0"
       - name: Restore open localization work on latest master
         shell: bash

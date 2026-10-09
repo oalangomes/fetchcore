@@ -18,6 +18,8 @@ x-python: &python-service
     context: ../..
     dockerfile: tools/explorer/docker/Dockerfile
     target: python-runtime
+    args:
+      PYTHON_IMAGE: ${FETCHCORE_PYTHON_IMAGE:-python:3.11-slim@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce}
   # Optional operator settings (such as FETCHCORE_RETRIEVAL) belong in root .env.
   # Compose's own interpolation alone does not inject unlisted vars into containers.
   env_file:
@@ -59,6 +61,8 @@ services:
       context: ../..
       dockerfile: tools/explorer/docker/Dockerfile
       target: web-runtime
+      args:
+        PYTHON_IMAGE: ${FETCHCORE_PYTHON_IMAGE:-python:3.11-slim@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce}
     ports:
       - "127.0.0.1:${FETCHCORE_WEB_PORT:-5173}:8080"
     depends_on:
@@ -93,6 +97,8 @@ services:
     profiles: ["runtime"]
     build:
       context: ../..
+      args:
+        PYTHON_IMAGE: ${FETCHCORE_PYTHON_IMAGE:-python:3.11-slim@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce}
     image: ${FETCHCORE_IMAGE:-fetchcore:dev}
     stdin_open: true
     tty: false

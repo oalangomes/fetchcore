@@ -1,5 +1,6 @@
 # Optional Search Lab/MCP development deployment. Never part of core packaging.
-FROM python:3.11-slim AS python-runtime
+ARG PYTHON_IMAGE=python:3.11-slim@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce
+FROM ${PYTHON_IMAGE} AS python-runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
