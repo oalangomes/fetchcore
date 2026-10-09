@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Codex CLI wrapper for the Repository Learning Benchmark.
 
 The wrapper keeps agent lifecycle outside FetchCore. It exposes either a
