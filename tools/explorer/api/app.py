@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+import os
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
@@ -56,9 +57,23 @@ class SourcePayload(BaseModel):
     context_lines: int = Field(default=4, ge=0, le=100)
 
 
+def _explorer_runtime_config():
+    """Default only this optional devtool to Solr; operator selections still win.
+
+    A bare FetchCore runtime defaults to local-semantic. The Search Lab instead
+    uses Solr, by explicitly selecting it before composing the runtime. We do
+    not change FetchCore defaults, reconfigure explicit YAML/ENV choices, or
+    replace an unavailable Solr backend with local scanning.
+    """
+    config = load_runtime_config()
+    if config.sources.get("runtime.backend") in (None, "default"):
+        return load_runtime_config(environ={**os.environ, "FETCHCORE_BACKEND": "solr"})
+    return config
+
+
 @lru_cache(maxsize=1)
 def _runtime() -> ExplorerContext:
-    config = load_runtime_config()
+    config = _explorer_runtime_config()
     service = service_from_runtime_config(config)
     capabilities = BackendRegistry().create(config.backend).retrieval_capabilities.to_mapping()
     return ExplorerContext(
