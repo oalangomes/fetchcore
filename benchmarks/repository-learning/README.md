@@ -190,6 +190,10 @@ The direct wrapper must expose only ordinary repository exploration. FetchCore w
 
 A completed run writes per-arm JSON plus `run.json` and a generated `README.md`. Artifacts record frozen repository identity, scenario/prompt fingerprints, FetchCore revision, harness/provider/model identity, ai-memory server identity when advertised, unique memory scope, acquisition metrics, recall payloads, answers and deterministic scores.
 
+The checked-in [artifact index](.artifacts/repository-learning/INDEX.md) is the
+authoritative catalog for canonical, reproduction, and invalid runs. Preserve
+original run IDs and source-run paths when adding evidence.
+
 The ruler uses the same hidden question-level required/forbidden regexes at three
 distinct stages:
 
