@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { App } from './App'
 
@@ -12,6 +12,8 @@ function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(<QueryClientProvider client={client}><App /></QueryClientProvider>)
 }
+
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async (path: string, options?: RequestInit) => {
