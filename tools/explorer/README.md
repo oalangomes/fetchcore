@@ -13,14 +13,15 @@ An **optional, local-only** retrieval workbench. The core remains headless throu
 
 ## Docker Compose: single command for the stack
 
-The root `compose.yaml` starts **web + API + MCP (Streamable HTTP) + Solr** together.
+The optional `tools/explorer/compose.yaml` starts **web + API + MCP (Streamable HTTP) + Solr** together.
 This is a developer-only deployment: network ports are published on host **127.0.0.1**
 rather than all interfaces. Compose does not change the headless FetchCore core or
 the existing stdio `fetchcore-mcp` command.
 
-From the repository root:
+From the repository root (choose the dedicated Compose file once):
 
 ```bash
+export COMPOSE_FILE=tools/explorer/compose.yaml
 docker compose up --build -d --wait
 docker compose ps
 ```
@@ -48,8 +49,8 @@ discard the Solr index. After repository edits, run an explicit sync again.
 Incompatible schemas or fingerprints require investigation rather than any silent
 backend fallback.
 
-To search another local repository, set the repository identity and the source
-location **before** running Compose:
+To search another local repository, set the repository identity and its **absolute** source
+location before running Compose:
 
 ```bash
 FETCHCORE_SOURCE_PATH=/absolute/path/to/repo \
@@ -58,7 +59,9 @@ FETCHCORE_REPOSITORY=owner/other-repo docker compose up --build -d --wait
 
 The same source directory is mounted read-only into both retrieval transports and
 the on-demand indexer. To persist these settings, copy
-`tools/explorer/.env.example` to root `.env` and edit it.
+`tools/explorer/.env.example` to root `.env` and edit it. This also sets `COMPOSE_FILE`;
+it does not modify the existing root `compose.yml`, which continues to serve
+other backend/runtime profiles.
 Do not mount broad filesystem roots or publish the unauthenticated MCP port externally.
 
 For a full **four-service** smoke (once the demo fixture is indexed), run:
