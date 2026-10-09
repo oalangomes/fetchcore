@@ -133,13 +133,16 @@ function TelemetryPanel({ data }: { data?: RetrievalTelemetry }) {
   </div>
 }
 
-function ResultDetails({ hit, repository }: { hit: SearchHit; repository: string }) {
+function ResultDetails({ hit, repository, boundRevision }: { hit: SearchHit; repository: string; boundRevision: string | null }) {
+  // A result revision is observed provenance, not authority over materialized workspace bytes.
+  // SourceReadRequest.revision is an exact precondition on the authorized binding only.
+  const revisionPrecondition = hit.revision && hit.revision === boundRevision ? hit.revision : undefined
   const [tab, setTab] = useState('evidence')
   const source = useQuery({
-    queryKey: ['source', repository, hit.source_ref, hit.revision, hit.line_start, hit.line_end],
+    queryKey: ['source', repository, hit.source_ref, revisionPrecondition, hit.line_start, hit.line_end],
     queryFn: () => readSource({
       source_ref: hit.source_ref, repository,
-      ...(hit.revision ? { revision: hit.revision } : {}),
+      ...(revisionPrecondition ? { revision: revisionPrecondition } : {}),
       ...(hit.line_start ? { line_start: hit.line_start } : {}),
       ...(hit.line_end ? { line_end: hit.line_end } : {}),
       context_lines: 5,
@@ -164,6 +167,9 @@ function ResultDetails({ hit, repository }: { hit: SearchHit; repository: string
       </Tabs.List>
       <Tabs.Content value="evidence" className="py-5"><Evidence hit={hit}/></Tabs.Content>
       <Tabs.Content value="source" className="py-5">
+        {hit.revision && !revisionPrecondition && <p className="mb-3 rounded-lg border border-amber-700/40 bg-amber-900/20 p-3 text-xs text-amber-100">
+          Fonte indexada na revisão {shorten(hit.revision, 18)}. A revisão do workspace não está vinculada ou não coincide: esta leitura representa os bytes atuais autorizados, não prova equivalência ao trecho indexado.
+        </p>}
         {source.isLoading ? <p className="text-sm text-muted">Lendo arquivo autorizado...</p> :
           source.isError ? <div className="error-panel">{source.error.message}</div> : source.data ?
           <div className="rounded-xl border border-line bg-background/50 p-4">
@@ -373,7 +379,7 @@ export function App() {
                     <div className="mb-3 flex items-center justify-between px-2 text-xs text-muted"><span>{response.results.length} candidatos</span><ArrowDownRight size={13}/></div>
                     <ResultList response={response} selected={selectedHit?.id ?? null} onSelect={setSelectedId}/>
                   </div>
-                  <div className="min-w-0 p-5">{selectedHit ? <ResultDetails key={selectedHit.id} hit={selectedHit} repository={config.data?.repository ?? ''}/> : <EmptyPanel icon={Code2} title="Nenhuma evidência selecionada" message="Execute outra busca ou ajuste os critérios."/>}</div>
+                  <div className="min-w-0 p-5">{selectedHit ? <ResultDetails key={selectedHit.id} hit={selectedHit} repository={config.data?.repository ?? ''} boundRevision={config.data?.revision ?? null}/> : <EmptyPanel icon={Code2} title="Nenhuma evidência selecionada" message="Execute outra busca ou ajuste os critérios."/>}</div>
                 </div>}
             </section>
             {response && <section className="panel p-4">
