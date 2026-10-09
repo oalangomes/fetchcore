@@ -1,0 +1,72 @@
+schema_version: 1
+id: fetchcore.repository-learning-ruler-v2
+source_scenario_id: fetchcore-self-architecture
+source_scenario_sha256: 2753adf17add395ae4977424c537f6aab13449bcc05327beb5130b60b319c302
+questions:
+  - id: q-canonical-knowledge
+    fact_id: canonical-knowledge
+    requirements:
+      - id: canonical-knowledge-is-truth
+        type: any_pattern
+        alternatives:
+          - '(?i)canonical\s+repository\s+knowledge'
+          - '(?i)canonical\s+(?:truth|unit).{0,80}(?:repository\s+knowledge|KnowledgeDocument)'
+      - id: stores-are-rebuildable-projections
+        type: any_pattern
+        alternatives:
+          - '(?i)(rebuildable|replaceable).*(projection|store)|(projection|store).*(rebuildable|replaceable)'
+  - id: q-intent-scope
+    fact_id: intent-scope-boundary
+    requirements:
+      - id: intent-is-query-meaning
+        type: any_pattern
+        alternatives:
+          - '(?i)SearchIntent.*(meaning|means|query|intent)'
+          - '(?i)SearchIntent\s+(?:states|expresses)\s+what'
+      - id: scope-bounds-search
+        type: any_pattern
+        alternatives:
+          - '(?i)SearchScope.*(repository|revision|path|scope|knowledge type|result|where)'
+  - id: q-required-semantics
+    fact_id: required-semantics-reject
+    requirements:
+      - id: unsupported-is-rejected
+        type: any_pattern
+        alternatives:
+          - '(?i)(reject|rejected|unsupported_semantics)'
+      - id: required-structure
+        type: any_pattern
+        alternatives:
+          - '(?i)(required|anchor|boolean)'
+    forbidden_patterns:
+      - '(?i)silently\s+(drop|ignore|flatten)'
+  - id: q-backends
+    fact_id: retrieval-backends
+    requirements:
+      - id: named-retrieval-adapters
+        type: all_identifiers
+        identifiers: [local, Solr, OpenSearch, Qdrant]
+  - id: q-hybrid
+    fact_id: hybrid-rrf
+    requirements:
+      - id: reciprocal-rank-fusion
+        type: any_pattern
+        alternatives:
+          - '(?i)RRF|reciprocal\s+rank\s+fusion'
+      - id: independent-lexical-dense-channels
+        type: any_pattern
+        alternatives:
+          - '(?i)(lexical|sparse).*(dense)|dense.*(lexical|sparse)'
+  - id: q-serving
+    fact_id: serving-boundary
+    requirements:
+      - id: mcp-application-backend-path
+        type: any_pattern
+        alternatives:
+          - '(?i)MCP.*RetrievalApplicationService.*KnowledgeSearchBackend'
+          - '(?is)(?=.*\bMCP\b)(?=.*application (?:service|runtime))(?=.*(?:backend|adapter))'
+      - id: backend-details-stay-in-adapters
+        type: any_pattern
+        alternatives:
+          - '(?i)(MCP|transport).*(does not|not).*(Solr|OpenSearch|Qdrant)|backend.*(adapter|protocol)'
+
