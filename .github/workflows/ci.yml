@@ -86,7 +86,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate Compose contract
-        run: docker compose --profile runtime --profile solr --profile opensearch --profile qdrant config --quiet
+        run: make compose-config
       - name: Build FetchCore image
         run: docker build --tag fetchcore:ci .
       - name: Smoke FetchCore image

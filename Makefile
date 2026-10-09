@@ -48,6 +48,13 @@ docker-smoke: docker-build
 	$(DOCKER) run --rm --entrypoint sh $(IMAGE) -c 'test "$$(id -u)" -ne 0 && command -v fetchcore-mcp >/dev/null && python -c "import fetchcore; import importlib.metadata; assert importlib.metadata.version(\"fetchcore\")"'
 
 compose-config:
-	$(DOCKER) compose --profile runtime --profile solr --profile opensearch --profile qdrant config --quiet
+	$(DOCKER) compose config --quiet
+	$(DOCKER) compose --profile runtime --profile indexing config --quiet
+	$(DOCKER) compose -f tools/explorer/compose.yaml config --quiet
+	$(DOCKER) compose -f infra/compose/solr.yml config --quiet
+	$(DOCKER) compose -f infra/compose/opensearch.yml config --quiet
+	$(DOCKER) compose -f infra/compose/qdrant.yml config --quiet
+	FETCHCORE_BACKEND=opensearch $(DOCKER) compose -f infra/compose/app.yml -f infra/compose/opensearch.yml config --quiet
+	FETCHCORE_BACKEND=qdrant-vector $(DOCKER) compose -f infra/compose/app.yml -f infra/compose/qdrant.yml config --quiet
 
 runtime-check: compose-config docker-smoke

@@ -89,15 +89,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      COMPOSE_FILE: tools/explorer/compose.yaml
       FETCHCORE_SOURCE_PATH: ${{ github.workspace }}/tools/explorer/fixtures/demo-repo
       FETCHCORE_REPOSITORY: demo/catalog
       FETCHCORE_SOLR_COLLECTION: fetchcore-lab
     steps:
       - uses: actions/checkout@v4
-      - name: Validate Compose configuration
-        run: docker compose config --quiet
-      - name: Build and start web, API, MCP and Solr
+      - name: Validate root, legacy and standalone Compose contracts
+        run: |
+          docker compose config --quiet
+          docker compose --profile runtime --profile indexing config --quiet
+          docker compose -f tools/explorer/compose.yaml config --quiet
+          docker compose -f infra/compose/solr.yml config --quiet
+          docker compose -f infra/compose/opensearch.yml config --quiet
+          docker compose -f infra/compose/qdrant.yml config --quiet
+          FETCHCORE_BACKEND=opensearch docker compose -f infra/compose/app.yml -f infra/compose/opensearch.yml config --quiet
+          FETCHCORE_BACKEND=qdrant-vector docker compose -f infra/compose/app.yml -f infra/compose/qdrant.yml config --quiet
+      - name: Build and start root default web, API, MCP and Solr
         run: docker compose up -d --build --wait --wait-timeout 180
       - name: Assert Solr starts with an empty index (no automatic indexing)
         run: |
