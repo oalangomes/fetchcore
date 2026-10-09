@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -99,7 +99,7 @@ def create_app(context: ExplorerContext | None = None) -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/api/config")
-    def configuration(ctx: ExplorerContext = Depends(resolved)) -> dict[str, object]:
+    def configuration(ctx: Annotated[ExplorerContext, Depends(resolved)]) -> dict[str, object]:
         return {
             "repository": ctx.repository,
             "backend": ctx.backend,
@@ -113,7 +113,7 @@ def create_app(context: ExplorerContext | None = None) -> FastAPI:
     @app.post("/api/search")
     def search(
         payload: SearchPayload,
-        ctx: ExplorerContext = Depends(resolved),
+        ctx: Annotated[ExplorerContext, Depends(resolved)],
     ) -> dict[str, object]:
         try:
             intent = SearchIntent.from_mapping(payload.intent)
@@ -138,7 +138,7 @@ def create_app(context: ExplorerContext | None = None) -> FastAPI:
     @app.post("/api/source")
     def source(
         payload: SourcePayload,
-        ctx: ExplorerContext = Depends(resolved),
+        ctx: Annotated[ExplorerContext, Depends(resolved)],
     ) -> dict[str, object]:
         try:
             result = ctx.service.get_source(
