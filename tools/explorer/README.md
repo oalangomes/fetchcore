@@ -110,6 +110,7 @@ No agent workflow, graph requirement, consumer ranking, LLM inference or new pro
 ## Limitations
 
 - One repository binding per process; no federated multi-repo behavior.
+- If an indexed result has a revision but the serving workspace is unbound or has another revision, source reads show a warning and display authorized current-workspace bytes. The original indexed provenance remains visible; equivalence is **not** claimed. An exact revision precondition is supplied only when it matches the authorized binding.
 - Solr is the default Explorer backend; explicitly configured other backends are respected. Switching requires operator reconfiguration/restart.
 - Graph Explorer belongs to #31, not this MVP.
 - Quality/ground-truth evaluation is the responsibility of retrievalgate, not this interface.
