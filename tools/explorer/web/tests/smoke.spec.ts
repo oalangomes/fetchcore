@@ -13,7 +13,7 @@ test('real search → provenance → authorized source read (local FetchCore)', 
   await expect(page.getByText('Provenance e identidade')).toBeVisible()
 
   await page.getByRole('tab', { name: 'Código-fonte' }).click()
-  await expect(page.getByText(/def eligibility_validator/)).toBeVisible()
+  await expect(page.locator('pre.code-output').filter({ hasText: 'def eligibility_validator' })).toBeVisible()
   await page.getByRole('button', { name: 'Telemetry' }).click()
   await expect(page.getByText('Estágios de aquisição')).toBeVisible()
 })
