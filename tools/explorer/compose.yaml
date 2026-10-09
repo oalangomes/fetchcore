@@ -1,0 +1,111 @@
+# Optional local development stack: frontend, API, MCP and Solr.
+name: fetchcore-lab
+
+x-runtime: &runtime
+  FETCHCORE_BACKEND: solr
+  FETCHCORE_WORKSPACE: /workspace
+  FETCHCORE_REPOSITORY: ${FETCHCORE_REPOSITORY:-oalangomes/fetchcore}
+  FETCHCORE_SOLR_URL: http://solr:8983/solr
+  FETCHCORE_SOLR_COLLECTION: ${FETCHCORE_SOLR_COLLECTION:-fetchcore-lab}
+
+x-python: &python-service
+  build:
+    context: ../..
+    dockerfile: tools/explorer/docker/Dockerfile
+    target: python-runtime
+  environment: *runtime
+  volumes:
+    - ${FETCHCORE_SOURCE_PATH:-../..}:/workspace:ro
+  networks:
+    - lab
+  restart: unless-stopped
+
+services:
+  solr:
+    image: solr:9.10.1
+    command: ["solr-precreate", "${FETCHCORE_SOLR_COLLECTION:-fetchcore-lab}", "/fetchcore-configset"]
+    ports:
+      - "127.0.0.1:${FETCHCORE_SOLR_PORT:-8983}:8983"
+    volumes:
+      - solr-data:/var/solr
+      - ../../infra/solr/configset:/fetchcore-configset:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8983/solr/admin/info/system >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 12
+    networks: [lab]
+    restart: unless-stopped
+
+  api:
+    <<: *python-service
+    command: ["python", "-m", "uvicorn", "tools.explorer.api.app:app", "--host", "0.0.0.0", "--port", "8765"]
+    depends_on:
+      solr:
+        condition: service_healthy
+    expose: ["8765"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/config', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  mcp:
+    <<: *python-service
+    command: ["python", "-m", "tools.explorer.docker.mcp_http"]
+    depends_on:
+      solr:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${FETCHCORE_MCP_PORT:-8766}:8766"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8766), timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  web:
+    build:
+      context: ../..
+      dockerfile: tools/explorer/docker/Dockerfile
+      target: web-runtime
+    ports:
+      - "127.0.0.1:${FETCHCORE_WEB_PORT:-5173}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+      mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+    networks: [lab]
+    restart: unless-stopped
+
+  # Explicit on-demand operation. Compose up never triggers writes or rebuild.
+  indexer:
+    <<: *python-service
+    profiles: [indexing]
+    restart: "no"
+    depends_on:
+      solr:
+        condition: service_healthy
+    environment:
+      <<: *runtime
+      FETCHCORE_INDEX_WORKSPACE: /workspace
+      FETCHCORE_INDEX_REPOSITORY: ${FETCHCORE_REPOSITORY:-oalangomes/fetchcore}
+      FETCHCORE_INDEX_BACKEND: solr
+      FETCHCORE_INDEX_BACKEND_SETTINGS: '{"url":"http://solr:8983/solr","collection":"${FETCHCORE_SOLR_COLLECTION:-fetchcore-lab}","projection_version":"3"}'
+    command: ["fetchcore", "index", "status"]
+
+networks:
+  lab:
+
+volumes:
+  solr-data:
