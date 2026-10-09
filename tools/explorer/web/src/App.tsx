@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode, type FormEvent } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
@@ -8,7 +8,7 @@ import {
   Activity, ArrowDownRight, ArrowRight, Braces, Check, ChevronRight, CircleAlert,
   Clock3, Code2, Copy, Database, FileCode2, Fingerprint, Gauge, GitBranch,
   Layers3, ListFilter, LoaderCircle, Network, Play, Search, ShieldCheck, SlidersHorizontal,
-  Sparkles, TerminalSquare, Workflow, X,
+  Sparkles, TerminalSquare, Workflow,
 } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { getConfig, parseIntent, readSource, search } from './api'
@@ -40,7 +40,7 @@ function Metric({ label, value, hint }: { label: string; value: string | number;
     {hint && <span className="text-xs text-muted">{hint}</span>}
   </div>
 }
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({ children }: { children: ReactNode }) {
   return <h3 className="section-label">{children}</h3>
 }
 function JsonDump({ data }: { data: unknown }) {
@@ -244,7 +244,7 @@ export function App() {
       // Editing incomplete JSON is expected.
     }
   }
-  function submit(event: React.FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault()
     try {
       const intent = parseIntent(intentText)
@@ -373,7 +373,7 @@ export function App() {
                     <div className="mb-3 flex items-center justify-between px-2 text-xs text-muted"><span>{response.results.length} candidatos</span><ArrowDownRight size={13}/></div>
                     <ResultList response={response} selected={selectedHit?.id ?? null} onSelect={setSelectedId}/>
                   </div>
-                  <div className="min-w-0 p-5">{selectedHit ? <ResultDetails key={selectedHit.id} hit={selectedHit} repository={config.data?.repository ?? ''}/> : <EmptyPanel icon={Code2} title="Nenhuma evidência selecionada" message="Execute outra busca ou ajuste os critérios."/ >}</div>
+                  <div className="min-w-0 p-5">{selectedHit ? <ResultDetails key={selectedHit.id} hit={selectedHit} repository={config.data?.repository ?? ''}/> : <EmptyPanel icon={Code2} title="Nenhuma evidência selecionada" message="Execute outra busca ou ajuste os critérios."/>}</div>
                 </div>}
             </section>
             {response && <section className="panel p-4">
