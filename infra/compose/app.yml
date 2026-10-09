@@ -1,0 +1,115 @@
+# Shared FetchCore developer application. Combine with exactly one backend:
+# docker compose -f infra/compose/app.yml -f infra/compose/opensearch.yml up -d --build
+# Paths below are relative to this file; ../.. is the repository root.
+x-runtime: &runtime
+  FETCHCORE_BACKEND: ${FETCHCORE_BACKEND:-solr}
+  FETCHCORE_WORKSPACE: /workspace
+  FETCHCORE_REPOSITORY: ${FETCHCORE_REPOSITORY:-oalangomes/fetchcore}
+  FETCHCORE_SOLR_URL: http://solr:8983/solr
+  FETCHCORE_SOLR_COLLECTION: ${FETCHCORE_SOLR_COLLECTION:-fetchcore-lab}
+  FETCHCORE_OPENSEARCH_URL: http://opensearch:9200
+  FETCHCORE_OPENSEARCH_INDEX: ${FETCHCORE_OPENSEARCH_INDEX:-fetchcore-lab}
+  FETCHCORE_QDRANT_URL: http://qdrant:6333
+  FETCHCORE_QDRANT_COLLECTION: ${FETCHCORE_QDRANT_COLLECTION:-fetchcore-lab}
+  FETCHCORE_OLLAMA_URL: ${FETCHCORE_OLLAMA_URL:-http://host.docker.internal:11434}
+
+x-python: &python-service
+  build:
+    context: ../..
+    dockerfile: tools/explorer/docker/Dockerfile
+    target: python-runtime
+  # Optional operator settings (such as FETCHCORE_RETRIEVAL) belong in root .env.
+  # Compose's own interpolation alone does not inject unlisted vars into containers.
+  env_file:
+    - path: ../../.env
+      required: false
+  environment: *runtime
+  volumes:
+    - ${FETCHCORE_SOURCE_PATH:-../..}:/workspace:ro
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *python-service
+    command: ["python", "-m", "uvicorn", "tools.explorer.api.app:app", "--host", "0.0.0.0", "--port", "8765"]
+    expose: ["8765"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/config', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  mcp:
+    <<: *python-service
+    command: ["python", "-m", "tools.explorer.docker.mcp_http"]
+    ports:
+      - "127.0.0.1:${FETCHCORE_MCP_PORT:-8766}:8766"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8766), timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  web:
+    build:
+      context: ../..
+      dockerfile: tools/explorer/docker/Dockerfile
+      target: web-runtime
+    ports:
+      - "127.0.0.1:${FETCHCORE_WEB_PORT:-5173}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+      mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+    restart: unless-stopped
+
+  # Operator-triggered only; no index mutation during compose up or retrieval.
+  # The operational CLI currently supports Solr only (#123).
+  indexer:
+    <<: *python-service
+    profiles: ["indexing"]
+    restart: "no"
+    environment:
+      <<: *runtime
+      FETCHCORE_INDEX_WORKSPACE: /workspace
+      FETCHCORE_INDEX_REPOSITORY: ${FETCHCORE_REPOSITORY:-oalangomes/fetchcore}
+      FETCHCORE_INDEX_BACKEND: solr
+      FETCHCORE_INDEX_BACKEND_SETTINGS: '{"url":"http://solr:8983/solr","collection":"${FETCHCORE_SOLR_COLLECTION:-fetchcore-lab}","projection_version":"3"}'
+    command: ["fetchcore", "index", "status"]
+
+  # Preserve the original opt-in stdio runtime for existing contributors.
+  fetchcore:
+    profiles: ["runtime"]
+    build:
+      context: ../..
+    image: ${FETCHCORE_IMAGE:-fetchcore:dev}
+    stdin_open: true
+    tty: false
+    environment:
+      FETCHCORE_MCP_WORKSPACE: /workspace
+      FETCHCORE_MCP_REPOSITORY: ${FETCHCORE_MCP_REPOSITORY:-local/repository}
+      FETCHCORE_MCP_BACKEND: ${FETCHCORE_MCP_BACKEND:-local-semantic}
+      FETCHCORE_MCP_REVISION: ${FETCHCORE_MCP_REVISION:-}
+      FETCHCORE_MCP_BACKEND_SETTINGS: ${FETCHCORE_MCP_BACKEND_SETTINGS:-}
+      FETCHCORE_MCP_RETRIEVAL: ${FETCHCORE_MCP_RETRIEVAL:-}
+      FETCHCORE_MCP_KNOWLEDGE_TYPES: ${FETCHCORE_MCP_KNOWLEDGE_TYPES:-}
+      FETCHCORE_MCP_REPOSITORY_PATHS: ${FETCHCORE_MCP_REPOSITORY_PATHS:-}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+    volumes:
+      - type: bind
+        source: ${FETCHCORE_WORKSPACE:-../..}
+        target: /workspace
+        read_only: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
