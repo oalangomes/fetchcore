@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Budget-aware benchmark MCP adapter over FetchCore's application service.
 
 This adapter owns only experiment-facing output shaping and acquisition budgets.
