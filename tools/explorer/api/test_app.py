@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from fetchcore.application import RepositoryBinding, RetrievalApplicationService
-from tools.explorer.api.app import ExplorerContext, create_app
+from tools.explorer.api.app import ExplorerContext, _explorer_runtime_config, create_app
 
 
 def _client(tmp_path: Path) -> TestClient:
@@ -113,3 +113,69 @@ def test_exact_path_anchor_passes_to_existing_targeted_service(tmp_path: Path) -
     )
     assert response.status_code == 200, response.text
     assert response.json()["metadata"]["targeted"]["outcome"] == "exact_unique"
+
+
+def test_explorer_defaults_to_solr_without_changing_fetchcore_default(monkeypatch, tmp_path: Path) -> None:
+    for name in ("FETCHCORE_CONFIG", "FETCHCORE_BACKEND", "FETCHCORE_MCP_BACKEND"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("FETCHCORE_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("FETCHCORE_REPOSITORY", "demo/catalog")
+    monkeypatch.setenv("FETCHCORE_SOLR_COLLECTION", "lab-test")
+
+    from fetchcore.application import load_runtime_config
+
+    assert load_runtime_config().backend == "local-semantic"
+    config = _explorer_runtime_config()
+    assert config.backend == "solr"
+    assert config.backend_settings["collection"] == "lab-test"
+    assert config.sources["runtime.backend"] == "environment"
+
+
+def test_explorer_preserves_explicit_operator_backend(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("FETCHCORE_CONFIG", raising=False)
+    monkeypatch.delenv("FETCHCORE_MCP_BACKEND", raising=False)
+    monkeypatch.setenv("FETCHCORE_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("FETCHCORE_BACKEND", "opensearch")
+    assert _explorer_runtime_config().backend == "opensearch"
+
+    monkeypatch.setenv("FETCHCORE_BACKEND", "local-semantic")
+    assert _explorer_runtime_config().backend == "local-semantic"
+
+
+def test_explorer_preserves_operator_file_backend(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("FETCHCORE_BACKEND", raising=False)
+    monkeypatch.delenv("FETCHCORE_MCP_BACKEND", raising=False)
+    config_path = tmp_path / "runtime.yaml"
+    config_path.write_text(
+        "version: 1\nruntime:\n  backend: opensearch\n"
+        "  workspace: " + str(tmp_path) + "\n  repository: demo/catalog\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FETCHCORE_CONFIG", str(config_path))
+    config = _explorer_runtime_config()
+    assert config.backend == "opensearch"
+    assert config.sources["runtime.backend"] == "config_file"
+
+
+def test_default_solr_never_silently_falls_back_on_failure(monkeypatch, tmp_path: Path) -> None:
+    from tools.explorer.api.app import _runtime, app
+
+    monkeypatch.delenv("FETCHCORE_CONFIG", raising=False)
+    monkeypatch.delenv("FETCHCORE_BACKEND", raising=False)
+    monkeypatch.delenv("FETCHCORE_MCP_BACKEND", raising=False)
+    monkeypatch.setenv("FETCHCORE_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("FETCHCORE_REPOSITORY", "demo/catalog")
+    monkeypatch.setenv("FETCHCORE_SOLR_URL", "http://127.0.0.1:1/solr")
+    monkeypatch.setenv("FETCHCORE_SOLR_COLLECTION", "unavailable")
+    _runtime.cache_clear()
+    try:
+        with TestClient(app) as client:
+            assert client.get("/api/config").json()["backend"] == "solr"
+            search_response = client.post(
+                "/api/search",
+                json={"intent": {"schema_version": 2, "canonical_query": "needle"}},
+            )
+            assert search_response.status_code != 200
+            assert search_response.json().get("backend") != "local-semantic"
+    finally:
+        _runtime.cache_clear()
