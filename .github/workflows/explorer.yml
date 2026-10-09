@@ -1,0 +1,50 @@
+name: Search Lab
+
+on:
+  pull_request:
+    paths:
+      - 'tools/explorer/**'
+      - '.github/workflows/explorer.yml'
+      - 'src/fetchcore/application/**'
+      - 'src/fetchcore/retrieval/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  explorer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install FetchCore and API extras
+        run: |
+          python -m pip install -e ".[dev]"
+          python -m pip install -r tools/explorer/api/requirements.txt
+      - name: Python contracts and real local backend
+        run: python -m pytest -q tools/explorer/api/test_app.py
+      - name: Install UI dependencies
+        working-directory: tools/explorer/web
+        run: npm install --no-audit --no-fund
+      - name: Build and TypeScript check
+        working-directory: tools/explorer/web
+        run: npm run build
+      - name: UI unit tests
+        working-directory: tools/explorer/web
+        run: npm test
+      - name: Chromium browser
+        working-directory: tools/explorer/web
+        run: npx playwright install --with-deps chromium
+      - name: Full browser smoke, real FetchCore search and source
+        working-directory: tools/explorer/web
+        env:
+          CI: 'true'
+        run: npm run test:e2e
