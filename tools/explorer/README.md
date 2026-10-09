@@ -10,7 +10,82 @@ An **optional, local-only** retrieval workbench. The core remains headless throu
 - Authorized source reads; telemetry/stages, candidate counts and fingerprints when returned.
 - Explicit structured errors with no silent fallback.
 
-## Run (Solr is the default backend)
+
+## Docker Compose: single command for the stack
+
+The root `compose.yaml` starts **web + API + MCP (Streamable HTTP) + Solr** together.
+This is a developer-only deployment: network ports are published on host **127.0.0.1**
+rather than all interfaces. Compose does not change the headless FetchCore core or
+the existing stdio `fetchcore-mcp` command.
+
+From the repository root:
+
+```bash
+docker compose up --build -d --wait
+docker compose ps
+```
+
+| Service | Container endpoint | Host endpoint |
+| --- | --- | --- |
+| Frontend (Nginx static React build) | `web:8080` | `http://127.0.0.1:5173` |
+| Explorer API (FastAPI) | `api:8765` | Proxied at `http://127.0.0.1:5173/api/` |
+| MCP Streamable HTTP | `mcp:8766/mcp` | `http://127.0.0.1:8766/mcp` |
+| Solr (Projection v3) | `solr:8983/solr` | `http://127.0.0.1:8983/solr` |
+
+**First-run indexing is explicit, not triggered by startup:**
+
+```bash
+docker compose --profile indexing run --rm indexer fetchcore index bootstrap
+docker compose --profile indexing run --rm indexer fetchcore index status
+docker compose --profile indexing run --rm indexer fetchcore index sync
+```
+
+The last command is an **operator-requested** sync. Under the legacy operational
+indexing CLI it may perform the initial full rebuild if there is no snapshot.
+Do not confuse a successful container health check with a ready indexed corpus.
+The Solr volume persists across `down` / `up`; use `down -v` only to deliberately
+discard the Solr index. After repository edits, run an explicit sync again.
+Incompatible schemas or fingerprints require investigation rather than any silent
+backend fallback.
+
+To search another local repository, set the repository identity and the source
+location **before** running Compose:
+
+```bash
+FETCHCORE_SOURCE_PATH=/absolute/path/to/repo \
+FETCHCORE_REPOSITORY=owner/other-repo docker compose up --build -d --wait
+```
+
+The same source directory is mounted read-only into both retrieval transports and
+the on-demand indexer. To persist these settings, copy
+`tools/explorer/.env.example` to root `.env` and edit it.
+Do not mount broad filesystem roots or publish the unauthenticated MCP port externally.
+
+For a full **four-service** smoke (once the demo fixture is indexed), run:
+
+```bash
+docker compose exec -T api python -m tools.explorer.docker.smoke
+```
+
+The smoke checks the static frontend, same-origin API proxy, Solr search with
+typed provenance, bounded source retrieval, MCP tool discovery and MCP search/source
+through Streamable HTTP.
+
+```bash
+docker compose logs -f --tail=100
+docker compose down
+```
+
+### MCP client setup
+
+Point a Streamable HTTP MCP client at `http://127.0.0.1:8766/mcp`.
+The regular stdio MCP interface remains available separately as `fetchcore-mcp`.
+Both interfaces delegate to the same application service; the server never accesses
+Solr directly. No API token, authentication, ACL or remote hosting is provided by
+this optional development deployment.
+
+
+## Run without Docker (Solr is the default backend)
 
 Requires Python 3.11+, Node.js 20+ and Docker for the optional managed Solr example.
 **Search Lab starts with Solr/BM25 lexical retrieval by default**, instead of `local-semantic`.
