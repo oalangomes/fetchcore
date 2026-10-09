@@ -26,7 +26,7 @@ beforeEach(() => {
       return { ok: true, json: async () => ({
         backend: 'local-semantic', status: 'ok', duration_ms: 7, metadata: {},
         results: [{ id: '1', source: 'eligibility.py', source_ref: 'repository://demo/catalog/eligibility.py',
-          knowledge_type: 'code', score: 1.3, content: 'def eligibility_validator(): pass', query_matches: [
+          knowledge_type: 'code', score: 1.3, revision: 'indexed-rev', content: 'def eligibility_validator(): pass', query_matches: [
             { match_type: 'lexical', channels: ['lexical'], matched_values: [request.intent.canonical_query], source_ref: 'x', signal: {} },
           ] }],
         telemetry: { mode: 'lexical', duration_ms: 7, candidates_examined: 2, candidates_returned: 1, returned_chars: 20, stages: [] },
@@ -58,5 +58,23 @@ describe('Search Lab', () => {
     fireEvent.click(screen.getByTestId('run-search'))
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(vi.mocked(globalThis.fetch).mock.calls.filter(call => call[0] === '/api/search')).toHaveLength(0)
+  })
+})
+
+describe('Source revision handling', () => {
+  it('does not pass an unbound indexed revision as an authorized source precondition', async () => {
+    mount()
+    await screen.findByText('demo/catalog')
+    fireEvent.click(screen.getByTestId('run-search'))
+    await screen.findByText('Trecho recuperado')
+    fireEvent.click(screen.getByRole('tab', { name: 'Código-fonte' }))
+    await waitFor(() => {
+      const sourceCall = vi.mocked(globalThis.fetch).mock.calls.find(call => call[0] === '/api/source')
+      expect(sourceCall).toBeDefined()
+      const payload = JSON.parse(String((sourceCall?.[1] as RequestInit).body))
+      expect(payload.revision).toBeUndefined()
+      expect(payload.repository).toBe('demo/catalog')
+    })
+    expect(screen.getByText(/não prova equivalência ao trecho indexado/)).toBeInTheDocument()
   })
 })
