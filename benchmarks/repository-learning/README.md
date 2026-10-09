@@ -6,18 +6,22 @@ The benchmark asks:
 
 > When a fresh agent must learn a repository, does FetchCore-mediated evidence produce durable technical memory with less acquisition/context cost and equal or better factual recall than direct repository exploration?
 
-It separates three layers:
+Protocol v2 separates four observable stages:
 
 ```text
-repository acquisition → durable memory construction → fresh-session recall
-       FetchCore?              ai-memory               deterministic score
+repository acquisition → durable memory construction → ai-memory recall → fresh answer
+       FetchCore?              stored pages          query + read_page    evaluator
 ```
+
+The v1 artifacts remain checked in as historical evidence. V2 changes the recall
+protocol, not FetchCore retrieval: `memory_query` discovers relevant pages and
+`memory_read_page` expands the top ranked pages before evaluation.
 
 **retrieval != learning != authority**
 
 ## Arms
 
-The v1 protocol runs the same study objective and evaluation questions through:
+The protocol runs the same study objective and evaluation questions through:
 
 - `direct`: ordinary repository exploration, no FetchCore retrieval;
 - `fetchcore`: FetchCore `search/get_source` acquisition;
@@ -27,7 +31,11 @@ The external agent wrapper owns tool exposure. Keep model, harness, provider, re
 
 ## ai-memory boundary
 
-`akitaonrails/ai-memory` is an **external** durable-memory system. The study process emits Markdown pages; the runner persists them through ai-memory's public MCP `memory_write_page` tool. For each evaluation question the runner calls `memory_query`; a fresh evaluator receives only those recall payloads.
+`akitaonrails/ai-memory` is an **external** durable-memory system. The study process emits Markdown pages; the runner persists them through ai-memory's public MCP `memory_write_page` tool. For each evaluation question the runner calls `memory_query` for discovery, then reads up to three ranked unique pages in full through `memory_read_page` by exact path. A fresh evaluator receives only that isolated memory-derived context.
+
+The default expansion limit is configurable with `--memory-read-page-limit`.
+It is recorded in the run artifact together with the query limit so memory-context
+cost remains observable rather than hidden.
 
 FetchCore never imports ai-memory and owns no memory/lifecycle semantics.
 
@@ -140,12 +148,18 @@ The direct wrapper must expose only ordinary repository exploration. FetchCore w
 
 A completed run writes per-arm JSON plus `run.json` and a generated `README.md`. Artifacts record frozen repository identity, scenario/prompt fingerprints, FetchCore revision, harness/provider/model identity, ai-memory server identity when advertised, unique memory scope, acquisition metrics, recall payloads, answers and deterministic scores.
 
-The ruler uses question-level required/forbidden regexes hidden from the evaluator:
+The ruler uses the same hidden question-level required/forbidden regexes at three
+distinct stages:
 
-- **FactRecall**: fraction of declared facts recovered by at least one passing question;
-- **FactPrecision**: passing answers / non-empty answers;
-- unsupported/incorrect answer count;
-- per-question required-pattern misses and forbidden-pattern hits.
+- **StoredFactRecall**: facts already present in the durable pages emitted by the study agent;
+- **MemoryRecallCoverage**: facts present in the `memory_query → memory_read_page` context;
+- **AnswerFactRecall / FactPrecision**: facts preserved in the fresh evaluator answer;
+- per-question PASS/FAIL remains available at every stage.
+
+This makes loss attribution explicit: acquisition/learning, memory retrieval and
+fresh answering are no longer collapsed into one number. The deterministic ruler
+is still intentionally lexical and can have phrasing false negatives; that is a
+separate controlled variable from the v2 recall change.
 
 This is a deterministic **learning-memory** ruler, not a FetchCore retrieval metric and not an authority score. Retrievalgate can evaluate retrieval-level regressions separately.
 
