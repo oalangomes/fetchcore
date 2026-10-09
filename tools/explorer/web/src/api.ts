@@ -1,4 +1,4 @@
-import type { ExplorerConfig, SearchPayload, SearchResponse, SourceResult } from './types'
+import type { ExplorerConfig, SearchHit, SearchPayload, SearchResponse, SourceResult } from './types'
 
 export class ApiError extends Error {
   constructor(message: string, readonly category: string, readonly status: number) {
@@ -41,4 +41,16 @@ export function parseIntent(text: string): Record<string, unknown> {
     throw new Error('SearchIntent deve ser um objeto JSON.')
   }
   return value as Record<string, unknown>
+}
+
+/** Build a source request without pretending result provenance authorizes a workspace revision. */
+export function sourcePayloadForHit(hit: SearchHit, repository: string, boundRevision: string | null) {
+  return {
+    source_ref: hit.source_ref,
+    repository,
+    ...(hit.revision && hit.revision === boundRevision ? { revision: hit.revision } : {}),
+    ...(hit.line_start ? { line_start: hit.line_start } : {}),
+    ...(hit.line_end ? { line_end: hit.line_end } : {}),
+    context_lines: 5,
+  }
 }
