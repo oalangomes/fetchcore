@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 
 test('real Solr search → provenance → authorized source read (FetchCore)', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByText('Conectado · local')).toBeVisible()
+  await expect(page.getByText('API conectada')).toBeVisible()
   await expect(page.getByText('solr', { exact: true }).first()).toBeVisible()
   await page.getByLabel('Canonical query').fill('eligibility_validator')
   await page.getByTestId('run-search').click()
