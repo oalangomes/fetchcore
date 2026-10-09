@@ -104,3 +104,10 @@ class AiMemoryClient:
             "memory_query",
             {"workspace": workspace, "project": project, "query": query, "limit": limit},
         )
+
+    def read_page(self, workspace: str, project: str, path: str) -> dict[str, object]:
+        """Read one exact ai-memory wiki page in full after discovery by memory_query."""
+        return self.call_tool(
+            "memory_read_page",
+            {"workspace": workspace, "project": project, "path": path},
+        )
