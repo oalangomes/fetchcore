@@ -1,0 +1,42 @@
+schema_version: 1
+source_run_sha256: 29a1a3f3f852e0283f9a8037055f747f91456941bda4cc2a71198cec56958c35
+cases:
+  - arm: direct
+    question_id: q-canonical-knowledge
+    expected_semantic:
+      stored_memory: true
+      memory_recall: true
+      answer: true
+    rationale: >-
+      The text identifies KnowledgeDocument as the canonical unit and states that
+      vendor indexes are rebuildable projections; only the exact phrase
+      "Canonical Repository Knowledge" is absent.
+  - arm: fetchcore
+    question_id: q-canonical-knowledge
+    expected_semantic:
+      stored_memory: true
+      memory_recall: true
+      answer: true
+    rationale: >-
+      The answer says canonical truth is backend-neutral Repository Knowledge and
+      that search/vector stores are rebuildable projections.
+  - arm: fetchcore_bounded
+    question_id: q-intent-scope
+    expected_semantic:
+      stored_memory: true
+      memory_recall: true
+      answer: true
+    rationale: >-
+      The answer correctly says SearchIntent expresses what the caller means and
+      SearchScope defines where FetchCore may look; the original regex accepts
+      "meaning" but not "means".
+  - arm: fetchcore_bounded
+    question_id: q-serving
+    expected_semantic:
+      stored_memory: true
+      memory_recall: true
+      answer: true
+    rationale: >-
+      The text preserves the MCP-to-application-to-backend-adapter boundary and
+      confines backend protocol details to adapters, without spelling both class
+      names required by the original regex.
