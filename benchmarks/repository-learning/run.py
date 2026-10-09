@@ -36,34 +36,41 @@ def markdown_report(payload: dict[str, object]) -> str:
     lines = [
         "# Repository Learning Benchmark",
         "",
-        f"- Protocol: `{payload['protocol']}`",
-        f"- Scenario: `{payload['scenario_id']}`",
-        f"- Repository: `{payload['repository']['identity']}`",
-        f"- Revision: `{payload['repository']['revision']}`",
+        f"- Protocol: \`{payload['protocol']}\`",
+        f"- Scenario: \`{payload['scenario_id']}\`",
+        f"- Repository: \`{payload['repository']['identity']}\`",
+        f"- Revision: \`{payload['repository']['revision']}\`",
         "",
         (
-            "| Arm | FactRecall | FactPrecision | Questions | Memory pages | Tool calls | "
-            "Returned chars | Wall ms |"
+            "| Arm | StoredFactRecall | MemoryRecallCoverage | AnswerFactRecall | Questions | "
+            "Memory pages | Tool calls | Returned chars | Wall ms |"
         ),
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     arms = payload["arms"]
     assert isinstance(arms, dict)
     for name, raw in arms.items():
         assert isinstance(raw, dict)
-        score = raw["score"]
+        stages = raw["stages"]
         metrics = raw["study"]["metrics"]
-        assert isinstance(score, dict) and isinstance(metrics, dict)
+        assert isinstance(stages, dict) and isinstance(metrics, dict)
+        stored = stages["stored_memory"]
+        recalled = stages["memory_recall"]
+        answer = stages["answer"]
+        assert isinstance(stored, dict)
+        assert isinstance(recalled, dict)
+        assert isinstance(answer, dict)
         lines.append(
             (
-                "| {name} | {recall:.3f} | {precision:.3f} | {correct}/{total} | "
-                "{pages} | {calls} | {chars} | {wall:.1f} |"
+                "| {name} | {stored:.3f} | {recalled:.3f} | {answer:.3f} | "
+                "{correct}/{total} | {pages} | {calls} | {chars} | {wall:.1f} |"
             ).format(
                 name=name,
-                recall=float(score["fact_recall"]),
-                precision=float(score["fact_precision"]),
-                correct=score["questions_correct"],
-                total=score["questions_total"],
+                stored=float(stored["fact_recall"]),
+                recalled=float(recalled["fact_recall"]),
+                answer=float(answer["fact_recall"]),
+                correct=answer["questions_correct"],
+                total=answer["questions_total"],
                 pages=len(raw["study"]["memory_pages"]),
                 calls=metrics["tool_calls"],
                 chars=metrics["returned_chars"],
@@ -73,30 +80,43 @@ def markdown_report(payload: dict[str, object]) -> str:
     lines.extend(
         [
             "",
-            "## Per-question results",
+            "## Per-question stage results",
             "",
-            "| Arm | Question | Result |",
-            "| --- | --- | --- |",
+            "| Arm | Question | Stored | Recalled | Answer |",
+            "| --- | --- | --- | --- | --- |",
         ]
     )
     for name, raw in arms.items():
         assert isinstance(raw, dict)
-        score = raw["score"]
-        assert isinstance(score, dict)
-        rows = score["per_question"]
-        assert isinstance(rows, list)
-        for row in rows:
-            assert isinstance(row, dict)
+        stages = raw["stages"]
+        assert isinstance(stages, dict)
+        stage_rows: dict[str, dict[str, bool]] = {}
+        for stage_name in ("stored_memory", "memory_recall", "answer"):
+            score = stages[stage_name]
+            assert isinstance(score, dict)
+            rows = score["per_question"]
+            assert isinstance(rows, list)
+            for row in rows:
+                assert isinstance(row, dict)
+                question_id = str(row["question_id"])
+                stage_rows.setdefault(question_id, {})[stage_name] = bool(row["passed"])
+        for question_id, results in stage_rows.items():
             lines.append(
-                f"| {name} | {row['question_id']} | "
-                f"{'PASS' if row['passed'] else 'FAIL'} |"
+                "| {name} | {question} | {stored} | {recalled} | {answer} |".format(
+                    name=name,
+                    question=question_id,
+                    stored="PASS" if results.get("stored_memory") else "FAIL",
+                    recalled="PASS" if results.get("memory_recall") else "FAIL",
+                    answer="PASS" if results.get("answer") else "FAIL",
+                )
             )
     lines.extend(
         [
             "",
             (
-                "FactRecall/FactPrecision measure the durable-memory evaluation only. "
-                "They are not retrieval authority scores."
+                "StoredFactRecall measures facts present in the durable pages before ai-memory "
+                "retrieval. MemoryRecallCoverage measures the query→read_page recall context. "
+                "AnswerFactRecall measures the fresh evaluator output. None is an authority score."
             ),
             "",
         ]
@@ -118,6 +138,109 @@ def parse_arm_commands(values: list[str]) -> dict[str, str]:
             raise ProtocolError(f"duplicate study command for arm {arm}")
         result[arm] = command
     return result
+
+
+def _question_ids(scenario: dict[str, object]) -> set[str]:
+    questions = scenario["questions"]
+    assert isinstance(questions, list)
+    return {
+        str(question["id"])
+        for question in questions
+        if isinstance(question, dict)
+    }
+
+
+def score_stored_memory(
+    scenario: dict[str, object], study: dict[str, object]
+) -> dict[str, object]:
+    pages = study["memory_pages"]
+    assert isinstance(pages, list)
+    corpus = "\n\n".join(
+        str(page["body"])
+        for page in pages
+        if isinstance(page, dict) and isinstance(page.get("body"), str)
+    )
+    return score_answers(
+        scenario,
+        {question_id: corpus for question_id in _question_ids(scenario)},
+    )
+
+
+def _memory_hit_paths(query_result: dict[str, object], limit: int) -> list[str]:
+    hits = query_result.get("hits", [])
+    if not isinstance(hits, list):
+        return []
+    paths: list[str] = []
+    seen: set[str] = set()
+    for hit in hits:
+        if not isinstance(hit, dict):
+            continue
+        path = hit.get("path")
+        if not isinstance(path, str) or not path or path in seen:
+            continue
+        seen.add(path)
+        paths.append(path)
+        if len(paths) >= limit:
+            break
+    return paths
+
+
+def expand_memory_recall(
+    memory: AiMemoryClient,
+    *,
+    workspace: str,
+    project: str,
+    query_result: dict[str, object],
+    read_page_limit: int,
+) -> dict[str, object]:
+    expanded_pages = [
+        {
+            "path": path,
+            "page": memory.read_page(workspace, project, path),
+        }
+        for path in _memory_hit_paths(query_result, read_page_limit)
+    ]
+    return {
+        "discovery": query_result,
+        "expanded_pages": expanded_pages,
+    }
+
+
+def score_memory_recall(
+    scenario: dict[str, object], recalled: dict[str, object]
+) -> dict[str, object]:
+    return score_answers(
+        scenario,
+        {
+            question_id: json.dumps(
+                recalled.get(question_id, {}),
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            for question_id in _question_ids(scenario)
+        },
+    )
+
+
+def memory_recall_metrics(recalled: dict[str, object]) -> dict[str, int]:
+    pages_read = 0
+    distinct_paths: set[str] = set()
+    for payload in recalled.values():
+        if not isinstance(payload, dict):
+            continue
+        pages = payload.get("expanded_pages", [])
+        if not isinstance(pages, list):
+            continue
+        pages_read += len(pages)
+        for page in pages:
+            if isinstance(page, dict) and isinstance(page.get("path"), str):
+                distinct_paths.add(str(page["path"]))
+    return {
+        "queries": len(recalled),
+        "full_pages_read": pages_read,
+        "distinct_pages_read": len(distinct_paths),
+        "context_chars": len(json.dumps(recalled, ensure_ascii=False, sort_keys=True)),
+    }
 
 
 def run(args: argparse.Namespace) -> dict[str, object]:
@@ -179,11 +302,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     started_run = time.perf_counter()
     arms_payload: dict[str, object] = {}
     arms_config = _required_mapping(scenario["arms"], "scenario.arms")
-    question_ids = {
-        str(question["id"])
-        for question in scenario["questions"]  # type: ignore[index]
-        if isinstance(question, dict)
-    }
+    question_ids = _question_ids(scenario)
 
     for arm_name in selected:
         arm_started = time.perf_counter()
@@ -226,11 +345,18 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         for raw_question in questions:
             assert isinstance(raw_question, dict)
             question_id = str(raw_question["id"])
-            recalled[question_id] = memory.query(
+            query_result = memory.query(
                 args.memory_workspace,
                 project,
                 str(raw_question["prompt"]),
                 args.memory_query_limit,
+            )
+            recalled[question_id] = expand_memory_recall(
+                memory,
+                workspace=args.memory_workspace,
+                project=project,
+                query_result=query_result,
+                read_page_limit=args.memory_read_page_limit,
             )
 
         eval_prompt = render_evaluation_prompt(
@@ -255,6 +381,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             )
         answers = validate_evaluation_result(raw_eval, question_ids)
         score = score_answers(scenario, answers)
+        stored_score = score_stored_memory(scenario, study)
+        recall_score = score_memory_recall(scenario, recalled)
         arm_payload = {
             "memory_scope": {"workspace": args.memory_workspace, "project": project},
             "tool_policy": arm["tool_policy"],
@@ -263,8 +391,14 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             "study_execution": study_exec,
             "memory_writes": written,
             "memory_recall": recalled,
+            "memory_recall_metrics": memory_recall_metrics(recalled),
             "evaluation": {"answers": answers},
             "evaluation_execution": eval_exec,
+            "stages": {
+                "stored_memory": stored_score,
+                "memory_recall": recall_score,
+                "answer": score,
+            },
             "score": score,
             "duration_ms": round((time.perf_counter() - arm_started) * 1000, 3),
         }
@@ -293,6 +427,9 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             "server_info": server_info,
             "workspace": args.memory_workspace,
             "fresh_server_required": True,
+            "recall_strategy": "memory_query_then_memory_read_page",
+            "query_limit": args.memory_query_limit,
+            "read_page_limit": args.memory_read_page_limit,
         },
         "arms": arms_payload,
         "duration_ms": round((time.perf_counter() - started_run) * 1000, 3),
@@ -320,6 +457,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--memory-auth-token", default=os.getenv("AI_MEMORY_AUTH_TOKEN"))
     parser.add_argument("--memory-workspace", default="fetchcore-rlb")
     parser.add_argument("--memory-query-limit", type=int, default=8)
+    parser.add_argument("--memory-read-page-limit", type=int, default=3)
     parser.add_argument("--timeout-seconds", type=int, default=900)
     parser.add_argument("--harness-id", required=True)
     parser.add_argument("--provider-id", required=True)
@@ -328,6 +466,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.memory_query_limit < 1:
         parser.error("--memory-query-limit must be positive")
+    if args.memory_read_page_limit < 1:
+        parser.error("--memory-read-page-limit must be positive")
     if args.timeout_seconds < 1:
         parser.error("--timeout-seconds must be positive")
     return args
