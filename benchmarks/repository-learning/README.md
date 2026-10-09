@@ -107,6 +107,31 @@ python benchmarks/repository-learning/run.py \
 
 The workspace must be clean and exactly match the scenario revision.
 
+## Controlled v1 → v2 re-evaluation
+
+To isolate the recall fix from study-agent variability, V2 can reuse the durable
+pages already produced by a completed run. This path does **not** call DIRECT or
+FetchCore acquisition again. It writes the recorded pages into fresh ai-memory
+projects, performs `memory_query → memory_read_page`, and starts only the fresh
+evaluator:
+
+```bash
+python benchmarks/repository-learning/reevaluate.py \
+  --source-run benchmarks/repository-learning/.artifacts/repository-learning/codex-20261008-002/run/run.json \
+  --scenario benchmarks/repository-learning/scenarios/fetchcore-self.yaml \
+  --output /tmp/fetchcore-rlb-v2-reeval \
+  --run-id codex-20261008-002-v2 \
+  --harness-id codex \
+  --provider-id <provider> \
+  --model-id <same-model-as-v1> \
+  --evaluate-command '<fresh-evaluator-wrapper>'
+```
+
+Use a fresh/disposable ai-memory server for this command too. The output records
+the source run/protocol and marks every arm with `study_reused=true`. This is
+the preferred first V2 measurement because the intentional changed variable is
+only durable-memory recall.
+
 ## Opt-in end-to-end run
 
 Start ai-memory with a **fresh data directory** and its stateless Streamable HTTP MCP endpoint. One loopback example is:
