@@ -36,10 +36,10 @@ def markdown_report(payload: dict[str, object]) -> str:
     lines = [
         "# Repository Learning Benchmark",
         "",
-        f"- Protocol: \`{payload['protocol']}\`",
-        f"- Scenario: \`{payload['scenario_id']}\`",
-        f"- Repository: \`{payload['repository']['identity']}\`",
-        f"- Revision: \`{payload['repository']['revision']}\`",
+        f"- Protocol: `{payload['protocol']}`",
+        f"- Scenario: `{payload['scenario_id']}`",
+        f"- Repository: `{payload['repository']['identity']}`",
+        f"- Revision: `{payload['repository']['revision']}`",
         "",
         (
             "| Arm | StoredFactRecall | MemoryRecallCoverage | AnswerFactRecall | Questions | "
