@@ -417,3 +417,63 @@ def test_reevaluation_resolves_relative_script_before_temp_cwd(
 
     assert str(script.resolve()) in command
     assert "--flag value" in command
+
+
+def test_checked_in_full_fresh_v2_preserves_protocol_invariants() -> None:
+    artifact_path = (
+        RUNNER.parent
+        / ".artifacts"
+        / "repository-learning"
+        / "codex-20261009-003-v2-fresh"
+        / "run"
+        / "run.json"
+    )
+    artifact = protocol_module.parse_json_output(
+        artifact_path.read_text(encoding="utf-8"), "full fresh V2 artifact"
+    )
+
+    assert artifact["protocol"] == "fetchcore.repository-learning-v2"
+    assert artifact["status"] == "complete"
+    assert artifact.get("mode") is None
+    assert "source_run" not in artifact
+    assert artifact["scenario_id"] == "fetchcore-self-architecture"
+    assert artifact["scenario_sha256"] == (
+        "2753adf17add395ae4977424c537f6aab13449bcc05327beb5130b60b319c302"
+    )
+    assert artifact["repository"] == {
+        "identity": "oalangomes/fetchcore",
+        "revision": "e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c",
+    }
+    memory = artifact["ai_memory"]
+    assert isinstance(memory, dict)
+    assert memory["server_info"] == {"name": "ai-memory", "version": "2.6.2"}
+    assert memory["recall_strategy"] == "memory_query_then_memory_read_page"
+    assert memory["read_page_limit"] == 3
+
+    arms = artifact["arms"]
+    assert isinstance(arms, dict)
+    assert set(arms) == {"direct", "fetchcore", "fetchcore_bounded"}
+    scopes: set[str] = set()
+    for arm in arms.values():
+        assert isinstance(arm, dict)
+        assert arm.get("study_reused") is not True
+        scope = arm["memory_scope"]
+        assert isinstance(scope, dict)
+        scopes.add(str(scope["project"]))
+        stages = arm["stages"]
+        assert isinstance(stages, dict)
+        assert set(stages) == {"stored_memory", "memory_recall", "answer"}
+        metrics = arm["memory_recall_metrics"]
+        assert isinstance(metrics, dict)
+        assert metrics["queries"] == 6
+        assert int(metrics["full_pages_read"]) <= 18
+    assert len(scopes) == 3
+
+    bounded = arms["fetchcore_bounded"]
+    assert isinstance(bounded, dict)
+    study = bounded["study"]
+    assert isinstance(study, dict)
+    metrics = study["metrics"]
+    assert isinstance(metrics, dict)
+    assert int(metrics["tool_calls"]) <= 24
+    assert int(metrics["returned_chars"]) <= 20_000
