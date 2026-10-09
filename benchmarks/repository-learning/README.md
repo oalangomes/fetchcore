@@ -120,11 +120,7 @@ python benchmarks/repository-learning/reevaluate.py \
   --source-run benchmarks/repository-learning/.artifacts/repository-learning/codex-20261008-002/run/run.json \
   --scenario benchmarks/repository-learning/scenarios/fetchcore-self.yaml \
   --output /tmp/fetchcore-rlb-v2-reeval \
-  --run-id codex-20261008-002-v2 \
-  --harness-id codex \
-  --provider-id <provider> \
-  --model-id <same-model-as-v1> \
-  --evaluate-command '<fresh-evaluator-wrapper>'
+  --run-id codex-20261008-002-v2
 ```
 
 Use a fresh/disposable ai-memory server for this command too. The output records
@@ -132,14 +128,35 @@ the source run/protocol and marks every arm with `study_reused=true`. This is
 the preferred first V2 measurement because the intentional changed variable is
 only durable-memory recall.
 
+For Codex source runs, the replay inherits harness id, provider, model and
+repository revision from the source artifact and builds the bundled evaluator
+command with an absolute wrapper path before entering the evaluator's temporary
+working directory. Explicit `--harness-id`, `--provider-id` or `--model-id`
+values are accepted only when they match the source run; mismatches fail closed.
+A custom/non-Codex source harness must provide `--evaluate-command`.
+
 ## Opt-in end-to-end run
 
-Start ai-memory with a **fresh data directory** and its stateless Streamable HTTP MCP endpoint. One loopback example is:
+Start ai-memory with a **fresh data directory** and its stateless Streamable HTTP MCP endpoint.
+
+For the Docker wrapper installation, start the persistent benchmark server
+directly so port 49374 is published to the host:
 
 ```bash
 export AI_MEMORY_DATA_DIR="$(mktemp -d)"
-ai-memory serve --transport http --bind 127.0.0.1:49374
+docker rm -f ai-memory-rlb 2>/dev/null || true
+docker run -d \
+  --name ai-memory-rlb \
+  --rm \
+  -p 127.0.0.1:49374:49374 \
+  -v "$AI_MEMORY_DATA_DIR:/data" \
+  docker.io/akitaonrails/ai-memory:latest
 ```
+
+A native ai-memory binary can instead run `serve --transport http` directly.
+Do not use the Docker CLI wrapper itself as the long-lived server process: its
+loopback listener belongs to the helper container unless the port is explicitly
+published.
 
 In the shell running the benchmark:
 
