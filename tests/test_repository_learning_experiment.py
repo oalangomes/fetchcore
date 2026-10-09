@@ -25,6 +25,14 @@ assert WRAPPER_SPEC is not None and WRAPPER_SPEC.loader is not None
 wrapper_module = importlib.util.module_from_spec(WRAPPER_SPEC)
 WRAPPER_SPEC.loader.exec_module(wrapper_module)
 
+REEVALUATE = RUNNER.parent / "reevaluate.py"
+REEVALUATE_SPEC = importlib.util.spec_from_file_location(
+    "repository_learning_reevaluate", REEVALUATE
+)
+assert REEVALUATE_SPEC is not None and REEVALUATE_SPEC.loader is not None
+reevaluate_module = importlib.util.module_from_spec(REEVALUATE_SPEC)
+REEVALUATE_SPEC.loader.exec_module(reevaluate_module)
+
 import protocol as protocol_module
 
 
@@ -313,3 +321,28 @@ def test_stage_scores_distinguish_stored_recalled_and_answered_facts() -> None:
     assert metrics["full_pages_read"] == 1
     assert metrics["distinct_pages_read"] == 1
     assert metrics["context_chars"] > 0
+
+
+def test_reevaluation_requires_identical_scenario_and_repository() -> None:
+    scenario = minimal_scenario()
+    source = {
+        "status": "complete",
+        "scenario_id": "demo",
+        "scenario_sha256": "scenario-sha",
+        "repository": {"identity": "owner/repo", "revision": "abc"},
+        "arms": {},
+    }
+    reevaluate_module.validate_source_run(
+        source,
+        scenario,
+        scenario_sha256="scenario-sha",
+    )
+
+    mismatched = dict(source)
+    mismatched["repository"] = {"identity": "owner/repo", "revision": "different"}
+    with pytest.raises(module.ProtocolError, match="repository revision"):
+        reevaluate_module.validate_source_run(
+            mismatched,
+            scenario,
+            scenario_sha256="scenario-sha",
+        )
