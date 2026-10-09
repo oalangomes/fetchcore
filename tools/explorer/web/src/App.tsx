@@ -271,7 +271,7 @@ export function App() {
       <div className="nav-inert"><Network size={17}/> Graph Explorer <span className="ml-auto text-[10px]">NEXT</span></div>
       <div className="nav-caption mt-10">AMBIENTE</div>
       <div className="space-y-3 rounded-xl border border-line bg-surface/40 p-4">
-        <div className="flex items-center gap-2 text-xs"><span className={'status-dot ' + (config.isSuccess ? 'bg-accent' : 'bg-amber-400')}/>{config.isSuccess ? 'Conectado · local' : config.isLoading ? 'Conectando...' : 'Indisponível'}</div>
+        <div className="flex items-center gap-2 text-xs"><span className={'status-dot ' + (config.isSuccess ? 'bg-accent' : 'bg-amber-400')}/>{config.isSuccess ? 'API conectada' : config.isLoading ? 'Conectando...' : 'Indisponível'}</div>
         <p className="break-all font-mono text-xs text-white">{config.data?.repository ?? 'repository indisponível'}</p>
         <div className="flex items-center gap-2 text-xs text-muted"><Database size={13}/>{config.data?.backend ?? '—'}</div>
         <div className="flex items-center gap-2 text-xs text-muted"><GitBranch size={13}/>{shorten(config.data?.revision ?? 'working tree', 20)}</div>
