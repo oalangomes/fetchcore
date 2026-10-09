@@ -95,10 +95,15 @@ Example:
 If the variable is absent, the self-dogfood workflow defaults to:
 
 ```json
-["self-hosted","Linux","X64"]
+["self-hosted","Linux","X64","fetchcore"]
 ```
 
-This keeps runner affinity outside FetchCore domain contracts.
+The repository-specific label prevents an unrelated self-hosted runner from
+claiming the job. Runner lifecycle remains an operator concern: on-demand
+runners must be made available before a manual dispatch, while continuous
+post-merge dogfood requires an explicitly configured always-on runner. Pull
+request code is validated on GitHub-hosted runners and is not sent to this
+self-hosted path.
 
 ## Persistence modes
 
@@ -153,7 +158,12 @@ and uploads JSON artifacts for each stage. Writers are serialized per repository
 
 ## FetchCore self-dogfood
 
-`.github/workflows/self-dogfood.yml` runs after pushes to `master` and can also be dispatched manually.
+`.github/workflows/self-dogfood.yml` runs only after the `CI` workflow succeeds
+for `master`, and can also be dispatched manually. A failed or cancelled CI run
+does not enqueue self-dogfood. Only a `push` run originating from the FetchCore
+repository is accepted; pull request and fork revisions cannot reach the
+self-hosted job through this trigger. The workflow indexes the exact successful
+CI `head_sha`, rather than a later moving branch head.
 
 It indexes `oalangomes/fetchcore` into the `fetchcore-self` collection, keeps the Solr state in the `fetchcore-self-solr` Docker volume, and then evaluates the index through the real MCP stdio server.
 

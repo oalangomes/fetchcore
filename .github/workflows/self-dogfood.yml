@@ -1,7 +1,9 @@
 name: FetchCore self dogfood
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches:
       - master
   workflow_dispatch:
@@ -11,13 +13,18 @@ permissions:
 
 jobs:
   self-index:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
     uses: ./.github/workflows/repository-index.yml
     with:
-      runner_labels_json: ${{ vars.FETCHCORE_INDEX_RUNNER_LABELS_JSON || '["self-hosted","Linux","X64"]' }}
+      runner_labels_json: ${{ vars.FETCHCORE_INDEX_RUNNER_LABELS_JSON || '["self-hosted","Linux","X64","fetchcore"]' }}
       target_repository: oalangomes/fetchcore
-      target_ref: ${{ github.sha }}
+      target_ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       target_branch: master
-      fetchcore_ref: ${{ github.sha }}
+      fetchcore_ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       collection: fetchcore-self
       managed_solr: true
       solr_volume: fetchcore-self-solr

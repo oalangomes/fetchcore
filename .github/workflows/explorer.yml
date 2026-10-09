@@ -18,6 +18,16 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Pull pinned Solr image
+        shell: bash
+        env:
+          IMAGE_OVERRIDE: ${{ vars.FETCHCORE_CI_SOLR_IMAGE }}
+        run: |
+          set -euo pipefail
+          source infra/images.lock
+          image="${IMAGE_OVERRIDE:-$FETCHCORE_SOLR_IMAGE}"
+          scripts/ci/docker-pull.sh "$image"
+          echo "FETCHCORE_SOLR_IMAGE=$image" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -36,7 +46,7 @@ jobs:
           docker run -d --name fetchcore-explorer-solr \
             -p 127.0.0.1:8983:8983 \
             -v "$GITHUB_WORKSPACE/infra/solr/configset:/fetchcore-configset:ro" \
-            solr:9.10.1 solr-precreate fetchcore-lab /fetchcore-configset
+            "$FETCHCORE_SOLR_IMAGE" solr-precreate fetchcore-lab /fetchcore-configset
       - name: Wait for Solr readiness
         run: |
           python - <<'PY'
@@ -94,6 +104,20 @@ jobs:
       FETCHCORE_SOLR_COLLECTION: fetchcore-lab
     steps:
       - uses: actions/checkout@v4
+      - name: Pull pinned stack images
+        shell: bash
+        env:
+          PYTHON_IMAGE_OVERRIDE: ${{ vars.FETCHCORE_CI_PYTHON_IMAGE }}
+          SOLR_IMAGE_OVERRIDE: ${{ vars.FETCHCORE_CI_SOLR_IMAGE }}
+        run: |
+          set -euo pipefail
+          source infra/images.lock
+          python_image="${PYTHON_IMAGE_OVERRIDE:-$FETCHCORE_PYTHON_IMAGE}"
+          solr_image="${SOLR_IMAGE_OVERRIDE:-$FETCHCORE_SOLR_IMAGE}"
+          scripts/ci/docker-pull.sh "$python_image"
+          scripts/ci/docker-pull.sh "$solr_image"
+          echo "FETCHCORE_PYTHON_IMAGE=$python_image" >> "$GITHUB_ENV"
+          echo "FETCHCORE_SOLR_IMAGE=$solr_image" >> "$GITHUB_ENV"
       - name: Validate root, legacy and standalone Compose contracts
         run: |
           docker compose config --quiet

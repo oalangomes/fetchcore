@@ -42,7 +42,9 @@ docs-check:
 check: lint typecheck test build docs-check
 
 docker-build:
-	$(DOCKER) build --tag $(IMAGE) .
+	@set -a; . ./infra/images.lock; set +a; \
+	DOCKER_BIN="$(DOCKER)" scripts/ci/docker-pull.sh "$$FETCHCORE_PYTHON_IMAGE"; \
+	$(DOCKER) build --build-arg PYTHON_IMAGE="$$FETCHCORE_PYTHON_IMAGE" --tag $(IMAGE) .
 
 docker-smoke: docker-build
 	$(DOCKER) run --rm --entrypoint sh $(IMAGE) -c 'test "$$(id -u)" -ne 0 && command -v fetchcore-mcp >/dev/null && python -c "import fetchcore; import importlib.metadata; assert importlib.metadata.version(\"fetchcore\")"'
