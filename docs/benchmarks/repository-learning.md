@@ -71,3 +71,9 @@ v2: memory_query → memory_read_page(top ranked pages) → evaluator
 Scorer/rubric changes and memory-page-granularity changes remain separate future
 experiments so a better score cannot be attributed to multiple simultaneous
 variables.
+
+The frozen empirical result and its permitted interpretation are recorded in the
+[V1 to V2 controlled conclusion](repository-learning-v1-v2-conclusion.md). The
+[artifact index](../../benchmarks/repository-learning/.artifacts/repository-learning/INDEX.md)
+identifies the canonical baseline, controlled replay, reproduction, and invalid
+historical attempt.
