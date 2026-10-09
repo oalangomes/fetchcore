@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getConfig, parseIntent, search, ApiError } from './api'
+import { getConfig, parseIntent, search, ApiError, sourcePayloadForHit } from './api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -26,5 +26,23 @@ describe('HTTP boundary contract', () => {
     }))
     await expect(getConfig()).rejects.toMatchObject({ category: 'unauthorized_repository', status: 403 })
     expect(new ApiError('x', 'y', 422)).toBeInstanceOf(Error)
+  })
+})
+
+describe('authorized source request', () => {
+  const hit = {
+    id: 'one', source: 'a.py', source_ref: 'repository://demo/catalog/a.py',
+    knowledge_type: 'code', content: 'example', score: 1,
+    revision: 'old-indexed-revision', line_start: 5, line_end: 10,
+  }
+  it('omits an indexed revision when the materialized binding is not the same', () => {
+    expect(sourcePayloadForHit(hit, 'demo/catalog', null)).toEqual({
+      source_ref: hit.source_ref, repository: 'demo/catalog',
+      line_start: 5, line_end: 10, context_lines: 5,
+    })
+    expect(sourcePayloadForHit(hit, 'demo/catalog', 'different-revision')).not.toHaveProperty('revision')
+  })
+  it('preserves exact revision precondition only for a matching authorized binding', () => {
+    expect(sourcePayloadForHit(hit, 'demo/catalog', 'old-indexed-revision').revision).toBe('old-indexed-revision')
   })
 })
