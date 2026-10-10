@@ -305,7 +305,7 @@ describe('Retrieval Comparison Lab', () => {
     expect(panel).toHaveTextContent('Corpus/repository revision não comprovadamente idênticos')
     expect(panel).toHaveTextContent('Tempo total')
     expect(panel).toHaveTextContent('7 ms')
-    expect(panel).toHaveTextContent('não informado')
+    expect(panel).toHaveTextContent('não medido')
     expect(screen.getByLabelText('Diferenças dos candidatos')).toBeInTheDocument()
     const calls = vi.mocked(globalThis.fetch).mock.calls.filter(call => call[0] === '/api/search')
     expect(calls).toHaveLength(2)
