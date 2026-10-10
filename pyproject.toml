@@ -62,5 +62,6 @@ relative_files = true
 source = ["fetchcore"]
 
 [tool.coverage.report]
-fail_under = 70
+fail_under = 48
+precision = 2
 show_missing = true

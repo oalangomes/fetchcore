@@ -30,7 +30,7 @@ typecheck:
 
 test:
 	$(PYTHON) -m coverage run -m pytest -q
-	$(PYTHON) -m coverage report --fail-under=0
+	$(PYTHON) -m coverage report
 
 build:
 	$(PYTHON) -m build
