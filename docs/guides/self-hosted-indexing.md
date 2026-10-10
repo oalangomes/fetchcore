@@ -180,8 +180,9 @@ That path selects a free loopback port, creates a uniquely named ephemeral
 container from the digest-pinned Solr image, and records it as owned by the run.
 Cleanup removes only that exact owned container. It never deletes a pre-existing
 container or volume. `managed_solr: true` remains as a deprecated compatibility
-alias for this opt-in policy; `solr_port` and `solr_volume` are deprecated because
-fixed ports and shared-volume ownership are unsafe.
+alias for this opt-in policy. Nonempty `solr_port` and `solr_volume` inputs fail
+explicitly: configure `solr_url` for persistent service ownership. Fixed ports
+and shared-volume ownership are unsupported.
 
 ## Isolating a second repository
 
@@ -281,7 +282,9 @@ CI `head_sha`, rather than a later moving branch head.
 It indexes `oalangomes/fetchcore` into the dedicated
 `fetchcore-self-dogfood` core/collection, reuses the configured Solr service, and
 then evaluates the index through the real MCP stdio server. The normal wrapper
-requests `sync`; initialization remains a separate explicit `rebuild` dispatch.
+requests `sync` with `create_if_missing: false`; initialization remains a separate
+explicit `create_if_missing: true` and `index_lifecycle: rebuild` dispatch. If the
+dedicated resource is absent, the normal run fails with `resource_missing`.
 
 The flow is:
 

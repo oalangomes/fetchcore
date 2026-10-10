@@ -28,7 +28,7 @@ jobs:
       solr_url: http://127.0.0.1:8983/solr
       solr_deployment_mode: standalone
       collection: fetchcore-self-dogfood
-      create_if_missing: true
+      create_if_missing: false
       solr_provision_mode: reuse_only
       index_lifecycle: sync
       evaluate: true

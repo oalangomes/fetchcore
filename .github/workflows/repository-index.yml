@@ -270,11 +270,21 @@ jobs:
           INDEX_LIFECYCLE: ${{ inputs.index_lifecycle }}
           EVALUATION_MODES_JSON: ${{ inputs.evaluation_modes_json }}
           TARGET_REPOSITORY: ${{ inputs.target_repository || github.repository }}
+          SOLR_PORT: ${{ inputs.solr_port }}
+          SOLR_VOLUME: ${{ inputs.solr_volume }}
         run: |
           set -euo pipefail
           case "$DEPLOYMENT_MODE" in auto|standalone|solrcloud) ;; *) echo "invalid solr_deployment_mode" >&2; exit 2;; esac
           case "$PROVISION_MODE" in reuse_only|provision_if_missing) ;; *) echo "invalid solr_provision_mode" >&2; exit 2;; esac
           case "$INDEX_LIFECYCLE" in plan|sync|rebuild) ;; *) echo "invalid index_lifecycle" >&2; exit 2;; esac
+          if [ -n "$SOLR_PORT" ]; then
+            echo "solr_port is deprecated and no longer controls owned provisioning; configure solr_url for a persistent/external service" >&2
+            exit 2
+          fi
+          if [ -n "$SOLR_VOLUME" ]; then
+            echo "solr_volume is deprecated and is no longer used; persistent state must belong to the explicitly configured external Solr service" >&2
+            exit 2
+          fi
           python - <<'PY'
           import json
           import os

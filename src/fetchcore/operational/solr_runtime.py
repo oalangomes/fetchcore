@@ -182,6 +182,11 @@ class SubprocessDockerRunner:
         except (OSError, subprocess.SubprocessError) as exc:
             raise SolrRuntimeError("provisioning_failed", "Docker provisioning failed") from exc
         if completed.returncode != 0:
+            if (
+                tuple(arguments[:2]) == ("rm", "-f")
+                and "No such container" in completed.stderr
+            ):
+                return
             raise SolrRuntimeError("provisioning_failed", "Docker provisioning failed")
 
 
@@ -579,6 +584,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    prepared_state: SolrRuntimeState | None = None
     try:
         if args.command == "cleanup":
             state = json.loads(args.state.read_text(encoding="utf-8"))
@@ -598,20 +604,33 @@ def main(argv: Sequence[str] | None = None) -> int:
             configset_dir=args.configset_dir,
             owner_token=args.owner_token,
         )
-        state = prepare_solr_runtime(config)
+        prepared_state = prepare_solr_runtime(config)
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
         args.output_json.write_text(
-            json.dumps(state.to_mapping(), sort_keys=True, indent=2) + "\n", encoding="utf-8",
+            json.dumps(prepared_state.to_mapping(), sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
         )
-        _write_env(args.output_env, state)
-        print(json.dumps(state.to_mapping(), sort_keys=True))
+        _write_env(args.output_env, prepared_state)
+        print(json.dumps(prepared_state.to_mapping(), sort_keys=True))
         return 0
     except (OSError, ValueError, json.JSONDecodeError, SolrRuntimeError) as exc:
         category = getattr(exc, "category", "solr_runtime_failure")
-        print(json.dumps({
+        failure: dict[str, object] = {
             "status": "failed",
             "error": {"category": category, "message": str(exc)},
-        }, sort_keys=True))
+        }
+        if prepared_state is not None and prepared_state.owned_by_run:
+            try:
+                cleanup_solr_runtime(prepared_state.to_mapping())
+            except Exception as cleanup_exc:  # noqa: BLE001 - preserve both failures
+                failure["cleanup_error"] = {
+                    "category": getattr(cleanup_exc, "category", "cleanup_failed"),
+                    "message": (
+                        str(cleanup_exc) if isinstance(cleanup_exc, SolrRuntimeError)
+                        else "Owned Solr cleanup failed"
+                    ),
+                }
+        print(json.dumps(failure, sort_keys=True))
         return 1
 
 

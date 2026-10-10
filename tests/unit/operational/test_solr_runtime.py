@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 from collections.abc import Mapping, Sequence
 from email.message import Message
 from pathlib import Path
@@ -187,6 +188,23 @@ def test_cleanup_never_touches_reused_or_mismatched_resources() -> None:
     assert docker.calls == []
 
 
+def test_exact_owned_cleanup_is_idempotent_when_container_is_already_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def missing(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args[0], 1, "", "Error response from daemon: No such container: fetchcore-solr-123-1",
+        )
+
+    monkeypatch.setattr(solr_runtime.subprocess, "run", missing)
+    state = {
+        "instance": "provisioned", "owned_by_run": True,
+        "owner_token": "123-1", "container": "fetchcore-solr-123-1",
+    }
+    assert cleanup_solr_runtime(state) is True
+    assert cleanup_solr_runtime(state) is True
+
+
 def test_missing_resource_requires_explicit_creation(tmp_path: Path) -> None:
     solr = FakeSolr()
     with pytest.raises(SolrRuntimeError) as failure:
@@ -337,3 +355,120 @@ def test_cli_failure_is_structured_and_redacted(tmp_path: Path, capsys: pytest.C
     assert result == 1
     assert output["error"]["category"] == "invalid_configuration"
     assert "secret" not in json.dumps(output)
+
+
+def _owned_prepare_args(tmp_path: Path) -> list[str]:
+    return [
+        "prepare", "--solr-url", "http://127.0.0.1:8983/solr",
+        "--resource", "fetchcore-self-dogfood", "--repository", "oalangomes/fetchcore",
+        "--create-if-missing", "--provision-mode", "provision_if_missing",
+        "--solr-image", IMAGE, "--configset-dir", str(tmp_path),
+        "--owner-token", "123-1", "--output-json", str(tmp_path / "state.json"),
+        "--output-env", str(tmp_path / "state.env"),
+    ]
+
+
+def test_post_provision_output_failure_removes_exact_owned_container(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    docker = FakeDocker()
+    solr = FakeSolr(resources={"fetchcore-self-dogfood"}, unavailable_calls=1)
+    monkeypatch.setattr(solr_runtime, "SubprocessDockerRunner", lambda: docker)
+    monkeypatch.setattr(solr_runtime, "UrllibJsonClient", lambda: solr)
+    monkeypatch.setattr(solr_runtime, "_free_loopback_port", lambda: 49123)
+    original_write = Path.write_text
+
+    def fail_env_write(path: Path, data: str, *, encoding: str) -> int:
+        if path == tmp_path / "state.env":
+            raise OSError("state output unavailable")
+        return original_write(path, data, encoding=encoding)
+
+    monkeypatch.setattr(Path, "write_text", fail_env_write)
+    result = solr_runtime.main(_owned_prepare_args(tmp_path))
+
+    assert result == 1
+    assert docker.calls[0][:4] == ("run", "-d", "--name", "fetchcore-solr-123-1")
+    assert docker.calls[-1] == ("rm", "-f", "fetchcore-solr-123-1")
+    output = json.loads(capsys.readouterr().out)
+    assert output["error"]["message"] == "state output unavailable"
+    assert "cleanup_error" not in output
+
+
+def test_reused_runtime_output_failure_does_not_run_docker_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    docker = FakeDocker(forbidden=True)
+    solr = FakeSolr(resources={"fetchcore-self-dogfood"})
+    monkeypatch.setattr(solr_runtime, "SubprocessDockerRunner", lambda: docker)
+    monkeypatch.setattr(solr_runtime, "UrllibJsonClient", lambda: solr)
+    original_write = Path.write_text
+
+    def fail_env_write(path: Path, data: str, *, encoding: str) -> int:
+        if path == tmp_path / "state.env":
+            raise OSError("state output unavailable")
+        return original_write(path, data, encoding=encoding)
+
+    monkeypatch.setattr(Path, "write_text", fail_env_write)
+    args = _owned_prepare_args(tmp_path)
+    args[args.index("provision_if_missing")] = "reuse_only"
+    result = solr_runtime.main(args)
+
+    assert result == 1
+    assert docker.calls == []
+    assert json.loads(capsys.readouterr().out)["error"]["message"] == "state output unavailable"
+
+
+def test_cleanup_failure_reports_original_and_cleanup_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    class FailingCleanupDocker(FakeDocker):
+        def run(self, arguments: Sequence[str]) -> None:
+            super().run(arguments)
+            if arguments[:2] == ("rm", "-f"):
+                raise SolrRuntimeError("provisioning_failed", "Exact owned cleanup failed")
+
+    docker = FailingCleanupDocker()
+    solr = FakeSolr(resources={"fetchcore-self-dogfood"}, unavailable_calls=1)
+    monkeypatch.setattr(solr_runtime, "SubprocessDockerRunner", lambda: docker)
+    monkeypatch.setattr(solr_runtime, "UrllibJsonClient", lambda: solr)
+    monkeypatch.setattr(solr_runtime, "_free_loopback_port", lambda: 49123)
+    original_write = Path.write_text
+
+    def fail_env_write(path: Path, data: str, *, encoding: str) -> int:
+        if path == tmp_path / "state.env":
+            raise OSError("state output unavailable")
+        return original_write(path, data, encoding=encoding)
+
+    monkeypatch.setattr(Path, "write_text", fail_env_write)
+    result = solr_runtime.main(_owned_prepare_args(tmp_path))
+
+    assert result == 1
+    output = json.loads(capsys.readouterr().out)
+    assert output["error"]["message"] == "state output unavailable"
+    assert output["cleanup_error"]["message"] == "Exact owned cleanup failed"
+    assert docker.calls[-1] == ("rm", "-f", "fetchcore-solr-123-1")
+
+
+def test_cleanup_command_failure_does_not_trigger_prepare_compensation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    class FailingCleanupDocker(FakeDocker):
+        def run(self, arguments: Sequence[str]) -> None:
+            super().run(arguments)
+            raise SolrRuntimeError("provisioning_failed", "Exact owned cleanup failed")
+
+    docker = FailingCleanupDocker()
+    monkeypatch.setattr(solr_runtime, "SubprocessDockerRunner", lambda: docker)
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps({
+        "instance": "provisioned", "owned_by_run": True,
+        "owner_token": "123-1", "container": "fetchcore-solr-123-1",
+    }), encoding="utf-8")
+
+    result = solr_runtime.main(["cleanup", "--state", str(state_path)])
+
+    assert result == 1
+    assert docker.calls == [("rm", "-f", "fetchcore-solr-123-1")]
+    output = json.loads(capsys.readouterr().out)
+    assert output["error"]["message"] == "Exact owned cleanup failed"
+    assert "cleanup_error" not in output
