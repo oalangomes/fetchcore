@@ -204,3 +204,52 @@ def test_cli_readiness_exit_contract(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     assert failed.exit_code == 1, failed.output
     assert '"ready": false' in failed.output
     assert '"category": "unavailable"' in failed.output
+
+
+@pytest.mark.parametrize(
+    ("identity_matches", "vector_size", "expected"),
+    [
+        (False, 768, "embedding_identity_changed"),
+        (True, 8, "vector_dimensions_mismatch"),
+    ],
+)
+def test_solr_dense_snapshot_identity_and_live_dimensions_fail_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    identity_matches: bool, vector_size: int, expected: str,
+) -> None:
+    from fetchcore.application import indexing, index_operations, runtime_inspection
+    import fetchcore.adapters.retrieval.solr.index_contract as contract
+    from fetchcore.application.composition import EmbeddingProviderRegistry
+
+    class StubProvider:
+        provider_id = "ollama"
+        model_id = "embeddinggemma"
+        def embed(self, texts: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
+            assert texts == ("fetchcore readiness",)
+            return (tuple(0.1 for _ in range(vector_size)),)
+
+    monkeypatch.setattr(
+        EmbeddingProviderRegistry, "create", lambda self, config, **kwargs: StubProvider(),
+    )
+    monkeypatch.setattr(
+        runtime_inspection.RuntimeInspectionService, "doctor",
+        lambda self: _doctor(embedding_provider=("ok", None)),
+    )
+    runtime = SimpleNamespace(indexer=object(), fingerprint="fp1")
+    fake = FakeStore(matches=identity_matches)
+    monkeypatch.setattr(
+        indexing, "build_index_context",
+        lambda **kw: SimpleNamespace(store=fake, runtime=runtime),
+    )
+    monkeypatch.setattr(contract, "bind_indexing_contract_store", lambda store, indexer: fake)
+    monkeypatch.setattr(index_operations, "repository_index_status", lambda store, runtime: {"state": "ready"})
+    report = inspect_readiness(RuntimeInspectionService(FetchCoreRuntimeConfig(
+        backend="solr", workspace=tmp_path, repository="demo/repo", revision="abc",
+        retrieval=RetrievalConfig.from_mapping({"dense": {"enabled": True}}),
+    )))
+    assert report.mode == "dense"
+    assert report.checks["snapshot"].state == "ready"
+    assert report.checks["currentness"].state == "ready"
+    assert report.checks["embedding"].state == "incompatible"
+    assert report.checks["embedding"].category == expected
+    assert not report.ready
