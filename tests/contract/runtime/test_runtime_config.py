@@ -284,17 +284,44 @@ def test_provider_registry_resolves_and_rejects_unknown_or_mismatch() -> None:
 def test_injected_factories_are_used() -> None:
     class FixtureProvider:
         provider_id = "fixture"
-        model_id = "fixture-model"
+
+        def __init__(self, model: str) -> None:
+            self.model_id = model
 
         def embed(self, texts: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
             return tuple((1.0,) for _ in texts)
 
     providers = EmbeddingProviderRegistry(
-        factories={"fixture": lambda embedding, settings: FixtureProvider()}
+        factories={"fixture": lambda embedding, settings: FixtureProvider(embedding.model)}
     )
     assert providers.create(
         EmbeddingConfig(provider="fixture"), backend_id="solr", backend_name="Solr"
     ).provider_id == "fixture"
+
+
+def test_provider_registry_rejects_model_identity_mismatch() -> None:
+    class WrongModelProvider:
+        provider_id = "fixture"
+        model_id = "different-model"
+
+        def embed(self, texts: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
+            return tuple((1.0,) for _ in texts)
+
+    providers = EmbeddingProviderRegistry(
+        factories={"fixture": lambda embedding, settings: WrongModelProvider()}
+    )
+    with pytest.raises(KnowledgeSearchError) as captured:
+        providers.create(
+            EmbeddingConfig(provider="fixture", model="expected-model"),
+            backend_id="solr",
+            backend_name="Solr",
+        )
+
+    assert captured.value.category == "schema_mismatch"
+    assert captured.value.metadata == {
+        "requested_model": "expected-model",
+        "actual_model": "different-model",
+    }
 
 
 def test_backend_registry_custom_factory_and_unknown() -> None:

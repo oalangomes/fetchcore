@@ -40,6 +40,17 @@ def build_evidence(
     plan = _result(plan_path)
     status = _result(status_path)
     execution = _result(execution_path) if execution_path is not None else None
+    execution_details = (
+        execution.get("execution") if isinstance(execution, dict) else None
+    )
+    if not isinstance(execution_details, dict):
+        execution_details = {}
+    execution_snapshot = execution_details.get("snapshot")
+    if not isinstance(execution_snapshot, dict):
+        execution_snapshot = {}
+    execution_telemetry = execution_details.get("telemetry")
+    if not isinstance(execution_telemetry, dict):
+        execution_telemetry = {}
     executed = "plan"
     if execution is not None:
         mode = execution.get("mode")
@@ -64,15 +75,26 @@ def build_evidence(
             "indexed_revision": status.get("indexed_revision"),
             "currentness": status.get("currentness"),
             "reason": status.get("reason"),
+            "corpus_checksum": execution_snapshot.get("corpus_checksum"),
+            "projection_version": execution_snapshot.get("projection_version"),
+            "embedding_provider": execution_snapshot.get("embedding_provider"),
+            "embedding_model": execution_snapshot.get("embedding_model"),
+            "vector_dimensions": execution_snapshot.get("vector_dimensions"),
+            "serializer_mode": execution_snapshot.get("serializer_mode"),
+            "serializer_version": execution_snapshot.get("serializer_version"),
+            "serializer_fingerprint": execution_snapshot.get("serializer_fingerprint"),
+            "projection_fingerprint": execution_snapshot.get("projection_fingerprint"),
         },
         "index_lifecycle": {
             "requested": lifecycle,
             "planned": plan.get("mode"),
             "executed": executed,
+            "telemetry": execution_telemetry,
         },
         "evaluation": {
             "modes": evaluation_modes,
         },
+        "embedding_probe": bootstrap.get("embedding_probe"),
     }
 
 

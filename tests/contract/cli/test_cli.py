@@ -7,6 +7,7 @@ from click.testing import CliRunner
 
 from fetchcore import cli
 from fetchcore.application import indexing
+from fetchcore.retrieval.config import RetrievalConfig
 
 
 class _Runtime:
@@ -54,6 +55,53 @@ def test_index_bootstrap_validates_explicit_schema(
     payload = json.loads(result.output)
     assert payload["operation"] == "bootstrap"
     assert payload["result"]["validated"] is True
+
+
+def test_index_bootstrap_resolves_shared_vector_runtime_config(
+    tmp_path: Path,
+    monkeypatch: object,
+) -> None:
+    config = tmp_path / "runtime.yaml"
+    config.write_text(
+        "version: 1\nruntime:\n  backend: solr\n"
+        "retrieval:\n  dense:\n    enabled: true\n"
+        "    embedding:\n      provider: ollama\n"
+        "      model: embeddinggemma\n      dimensions: 768\n"
+        "backends:\n  solr:\n    url: http://solr:8983/solr\n"
+        "    collection: vector-ready\n"
+        "embedding:\n  ollama:\n    url: http://ollama:11434\n",
+        encoding="utf-8",
+    )
+    observed: dict[str, object] = {}
+
+    def build(**values: object) -> cli._IndexCommandContext:
+        observed.update(values)
+        return _context(tmp_path)
+
+    monkeypatch.setattr(cli, "_build_index_context", build)  # type: ignore[attr-defined]
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "index",
+            "--config",
+            str(config),
+            "--workspace",
+            str(tmp_path),
+            "--repository",
+            "oalangomes/fetchcore",
+            "bootstrap",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    retrieval = observed["retrieval"]
+    assert isinstance(retrieval, RetrievalConfig)
+    assert retrieval.mode == "dense"
+    assert retrieval.dense.embedding.dimensions == 768
+    assert observed["backend_settings"] == {
+        "url": "http://solr:8983/solr",
+        "collection": "vector-ready",
+    }
 
 
 def test_index_status_emits_machine_readable_json(

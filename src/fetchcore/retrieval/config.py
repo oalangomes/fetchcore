@@ -37,6 +37,7 @@ class EmbeddingConfig:
     model: str = "embeddinggemma"
     timeout_seconds: float | None = None
     request_batch_size: int | None = None
+    dimensions: int | None = None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object] | None) -> EmbeddingConfig:
@@ -48,6 +49,10 @@ class EmbeddingConfig:
         model = _string_value(
             data.get("model", cls.model), "retrieval.dense.embedding.model"
         ).strip()
+        dimensions = _optional_positive_int(
+            data.get("dimensions"),
+            "retrieval.dense.embedding.dimensions",
+        )
         timeout_seconds = _optional_positive_float(
             data.get("timeout_seconds"),
             "retrieval.dense.embedding.timeout_seconds",
@@ -67,6 +72,7 @@ class EmbeddingConfig:
         return cls(
             provider=provider,
             model=model,
+            dimensions=dimensions,
             timeout_seconds=timeout_seconds,
             request_batch_size=request_batch_size,
         )
@@ -77,6 +83,8 @@ class EmbeddingConfig:
             "provider": self.provider,
             "model": self.model,
         }
+        if self.dimensions is not None:
+            result["dimensions"] = self.dimensions
         if self.timeout_seconds is not None:
             result["timeout_seconds"] = self.timeout_seconds
         if self.request_batch_size is not None:

@@ -174,7 +174,9 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     assert repository_index.count("fetchcore index \\") == 5
     assert 'sync "$REPOSITORY" --json' in repository_index
     assert 'rebuild "$REPOSITORY" --json' in repository_index
-    assert "unavailable until #130" in repository_index
+    assert 'set(modes) - {"lexical", "dense", "hybrid"}' in repository_index
+    assert "FETCHCORE_RETRIEVAL=" in repository_index
+    assert "fetchcore readiness --json" in repository_index
 
 
 @pytest.mark.parametrize(
@@ -201,6 +203,10 @@ def test_workflow_rejects_deprecated_inputs_with_actionable_error(
         "INDEX_LIFECYCLE": "sync",
         "EVALUATION_MODES_JSON": '["lexical"]',
         "TARGET_REPOSITORY": "oalangomes/fetchcore",
+        "EMBEDDING_PROVIDER": "ollama",
+        "EMBEDDING_MODEL": "embeddinggemma",
+        "EMBEDDING_DIMENSIONS": "768",
+        "OLLAMA_URL": "http://127.0.0.1:11434",
         "SOLR_PORT": "",
         "SOLR_VOLUME": "",
     }
@@ -215,3 +221,38 @@ def test_workflow_rejects_deprecated_inputs_with_actionable_error(
     )
     assert rejected.returncode == 2
     assert message in rejected.stderr
+
+
+def test_workflow_accepts_explicit_vector_modes_and_rejects_schema_dimension() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "repository-index.yml").read_text(encoding="utf-8")
+    )
+    policy = next(
+        step["run"] for step in workflow["jobs"]["index"]["steps"]
+        if step.get("name") == "Validate workflow policy"
+    )
+    env = {
+        **os.environ,
+        "DEPLOYMENT_MODE": "standalone",
+        "PROVISION_MODE": "reuse_only",
+        "INDEX_LIFECYCLE": "rebuild",
+        "EVALUATION_MODES_JSON": '["lexical","dense","hybrid"]',
+        "TARGET_REPOSITORY": "oalangomes/fetchcore",
+        "EMBEDDING_PROVIDER": "ollama",
+        "EMBEDDING_MODEL": "embeddinggemma",
+        "EMBEDDING_DIMENSIONS": "768",
+        "OLLAMA_URL": "http://127.0.0.1:11434",
+        "SOLR_PORT": "",
+        "SOLR_VOLUME": "",
+    }
+    accepted = subprocess.run(
+        ["bash", "-c", policy], env=env, capture_output=True, text=True, check=False,
+    )
+    assert accepted.returncode == 0, accepted.stderr
+
+    env["EMBEDDING_DIMENSIONS"] = "16"
+    rejected = subprocess.run(
+        ["bash", "-c", policy], env=env, capture_output=True, text=True, check=False,
+    )
+    assert rejected.returncode != 0
+    assert "must be 768" in rejected.stderr

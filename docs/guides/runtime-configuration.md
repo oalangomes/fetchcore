@@ -18,6 +18,7 @@ retrieval:
     embedding:
       provider: ollama
       model: embeddinggemma
+      dimensions: 768
       timeout_seconds: 60
       request_batch_size: 32
 backends:
@@ -66,8 +67,8 @@ Simple runtime environment overrides include `FETCHCORE_BACKEND`,
 backend settings. Keep secrets out of checked-in YAML; inject the Qdrant API key
 through ENV or explicit caller values.
 
-`EmbeddingConfig` (`retrieval.dense.embedding`) owns provider, model, timeout,
-and request batch. `embedding.ollama` owns only the Ollama URL. The two Ollama
+`EmbeddingConfig` (`retrieval.dense.embedding`) owns provider, model, expected
+dimensions, timeout, and request batch. `embedding.ollama` owns only the Ollama URL. The two Ollama
 ENV execution overrides are translated into `EmbeddingConfig` before
 composition, following the same source precedence. Qdrant's backend timeout
 controls only Qdrant transport; it does not override the embedding timeout.
@@ -93,8 +94,10 @@ that origin. Secret values such as Qdrant API keys are masked. An optional
 `--config <path>` selects the operator file explicitly; no `.fetchcore/*`
 repository policy file is searched or treated as runtime configuration.
 
-The repository-scoped CLI `search` and `source` commands use this same resolved
-runtime boundary for backend and retrieval settings. Repository identity and
+The repository-scoped CLI `search`, `source`, and `index` commands use this same
+resolved runtime boundary for backend, retrieval, and embedding settings. Pass
+`fetchcore index --config /absolute/path/config.yaml ...` or use the canonical
+runtime environment variables. Repository identity and
 source workspace instead come from the canonical repository registry; a
 conflicting configured repository or revision fails rather than silently
 selecting another binding. These commands never trigger indexing or refresh.

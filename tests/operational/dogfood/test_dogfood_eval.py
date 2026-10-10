@@ -76,3 +76,9 @@ def test_mcp_child_receives_only_required_loader_environment(monkeypatch) -> Non
     monkeypatch.setenv("GITHUB_TOKEN", "not-forwarded")
 
     assert dogfood._loader_environment() == {"LD_LIBRARY_PATH": "/runtime/python/lib"}
+
+
+def test_percentiles_are_observed_and_missing_values_remain_absent() -> None:
+    assert dogfood._percentile([], 95) is None
+    assert dogfood._percentile([10, 20, 30, 40], 50) == 25.0
+    assert dogfood._percentile([10, 20, 30, 40], 95) == 40.0

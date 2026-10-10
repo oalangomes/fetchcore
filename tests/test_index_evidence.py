@@ -51,7 +51,20 @@ def test_bounded_evidence_preserves_observed_lifecycle_and_runtime(tmp_path: Pat
             },
         }),
         execution_path=_write(tmp_path / "sync.json", {
-            "status": "succeeded", "result": {"mode": "noop"},
+            "status": "succeeded", "result": {
+                "mode": "noop",
+                "execution": {
+                    "telemetry": {
+                        "embedding_requests": 0,
+                        "embedding_vectors": 0,
+                        "backend_writes": 0,
+                    },
+                    "snapshot": {
+                        "embedding_provider": None,
+                        "projection_fingerprint": "sha256:projection",
+                    },
+                },
+            },
         }),
     )
     assert evidence["solr"] == {
@@ -65,9 +78,17 @@ def test_bounded_evidence_preserves_observed_lifecycle_and_runtime(tmp_path: Pat
         "schema_compatibility": "compatible",
     }
     assert evidence["index_lifecycle"] == {
-        "requested": "sync", "planned": "noop", "executed": "noop",
+        "requested": "sync",
+        "planned": "noop",
+        "executed": "noop",
+        "telemetry": {
+            "embedding_requests": 0,
+            "embedding_vectors": 0,
+            "backend_writes": 0,
+        },
     }
     assert evidence["snapshot"]["currentness"] == "current"
+    assert evidence["snapshot"]["projection_fingerprint"] == "sha256:projection"
     assert evidence["evaluation"] == {"modes": ["lexical"]}
 
 
@@ -88,5 +109,5 @@ def test_plan_only_is_reported_without_inventing_execution(tmp_path: Path) -> No
         execution_path=None,
     )
     assert evidence["index_lifecycle"] == {
-        "requested": "plan", "planned": "initial", "executed": "plan",
+        "requested": "plan", "planned": "initial", "executed": "plan", "telemetry": {},
     }

@@ -180,6 +180,17 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
                     model=str(config.backend_settings.get("embedding_model", EmbeddingConfig.model)),
                 )
             )
+            if config.backend == "solr":
+                from fetchcore.adapters.retrieval.solr.backend import SOLR_VECTOR_DIMENSIONS
+                if selected.dimensions not in {None, SOLR_VECTOR_DIMENSIONS}:
+                    checks["embedding"] = ReadinessFact(
+                        "incompatible", "vector_dimensions_mismatch"
+                    )
+                    checks["snapshot"] = ReadinessFact("unknown", "probe_blocked")
+                    return ReadinessReport(
+                        config.backend, config.repository, config.revision, None,
+                        mode, checks, fingerprints,
+                    )
             provider = inspector.providers.create(
                 selected, backend_id=config.backend, backend_name=config.backend,
             )

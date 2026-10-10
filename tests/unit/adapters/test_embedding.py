@@ -31,6 +31,7 @@ def _retrieval_with_transport_controls() -> RetrievalConfig:
                 "embedding": {
                     "provider": "ollama",
                     "model": "embeddinggemma",
+                    "dimensions": 768,
                     "request_batch_size": 7,
                     "timeout_seconds": 45,
                 },
@@ -162,9 +163,11 @@ def test_embedding_transport_controls_round_trip() -> None:
     assert embedding.model == "embeddinggemma"
     assert embedding.request_batch_size == 7
     assert embedding.timeout_seconds == 45.0
+    assert embedding.dimensions == 768
     assert embedding.to_mapping() == {
         "provider": "ollama",
         "model": "embeddinggemma",
+        "dimensions": 768,
         "timeout_seconds": 45.0,
         "request_batch_size": 7,
     }
@@ -174,6 +177,7 @@ def test_embedding_transport_controls_round_trip() -> None:
     ("field", "value"),
     [
         ("request_batch_size", 0),
+        ("dimensions", 0),
         ("timeout_seconds", 0),
         ("timeout_seconds", float("inf")),
     ],

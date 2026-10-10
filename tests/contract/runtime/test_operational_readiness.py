@@ -253,3 +253,46 @@ def test_solr_dense_snapshot_identity_and_live_dimensions_fail_closed(
     assert report.checks["embedding"].state == "incompatible"
     assert report.checks["embedding"].category == expected
     assert not report.ready
+
+
+def test_solr_configured_vector_dimensions_fail_before_provider_probe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    import fetchcore.application.runtime_inspection as inspection
+
+    monkeypatch.setattr(
+        inspection.RuntimeInspectionService,
+        "doctor",
+        lambda self: _doctor(embedding_provider=("ok", None)),
+    )
+
+    class ForbiddenProviders:
+        def create(self, *args: object, **kwargs: object) -> object:
+            raise AssertionError("invalid configured dimensions must fail before provider probing")
+
+    inspector = RuntimeInspectionService(
+        FetchCoreRuntimeConfig(
+            backend="solr",
+            workspace=tmp_path,
+            repository="demo/repo",
+            revision="abc",
+            retrieval=RetrievalConfig.from_mapping({
+                "dense": {
+                    "enabled": True,
+                    "embedding": {
+                        "provider": "ollama",
+                        "model": "embeddinggemma",
+                        "dimensions": 16,
+                    },
+                },
+            }),
+        ),
+        providers=ForbiddenProviders(),  # type: ignore[arg-type]
+    )
+    report = inspect_readiness(inspector)
+
+    assert report.mode == "dense"
+    assert report.checks["embedding"].state == "incompatible"
+    assert report.checks["embedding"].category == "vector_dimensions_mismatch"
+    assert report.checks["snapshot"].state == "unknown"
+    assert not report.ready

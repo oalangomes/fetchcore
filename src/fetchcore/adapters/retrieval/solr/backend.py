@@ -2224,6 +2224,16 @@ def _prepare_dense_query(
 ]:
     embedder = backend.embedding_factory(retrieval)
     requested = retrieval.dense.embedding
+    if requested.dimensions is not None and requested.dimensions != SOLR_VECTOR_DIMENSIONS:
+        raise KnowledgeSearchError(
+            "configured embedding dimensions do not match the frozen Solr vector schema",
+            category="schema_mismatch",
+            metadata={
+                "expected_dimensions": SOLR_VECTOR_DIMENSIONS,
+                "actual_dimensions": requested.dimensions,
+                "rebuild_required": True,
+            },
+        )
     if embedder.provider_id != requested.provider:
         raise KnowledgeSearchError(
             "configured embedding provider is not supported by Solr dense retrieval",
@@ -2254,7 +2264,11 @@ def _prepare_dense_query(
     query_text = serializer.serialize_query(intent)
     vectors = embedder.embed((query_text,))
     dimensions = validate_vector_dimensions(vectors)
-    if dimensions != snapshot.vector_dimensions or dimensions != SOLR_VECTOR_DIMENSIONS:
+    if (
+        dimensions != snapshot.vector_dimensions
+        or dimensions != SOLR_VECTOR_DIMENSIONS
+        or (requested.dimensions is not None and dimensions != requested.dimensions)
+    ):
         raise KnowledgeSearchError(
             "query embedding dimensions do not match the active Solr vector snapshot",
             category="schema_mismatch",

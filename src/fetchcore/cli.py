@@ -11,10 +11,12 @@ import click
 import yaml
 
 from fetchcore.application import (
+    EmbeddingProviderRegistry,
     RepositoryRetrievalApplicationService,
     SearchRequest,
     SourceReadRequest,
     SourceReadResult,
+    load_runtime_config,
 )
 from fetchcore.application.indexing import (
     IndexContext as _IndexCommandContext,
@@ -430,6 +432,7 @@ def _flatten_values(value: dict[str, object], prefix: str = "") -> dict[str, str
 
 
 @main.group("index")
+@click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False))
 @click.option(
     "--workspace",
     type=click.Path(path_type=Path, file_okay=False),
@@ -461,7 +464,7 @@ def _flatten_values(value: dict[str, object], prefix: str = "") -> dict[str, str
 @click.option("--allowed-root", multiple=True, type=click.Path(path_type=Path, file_okay=False))
 @click.pass_context
 def index_group(
-    ctx: click.Context, workspace: Path, repository: str | None,
+    ctx: click.Context, config_path: Path | None, workspace: Path, repository: str | None,
     branch: str | None, revision: str | None, backend: str, backend_settings: str,
     cache_root: Path | None, allowed_root: tuple[Path, ...],
 ) -> None:
@@ -469,7 +472,7 @@ def index_group(
     ctx.obj = {
         "workspace": workspace, "repository": repository, "branch": branch,
         "revision": revision, "backend": backend, "backend_settings": backend_settings,
-        "cache_root": cache_root, "allowed_root": allowed_root,
+        "cache_root": cache_root, "allowed_root": allowed_root, "config_path": config_path,
     }
 
 
@@ -488,10 +491,23 @@ def _dispatch_index(ctx: click.Context, operation: str, reference: str | None,
                     )
             try:
                 settings = _json_object(options["backend_settings"])
+                runtime = load_runtime_config(
+                    path=options["config_path"],
+                    overrides={
+                        "runtime": {"backend": options["backend"]},
+                        "backends": {options["backend"]: settings},
+                    },
+                )
+                providers = EmbeddingProviderRegistry(
+                    settings={"ollama": runtime.ollama.to_mapping()}
+                )
                 service = RepositoryIndexApplicationService(
                     RepositoryApplicationService(cache_root=options["cache_root"],
                                                   allowed_roots=options["allowed_root"] or None),
-                    backend=options["backend"], backend_settings=settings,
+                    backend=runtime.backend,
+                    backend_settings=runtime.backend_settings,
+                    retrieval=runtime.retrieval,
+                    providers=providers,
                 )
                 return service.run(operation, reference)
             except RepositoryRegistryError:
@@ -510,10 +526,23 @@ def _dispatch_index(ctx: click.Context, operation: str, reference: str | None,
     if not options["repository"]:
         raise click.UsageError("Provide a registered repository or legacy --repository")
     try:
+        settings = _json_object(options["backend_settings"])
+        runtime = load_runtime_config(
+            path=options["config_path"],
+            overrides={
+                "runtime": {"backend": options["backend"]},
+                "backends": {options["backend"]: settings},
+            },
+        )
         context = _build_index_context(
             workspace=options["workspace"], repository=options["repository"],
             branch=_optional_text(options["branch"]), revision=_optional_text(options["revision"]),
-            backend=options["backend"], backend_settings=_json_object(options["backend_settings"]),
+            backend=runtime.backend,
+            backend_settings=dict(runtime.backend_settings),
+            retrieval=runtime.retrieval,
+            providers=EmbeddingProviderRegistry(
+                settings={"ollama": runtime.ollama.to_mapping()}
+            ),
         )
     except (KnowledgeSearchError, RepositoryIndexPolicyError, OSError, ValueError) as exc:
         raise click.ClickException(_error_message(exc)) from exc
