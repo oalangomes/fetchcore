@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 690 132" width="690" height="132" role="img" aria-label="FetchCore — Repositories into evidence">
+<title>FetchCore wordmark</title>
+<g transform="translate(12 18)"><g fill="none" stroke="#EAF7F8" stroke-width="7" stroke-linejoin="round" stroke-linecap="square">
+  <path d="M37 23H23V73H37"/>
+  <path d="M59 23H73V73H59"/>
+  <path d="M39 34H55"/>
+  <path d="M39 63H55"/>
+  <path d="M39 49H46"/>
+</g>
+<rect x="52" y="41" width="15" height="15" rx="2" fill="#32E2C1"/></g>
+<text x="132" y="78" font-family="Inter, 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" font-weight="750" font-size="67" letter-spacing="-2.4" fill="#EAF7F8">Fetch<tspan fill="#32E2C1">Core</tspan></text>
+<text x="136" y="108" font-family="Inter, 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" font-weight="600" font-size="15" letter-spacing="2.3" fill="#AFC9D1">REPOSITORIES INTO EVIDENCE</text>
+</svg>
