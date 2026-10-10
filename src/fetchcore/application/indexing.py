@@ -12,13 +12,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from fetchcore.application.composition import EmbeddingProviderRegistry
 from fetchcore.application.index_operations import (
     RepositoryIndexRuntime, dry_run_repository_index, prepare_repository_index_runtime,
     repository_index_status,
 )
 from fetchcore.application.repositories import RepositoryApplicationService
 from fetchcore.adapters.retrieval.solr.backend import (
-    SolrIndexStore, SolrIndexSyncResult, SolrSettings, UrllibSolrTransport,
+    SOLR_VECTOR_DIMENSIONS,
+    SolrIndexStore,
+    SolrIndexSyncResult,
+    SolrSettings,
+    UrllibSolrTransport,
 )
 from fetchcore.adapters.retrieval.solr.index_contract import (
     bind_indexing_contract_store, snapshot_indexing_fingerprint,
@@ -28,7 +33,15 @@ from fetchcore.adapters.retrieval.solr.incremental_persistence import (
 )
 from fetchcore.repository.sources import LocalWorkspaceSourceProvider
 from fetchcore.repository.registry import RepositoryRegistryError
+from fetchcore.retrieval.config import RetrievalConfig
 from fetchcore.retrieval.contracts import KnowledgeSearchError
+from fetchcore.retrieval.embedding import (
+    VECTOR_EMBEDDING_SERIALIZATION_VERSION,
+    validate_vector_dimensions,
+)
+
+
+_EMBEDDING_PROBE_TEXT = "fetchcore embedding probe"
 
 
 @dataclass(frozen=True)
@@ -52,15 +65,25 @@ class IndexContext:
     backend: str
     runtime: RepositoryIndexRuntime
     store: SolrIndexStore
+    retrieval: RetrievalConfig | None = None
+
+    @property
+    def require_vectors(self) -> bool:
+        return self.retrieval is not None and self.retrieval.mode in {"dense", "hybrid"}
 
     def legacy(self, operation: str) -> dict[str, object]:
         if operation == "bootstrap":
-            self.store.validate_schema(require_vectors=False)
-            return {
+            self.store.validate_schema(require_vectors=self.require_vectors)
+            result: dict[str, object] = {
                 "schema": "fetchcore.solr.projection-v3",
                 "projection_version": self.store.settings.projection_version,
                 "validated": True,
+                "retrieval_mode": self.retrieval.mode if self.retrieval else "lexical",
+                "vectors_required": self.require_vectors,
             }
+            if self.require_vectors:
+                result["embedding_probe"] = _probe_embedding_provider(self.store)
+            return result
         if operation == "status":
             return repository_index_status(self.store, self.runtime)
         if operation == "dry-run":
@@ -75,6 +98,8 @@ class IndexContext:
 def build_index_context(
     *, workspace: Path, repository: str, branch: str | None, revision: str | None,
     backend: str, backend_settings: dict[str, object],
+    retrieval: RetrievalConfig | None = None,
+    providers: EmbeddingProviderRegistry | None = None,
 ) -> IndexContext:
     indexing_capabilities(backend)
     root = workspace.expanduser().resolve(strict=True)
@@ -82,7 +107,70 @@ def build_index_context(
         root, repository=repository.strip(), branch=branch or None, revision=revision or None,
     )
     settings = SolrSettings.from_mapping(backend_settings)
-    return IndexContext(root, backend, runtime, SolrIndexStore(UrllibSolrTransport(settings), settings))
+    embedding_provider = None
+    if retrieval is not None and retrieval.mode in {"dense", "hybrid"}:
+        configured_dimensions = retrieval.dense.embedding.dimensions
+        if configured_dimensions not in {None, SOLR_VECTOR_DIMENSIONS}:
+            raise KnowledgeSearchError(
+                "configured embedding dimensions do not match the frozen Solr vector schema",
+                category="schema_mismatch",
+                metadata={
+                    "expected_dimensions": SOLR_VECTOR_DIMENSIONS,
+                    "actual_dimensions": configured_dimensions,
+                    "rebuild_required": True,
+                },
+            )
+        embedding_provider = (providers or EmbeddingProviderRegistry()).create(
+            retrieval.dense.embedding,
+            backend_id="solr",
+            backend_name="Solr",
+        )
+    store = SolrIndexStore(
+        UrllibSolrTransport(settings),
+        settings,
+        embedding_provider=embedding_provider,
+    )
+    return IndexContext(root, backend, runtime, store, retrieval)
+
+
+def _probe_embedding_provider(store: SolrIndexStore) -> dict[str, object]:
+    """Probe the configured provider once without mutating the Solr projection."""
+    provider = store.embedding_provider
+    serializer = store.embedding_serializer
+    if provider is None or serializer is None:
+        raise KnowledgeSearchError(
+            "vector indexing requires a composed embedding provider",
+            category="unsupported_capability",
+            metadata={"backend": "solr", "capability": "embedding_provider"},
+        )
+    vectors = provider.embed((_EMBEDDING_PROBE_TEXT,))
+    dimensions = validate_vector_dimensions(vectors)
+    if len(vectors) != 1:
+        raise KnowledgeSearchError(
+            "embedding probe returned an unexpected vector count",
+            category="embedding_failed",
+        )
+    if dimensions != SOLR_VECTOR_DIMENSIONS:
+        raise KnowledgeSearchError(
+            "embedding probe dimensions do not match the frozen Solr vector schema",
+            category="schema_mismatch",
+            metadata={
+                "expected_dimensions": SOLR_VECTOR_DIMENSIONS,
+                "actual_dimensions": dimensions,
+                "rebuild_required": True,
+            },
+        )
+    return {
+        "requests": 1,
+        "vectors": 1,
+        "provider": provider.provider_id,
+        "model": provider.model_id,
+        "dimensions": dimensions,
+        "serializer_mode": serializer.mode.value,
+        "serializer_version": VECTOR_EMBEDDING_SERIALIZATION_VERSION,
+        "serializer_fingerprint": serializer.serializer_fingerprint,
+        "projection_fingerprint": serializer.projection_fingerprint,
+    }
 
 
 @dataclass(frozen=True)
@@ -98,7 +186,7 @@ class IndexObservation:
 def _observe(context: IndexContext) -> IndexObservation:
     store, runtime = context.store, context.runtime
     try:
-        store.validate_schema(require_vectors=False)
+        store.validate_schema(require_vectors=context.require_vectors)
     except KnowledgeSearchError as exc:
         if exc.category != "schema_mismatch":
             raise
@@ -119,7 +207,7 @@ def _observe(context: IndexContext) -> IndexObservation:
     if snapshot_indexing_fingerprint(snapshot) != runtime.fingerprint:
         return IndexObservation("rebuild_required", "incompatible", "indexing_contract_changed",
                                 snapshot.revision, projection_compatible=True)
-    if not store.embedding_snapshot_matches(snapshot):
+    if context.require_vectors and not store.embedding_snapshot_matches(snapshot):
         return IndexObservation("rebuild_required", "incompatible", "embedding_identity_changed",
                                 snapshot.revision, projection_compatible=True)
     status = repository_index_status(store, runtime)
@@ -135,10 +223,14 @@ def _observe(context: IndexContext) -> IndexObservation:
 
 class RepositoryIndexApplicationService:
     def __init__(self, repositories: RepositoryApplicationService, *, backend: str = "solr",
-                 backend_settings: Mapping[str, object] | None = None) -> None:
+                 backend_settings: Mapping[str, object] | None = None,
+                 retrieval: RetrievalConfig | None = None,
+                 providers: EmbeddingProviderRegistry | None = None) -> None:
         self.repositories = repositories
         self.backend = backend
         self.backend_settings = dict(backend_settings or {})
+        self.retrieval = retrieval
+        self.providers = providers
 
     def run(self, operation: str, reference: str) -> dict[str, object]:
         if operation not in {"plan", "status", "sync", "rebuild"}:
@@ -166,9 +258,16 @@ class RepositoryIndexApplicationService:
             context = build_index_context(
                 workspace=source.workspace, repository=source.repository, branch=source.branch,
                 revision=source.revision, backend=self.backend, backend_settings=self.backend_settings,
+                retrieval=self.retrieval, providers=self.providers,
             )
             store = bind_indexing_contract_store(context.store, context.runtime.indexer)
-            context = IndexContext(context.workspace, context.backend, context.runtime, store)
+            context = IndexContext(
+                context.workspace,
+                context.backend,
+                context.runtime,
+                store,
+                context.retrieval,
+            )
             observation = _observe(context)
             result: dict[str, object] = {
                 "repository": source.repository, "provider": source.provider,
@@ -182,6 +281,7 @@ class RepositoryIndexApplicationService:
                 "incremental_possible": observation.mode in {"incremental", "noop"},
                 "indexing_fingerprint": context.runtime.fingerprint,
                 "projection_fingerprint": store.projection_fingerprint,
+                "retrieval_mode": self.retrieval.mode if self.retrieval else "lexical",
             }
             if operation == "status":
                 return result
@@ -245,7 +345,7 @@ class RepositoryIndexApplicationService:
                 outcome["discovery"] = synced.discovery.to_mapping()
             else:
                 # Validate live schema even for explicit rebuild; never repair it here.
-                store.validate_schema(require_vectors=False)
+                store.validate_schema(require_vectors=context.require_vectors)
                 outcome = _execution_result(store.full_rebuild(
                     context.runtime.indexer.index(context.workspace),
                 ))
@@ -267,12 +367,16 @@ def _execution_result(storage: SolrIndexSyncResult) -> dict[str, object]:
     result["snapshot"] = {
         "repository": snapshot.repository, "branch": snapshot.branch,
         "revision": snapshot.revision, "document_count": snapshot.document_count,
+        "corpus_checksum": snapshot.corpus_checksum,
+        "projection_version": snapshot.projection_version,
         "indexed_at": snapshot.indexed_at, "status": snapshot.status,
         "projection_fingerprint": snapshot.projection_fingerprint,
         "indexing_fingerprint": snapshot_indexing_fingerprint(snapshot),
         "embedding_provider": snapshot.embedding_provider,
         "embedding_model": snapshot.embedding_model,
         "vector_dimensions": snapshot.vector_dimensions,
+        "serializer_mode": snapshot.embedding_serializer_mode,
+        "serializer_version": snapshot.embedding_serializer_version,
         "serializer_fingerprint": snapshot.embedding_serializer_fingerprint,
     }
     return result

@@ -165,7 +165,7 @@ def test_registered_lifecycle_initial_noop_incremental_rebuild(workspace, tmp_pa
 
 @pytest.mark.parametrize("corruption,reason", [
     ("indexing", "indexing_contract_changed"), ("projection", "schema_mismatch"),
-    ("embedding", "embedding_identity_changed"), ("payload", "response_parsing_failure"),
+    ("payload", "response_parsing_failure"),
     ("not_ready", "index_stale"),
 ])
 def test_incompatible_sync_never_rebuilds(workspace, tmp_path, backend, invoke, corruption, reason):
@@ -176,8 +176,6 @@ def test_incompatible_sync_never_rebuilds(workspace, tmp_path, backend, invoke, 
         snapshot["canonical_payload"] = '{"indexing_fingerprint":"changed"}'
     elif corruption == "projection":
         snapshot["projection_fingerprint"] = "changed"
-    elif corruption == "embedding":
-        snapshot["embedding_model"] = "different"
     elif corruption == "payload":
         snapshot["canonical_payload"] = "{invalid"
     else:

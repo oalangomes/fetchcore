@@ -43,6 +43,11 @@ resource against the FetchCore Projection v3 schema. Explicit owned provisioning
 uses `infra/solr/configset`, which preserves the behavior-proven analyzers, BM25
 parameters and vector field contract extracted from AgentsOrchNext. The CLI never
 silently rewrites an incompatible schema. `dry-run` performs no persistent writes.
+With explicit dense/hybrid retrieval configuration, bootstrap also requires the
+vector field, resolves the provider through application composition, and performs
+one counted embedding probe to verify provider/model reachability and 768 output
+dimensions. It does not download a model, generate document vectors, or write to
+Solr.
 
 Equivalent environment variables are available:
 
@@ -87,6 +92,22 @@ jobs:
 ```
 
 A complete example lives at `examples/github-actions/fetchcore-index.yml`.
+
+For a vector-enabled run, the model must already exist at the operator-owned
+endpoint and the initial lifecycle must be an explicit rebuild:
+
+```yaml
+      index_lifecycle: rebuild
+      evaluate: true
+      evaluation_modes_json: '["lexical","dense","hybrid"]'
+      embedding_provider: ollama
+      embedding_model: embeddinggemma
+      embedding_dimensions: 768
+      ollama_url: http://127.0.0.1:11434
+```
+
+The workflow passes this backend-neutral embedding contract to FetchCore. It
+does not pull a model, repair schema, or implement vectorization in YAML.
 
 ## Runner selection
 
@@ -268,7 +289,8 @@ Every piped command enables `pipefail`, so report capture with `tee` cannot turn
 The bounded `run-evidence.json` records repository, revision, sanitized Solr
 endpoint, deployment mode, reused/provisioned instance, existing/created resource,
 repository binding, schema compatibility, observed snapshot/currentness, requested
-and executed lifecycle, and evaluation modes. It composes existing facts and does
+and executed lifecycle, embedding snapshot identity, measured index/embedding
+telemetry, the bounded bootstrap probe, and evaluation modes. It composes existing facts and does
 not anticipate the generic telemetry platform tracked by #137.
 
 The Solr preflight also writes `solr-preflight.json` before returning a known
@@ -310,8 +332,17 @@ pull requests. Pull requests never write to the persistent `fetchcore` resource.
 
 Self-evaluation scenarios live in `dogfood/scenarios/fetchcore-self.yaml`.
 At least one scenario verifies `get_source`, so the gate exercises bounded
-source serving as well as search. The currently supported default arm is
-`lexical`; dense/hybrid remain explicit capability-dependent work under #130.
+source serving as well as search. Pull-request self-dogfood remains lexical by
+default; explicit vector runs can evaluate `lexical`, `dense`, and `hybrid`
+independently through the same reusable workflow when a compatible provider and
+vector snapshot are configured. Provider, schema, or snapshot failures remain
+typed failures and are never reported as lexical success.
+
+For local Compose, `docker compose up` remains lexical and does not require
+Ollama. To opt in to vectors: make the model available externally, set
+`FETCHCORE_RETRIEVAL` and `FETCHCORE_OLLAMA_URL`, run an explicit
+`fetchcore index ... rebuild`, verify `fetchcore readiness`, then execute dense
+or hybrid search. Compose never pulls the model or rebuilds automatically.
 
 ## FetchCore operational index
 

@@ -76,6 +76,15 @@ class EmbeddingProviderRegistry:
                     "actual_provider": provider.provider_id,
                 },
             )
+        if provider.model_id != embedding.model:
+            raise KnowledgeSearchError(
+                "embedding composition returned a mismatched model",
+                category="schema_mismatch",
+                metadata={
+                    "requested_model": embedding.model,
+                    "actual_model": provider.model_id,
+                },
+            )
         return provider
 
 
@@ -124,6 +133,7 @@ def _qdrant_embedding_provider(
         EmbeddingConfig(
             provider=embedding.provider,
             model=settings.embedding_model,
+            dimensions=embedding.dimensions,
             timeout_seconds=settings.timeout_seconds,
         ),
         backend_id="qdrant-vector",

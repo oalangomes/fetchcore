@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import os
+import statistics
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--revision")
     parser.add_argument("--solr-url", required=True)
     parser.add_argument("--collection", required=True)
+    parser.add_argument("--mode", choices=("lexical", "dense", "hybrid"), default="lexical")
+    parser.add_argument("--embedding-provider", default="ollama")
+    parser.add_argument("--embedding-model", default="embeddinggemma")
+    parser.add_argument("--embedding-dimensions", type=int, default=768)
+    parser.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     parser.add_argument("--scenarios", type=Path, required=True)
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--output-markdown", type=Path, required=True)
@@ -115,6 +121,23 @@ async def evaluate(args: argparse.Namespace, scenarios: tuple[Scenario, ...]) ->
             separators=(",", ":"),
         ),
     }
+    if args.mode in {"dense", "hybrid"}:
+        server_env["FETCHCORE_MCP_RETRIEVAL"] = json.dumps(
+            {
+                "dense": {
+                    "enabled": True,
+                    "embedding": {
+                        "provider": args.embedding_provider,
+                        "model": args.embedding_model,
+                        "dimensions": args.embedding_dimensions,
+                    },
+                },
+                "hybrid": {"enabled": args.mode == "hybrid"},
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        server_env["FETCHCORE_OLLAMA_URL"] = args.ollama_url
     if args.revision:
         server_env["FETCHCORE_MCP_REVISION"] = args.revision
 
@@ -230,6 +253,7 @@ async def evaluate(args: argparse.Namespace, scenarios: tuple[Scenario, ...]) ->
                     "source_ref_verified": source_ref,
                     "backend": payload.get("backend"),
                     "search_duration_ms": payload.get("duration_ms"),
+                    "retrieval_telemetry": payload.get("telemetry"),
                     "top_source_refs": [
                         item.get("source_ref") or item.get("source")
                         for item in results[:5]
@@ -244,12 +268,19 @@ async def evaluate(args: argparse.Namespace, scenarios: tuple[Scenario, ...]) ->
         for item in reports
         if isinstance((value := item.get("search_duration_ms")), int)
     ]
+    time_to_first_values = [
+        int(value)
+        for item in reports
+        if isinstance((telemetry := item.get("retrieval_telemetry")), dict)
+        and isinstance((value := telemetry.get("time_to_first_candidate_ms")), int)
+    ]
     return {
         "schema_version": 1,
         "status": "passed" if passed_count == len(reports) else "failed",
         "repository": args.repository,
         "revision": args.revision,
         "backend": "solr",
+        "mode": args.mode,
         "collection": args.collection,
         "protocol_smoke": protocol_smoke,
         "summary": {
@@ -265,9 +296,23 @@ async def evaluate(args: argparse.Namespace, scenarios: tuple[Scenario, ...]) ->
                 else sum(reciprocal_ranks) / len(reciprocal_ranks)
             ),
             "search_duration_ms_total": sum(duration_values),
+            "search_duration_ms_p50": _percentile(duration_values, 50),
+            "search_duration_ms_p95": _percentile(duration_values, 95),
+            "time_to_first_candidate_ms_p50": _percentile(time_to_first_values, 50),
+            "time_to_first_candidate_ms_p95": _percentile(time_to_first_values, 95),
         },
         "scenarios": reports,
     }
+
+
+def _percentile(values: list[int], percentile: int) -> float | None:
+    if not values:
+        return None
+    if percentile == 50:
+        return float(statistics.median(values))
+    ordered = sorted(values)
+    rank = max(1, (percentile * len(ordered) + 99) // 100)
+    return float(ordered[rank - 1])
 
 def tool_payload(result: Any) -> dict[str, object]:
     structured = getattr(result, "structuredContent", None)
@@ -331,6 +376,7 @@ def markdown_report(payload: dict[str, object]) -> str:
         f"- Repository: `{payload['repository']}`",
         f"- Revision: `{payload.get('revision') or 'unknown'}`",
         f"- Backend: `{payload['backend']}`",
+        f"- Retrieval mode: `{payload['mode']}`",
         f"- Collection: `{payload['collection']}`",
         "- MCP protocol smoke: **PASS**",
         f"- Scenarios: {summary['passed']}/{summary['total']} passed",

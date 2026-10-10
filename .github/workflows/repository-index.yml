@@ -89,10 +89,30 @@ on:
         type: boolean
         default: false
       evaluation_modes_json:
-        description: Retrieval modes to evaluate; dense/hybrid remain blocked until issue 130.
+        description: Retrieval modes to evaluate (lexical, dense, hybrid).
         required: false
         type: string
         default: '["lexical"]'
+      embedding_provider:
+        description: Embedding provider used by explicit dense/hybrid indexing and serving.
+        required: false
+        type: string
+        default: ollama
+      embedding_model:
+        description: Embedding model identity used by indexing and serving.
+        required: false
+        type: string
+        default: embeddinggemma
+      embedding_dimensions:
+        description: Vector dimensions; the current Solr schema requires 768.
+        required: false
+        type: number
+        default: 768
+      ollama_url:
+        description: Explicit Ollama endpoint; the workflow never downloads a model.
+        required: false
+        type: string
+        default: http://127.0.0.1:11434
       evaluation_gate:
         description: Fail when one or more MCP evaluation scenarios miss expected evidence.
         required: false
@@ -198,10 +218,30 @@ on:
         type: boolean
         default: false
       evaluation_modes_json:
-        description: JSON retrieval mode list; currently only lexical is operational.
+        description: JSON retrieval mode list (lexical, dense, hybrid).
         required: false
         type: string
         default: '["lexical"]'
+      embedding_provider:
+        description: Embedding provider for dense/hybrid.
+        required: false
+        type: string
+        default: ollama
+      embedding_model:
+        description: Embedding model identity for dense/hybrid.
+        required: false
+        type: string
+        default: embeddinggemma
+      embedding_dimensions:
+        description: Vector dimensions; the current Solr schema requires 768.
+        required: false
+        type: number
+        default: 768
+      ollama_url:
+        description: Ollama endpoint; no model is downloaded by this workflow.
+        required: false
+        type: string
+        default: http://127.0.0.1:11434
       evaluation_gate:
         description: Fail when MCP evaluation scenarios miss expected evidence.
         required: false
@@ -269,6 +309,10 @@ jobs:
           PROVISION_MODE: ${{ inputs.solr_provision_mode }}
           INDEX_LIFECYCLE: ${{ inputs.index_lifecycle }}
           EVALUATION_MODES_JSON: ${{ inputs.evaluation_modes_json }}
+          EMBEDDING_PROVIDER: ${{ inputs.embedding_provider }}
+          EMBEDDING_MODEL: ${{ inputs.embedding_model }}
+          EMBEDDING_DIMENSIONS: ${{ inputs.embedding_dimensions }}
+          OLLAMA_URL: ${{ inputs.ollama_url }}
           TARGET_REPOSITORY: ${{ inputs.target_repository || github.repository }}
           SOLR_PORT: ${{ inputs.solr_port }}
           SOLR_VOLUME: ${{ inputs.solr_volume }}
@@ -297,12 +341,18 @@ jobs:
           modes = json.loads(os.environ["EVALUATION_MODES_JSON"])
           if not isinstance(modes, list) or not modes or any(not isinstance(mode, str) for mode in modes):
               raise SystemExit("evaluation_modes_json must be a non-empty JSON string array")
-          unsupported = sorted(set(modes) - {"lexical"})
+          unsupported = sorted(set(modes) - {"lexical", "dense", "hybrid"})
           if unsupported:
-              raise SystemExit(
-                  "requested evaluation modes are unavailable until #130 provides a vector-ready "
-                  "index/provider contract: " + ", ".join(unsupported)
-              )
+              raise SystemExit("unsupported evaluation modes: " + ", ".join(unsupported))
+          if set(modes) & {"dense", "hybrid"}:
+              if not os.environ["EMBEDDING_PROVIDER"].strip():
+                  raise SystemExit("embedding_provider is required for dense/hybrid")
+              if not os.environ["EMBEDDING_MODEL"].strip():
+                  raise SystemExit("embedding_model is required for dense/hybrid")
+              if int(os.environ["EMBEDDING_DIMENSIONS"]) != 768:
+                  raise SystemExit("embedding_dimensions must be 768 for the current Solr schema")
+              if not os.environ["OLLAMA_URL"].strip():
+                  raise SystemExit("ollama_url is required for dense/hybrid")
           PY
 
       - name: Resolve indexing identity
@@ -364,6 +414,13 @@ jobs:
         env:
           REPOSITORY: ${{ steps.identity.outputs.repository }}
           COLLECTION: ${{ inputs.collection }}
+          EVALUATION_MODES_JSON: ${{ inputs.evaluation_modes_json }}
+          EMBEDDING_PROVIDER: ${{ inputs.embedding_provider }}
+          EMBEDDING_MODEL: ${{ inputs.embedding_model }}
+          EMBEDDING_DIMENSIONS: ${{ inputs.embedding_dimensions }}
+          OLLAMA_URL: ${{ inputs.ollama_url }}
+          TARGET_WORKSPACE: ${{ github.workspace }}/target
+          TARGET_REVISION: ${{ steps.identity.outputs.revision }}
         run: |
           set -euo pipefail
           printf 'FETCHCORE_INDEX_BACKEND=solr\n' >> "$GITHUB_ENV"
@@ -376,6 +433,27 @@ jobs:
               "projection_version": "3",
           }
           print("FETCHCORE_INDEX_BACKEND_SETTINGS=" + json.dumps(payload, separators=(",", ":")))
+          print("FETCHCORE_BACKEND=solr")
+          print("FETCHCORE_WORKSPACE=" + os.environ["TARGET_WORKSPACE"])
+          print("FETCHCORE_REPOSITORY=" + os.environ["REPOSITORY"])
+          print("FETCHCORE_REVISION=" + os.environ["TARGET_REVISION"])
+          print("FETCHCORE_SOLR_URL=" + os.environ["FETCHCORE_SOLR_URL"])
+          print("FETCHCORE_SOLR_COLLECTION=" + os.environ["COLLECTION"])
+          modes = set(json.loads(os.environ["EVALUATION_MODES_JSON"]))
+          if modes & {"dense", "hybrid"}:
+              retrieval = {
+                  "dense": {
+                      "enabled": True,
+                      "embedding": {
+                          "provider": os.environ["EMBEDDING_PROVIDER"],
+                          "model": os.environ["EMBEDDING_MODEL"],
+                          "dimensions": int(os.environ["EMBEDDING_DIMENSIONS"]),
+                      },
+                  },
+                  "hybrid": {"enabled": "hybrid" in modes},
+              }
+              print("FETCHCORE_RETRIEVAL=" + json.dumps(retrieval, separators=(",", ":")))
+              print("FETCHCORE_OLLAMA_URL=" + os.environ["OLLAMA_URL"])
           PY
           fetchcore repo \
             --cache-root "$FETCHCORE_REPOSITORY_CACHE" \
@@ -450,7 +528,13 @@ jobs:
             status "$REPOSITORY" --json \
             | tee "$FETCHCORE_DOGFOOD_OUTPUT/status-after.json"
 
-      - name: Evaluate lexical retrieval through MCP
+      - name: Inspect requested Solr retrieval readiness
+        if: ${{ inputs.index_lifecycle != 'plan' }}
+        run: |
+          set -o pipefail
+          fetchcore readiness --json | tee "$FETCHCORE_DOGFOOD_OUTPUT/readiness.json"
+
+      - name: Evaluate configured retrieval modes through MCP
         if: ${{ inputs.evaluate && inputs.index_lifecycle != 'plan' }}
         env:
           REPOSITORY: ${{ steps.identity.outputs.repository }}
@@ -458,22 +542,34 @@ jobs:
           COLLECTION: ${{ inputs.collection }}
           SCENARIOS_PATH: ${{ inputs.scenarios_path }}
           EVALUATION_GATE: ${{ inputs.evaluation_gate }}
+          EVALUATION_MODES_JSON: ${{ inputs.evaluation_modes_json }}
+          EMBEDDING_PROVIDER: ${{ inputs.embedding_provider }}
+          EMBEDDING_MODEL: ${{ inputs.embedding_model }}
+          EMBEDDING_DIMENSIONS: ${{ inputs.embedding_dimensions }}
+          OLLAMA_URL: ${{ inputs.ollama_url }}
         run: |
           set -euo pipefail
           test -n "$SCENARIOS_PATH" || { echo "scenarios_path is required when evaluate=true" >&2; exit 2; }
-          args=(
-            --workspace target
-            --repository "$REPOSITORY"
-            --revision "$REVISION"
-            --solr-url "$FETCHCORE_SOLR_URL"
-            --collection "$COLLECTION"
-            --scenarios "target/$SCENARIOS_PATH"
-            --output-json "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation.json"
-            --output-markdown "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation.md"
-          )
-          if [ "$EVALUATION_GATE" != "true" ]; then args+=(--report-only); fi
-          python .fetchcore-runtime/scripts/dogfood_mcp_eval.py "${args[@]}"
-          cat "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation.md" >> "$GITHUB_STEP_SUMMARY"
+          while IFS= read -r mode; do
+            args=(
+              --workspace target
+              --repository "$REPOSITORY"
+              --revision "$REVISION"
+              --solr-url "$FETCHCORE_SOLR_URL"
+              --collection "$COLLECTION"
+              --mode "$mode"
+              --embedding-provider "$EMBEDDING_PROVIDER"
+              --embedding-model "$EMBEDDING_MODEL"
+              --embedding-dimensions "$EMBEDDING_DIMENSIONS"
+              --ollama-url "$OLLAMA_URL"
+              --scenarios "target/$SCENARIOS_PATH"
+              --output-json "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation-$mode.json"
+              --output-markdown "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation-$mode.md"
+            )
+            if [ "$EVALUATION_GATE" != "true" ]; then args+=(--report-only); fi
+            python .fetchcore-runtime/scripts/dogfood_mcp_eval.py "${args[@]}"
+            cat "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation-$mode.md" >> "$GITHUB_STEP_SUMMARY"
+          done < <(python -c 'import json, os; print("\\n".join(json.loads(os.environ["EVALUATION_MODES_JSON"])))')
 
       - name: Compose bounded run evidence
         if: ${{ success() }}

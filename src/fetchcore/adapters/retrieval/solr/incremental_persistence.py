@@ -13,6 +13,7 @@ from fetchcore.adapters.retrieval.solr.document_incremental import (
 from fetchcore.adapters.retrieval.solr.incremental import RepositorySyncOutcome
 from fetchcore.adapters.retrieval.solr.index_contract import snapshot_indexing_fingerprint
 from fetchcore.repository.indexing import KnowledgeDocument, RepositoryIndexResult
+from fetchcore.telemetry import IndexSyncTelemetry
 from fetchcore.adapters.retrieval.solr.backend import (
     SolrIndexSnapshot,
     SolrIndexStore,
@@ -50,7 +51,12 @@ class TargetedGitAwareSolrSynchronizer(DocumentAwareGitSolrSynchronizer):
                 previous_revision=snapshot.revision,
                 reason="indexing_contract_changed",
             )
-        if not self.store.embedding_snapshot_matches(snapshot):
+        embedding_mismatch = not self.store.embedding_snapshot_matches(snapshot)
+        lexical_view_of_vector_snapshot = (
+            getattr(self.store, "embedding_provider", None) is None
+            and snapshot.embedding_provider is not None
+        )
+        if embedding_mismatch and not lexical_view_of_vector_snapshot:
             return self._full_rebuild_outcome(
                 workspace,
                 previous_revision=snapshot.revision,
@@ -71,6 +77,13 @@ class TargetedGitAwareSolrSynchronizer(DocumentAwareGitSolrSynchronizer):
             and (current_branch is None or snapshot.branch == current_branch)
         ):
             return _noop_outcome(snapshot, plan, indexing_duration_ms=0)
+
+        if lexical_view_of_vector_snapshot:
+            return self._full_rebuild_outcome(
+                workspace,
+                previous_revision=snapshot.revision,
+                reason="vector_snapshot_requires_embedding_configuration",
+            )
 
         previous = self.store.load_documents(snapshot.repository)
         indexing_started = self.timer()
@@ -142,6 +155,14 @@ def _noop_outcome(
             deleted=0,
             unchanged=snapshot.document_count,
             duration_ms=0,
+            telemetry=IndexSyncTelemetry(
+                duration_ms=0,
+                backend_writes=0,
+                backend_deletes=0,
+                embedding_requests=0,
+                embedding_vectors=0,
+                embedding_duration_ms=0,
+            ),
         ),
         discovery=discovery,
         indexing_duration_ms=indexing_duration_ms,

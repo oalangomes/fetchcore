@@ -24,6 +24,7 @@ Group options precede the subcommand:
 
 ```bash
 fetchcore index --cache-root /srv/fetchcore-cache --allowed-root /srv/repos \
+  --config /etc/fetchcore/runtime.yaml \
   --backend solr \
   --backend-settings '{"url":"http://127.0.0.1:8983/solr","collection":"repo-knowledge"}' \
   plan owner/project --json
@@ -35,6 +36,18 @@ Cache precedence and local source authorization are identical to
 currently the only operational backend with both incremental and rebuild
 capabilities in this surface. Other backend IDs fail with `unsupported_backend`;
 retrieval support alone does not imply operational persistence support.
+
+Lexical indexing is the default and never resolves or calls an embedding
+provider. Dense and hybrid indexing are explicit opt-ins through the shared
+operator runtime contract. The same `provider`, `model`, `dimensions`, and
+serializer/projection identity are used later for query embedding. For the
+current Solr schema, `dimensions` must be `768`; a different configured or
+observed dimension fails with `schema_mismatch`.
+
+Enabling dense/hybrid over an existing lexical snapshot yields
+`rebuild_required`. Run `fetchcore index ... rebuild` explicitly; `sync` never
+silently vectorizes the existing corpus. Provider/model/dimension or serializer
+identity changes have the same explicit rebuild requirement.
 
 The #60 commands remain compatible:
 
@@ -111,10 +124,11 @@ available `indexing_telemetry` (scan/chunk counts). Wall-clock timing and throug
 are omitted from plans. Full-scan discovery placeholder counts are omitted rather
 than presented as measured zero changes. With an absent snapshot, prior document
 and delete counts are null because orphan backend records cannot be ruled out.
-Counts describe canonical documents, not
-backend HTTP requests or a vector workload. Embedding requests/cache hits and
-unmeasured physical backend write counts are omitted; this surface does not
-configure an embedding provider or implement an embedding cache.
+Counts describe canonical documents, not backend HTTP requests. In vector mode,
+execution telemetry reports measured embedding requests/vectors/duration and
+backend writes/deletes. No-op reports observed zeros. Plans still omit
+unmeasured vector work and FetchCore does not implement a cross-rebuild embedding
+cache here.
 
 Execution returns `mode: rebuild|incremental|noop` and `execution`, with mutation
 counts, measured execution telemetry where available, and a normalized `snapshot`
