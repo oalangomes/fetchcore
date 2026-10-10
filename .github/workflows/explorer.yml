@@ -172,7 +172,8 @@ jobs:
           assert state["checks"]["snapshot"]["state"] == "ready", state
           assert state["indexed_revision"] is not None, state
           # A snapshot can be present even when its runtime revision is unbound.
-          assert state["ready"] is False if state["requested_revision"] is None else True
+          if state["requested_revision"] is None:
+              assert state["ready"] is False, state
           PY
       - name: Smoke nginx, API, Solr and MCP Streamable HTTP
         run: docker compose exec -T api python -m tools.explorer.docker.smoke
