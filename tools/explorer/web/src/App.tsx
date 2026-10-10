@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type FormEvent } from 'react'
+import { useRef, useState, type ReactNode, type FormEvent } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
@@ -11,8 +11,11 @@ import {
   Sparkles, TerminalSquare, Workflow,
 } from 'lucide-react'
 import { Button } from './components/ui/button'
-import { getConfig, getReadiness, parseIntent, readSource, search, sourcePayloadForHit } from './api'
+import { ApiError, getConfig, getReadiness, parseIntent, readSource, search, sourcePayloadForHit } from './api'
 import { SearchIntentForm } from './SearchIntentForm'
+import { RunHistoryPanel } from './RunHistoryPanel'
+import { captureRun, prependRun, replayGate } from './runHistory'
+import type { RunManifest } from './runHistory'
 import { applyPreset, intentPresets, parseValidatedIntent, validateVisualIntent } from './intentBuilder'
 import type { ExplorerTarget, SearchHit, SearchPayload, SearchResponse, RetrievalTelemetry } from './types'
 
@@ -227,6 +230,8 @@ export function App() {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [selectedRepository, setSelectedRepository] = useState('')
   const [selectedTargetId, setSelectedTargetId] = useState('default')
+  const [runs, setRuns] = useState<RunManifest[]>([])
+  const sequence = useRef(0)
   const run = useMutation({ mutationFn: search, onSuccess: (response) => {
     setSelectedId(response.results[0]?.id ?? null)
     setActivePanel('results')
@@ -297,13 +302,37 @@ export function App() {
       // Editing incomplete JSON is expected.
     }
   }
+  function executeSearch(request: SearchPayload) {
+    const target = targets.find(candidate => candidate.id === request.target_id
+      && candidate.repository === request.repository)
+    if (!target) throw new Error('Destino não autorizado no catálogo atual')
+    const id = 'run-' + new Date().toISOString() + '-' + (++sequence.current)
+    run.mutate(request, {
+      onSuccess: response => {
+        try {
+          const captured = captureRun(id, request, target, response, null)
+          setRuns(previous => prependRun(previous, captured))
+        } catch (error) {
+          setParseError(error instanceof Error ? error.message : 'Falha ao registrar histórico')
+        }
+      },
+      onError: error => {
+        try {
+          const category = error instanceof ApiError ? error.category : 'retrieval_failed'
+          setRuns(previous => prependRun(previous, captureRun(id, request, target, null, category)))
+        } catch {
+          // A bad envelope must not change retrieval error handling.
+        }
+      },
+    })
+  }
   function submit(event: FormEvent) {
     event.preventDefault()
     try {
       const intent = parseValidatedIntent(intentText)
       if (previewError) throw new Error(previewError)
       setParseError('')
-      run.mutate({
+      executeSearch({
         repository: activeTarget?.repository ?? '',
         target_id: activeTarget?.id,
         limit, mode,
@@ -313,6 +342,29 @@ export function App() {
     } catch (error) {
       setParseError(error instanceof Error ? error.message : 'SearchIntent JSON inválido')
     }
+  }
+  function restoreRecordedQuery(record: RunManifest) {
+    const target = targets.find(candidate => candidate.id === record.target.id
+      && candidate.repository === record.target.repository)
+    // A historical target never becomes a new authorized target.
+    if (target) {
+      setSelectedRepository(target.repository)
+      setSelectedTargetId(target.id)
+    }
+    replaceIntent(record.request.intent)
+    setMode(record.request.mode)
+    setLimit(record.request.limit)
+    setKnowledgeTypes(record.request.knowledge_types.join(', '))
+    run.reset()
+    setReadinessTargetId(null)
+  }
+  async function verifyAndReplay(record: RunManifest): Promise<void> {
+    const target = targets.find(candidate => candidate.id === record.target.id)
+    if (!target) throw new Error('Target ausente no catálogo autorizado')
+    const report = await getReadiness(target.id)
+    const gate = replayGate(record, targets, report)
+    if (!gate.allowed) throw new Error(gate.reasons.join('; '))
+    executeSearch(record.request)
   }
 
   function replaceIntent(next: Record<string, unknown>) {
@@ -415,7 +467,8 @@ export function App() {
         {config.isError && <div role="alert" className="error-panel mb-5 flex items-start gap-3"><CircleAlert size={18}/><div><strong>API indisponível</strong><p className="mt-1 text-sm">{config.error.message}. Confirme que o FastAPI está rodando em 127.0.0.1:8765.</p></div></div>}
 
         <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
-          <section className="panel self-start" aria-label="Editor de busca">
+          <div className="min-w-0 self-start">
+          <section className="panel" aria-label="Editor de busca">
             <div className="panel-heading"><div className="flex items-center gap-2"><TerminalSquare size={17} className="text-accent"/><h2>Configurar busca</h2></div><span className="chip">SearchIntent v2</span></div>
             <form className="space-y-5 p-5" onSubmit={submit}>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -571,6 +624,11 @@ export function App() {
               <div className="flex items-center justify-between text-[11px] text-muted"><span>Destino: {activeTarget?.id ?? 'não configurado'}</span><span>limit 1–100</span></div>
             </form>
           </section>
+          <div className="panel mt-5">
+            <RunHistoryPanel runs={runs} targets={targets} busy={run.isPending}
+              onChange={setRuns} onRestore={restoreRecordedQuery} onReplay={verifyAndReplay}/>
+          </div>
+          </div>
 
           <div className="min-w-0 space-y-5">
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
