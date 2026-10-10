@@ -12,6 +12,7 @@ import json
 import re
 import socket
 import subprocess
+import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -614,22 +615,46 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(prepared_state.to_mapping(), sort_keys=True))
         return 0
     except (OSError, ValueError, json.JSONDecodeError, SolrRuntimeError) as exc:
-        category = getattr(exc, "category", "solr_runtime_failure")
         failure: dict[str, object] = {
+            "diagnostic_version": 1,
+            "stage": "solr_preflight",
             "status": "failed",
-            "error": {"category": category, "message": str(exc)},
+            "error": {
+                "category": (
+                    exc.category if isinstance(exc, SolrRuntimeError) else "solr_runtime_failure"
+                ),
+                "message": str(exc)[:500],
+            },
         }
+        if prepared_state is not None:
+            failure.update(prepared_state.to_mapping())
         if prepared_state is not None and prepared_state.owned_by_run:
             try:
                 cleanup_solr_runtime(prepared_state.to_mapping())
             except Exception as cleanup_exc:  # noqa: BLE001 - preserve both failures
                 failure["cleanup_error"] = {
-                    "category": getattr(cleanup_exc, "category", "cleanup_failed"),
+                    "category": (
+                        cleanup_exc.category
+                        if isinstance(cleanup_exc, SolrRuntimeError)
+                        else "cleanup_failed"
+                    ),
                     "message": (
-                        str(cleanup_exc) if isinstance(cleanup_exc, SolrRuntimeError)
+                        str(cleanup_exc)[:500] if isinstance(cleanup_exc, SolrRuntimeError)
                         else "Owned Solr cleanup failed"
                     ),
                 }
+        if args.command == "prepare":
+            try:
+                args.output_json.parent.mkdir(parents=True, exist_ok=True)
+                args.output_json.write_text(
+                    json.dumps(failure, sort_keys=True, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+            except OSError as diagnostic_exc:
+                print(
+                    f"Failed to write Solr preflight diagnostic: {diagnostic_exc}",
+                    file=sys.stderr,
+                )
         print(json.dumps(failure, sort_keys=True))
         return 1
 

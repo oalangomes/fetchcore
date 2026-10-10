@@ -226,6 +226,23 @@ def test_missing_standalone_core_is_created_only_when_authorized(tmp_path: Path)
     assert create[2]["configSet"] == "fetchcore"
 
 
+def test_repeated_explicit_bootstrap_reuses_the_created_resource(tmp_path: Path) -> None:
+    solr = FakeSolr()
+    docker = FakeDocker(forbidden=True)
+    bootstrap_config = config(tmp_path, create_if_missing=True)
+
+    first = prepare_solr_runtime(bootstrap_config, client=solr, docker=docker)
+    create_calls_after_first = sum(call[2].get("action") == "CREATE" for call in solr.calls)
+    second = prepare_solr_runtime(bootstrap_config, client=solr, docker=docker)
+    create_calls_after_second = sum(call[2].get("action") == "CREATE" for call in solr.calls)
+
+    assert first.resource_state == "created"
+    assert second.resource_state == "existing"
+    assert create_calls_after_first == 1
+    assert create_calls_after_second == 1
+    assert docker.calls == []
+
+
 def test_missing_server_side_configset_fails_explicitly(tmp_path: Path) -> None:
     class MissingConfigset(FakeSolr):
         def request(self, method: str, url: str, **kwargs: Any) -> Mapping[str, object]:
@@ -345,16 +362,51 @@ def test_credentials_and_unsafe_paths_are_rejected_without_disclosure(tmp_path: 
 
 
 def test_cli_failure_is_structured_and_redacted(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    output_path = tmp_path / "diagnostics" / "state.json"
     result = solr_runtime.main([
         "prepare", "--solr-url", "http://user:secret@localhost:8983/solr",
         "--resource", "fetchcore", "--repository", "oalangomes/fetchcore",
-        "--output-json", str(tmp_path / "state.json"),
+        "--output-json", str(output_path),
         "--output-env", str(tmp_path / "state.env"),
     ])
     output = json.loads(capsys.readouterr().out)
     assert result == 1
+    assert output_path.is_file()
+    assert json.loads(output_path.read_text(encoding="utf-8")) == output
+    assert output["diagnostic_version"] == 1
+    assert output["stage"] == "solr_preflight"
     assert output["error"]["category"] == "invalid_configuration"
     assert "secret" not in json.dumps(output)
+
+
+def test_missing_resource_writes_a_preflight_artifact_without_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    solr = FakeSolr()
+    docker = FakeDocker(forbidden=True)
+    monkeypatch.setattr(solr_runtime, "UrllibJsonClient", lambda: solr)
+    monkeypatch.setattr(solr_runtime, "SubprocessDockerRunner", lambda: docker)
+    output_path = tmp_path / "evidence" / "solr-preflight.json"
+    result = solr_runtime.main([
+        "prepare",
+        "--solr-url", "http://127.0.0.1:8983/solr",
+        "--resource", "fetchcore-self-dogfood",
+        "--repository", "oalangomes/fetchcore",
+        "--output-json", str(output_path),
+        "--output-env", str(tmp_path / "state.env"),
+    ])
+
+    output = json.loads(capsys.readouterr().out)
+    assert result == 1
+    assert json.loads(output_path.read_text(encoding="utf-8")) == output
+    assert output["status"] == "failed"
+    assert output["stage"] == "solr_preflight"
+    assert output["error"]["category"] == "resource_missing"
+    assert len(output["error"]["message"]) <= 500
+    assert not any(call[2].get("action") == "CREATE" for call in solr.calls)
+    assert docker.calls == []
 
 
 def _owned_prepare_args(tmp_path: Path) -> list[str]:
@@ -392,6 +444,10 @@ def test_post_provision_output_failure_removes_exact_owned_container(
     output = json.loads(capsys.readouterr().out)
     assert output["error"]["message"] == "state output unavailable"
     assert "cleanup_error" not in output
+    diagnostic = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert diagnostic["status"] == "failed"
+    assert diagnostic["instance"] == "provisioned"
+    assert diagnostic["owned_by_run"] is True
 
 
 def test_reused_runtime_output_failure_does_not_run_docker_cleanup(
