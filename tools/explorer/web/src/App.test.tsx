@@ -233,7 +233,7 @@ describe('Advanced SearchIntent v2 builder', () => {
   })
 
   it('exports a valid complete intent with no extra backend endpoints', async () => {
-    const createObjectURL = vi.fn(() => 'blob:search-intent')
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:search-intent')
     const revokeObjectURL = vi.fn()
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
