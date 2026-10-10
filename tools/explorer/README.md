@@ -9,9 +9,56 @@ An **optional, local-only** retrieval workbench. The core remains headless throu
 - Read-only operator backend/capabilities; bounded request scope mode, result limit and knowledge types.
 - Result inspection: source ref, revision, checksum, line ranges, content, `QueryMatchEvidence`, `EvidenceObservation`, relationships and raw metadata.
 - Authorized source reads; telemetry/stages, candidate counts and fingerprints when returned.
+- **Retrieval Comparison Lab** (#126): side-by-side A/B with optional C arm from real historical runs, candidate rank/presence, measured cost, provenance and explicit incompatible/unverified snapshot warnings.
 - Explicit structured errors with no silent fallback.
 - On-demand **operational readiness** view for selected authorized targets (#134): separates backend reachability, schema, snapshot, currentness, fingerprint and embedding readiness from retrieval quality.
 
+
+## Retrieval Comparison Lab (#126)
+
+Run at least two searches in Search Lab or import captured `RunManifest v1`
+bundles through the History panel. **Comparison never executes retrieval** and
+does not choose raw backend connections. Choose two (A/B) or three (A/B/C)
+captured runs. The third arm renders a second independent A/C comparison; it
+does not fuse candidates.
+
+The lab shows retained candidate overlap, source identity, rank and rank
+movement, observed lexical/dense channel attributions **only when actually
+reported**, duration, stage timing, candidates examined/returned, character
+counts and time-to-first-candidate when available. When telemetry is absent,
+the corresponding cost is **not measured**, never inferred or reconstructed.
+
+An identity is the repository `source_ref` plus stored revision and checksum.
+Changes in checksum distinguish two pieces of evidence even if a file path
+stays the same. Backend-local IDs are displayed with an explicit **weak
+identity** warning; do not interpret source-ref-less IDs as cross-backend
+semantic equivalence. Rank movement is displayed only for strong, shared
+candidate identities in fingerprint-aligned runs.
+
+**Comparison readiness is not process health.** The UI distinguishes:
+- `snapshot-aligned`: both runs have the same authorized repository, bound
+  revision, backend/collection, SearchIntent, K/scope and matching *reported*
+  projection and indexing/snapshot fingerprints;
+- `unverified`: the query/revision/context appear consistent, but required
+  fingerprints are missing, so an equivalent index/snapshot is **not proven**;
+- `incompatible`: the inputs, revision, collection/backend, K/budget,
+  projection/embedding/serializer identity or observed result status differ.
+  Diff rows remain inspectable but are **not** a controlled quality benchmark.
+
+Strategy/mode variations are explicit observations, not quality verdicts. In
+particular, a Solr lexical default does not automatically activate vectors;
+real dense/hybrid comparison requires the operator to complete #130. Other
+backends require the relevant operational parity in #123. The lab works with
+existing imported manifests in the meantime. The `Exportar diff JSON v1`
+action contains only normalized observed candidates, counts and measured
+telemetry; it does not include source bodies or service credentials.
+
+For provenance navigation, a recorded candidate only opens the current live
+result when the active retrieval response is on the same authorized target
+and its `source_ref`, revision and checksum match exactly. An imported
+manifest cannot grant permission to read current workspace source. Quality,
+Ground Truth, Recall@K and PASS/FAIL regression gates belong to external
+**retrievalgate**, not FetchCore.
 
 ## Run History and strict Replay (#146)
 
