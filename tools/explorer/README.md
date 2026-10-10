@@ -38,7 +38,7 @@ candidate identities in fingerprint-aligned runs.
 **Comparison readiness is not process health.** The UI distinguishes:
 - `snapshot-aligned`: both runs have the same authorized repository, bound
   revision, backend/collection, SearchIntent, K/scope and matching *reported*
-  projection and indexing/snapshot fingerprints;
+  projection and indexing/snapshot fingerprints, with a comparable explicit\n  candidate budget;
 - `unverified`: the query/revision/context appear consistent, but required
   fingerprints are missing, so an equivalent index/snapshot is **not proven**;
 - `incompatible`: the inputs, revision, collection/backend, K/budget,
