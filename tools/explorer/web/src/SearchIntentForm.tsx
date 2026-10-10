@@ -1,7 +1,6 @@
 import { parseIntent } from './api'
 
 /** A form is only a view over SearchIntent v2; JSON remains the lossless source. */
-type IntentObject = Record<string, unknown>
 type AnchorKind = 'identifier' | 'qualified_symbol' | 'path' | 'route' | 'source_ref'
 interface AnchorRow { type: 'anchor'; kind: AnchorKind; value: string; origin: string }
 interface ExpansionRow { value: string; origin: string }
