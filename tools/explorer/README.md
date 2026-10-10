@@ -14,6 +14,53 @@ An **optional, local-only** retrieval workbench. The core remains headless throu
 - On-demand **operational readiness** view for selected authorized targets (#134): separates backend reachability, schema, snapshot, currentness, fingerprint and embedding readiness from retrieval quality.
 
 
+## Evidence Coverage Map (#127)
+
+The Explorer adds a **read-only bounded intent-to-evidence matrix** for the
+**latest actual** response (not the current, possibly edited query draft).
+It intersects canonical query, typed required anchors, explicit nested AND/OR
+expression leaves, exact/semantic terms, typed QuerySignals, and clearly
+labeled optional hints/expansions with reported per-candidate
+`QueryMatchEvidence`. Source-derived `EvidenceObservation` is shown
+separately as an observation count; it **does not** automatically satisfy a
+query anchor. Rows and cells never infer matches from free-text substrings,
+Solr/BM25 scores, dense similarity, RRF or backend ranking.
+
+Cell/row states distinguish:
+- **Match observado:** a returned typed QuerySignal `value` (plus explicit
+  structural classification/type for required anchors) matches an intent
+  element. This is an observation, **not satisfaction**.
+- **Sem match observado:** other query-match diagnostics were returned, but
+  none explicitly matched this element. Not proof of corpus-level absence.
+- **Não avaliado/informado:** missing per-candidate typed diagnostics, or
+  canonical query/hints/expansions without a promised independent matching
+  contract. Unknown is not zero.
+- **Tradução não suportada:** only when the actual API response explicitly
+  reports a structured `metadata.query_translation.unsupported` item with a
+  matching intent path and `reason=unsupported`. This extension is optional,
+  and **not assumed to be emitted** by a backend today.
+- **Janela limitada:** a request reached its configured top-K or matrix
+  display bounds. Non-observation is inconclusive.
+
+The matrix shows at most 48 intent leaves × 24 source identities per response,
+deduplicating only exact `source_ref` + revision + checksum and surfacing a
+duplicate count. A dedicated section displays declared AND/OR branches with
+observed leaf counts **without** judging boolean satisfaction on a candidate.
+Result filters and a cell inspector expose the originally returned typed
+matches, channels, evidence observation count, canonical source ref, checksum,
+revision and lines. Clicking **Inspecionar candidato e fonte autorizada**
+selects the corresponding *current* result in the existing Search Lab
+inspector; actual source reads still require explicit user navigation and
+authorized workspace binding. Revision mismatch warnings remain in force.
+
+Telemetry mode/fingerprints are displayed only when reported by the
+application. Dense/hybrid attribution appears only if the backend actually
+returned per-query `channels`; fusion rank is not used to invent it.
+This tool **does not measure Recall@K, Ground Truth, source authority or
+consumer satisfaction**. Evaluation/regression gates remain in external
+`retrievalgate`. Graph, agent lifecycle and automatic query rewriting remain
+out of scope.
+
 ## Retrieval Comparison Lab (#126)
 
 Run at least two searches in Search Lab or import captured `RunManifest v1`
