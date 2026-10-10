@@ -1,3 +1,13 @@
+export interface ExplorerTarget {
+  id: string
+  repository: string
+  backend: string
+  collection: string | null
+  revision: string | null
+  capabilities: Record<string, boolean>
+  retrieval: Record<string, unknown> | null
+}
+
 export interface ExplorerConfig {
   repository: string
   backend: string
@@ -6,9 +16,12 @@ export interface ExplorerConfig {
   retrieval: Record<string, unknown> | null
   search_modes: string[]
   max_results: number
+  default_target?: string
+  targets?: ExplorerTarget[]
 }
 
 export interface SearchPayload {
+  target_id?: string
   repository: string
   limit: number
   mode: 'discovery' | 'targeted' | 'repository_source'
