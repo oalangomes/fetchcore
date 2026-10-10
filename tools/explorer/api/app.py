@@ -263,7 +263,10 @@ def create_app(context: ExplorerContext | None = None) -> FastAPI:
     def readiness(target_id: str = "default") -> dict[str, object]:
         """On-demand diagnostic: never mark service health as index readiness."""
         ctx = resolved()
-        target = _selected_target(ctx, target_id)
+        try:
+            target = _selected_target(ctx, target_id)
+        except KnowledgeSearchError as exc:
+            raise _error(exc) from exc
         if target.runtime_config is None:
             raise HTTPException(
                 status_code=409,

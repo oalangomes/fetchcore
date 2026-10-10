@@ -49,7 +49,7 @@ def test_report_never_promotes_unknown_and_does_not_claim_satisfaction() -> None
 
 def test_healthy_but_unindexed_is_not_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     import fetchcore.adapters.retrieval.solr.index_contract as contract
-    import fetchcore.application.indexing as indexing
+    from fetchcore.application import indexing
     import fetchcore.application.runtime_inspection as inspection
     monkeypatch.setattr(inspection.RuntimeInspectionService, "doctor", lambda self: _doctor())
     class MissingStore:
@@ -107,7 +107,7 @@ def test_snapshot_currentness_and_fingerprints(
     wanted_currentness: str, wanted_fingerprint: str,
 ) -> None:
     import fetchcore.adapters.retrieval.solr.index_contract as contract
-    import fetchcore.application.indexing as indexing
+    from fetchcore.application import indexing
     import fetchcore.application.index_operations as operations
     import fetchcore.application.runtime_inspection as inspection
 
@@ -131,7 +131,7 @@ def test_snapshot_currentness_and_fingerprints(
 
 def test_unknown_revision_is_not_proved_current(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     import fetchcore.adapters.retrieval.solr.index_contract as contract
-    import fetchcore.application.indexing as indexing
+    from fetchcore.application import indexing
     import fetchcore.application.index_operations as operations
     import fetchcore.application.runtime_inspection as inspection
     monkeypatch.setattr(inspection.RuntimeInspectionService, "doctor", lambda self: _doctor())
