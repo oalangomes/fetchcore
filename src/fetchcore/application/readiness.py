@@ -7,7 +7,7 @@ This module does not write, index, migrate, or implicitly repair projections.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, TYPE_CHECKING
+from typing import Any, Literal, TYPE_CHECKING
 
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 from fetchcore.retrieval.config import EmbeddingConfig
@@ -26,7 +26,7 @@ class ReadinessFact:
     category: str | None = None
 
     def to_mapping(self) -> dict[str, str]:
-        data = {"state": self.state}
+        data: dict[str, str] = {"state": self.state}
         if self.category is not None:
             data["category"] = self.category
         return data
@@ -98,7 +98,7 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
     than being invented from HTTP process liveness.
     """
     config = inspector.config
-    mode = (config.retrieval.mode() if config.retrieval is not None else
+    mode = (config.retrieval.mode if config.retrieval is not None else
             "dense" if config.backend == "qdrant-vector" else "lexical")
     report = inspector.doctor()
     doctor = {c.name: c for c in report.checks}
@@ -169,6 +169,7 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
             provider = inspector.providers.create(
                 selected, backend_id=config.backend, backend_name=config.backend,
             )
+        store: Any  # Adapter-specific snapshot readers share the same typed load_snapshot port.
         if config.backend == "solr":
             # Read the canonical indexing fingerprint from the bound store.
             # The legacy SolrIndexSnapshot silently discards the canonical payload.
