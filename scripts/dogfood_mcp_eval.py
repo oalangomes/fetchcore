@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -87,9 +88,20 @@ def load_scenarios(path: Path) -> tuple[Scenario, ...]:
     return tuple(scenarios)
 
 
+def _loader_environment() -> dict[str, str]:
+    """Pass the Python runtime loader path to the MCP child when required."""
+
+    return {
+        name: value
+        for name in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH")
+        if (value := os.environ.get(name))
+    }
+
+
 async def evaluate(args: argparse.Namespace, scenarios: tuple[Scenario, ...]) -> dict[str, object]:
     workspace = args.workspace.expanduser().resolve(strict=True)
     server_env = {
+        **_loader_environment(),
         "FETCHCORE_MCP_WORKSPACE": str(workspace),
         "FETCHCORE_MCP_REPOSITORY": args.repository,
         "FETCHCORE_MCP_BACKEND": "solr",

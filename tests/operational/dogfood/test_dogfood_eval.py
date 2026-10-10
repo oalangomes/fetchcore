@@ -69,3 +69,10 @@ def test_evaluation_can_be_promoted_to_gate_explicitly() -> None:
     payload = {"status": "failed"}
     assert dogfood._evaluation_exit_code(payload, True) == 1
     assert dogfood._evaluation_exit_code({"status": "passed"}, True) == 0
+
+
+def test_mcp_child_receives_only_required_loader_environment(monkeypatch) -> None:
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/runtime/python/lib")
+    monkeypatch.setenv("GITHUB_TOKEN", "not-forwarded")
+
+    assert dogfood._loader_environment() == {"LD_LIBRARY_PATH": "/runtime/python/lib"}
