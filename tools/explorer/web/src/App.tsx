@@ -346,7 +346,7 @@ export function App() {
   function exportIntent() {
     try {
       const next = parseValidatedIntent(intentText)
-      const blob = new Blob([JSON.stringify(next, null, 2) + '\\n'], { type: 'application/json' })
+      const blob = new Blob([JSON.stringify(next, null, 2) + '\n'], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
