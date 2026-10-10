@@ -17,7 +17,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
@@ -484,45 +484,28 @@ def _repository_binding(
     client: JsonClient,
     timeout: float,
 ) -> str:
-    try:
+    def count(query: str) -> int:
         payload = client.request(
             "GET", f"{service.endpoint}/{resource}/select",
-            params={
-                "q": "record_kind:snapshot", "fl": "repository", "rows": "1000", "wt": "json",
-            },
-            timeout=timeout,
+            params={"q": query, "rows": "0", "wt": "json"}, timeout=timeout,
         )
-    except SolrRuntimeError as exc:
-        if exc.category == "http_error":
-            return "unknown"
-        raise
-    response = payload.get("response")
-    if not isinstance(response, dict) or not isinstance(response.get("docs"), list):
-        raise SolrRuntimeError("not_solr", "Solr binding query returned an invalid response")
-    documents = cast(list[Any], response["docs"])
-    num_found = response.get("numFound")
-    if not isinstance(num_found, int) or num_found != len(documents):
-        raise SolrRuntimeError(
-            "repository_binding_unknown",
-            "Solr resource binding could not be determined within the bounded query",
-        )
-    if any(
-        not isinstance(item, dict)
-        or not isinstance(item.get("repository"), str)
-        or not item["repository"].strip()
-        for item in documents
-    ):
-        raise SolrRuntimeError(
-            "repository_binding_unknown",
-            "Solr resource contains a snapshot without a repository identity",
-        )
-    repositories = {
-        cast(str, item["repository"])
-        for item in documents
-    }
-    if not repositories:
+        response = payload.get("response")
+        if (
+            not isinstance(response, dict)
+            or not isinstance(response.get("numFound"), int)
+            or isinstance(response["numFound"], bool)
+            or response.get("numFoundExact") is False
+        ):
+            raise SolrRuntimeError(
+                "repository_binding_unknown", "Solr resource binding count is unavailable",
+            )
+        return cast(int, response["numFound"])
+
+    total = count("*:*")
+    if total == 0:
         return "unbound"
-    if repositories == {repository}:
+    matching = count(f'repository:"{repository}"')
+    if matching == total:
         return "matching"
     raise SolrRuntimeError(
         "repository_resource_collision",

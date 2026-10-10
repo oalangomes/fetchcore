@@ -42,11 +42,13 @@ class FakeSolr:
         mode: str = "std",
         resources: set[str] | None = None,
         repositories: set[str] | None = None,
+        unbound_documents: int = 0,
         unavailable_calls: int = 0,
     ) -> None:
         self.mode = mode
         self.resources = set(resources or ())
         self.repositories = set(repositories or ())
+        self.unbound_documents = unbound_documents
         self.unavailable_calls = unavailable_calls
         self.calls: list[tuple[str, str, Mapping[str, str], Mapping[str, object] | None]] = []
 
@@ -87,10 +89,14 @@ class FakeSolr:
             self.resources.add(str(payload["name"]))
             return {"responseHeader": {"status": 0}}
         if url.endswith("/select"):
-            documents = [
-                {"repository": repository} for repository in sorted(self.repositories)
-            ]
-            return {"response": {"numFound": len(documents), "docs": documents}}
+            query = values["q"]
+            if query == "*:*":
+                count = len(self.repositories) + self.unbound_documents
+            elif query.startswith('repository:"') and query.endswith('"'):
+                count = int(query[len('repository:"'):-1] in self.repositories)
+            else:
+                raise AssertionError(f"unexpected binding query: {query}")
+            return {"response": {"numFound": count, "numFoundExact": True, "docs": []}}
         raise AssertionError(f"unexpected request: {method} {url} {values}")
 
 
@@ -263,11 +269,22 @@ def test_repository_resource_collision_fails_closed(tmp_path: Path) -> None:
     assert failure.value.category == "repository_resource_collision"
 
 
+def test_unbound_documents_cannot_be_silently_repurposed(tmp_path: Path) -> None:
+    solr = FakeSolr(
+        resources={"fetchcore-self-dogfood"},
+        repositories={"oalangomes/fetchcore"},
+        unbound_documents=1,
+    )
+    with pytest.raises(SolrRuntimeError) as failure:
+        prepare_solr_runtime(config(tmp_path), client=solr, docker=FakeDocker(forbidden=True))
+    assert failure.value.category == "repository_resource_collision"
+
+
 def test_unknown_repository_binding_fails_closed(tmp_path: Path) -> None:
     class UnknownBinding(FakeSolr):
         def request(self, method: str, url: str, **kwargs: Any) -> Mapping[str, object]:
             if url.endswith("/select"):
-                return {"response": {"numFound": 1, "docs": [{}]}}
+                return {"response": {"numFound": 1, "numFoundExact": False}}
             return super().request(method, url, **kwargs)
 
     with pytest.raises(SolrRuntimeError) as failure:

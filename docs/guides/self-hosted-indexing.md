@@ -204,8 +204,9 @@ jobs:
 ```
 
 This proves operational isolation, not federated retrieval. A resource containing
-a snapshot for a different repository fails with
-`repository_resource_collision`; it is never silently repurposed.
+documents belonging to a different repository, or documents without repository
+identity, fails with `repository_resource_collision`; the resource is never silently
+repurposed.
 
 ## Explicit index lifecycle
 
