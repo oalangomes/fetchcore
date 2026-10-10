@@ -1,4 +1,4 @@
-import type { ExplorerConfig, SearchHit, SearchPayload, SearchResponse, SourceResult } from './types'
+import type { ExplorerConfig, SearchHit, SearchPayload, SearchResponse, SourceResult, ReadinessReport } from './types'
 
 export class ApiError extends Error {
   constructor(message: string, readonly category: string, readonly status: number) {
@@ -25,6 +25,8 @@ async function call<T>(path: string, payload?: unknown): Promise<T> {
 }
 
 export const getConfig = () => call<ExplorerConfig>('/api/config')
+export const getReadiness = (targetId: string) =>
+  call<ReadinessReport>('/api/readiness?target_id=' + encodeURIComponent(targetId))
 export const search = (payload: SearchPayload) => call<SearchResponse>('/api/search', payload)
 export const readSource = (payload: {
   source_ref: string

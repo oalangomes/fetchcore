@@ -98,3 +98,37 @@ runtime boundary for backend and retrieval settings. Repository identity and
 source workspace instead come from the canonical repository registry; a
 conflicting configured repository or revision fails rather than silently
 selecting another binding. These commands never trigger indexing or refresh.
+
+
+## Operational readiness (issue #134)
+
+`fetchcore doctor --json` reports runtime/configuration and backend probe
+health; `fetchcore capabilities --json` advertises capabilities only.
+Neither proves that a repository index is current and usable.
+
+`fetchcore readiness --json` composes these observations with a read-only
+repository snapshot/index-status check. Results are versioned and separately
+report `service`, `schema`, `snapshot`, `currentness`,
+`indexing_fingerprint`, `embedding` and `retrieval`. A repository can have
+a healthy process with an absent, stale or incompatible snapshot. `unknown`
+is never treated as `ready`, including an unbound revision/source identity.
+
+```bash
+FETCHCORE_BACKEND=solr FETCHCORE_REPOSITORY=oalangomes/fetchcore \\
+  FETCHCORE_WORKSPACE=. fetchcore readiness --json
+```
+
+The exit code is 0 **only when all required conditions are proven ready**.
+Otherwise the JSON result remains inspectable and exit code is 1; configuration
+or connection errors are not silently corrected. For lexical mode no embedding
+provider is needed. In explicit dense/hybrid mode, an aligned vector snapshot
+and a bounded live embedding probe are required (the probe can take time and
+invoke your provider). Run this check on demand rather than on the retrieval hot
+path. Alternate backends with unproven indexing fingerprints/currentness
+remain `unknown` until #123 provides end-to-end operational contracts.
+
+The optional local Explorer offers `GET /api/readiness?target_id=default`
+and an **Inspect index** button. It is intentionally on-demand and observes only
+the operator-allowlisted retrieval target. No index mutation or backend
+reconfiguration happens on readiness checks. Readiness **does not measure**
+Recall@K, retrieval quality or consumer satisfaction.

@@ -307,6 +307,12 @@ class RuntimeInspectionService:
             checks.extend(self._probe_backend(embedding_provider=embedding_provider))
         return DoctorReport(tuple(checks))
 
+    def readiness(self) -> dict[str, object]:
+        """Inspect operational repository/mode readiness without index writes."""
+        from fetchcore.application.readiness import inspect_readiness
+
+        return inspect_readiness(self).to_mapping()
+
     def _required_embedding(self) -> EmbeddingConfig | None:
         if self.config.retrieval is not None and self.config.retrieval.dense.enabled:
             return self.config.retrieval.dense.embedding

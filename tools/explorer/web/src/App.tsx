@@ -11,7 +11,7 @@ import {
   Sparkles, TerminalSquare, Workflow,
 } from 'lucide-react'
 import { Button } from './components/ui/button'
-import { getConfig, parseIntent, readSource, search, sourcePayloadForHit } from './api'
+import { getConfig, getReadiness, parseIntent, readSource, search, sourcePayloadForHit } from './api'
 import { SearchIntentForm } from './SearchIntentForm'
 import type { ExplorerTarget, SearchHit, SearchPayload, SearchResponse, RetrievalTelemetry } from './types'
 
@@ -234,6 +234,14 @@ export function App() {
   const repositoryTargets = targets.filter(target => target.repository === activeRepository)
   const activeTarget = repositoryTargets.find(target => target.id === selectedTargetId) ?? repositoryTargets[0]
   const resultTarget = targets.find(target => target.id === run.variables?.target_id) ?? activeTarget
+  const [readinessTargetId, setReadinessTargetId] = useState<string | null>(null)
+  const readiness = useQuery({
+    queryKey: ['readiness', readinessTargetId],
+    queryFn: () => getReadiness(readinessTargetId ?? 'default'),
+    enabled: readinessTargetId !== null,
+    retry: false,
+    staleTime: 0,
+  })
   const response = run.data
   const selectedHit = response?.results.find(hit => hit.id === selectedId) ?? response?.results[0]
   function changeRepository(value: string) {
@@ -241,11 +249,13 @@ export function App() {
     setSelectedTargetId(targets.find(target => target.repository === value)?.id ?? 'default')
     setSelectedId(null)
     run.reset()
+    setReadinessTargetId(null)
   }
   function changeTarget(value: string) {
     setSelectedTargetId(value)
     setSelectedId(null)
     run.reset()
+    setReadinessTargetId(null)
   }
   function switchIntentView(next: 'form' | 'json') {
     if (next === 'form') {
@@ -398,6 +408,34 @@ export function App() {
                       <p className="mt-2 text-xs leading-5 text-muted">Edite ou cole um SearchIntent v2 válido. O formulário preserva as expressões avançadas.</p>
                     </div>}
                 </div>
+              </div>
+              <div className="rounded-lg border border-line bg-surface/50 px-3 py-2.5 text-xs text-muted">
+                <div className="flex items-center justify-between gap-2">
+                  <strong className="text-white">Operational readiness</strong>
+                  <button type="button" className="switch-button border border-line"
+                    onClick={() => {
+                      setReadinessTargetId(activeTarget?.id ?? 'default')
+                      if (readinessTargetId === (activeTarget?.id ?? 'default')) void readiness.refetch()
+                    }}>
+                    Inspecionar índice
+                  </button>
+                </div>
+                {readiness.isFetching && <p className="mt-2">Verificando serviço, schema, snapshot, revisão e vetores…</p>}
+                {readiness.isError && <p role="alert" className="mt-2 text-rose-300">{readiness.error.message}</p>}
+                {readiness.data && !readiness.isFetching && readinessTargetId === activeTarget?.id &&
+                  <div className="mt-3 space-y-2" aria-label="Resultado de readiness">
+                    <div className="flex flex-wrap gap-2">
+                      <span className="chip">{readiness.data.ready ? 'Ready' : 'Not ready'}</span>
+                      <span className="chip">{readiness.data.backend} · {readiness.data.mode}</span>
+                    </div>
+                    {Object.entries(readiness.data.checks).map(([name, fact]) =>
+                      <div className="flex justify-between gap-3" key={name}>
+                        <span>{name}</span>
+                        <span className="font-mono" title={fact.category ?? ''}>{fact.state}{fact.category ? ' · ' + fact.category : ''}</span>
+                      </div>)}
+                    <p>Revisão indexada: {readiness.data.indexed_revision ?? 'não informada'} · solicitada: {readiness.data.requested_revision ?? 'não informada'}</p>
+                    <p>Readiness significa condições operacionais verificadas, não qualidade ou satisfação da busca.</p>
+                  </div>}
               </div>
               <div className="rounded-lg border border-line bg-surface/50 px-3 py-2.5 text-xs text-muted">
                 <div className="mb-1 flex items-center gap-2 font-semibold text-white"><Workflow size={14}/> Retrieval policy</div>

@@ -49,6 +49,38 @@ def doctor(config_path: Path | None, as_json: bool) -> None:
         raise click.exceptions.Exit(1)
 
 
+@main.command("readiness")
+@click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--json", "as_json", is_flag=True, help="Emit deterministic JSON.")
+def readiness(config_path: Path | None, as_json: bool) -> None:
+    """Check if the configured repository, snapshot, and retrieval mode are usable."""
+    from fetchcore.application.readiness import inspect_readiness
+
+    try:
+        report = inspect_readiness(RuntimeInspectionService.from_sources(path=config_path))
+    except (KnowledgeSearchError, OSError, ValueError, yaml.YAMLError) as exc:
+        category = getattr(exc, "category", "invalid_runtime_configuration")
+        if as_json:
+            click.echo(json.dumps({
+                "operation": "readiness", "status": "failed", "error": {"category": category},
+            }, sort_keys=True, indent=2))
+        else:
+            click.echo(f"readiness: failed category={category}")
+        raise click.exceptions.Exit(1) from exc
+    payload = report.to_mapping()
+    if as_json:
+        click.echo(json.dumps({
+            "operation": "readiness", "status": "succeeded", "result": payload,
+        }, sort_keys=True, indent=2))
+    else:
+        click.echo(f"readiness: {payload['status']} backend={report.backend} mode={report.mode}")
+        click.echo(f"repository={report.repository or 'unbound'} requested_revision={report.requested_revision or 'unknown'}")
+        for name, fact in sorted(report.checks.items()):
+            click.echo(f"{name}={fact.state}" + (f" category={fact.category}" if fact.category else ""))
+    if not report.ready:
+        raise click.exceptions.Exit(1)
+
+
 @main.command("capabilities")
 @click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False))
 @click.option("--json", "as_json", is_flag=True, help="Emit deterministic JSON.")
