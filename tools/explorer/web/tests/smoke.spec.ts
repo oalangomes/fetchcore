@@ -24,6 +24,7 @@ test('real Solr search → provenance → authorized source read (FetchCore)', a
 test('real Solr visual OR query preserves declared branches and provenance', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('API conectada')).toBeVisible()
+  await page.getByLabel('Canonical query').fill('eligibility_validator')
   await page.getByRole('button', { name: '+ OR · qualquer alternativa' }).click()
   await page.getByLabel('Termo branch 0').fill('eligibility_validator')
   await page.getByRole('button', { name: '+ Anchor obrigatório' }).click()
