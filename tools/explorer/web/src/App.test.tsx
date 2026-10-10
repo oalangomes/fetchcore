@@ -157,7 +157,7 @@ describe('Advanced SearchIntent v2 builder', () => {
     fireEvent.change(screen.getByLabelText('Termo branch 0'), { target: { value: 'eligibility_validator' } })
     fireEvent.click(screen.getByRole('button', { name: '+ OR · qualquer alternativa' }))
     fireEvent.change(screen.getByLabelText('Termo branch 1.0'), { target: { value: 'eligible' } })
-    fireEvent.click(screen.getByRole('button', { name: '+ Anchor obrigatório' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '+ Anchor obrigatório' })[0])
     fireEvent.change(screen.getByLabelText('Anchor branch 1.1'), { target: { value: 'src/auth.py' } })
     fireEvent.change(screen.getByLabelText('Origem branch 1.1'), { target: { value: 'caller:explicit' } })
     fireEvent.click(screen.getByRole('button', { name: 'Inspecionar payload final' }))
@@ -233,6 +233,7 @@ describe('Advanced SearchIntent v2 builder', () => {
   })
 
   it('exports a valid complete intent with no extra backend endpoints', async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     const createObjectURL = vi.fn((_blob: Blob) => 'blob:search-intent')
     const revokeObjectURL = vi.fn()
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
@@ -242,5 +243,7 @@ describe('Advanced SearchIntent v2 builder', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Exportar JSON' }))
     expect(createObjectURL).toHaveBeenCalledOnce()
     expect(createObjectURL.mock.calls[0][0]).toBeInstanceOf(Blob)
+    expect(click).toHaveBeenCalledOnce()
+    click.mockRestore()
   })
 })
