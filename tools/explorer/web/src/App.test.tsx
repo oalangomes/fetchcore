@@ -87,7 +87,7 @@ describe('Query builder and authorized target selectors', () => {
     }
     fireEvent.change(screen.getByLabelText('SearchIntent JSON'), { target: { value: JSON.stringify(intent) } })
     fireEvent.click(screen.getByRole('button', { name: 'Formulário' }))
-    expect(screen.getByText(/expressão booleana/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Editor visual de expression')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Termos exatos'), { target: { value: 'source_ref' } })
     fireEvent.click(screen.getByRole('button', { name: 'JSON completo' }))
     const jsonText = (screen.getByLabelText('SearchIntent JSON') as HTMLTextAreaElement).value
@@ -146,5 +146,101 @@ describe('On-demand operational readiness', () => {
     expect(await screen.findByText('Not ready')).toBeInTheDocument()
     expect(screen.getAllByText(/snapshot_missing/).length).toBeGreaterThan(0)
     expect(vi.mocked(globalThis.fetch).mock.calls.some(call => call[0] === '/api/readiness?target_id=default')).toBe(true)
+  })
+})
+
+describe('Advanced SearchIntent v2 builder', () => {
+  it('edits nested AND/OR branches without flattening their JSON or losing origin', async () => {
+    mount()
+    await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: '+ AND · todas as condições' }))
+    fireEvent.change(screen.getByLabelText('Termo branch 0'), { target: { value: 'eligibility_validator' } })
+    fireEvent.click(screen.getByRole('button', { name: '+ OR · qualquer alternativa' }))
+    fireEvent.change(screen.getByLabelText('Termo branch 1.0'), { target: { value: 'eligible' } })
+    fireEvent.click(screen.getByRole('button', { name: '+ Anchor obrigatório' }))
+    fireEvent.change(screen.getByLabelText('Anchor branch 1.1'), { target: { value: 'src/auth.py' } })
+    fireEvent.change(screen.getByLabelText('Origem branch 1.1'), { target: { value: 'caller:explicit' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Inspecionar payload final' }))
+    const prepared = JSON.parse(screen.getByLabelText('JSON final da busca').textContent ?? '{}')
+    expect(prepared.intent.expression).toEqual({ type: 'all_of', children: [
+      { type: 'term', value: 'eligibility_validator' },
+      { type: 'any_of', children: [
+        { type: 'term', value: 'eligible' },
+        { type: 'anchor', kind: 'path', value: 'src/auth.py', origin: 'caller:explicit' },
+      ] },
+    ] })
+    fireEvent.click(screen.getByRole('button', { name: 'JSON completo' }))
+    const full = JSON.parse((screen.getByLabelText('SearchIntent JSON') as HTMLTextAreaElement).value)
+    expect(full.expression).toEqual(prepared.intent.expression)
+    fireEvent.click(screen.getByRole('button', { name: 'Formulário' }))
+    expect(screen.getByLabelText('Anchor branch 1.1')).toHaveValue('src/auth.py')
+    fireEvent.click(screen.getByTestId('run-search'))
+    await screen.findByText('Trecho recuperado')
+    const sent = JSON.parse(String((vi.mocked(globalThis.fetch).mock.calls.find(call => call[0] === '/api/search')?.[1] as RequestInit).body))
+    expect(sent.intent.expression).toEqual(full.expression)
+  })
+
+  it('requires explicit preset action and refuses OR broadening on merge', async () => {
+    mount()
+    await screen.findByLabelText('Repositório autorizado')
+    fireEvent.change(screen.getByLabelText('Preset'), { target: { value: 'behavior' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar preset' }))
+    expect(screen.getByLabelText('Editor visual de expression')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: /Combinar listas/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar preset' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ambas as queries possuem expression')
+    fireEvent.click(screen.getByRole('button', { name: 'JSON completo' }))
+    const json = JSON.parse((screen.getByLabelText('SearchIntent JSON') as HTMLTextAreaElement).value)
+    expect(json.expression.type).toBe('all_of')
+    expect(json.expression.children).toHaveLength(2)
+  })
+
+  it('requires explicit import confirmation and blocks incompatible schema without overwriting edits', async () => {
+    mount()
+    await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: 'Importar JSON' }))
+    fireEvent.change(screen.getByLabelText(/Cole JSON completo para importar/), {
+      target: { value: '{"schema_version":8,"canonical_query":"bad"}' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar importação' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('schema_version')
+    expect(screen.getByLabelText('Canonical query')).toHaveValue('where is authentication validated?')
+    const imported = {
+      schema_version: 2, canonical_query: 'imported',
+      anchors: [], expression: { type: 'any_of', children: [
+        { type: 'term', value: 'authorization' },
+        { type: 'anchor', kind: 'source_ref', value: 'repository://demo/catalog/src/auth.py', origin: 'caller' },
+      ] }, expansions: [{ value: 'authz', origin: 'manual' }],
+      signals: [], hints: [],
+    }
+    fireEvent.change(screen.getByLabelText(/Cole JSON completo para importar/), {
+      target: { value: JSON.stringify(imported) },
+    })
+    expect(screen.getByLabelText('Canonical query')).toHaveValue('where is authentication validated?')
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar importação' }))
+    expect(screen.getByLabelText('Canonical query')).toHaveValue('imported')
+    fireEvent.click(screen.getByRole('button', { name: 'JSON completo' }))
+    expect(JSON.parse((screen.getByLabelText('SearchIntent JSON') as HTMLTextAreaElement).value)).toEqual(imported)
+  })
+
+  it('blocks submission of blank expression nodes without silent fallback', async () => {
+    mount()
+    await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: '+ OR · qualquer alternativa' }))
+    fireEvent.click(screen.getByTestId('run-search'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Term')
+    expect(vi.mocked(globalThis.fetch).mock.calls.some(call => call[0] === '/api/search')).toBe(false)
+  })
+
+  it('exports a valid complete intent with no extra backend endpoints', async () => {
+    const createObjectURL = vi.fn(() => 'blob:search-intent')
+    const revokeObjectURL = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
+    mount()
+    await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar JSON' }))
+    expect(createObjectURL).toHaveBeenCalledOnce()
+    expect(createObjectURL.mock.calls[0][0]).toBeInstanceOf(Blob)
   })
 })
