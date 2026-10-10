@@ -112,6 +112,15 @@ def test_container_inputs_are_immutable_and_match_dockerfile() -> None:
         ROOT / ".github" / "workflows" / "repository-index.yml"
     ).read_text(encoding="utf-8")
 
+    for path in (
+        ROOT / ".env.example",
+        ROOT / "infra" / "compose" / "app.yml",
+        ROOT / "infra" / "compose" / "solr.yml",
+        ROOT / "tools" / "explorer" / ".env.example",
+        ROOT / "tools" / "explorer" / "compose.yaml",
+    ):
+        assert "fetchcore-lab" not in path.read_text(encoding="utf-8")
+
 
 def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     workflow_dir = ROOT / ".github" / "workflows"
@@ -119,21 +128,41 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
         assert yaml.compose(path.read_text(encoding="utf-8")) is not None
 
     self_dogfood = (workflow_dir / "self-dogfood.yml").read_text(encoding="utf-8")
+    operational_index = (workflow_dir / "operational-index.yml").read_text(encoding="utf-8")
     localization = (workflow_dir / "docs-localization.yml").read_text(encoding="utf-8")
     ci = (workflow_dir / "ci.yml").read_text(encoding="utf-8")
     explorer = (workflow_dir / "explorer.yml").read_text(encoding="utf-8")
     repository_index = (workflow_dir / "repository-index.yml").read_text(encoding="utf-8")
 
-    assert "workflow_run:" in self_dogfood
-    assert "github.event.workflow_run.conclusion == 'success'" in self_dogfood
-    assert "github.event.workflow_run.event == 'push'" in self_dogfood
-    assert "head_repository.full_name == github.repository" in self_dogfood
-    assert self_dogfood.count("github.event.workflow_run.head_sha || github.sha") == 2
-    assert '["self-hosted","Linux","X64","fetchcore"]' in self_dogfood
+    assert "pull_request:" in self_dogfood
+    assert "workflow_run:" not in self_dogfood
+    assert '["ubuntu-latest"]' in self_dogfood
+    assert "fetchcore-self-dogfood" in self_dogfood
+    self_inputs = yaml.safe_load(self_dogfood)["jobs"]["self-index"]["with"]
+    assert self_inputs["create_if_missing"] is True
+    assert self_inputs["solr_provision_mode"] == "provision_if_missing"
+    assert self_inputs["index_lifecycle"] == "rebuild"
+    assert self_inputs["evaluate"] is True
+
+    assert "workflow_run:" in operational_index
+    assert "github.event.workflow_run.conclusion == 'success'" in operational_index
+    assert "github.event.workflow_run.event == 'push'" in operational_index
+    assert "head_repository.full_name == github.repository" in operational_index
+    assert operational_index.count("github.event.workflow_run.head_sha || github.sha") == 2
+    assert '["self-hosted","Linux","X64","fetchcore"]' in operational_index
+    operational_inputs = yaml.safe_load(operational_index)["jobs"]["operational-index"]["with"]
+    assert operational_inputs["collection"] == "fetchcore"
+    assert operational_inputs["create_if_missing"] is False
+    assert operational_inputs["solr_provision_mode"] == "reuse_only"
+    assert operational_inputs["index_lifecycle"] == "sync"
+    assert operational_inputs["evaluate"] is False
+
     assert "FETCHCORE_DOCS_LOCALIZATION_ENABLED == 'true'" in localization
     assert "Validate localization configuration" in localization
-    assert ci.count("scripts/ci/docker-pull.sh") == 2
+    assert ci.count("scripts/ci/docker-pull.sh") == 1
+    assert "dogfood-smoke:" not in ci
     assert explorer.count("scripts/ci/docker-pull.sh") == 3
+    assert "fetchcore-lab" not in explorer
     assert "workflow_call:" in repository_index
     assert "workflow_dispatch:" in repository_index
     assert "default: reuse_only" in repository_index
@@ -143,16 +172,9 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     )[1].split("jobs:", 1)[0]
     assert "docker run" not in repository_index
     assert repository_index.count("fetchcore index \\") == 5
-    assert "sync \"$REPOSITORY\" --json" in repository_index
-    assert "rebuild \"$REPOSITORY\" --json" in repository_index
+    assert 'sync "$REPOSITORY" --json' in repository_index
+    assert 'rebuild "$REPOSITORY" --json' in repository_index
     assert "unavailable until #130" in repository_index
-    assert "fetchcore-self-dogfood" in self_dogfood
-    assert "solr_provision_mode: reuse_only" in self_dogfood
-    self_inputs = yaml.safe_load(self_dogfood)["jobs"]["self-index"]["with"]
-    assert self_inputs["create_if_missing"] is False
-    assert self_inputs["solr_provision_mode"] == "reuse_only"
-    assert self_inputs["index_lifecycle"] == "sync"
-    assert "managed_solr: true" not in self_dogfood
 
 
 @pytest.mark.parametrize(

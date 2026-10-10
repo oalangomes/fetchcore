@@ -144,16 +144,14 @@ does not imply its index is present or compatible.
 
 ### Legacy Compose and runtime compatibility
 
-`tools/explorer/compose.yaml` remains a **thin compatibility wrapper**,
-so existing commands with `docker compose -f tools/explorer/compose.yaml`
-keep the original project name `fetchcore-lab`. Prefer the root command.
-Root `compose.yml` uses project `fetchcore`: its Solr volume is **separate**
-from `fetchcore-lab_solr-data`; both persist unless explicitly deleted.
-You must explicitly index or migrate data when switching project names.
+`tools/explorer/compose.yaml` remains only as a **thin compatibility alias**
+for existing commands. It now uses the same `fetchcore` Compose project as the
+root entrypoint, so Search Lab no longer creates a separate
+`fetchcore-lab` project, Solr resource, or volume namespace.
 
 Existing root `.env` files with `COMPOSE_FILE=tools/explorer/compose.yaml`
-continue selecting the old entrypoint until you **remove that line**. The
-new `.env.example` contains no `COMPOSE_FILE`. For Solr use
+continue selecting the compatibility entrypoint until you **remove that line**.
+The new `.env.example` contains no `COMPOSE_FILE`. For Solr use
 `FETCHCORE_SOLR_COLLECTION` / `FETCHCORE_SOLR_PORT`; historical root
 `SOLR_COLLECTION` / `SOLR_PORT` no longer configure the Explorer stack.
 
