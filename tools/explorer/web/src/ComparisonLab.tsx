@@ -66,6 +66,12 @@ function DiffView({ diff, a, b, onInspect }: {
       <td className="max-w-[180px] break-words px-3 py-3 align-top text-[11px] text-muted">
         A: {candidate.channels_a.length ? candidate.channels_a.join(', ') : 'não informado'}
         <div>B: {candidate.channels_b.length ? candidate.channels_b.join(', ') : 'não informado'}</div>
+        <details className="mt-2">
+          <summary className="cursor-pointer text-accent">Matches tipados</summary>
+          <pre className="json-output mt-2">{JSON.stringify({
+            A: candidate.a?.query_matches ?? null, B: candidate.b?.query_matches ?? null,
+          }, null, 2)}</pre>
+        </details>
       </td>
       <td className="px-3 py-3 align-top text-xs">
         {candidate.a && <button type="button" className="switch-button border border-line"
@@ -80,8 +86,10 @@ function DiffView({ diff, a, b, onInspect }: {
       <div className="space-y-1">
         <p className="text-sm font-semibold text-white">A × B — {status === 'snapshot-aligned'
           ? 'fingerprints alinhados' : status === 'unverified' ? 'não comprovada' : 'incompatível como experimento controlado'}</p>
-        <p className="text-xs text-muted">{armInfo(a)}</p>
-        <p className="text-xs text-muted">{armInfo(b)}</p>
+        <p className="text-xs text-muted">A: {armInfo(a)} · {a.outcome.state}
+          {a.outcome.category ? ' · erro ' + a.outcome.category : ''}</p>
+        <p className="text-xs text-muted">B: {armInfo(b)} · {b.outcome.state}
+          {b.outcome.category ? ' · erro ' + b.outcome.category : ''}</p>
       </div>
       <button type="button" className="switch-button border border-line" onClick={downloadDiff}>
         Exportar diff JSON v1
@@ -108,6 +116,22 @@ function DiffView({ diff, a, b, onInspect }: {
     {diff.assessment.observations.length > 0 && <div className="text-xs text-muted">
       {diff.assessment.observations.map(value => <p key={value}>• {value}</p>)}
     </div>}
+    <details className="rounded-lg border border-line px-3 py-3">
+      <summary className="cursor-pointer text-xs text-accent">Conferir query, scope e fingerprints de cada braço</summary>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {([['A', a], ['B', b]] as const).map(([name, arm]) =>
+          <div key={name} className="min-w-0">
+            <p className="mb-2 text-xs font-semibold text-white">{name} · observações capturadas</p>
+            <pre className="json-output max-h-60 overflow-auto">{JSON.stringify({
+              intent: arm.request.intent,
+              scope: { mode: arm.request.mode, knowledge_types: arm.request.knowledge_types, K: arm.request.limit },
+              target: arm.target,
+              fingerprints: arm.outcome.fingerprints,
+              status: arm.outcome.state, error: arm.outcome.category,
+            }, null, 2)}</pre>
+          </div>)}
+      </div>
+    </details>
     <section className="rounded-lg border border-line px-3 py-2">
       <h3 className="py-2 text-sm font-semibold text-white">Custos observados</h3>
       <MetricRow label="Execução" a="A" b="B"/>
