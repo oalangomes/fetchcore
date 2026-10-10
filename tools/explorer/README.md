@@ -13,6 +13,49 @@ An **optional, local-only** retrieval workbench. The core remains headless throu
 - On-demand **operational readiness** view for selected authorized targets (#134): separates backend reachability, schema, snapshot, currentness, fingerprint and embedding readiness from retrieval quality.
 
 
+## Run History and strict Replay (#146)
+
+**Histórico de execuções** records up to **20** live search outcomes per browser
+tab (including typed failures). This is strictly **in-memory**: no cookies,
+`localStorage`, browser databases, server-side run storage or background
+requests. Reloading or closing the tab discards the history. Explicit import,
+export and clear are available; clearing requires confirmation.
+
+Export is a **versioned bundle v1** (max 512 KB). It preserves the exact
+`SearchIntent`, search scope (`mode`, result limit and knowledge types),
+authorized target identity (repository/backend/collection/revision),
+observed rank/IDs, source refs where canonical, checksum, typed match summaries,
+stage latencies, measured telemetry and actual reported compatible fingerprints.
+Storage budgets are 20 runs, at most 100 candidates/run, 12 match summaries per
+candidate and 24 KB/run. If bounded capture truncates evidence, the manifest
+explicitly records `truncated=true`. Missing telemetry is **null**, not
+synthesized values. No source body, machine path, provider connection URL,
+raw backend response metadata or credentials are saved. A manually exported
+bundle **may still contain sensitive query terms, identifiers and source refs**:
+review before sharing.
+
+Imported bundles are validated and normalized before becoming visible;
+unsupported versions, duplicate IDs, invalid SearchIntent structures, oversized
+payloads and noncanonical source paths fail closed. Import does **not** create
+repository bindings, index or execute searches.
+
+**Restaurar query** loads only the recorded SearchIntent and explicit search
+parameters into the current editor. If the old target has been removed, it
+does **not** grant a new target; the current operator-authorized target remains
+unchanged. Restoring is not replaying and makes no network request.
+
+**Replay verificado** is intentionally strict: it calls the on-demand readiness
+endpoint on the currently authorized target, verifies identical backend,
+repository, collection, retrieval policy, bound requested/indexed revision and
+comparable observed fingerprints, then and only then submits an **entirely
+new** search through the existing application service. Missing metadata,
+stale revisions, changed fingerprints, failed runs and unknown/unready state
+block replay with explicit reasons. No implicit semantic fallback, auto-reindex
+or success/satisfaction assertion. Default unbound revisions will commonly
+block verified replay; use **Restaurar query** then explicitly execute a **new,
+non-comparable** run. The Comparison Lab #126 may later consume these manifests,
+while Ground Truth and PASS/FAIL belong to external `retrievalgate`.
+
 ## Advanced Query Builder (#145)
 
 The visual editor supports nested `all_of` (AND: **every** declared child
