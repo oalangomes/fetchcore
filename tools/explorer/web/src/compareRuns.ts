@@ -45,7 +45,7 @@ function canonical(value: unknown): string {
   if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']'
   if (value && typeof value === 'object') return '{' + Object.keys(value).sort()
     .map(key => JSON.stringify(key) + ':' + canonical((value as Record<string, unknown>)[key])).join(',') + '}'
-  return JSON.stringify(value)
+  return JSON.stringify(value) ?? 'null'
 }
 function nonblank(s: string | null | undefined): boolean {
   return typeof s === 'string' && s.trim().length > 0
@@ -103,6 +103,9 @@ function reasonsFor(a: RunManifest, b: RunManifest): ComparisonAssessment {
     reasons.push('Search scope mode ou knowledge types diferem')
   }
   if (a.request.limit !== b.request.limit) reasons.push('Top-K/result limit difere')
+  const budgetA = a.target.retrieval?.candidate_budget
+  const budgetB = b.target.retrieval?.candidate_budget
+  if (canonical(budgetA) !== canonical(budgetB)) reasons.push('Candidate budget difere ou não é comparável')
   if (a.outcome.state !== 'ok' || b.outcome.state !== 'ok') {
     reasons.push('Uma ou mais execuções falharam; nenhum vazio significa ausência de evidência')
   }
@@ -150,7 +153,7 @@ export function compareRuns(a: RunManifest, b: RunManifest): ComparisonDiff {
       key, identity: who.identity, identity_confidence: who.confidence,
       a: hitA, b: hitB,
       presence: shared ? 'shared' : hitA ? 'only-a' : 'only-b',
-      rank_delta: shared && assessment.query_equal && assessment.same_corpus
+      rank_delta: shared && who.confidence === 'source-ref' && assessment.status === 'snapshot-aligned'
         ? hitB.rank - hitA.rank : null,
       channels_a: channels(hitA), channels_b: channels(hitB),
     }
