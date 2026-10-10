@@ -19,6 +19,10 @@ ReadinessState = Literal[
     "ready", "absent", "stale", "incompatible", "unavailable",
     "unsupported", "unknown", "not_required",
 ]
+_REQUIRED_CHECKS = frozenset((
+    "service", "schema", "snapshot", "currentness",
+    "indexing_fingerprint", "embedding", "retrieval",
+))
 
 @dataclass(frozen=True)
 class ReadinessFact:
@@ -44,7 +48,10 @@ class ReadinessReport:
 
     @property
     def ready(self) -> bool:
-        return all(f.state in {"ready", "not_required"} for f in self.checks.values())
+        return (
+            _REQUIRED_CHECKS <= self.checks.keys()
+            and all(f.state in {"ready", "not_required"} for f in self.checks.values())
+        )
 
     def to_mapping(self) -> dict[str, object]:
         return {
