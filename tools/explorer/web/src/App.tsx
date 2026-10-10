@@ -332,7 +332,7 @@ export function App() {
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Investigue buscas reais, inspecione evidências tipadas e entenda o comportamento do backend — sem inferir autoridade.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            {Object.entries(config.data?.capabilities ?? {}).filter(([,enabled]) => enabled).map(([capability]) => <span key={capability} className="chip chip-teal"><Check size={11}/>{capability}</span>)}
+            {Object.entries(activeTarget?.capabilities ?? {}).filter(([,enabled]) => enabled).map(([capability]) => <span key={capability} className="chip chip-teal"><Check size={11}/>{capability}</span>)}
           </div>
         </div>
         {config.isError && <div role="alert" className="error-panel mb-5 flex items-start gap-3"><CircleAlert size={18}/><div><strong>API indisponível</strong><p className="mt-1 text-sm">{config.error.message}. Confirme que o FastAPI está rodando em 127.0.0.1:8765.</p></div></div>}
