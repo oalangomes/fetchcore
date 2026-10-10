@@ -7,7 +7,7 @@ This module does not write, index, migrate, or implicitly repair projections.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, TYPE_CHECKING
+from typing import Literal, TYPE_CHECKING, cast
 
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 from fetchcore.retrieval.config import EmbeddingConfig
@@ -230,11 +230,11 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
         ) else getattr(snapshot, "serializer_fingerprint", None)
         if config.backend == "solr":
             # The runtime branch always composes a Solr-backed, contract-bound store.
-            assert isinstance(store, SolrIndexStore)
-            assert isinstance(snapshot, SolrIndexSnapshot)
-            status = repository_index_status(store, index.runtime)
+            solr_store = cast(SolrIndexStore, store)
+            solr_snapshot = cast(SolrIndexSnapshot, snapshot)
+            status = repository_index_status(solr_store, index.runtime)
             expected = index.runtime.fingerprint
-            actual = snapshot_indexing_fingerprint(snapshot)
+            actual = snapshot_indexing_fingerprint(solr_snapshot)
             fingerprints["indexing"] = actual
             fingerprints["expected_indexing"] = expected
             checks["indexing_fingerprint"] = (
@@ -254,7 +254,7 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
             else:
                 checks["currentness"] = ReadinessFact("unknown", "revision_unbound")
             if mode in {"dense", "hybrid"}:
-                if not store.embedding_snapshot_matches(snapshot):
+                if not solr_store.embedding_snapshot_matches(solr_snapshot):
                     checks["embedding"] = ReadinessFact("incompatible", "embedding_identity_changed")
                 elif provider is None:
                     checks["embedding"] = ReadinessFact("unavailable", "embedding_provider_missing")
