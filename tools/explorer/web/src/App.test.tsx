@@ -329,3 +329,47 @@ describe('Retrieval Comparison Lab', () => {
     expect(panel).toHaveTextContent('Terceiro braço: comparação A × C')
   })
 })
+
+describe('Evidence Coverage Map — live typed observations', () => {
+  it('shows an unknown canonical query, never semantic satisfaction, and drills into authorized result inspector', async () => {
+    mount()
+    await screen.findByText('API conectada')
+    fireEvent.change(screen.getByLabelText('Canonical query'), { target: { value: 'eligibility_validator' } })
+    fireEvent.click(screen.getByTestId('run-search'))
+    await screen.findByText('Trecho recuperado')
+    const map = screen.getByLabelText('Evidence Coverage Map')
+    expect(map).toHaveTextContent('Query canônica (sem satisfação implícita)')
+    expect(map).toHaveTextContent('Não avaliado/informado')
+    expect(map).toHaveTextContent('Repositório autorizado: demo/catalog')
+    expect(map).toHaveTextContent('Revision binding: não vinculada')
+    fireEvent.click(screen.getByRole('button', { name: 'canonical_query × candidato 1' }))
+    expect(screen.getByLabelText('Detalhe da célula de cobertura')).toHaveTextContent('eligibility.py')
+    fireEvent.click(screen.getByRole('button', { name: 'Inspecionar candidato e fonte autorizada' }))
+    expect(screen.getByText('Provenance e identidade')).toBeInTheDocument()
+    expect(vi.mocked(globalThis.fetch).mock.calls.filter(call => call[0] === '/api/search')).toHaveLength(1)
+  })
+  it('reports missing required anchors from the observed typed window without promoting unrelated lexical signals', async () => {
+    mount()
+    await screen.findByText('API conectada')
+    fireEvent.click(screen.getByRole('button', { name: 'JSON completo' }))
+    fireEvent.change(screen.getByLabelText('SearchIntent JSON'), { target: {
+      value: JSON.stringify({
+        schema_version: 2, canonical_query: 'eligibility_validator',
+        anchors: [{ type: 'anchor', kind: 'path', value: 'src/missing.py', origin: 'caller' }],
+        expression: { type: 'all_of', children: [
+          { type: 'term', value: 'eligibility_validator' },
+          { type: 'term', value: 'nonexistent_anchor' },
+        ] },
+      }),
+    } })
+    fireEvent.click(screen.getByTestId('run-search'))
+    await screen.findByText('Trecho recuperado')
+    const map = screen.getByLabelText('Evidence Coverage Map')
+    expect(map).toHaveTextContent('expression: AND')
+    expect(map).toHaveTextContent('src/missing.py')
+    expect(map).toHaveTextContent('Sem match observado')
+    fireEvent.click(screen.getByRole('button', { name: 'Obrigatórios' }))
+    expect(screen.getByLabelText('Matriz de cobertura tipada')).toHaveTextContent('src/missing.py')
+    expect(vi.mocked(globalThis.fetch).mock.calls.filter(call => call[0] === '/api/search')).toHaveLength(1)
+  })
+})

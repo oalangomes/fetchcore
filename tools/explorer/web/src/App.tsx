@@ -15,6 +15,7 @@ import { ApiError, getConfig, getReadiness, parseIntent, readSource, search, sou
 import { SearchIntentForm } from './SearchIntentForm'
 import { RunHistoryPanel } from './RunHistoryPanel'
 import { ComparisonLab } from './ComparisonLab'
+import { EvidenceCoverageMap } from './EvidenceCoverageMap'
 import { captureRun, prependRun, replayGate } from './runHistory'
 import type { RunManifest, RecordedHit } from './runHistory'
 import { applyPreset, intentPresets, parseValidatedIntent, validateVisualIntent } from './intentBuilder'
@@ -343,6 +344,11 @@ export function App() {
     } catch (error) {
       setParseError(error instanceof Error ? error.message : 'SearchIntent JSON inválido')
     }
+  }
+  function inspectCurrentCoverageCandidate(id: string) {
+    if (!response?.results.some(hit => hit.id === id)) return
+    setSelectedId(id)
+    setActivePanel('results')
   }
   function inspectRecordedCandidate(record: RunManifest, recorded: RecordedHit): boolean {
     // A recorded historical source never authorizes a read. Only navigate a
@@ -680,6 +686,10 @@ export function App() {
             </section>}
           </div>
         </div>
+        {response && run.variables && <EvidenceCoverageMap key={runs[0]?.id ?? 'active'}
+          request={run.variables} response={response}
+          repository={resultTarget?.repository ?? ''}
+          revision={resultTarget?.revision ?? null} onInspect={inspectCurrentCoverageCandidate}/>}
         <ComparisonLab runs={runs} onInspect={inspectRecordedCandidate}/>
         <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-line py-5 text-xs text-muted"><span>FetchCore · Repositories → evidence</span><span>Local-only tooling · Sem agentes · Sem authority</span></footer>
       </div>
