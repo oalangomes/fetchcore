@@ -107,3 +107,16 @@ export interface SourceResult {
   total_lines: number
   truncated: boolean
 }
+
+export interface ReadinessReport {
+  schema_version: number
+  status: string
+  ready: boolean
+  backend: string
+  repository: string | null
+  requested_revision: string | null
+  indexed_revision: string | null
+  mode: string
+  checks: Record<string, { state: string; category?: string }>
+  fingerprints: Record<string, string | null>
+}

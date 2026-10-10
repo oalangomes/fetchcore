@@ -28,6 +28,7 @@ from fetchcore.application import (
     load_runtime_config,
     service_from_runtime_config,
 )
+from fetchcore.application.runtime_inspection import RuntimeInspectionService
 from fetchcore.retrieval import RetrievalConfig
 from fetchcore.retrieval.contracts import KnowledgeSearchError, SearchIntent
 
@@ -54,6 +55,7 @@ class ExplorerTarget:
     collection: str | None
     capabilities: dict[str, bool]
     retrieval: dict[str, object] | None
+    runtime_config: FetchCoreRuntimeConfig | None = None
 
     def public(self) -> dict[str, object]:
         return {
@@ -83,6 +85,7 @@ def _operator_targets(base: FetchCoreRuntimeConfig) -> dict[str, ExplorerTarget]
         collection=_collection(base.backend, base.backend_settings),
         capabilities=BackendRegistry().create(base.backend).retrieval_capabilities.to_mapping(),
         retrieval=base.retrieval.to_mapping() if base.retrieval else None,
+        runtime_config=base,
     )
     targets = {"default": default}
     raw = os.environ.get("FETCHCORE_EXPLORER_TARGETS", "").strip()
@@ -137,6 +140,7 @@ def _operator_targets(base: FetchCoreRuntimeConfig) -> dict[str, ExplorerTarget]
             collection=_collection(backend, settings),
             capabilities=BackendRegistry().create(backend).retrieval_capabilities.to_mapping(),
             retrieval=retrieval.to_mapping() if retrieval else None,
+            runtime_config=configured,
         )
     return targets
 
@@ -254,6 +258,21 @@ def create_app(context: ExplorerContext | None = None) -> FastAPI:
             "default_target": "default",
             "targets": [target.public() for target in _available_targets(ctx).values()],
         }
+
+    @app.get("/api/readiness")
+    def readiness(target_id: str = "default") -> dict[str, object]:
+        """On-demand diagnostic: never mark service health as index readiness."""
+        ctx = resolved()
+        try:
+            target = _selected_target(ctx, target_id)
+        except KnowledgeSearchError as exc:
+            raise _error(exc) from exc
+        if target.runtime_config is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"category": "readiness_unavailable", "message": "Target has no runtime readiness binding"},
+            )
+        return RuntimeInspectionService(target.runtime_config).readiness()
 
     @app.post("/api/search")
     def search(payload: SearchPayload) -> dict[str, object]:

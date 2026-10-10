@@ -266,3 +266,38 @@ def test_target_registry_is_operator_owned_and_fails_closed(monkeypatch, tmp_pat
         assert False, "duplicate default target id must fail"
     except ValueError as exc:
         assert "duplicated" in str(exc)
+
+
+def test_readiness_is_on_demand_and_uses_authorized_target(tmp_path: Path) -> None:
+    from fetchcore.application import FetchCoreRuntimeConfig
+    from fetchcore.application.runtime_inspection import RuntimeInspectionService
+
+    repo = "demo/catalog"
+    service = RetrievalApplicationService({
+        repo: RepositoryBinding(repository=repo, workspace=tmp_path, backend="local-semantic"),
+    })
+    config = FetchCoreRuntimeConfig(
+        backend="local-semantic", workspace=tmp_path, repository=repo,
+    )
+    target = ExplorerTarget(
+        "default", service, repo, "local-semantic", None, None,
+        {"lexical": True}, None, runtime_config=config,
+    )
+    ctx = ExplorerContext(
+        service=service, repository=repo, backend="local-semantic",
+        revision=None, capabilities={"lexical": True}, retrieval=None,
+        targets={"default": target},
+    )
+    client = TestClient(create_app(ctx))
+    public = client.get("/api/config").json()
+    assert "runtime_config" not in public["targets"][0]
+    invalid = client.get("/api/readiness?target_id=unconfigured")
+    assert invalid.status_code == 403
+    assert invalid.json()["error"]["category"] == "unauthorized_target"
+    response = client.get("/api/readiness?target_id=default")
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["schema_version"] == 1
+    assert report["ready"] is True
+    assert report["checks"]["snapshot"]["state"] == "not_required"
+    assert RuntimeInspectionService(config).readiness() == report

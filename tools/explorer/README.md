@@ -10,6 +10,7 @@ An **optional, local-only** retrieval workbench. The core remains headless throu
 - Result inspection: source ref, revision, checksum, line ranges, content, `QueryMatchEvidence`, `EvidenceObservation`, relationships and raw metadata.
 - Authorized source reads; telemetry/stages, candidate counts and fingerprints when returned.
 - Explicit structured errors with no silent fallback.
+- On-demand **operational readiness** view for selected authorized targets (#134): separates backend reachability, schema, snapshot, currentness, fingerprint and embedding readiness from retrieval quality.
 
 
 ## Query builder and operator-owned targets
