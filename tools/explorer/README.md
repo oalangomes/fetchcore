@@ -4,7 +4,7 @@ An **optional, local-only** retrieval workbench. The core remains headless throu
 
 ## Features
 - Live retrieval through existing `RetrievalApplicationService`, never mock data.
-- Dual `SearchIntent v2` editors: visual form for exact/semantic terms, hints, required anchors, expansions and typed signals; lossless full JSON editor for expressions and all advanced fields.
+- Dual `SearchIntent v2` editors: bounded visual **AND/OR nested expression tree** (ordered branches, typed anchors with origin), exact/semantic terms, hints, expansions and typed signals; full JSON remains lossless.
 - Operator-authorized repository and collection/index selector; selecting an index does **not** perform federated retrieval. Backend/provenance/source authorization remains application-owned.
 - Read-only operator backend/capabilities; bounded request scope mode, result limit and knowledge types.
 - Result inspection: source ref, revision, checksum, line ranges, content, `QueryMatchEvidence`, `EvidenceObservation`, relationships and raw metadata.
@@ -12,6 +12,42 @@ An **optional, local-only** retrieval workbench. The core remains headless throu
 - Explicit structured errors with no silent fallback.
 - On-demand **operational readiness** view for selected authorized targets (#134): separates backend reachability, schema, snapshot, currentness, fingerprint and embedding readiness from retrieval quality.
 
+
+## Advanced Query Builder (#145)
+
+The visual editor supports nested `all_of` (AND: **every** declared child
+must be matched inside a candidate record) and `any_of` (OR: at least one
+declared alternative), literal terms and structured anchors. Operators are
+**never inferred** from the natural-language query. Branch order is preserved;
+children can be moved up/down. Replacing a group with a leaf explicitly
+discards that subtree, so check the JSON preview before running a query.
+Deleting the only child is deliberately blocked; remove the entire group
+explicitly instead. Depth and node limits mirror the backend: 16 levels,
+256 total expression + root anchors + expansions. Incomplete term/anchor inputs
+are drafts only; search/export refuse to submit them.
+
+Five `v1` **versioned starter presets** cover identifier, qualified symbol,
+file path, architecture and behavior. Preset application requires choosing
+`Substituir intenção` or `Combinar listas`, then clicking **Aplicar preset**.
+Merge retains the original canonical query and appends explicit anchors, hints,
+expansions and signals (including `origin`). It **never invents OR/AND** for
+two independent expression trees; that conflict fails closed. Presets have
+example terms/paths that operators must tailor to their own repositories.
+
+JSON import only replaces the draft after explicit confirmation and full
+schema validation. JSON export writes the complete valid intent as a local file
+(no backend credentials, workspace paths or target authorization are embedded).
+Schema v1 is accepted in JSON mode but requires an explicit v2 migration
+before entering the advanced visual builder. Unknown fields or versions,
+invalid branches, missing required values, and excessive depth/size are
+rejected before a search rather than silently rewritten.
+
+**Inspecionar payload final** displays the actual bounded request envelope:
+`target_id`, canonical repository binding, `SearchIntent`, search mode,
+knowledge types and result limit. Scope/policy/budget are not silently folded
+into the query's semantic content. The Python contract remains the final
+authority on accepted structures. This is a developer interface, not a
+semantic satisfaction or evidence-approval UI.
 
 ## Query builder and operator-owned targets
 
