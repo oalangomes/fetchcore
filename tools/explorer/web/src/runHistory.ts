@@ -184,6 +184,14 @@ export function captureRun(
     },
     outcome: captureResponse(response, errorCategory),
   }
+  // A bounded history is a finite context budget, not a source document archive.
+  while (JSON.stringify(manifest).length > 24_000 && manifest.outcome.results.length) {
+    manifest.outcome.results.pop()
+    manifest.outcome.truncated = true
+  }
+  if (JSON.stringify(manifest).length > 24_000) {
+    throw new Error('Manifest excessivo: reduza o tamanho da query')
+  }
   return manifest
 }
 
@@ -230,8 +238,8 @@ export function importHistory(raw: string): RunManifest[] {
         || !(rawTarget.revision === null || typeof rawTarget.revision === 'string')
         || !['discovery','targeted','repository_source'].includes(String(rawRequest.mode))
         || !Number.isInteger(rawRequest.limit) || (rawRequest.limit as number) < 1 || (rawRequest.limit as number) > 100
-        || !Array.isArray(rawRequest.knowledge_types)
-        || rawRequest.knowledge_types.some(value => typeof value !== 'string')) {
+        || !Array.isArray(rawRequest.knowledge_types) || rawRequest.knowledge_types.length > 30
+        || rawRequest.knowledge_types.some(value => typeof value !== 'string' || value.length > 128)) {
       throw new Error('Manifest incompleto ou destino não verificável')
     }
     ids.add(entry.id)
@@ -249,15 +257,86 @@ export function importHistory(raw: string): RunManifest[] {
       throw new Error('Fingerprint inválido')
     }
     if (!(rawTarget.retrieval === null || isObject(rawTarget.retrieval))) throw new Error('Retrieval policy inválida')
-    // Re-canonicalize via the capture path: imported envelopes never become
-    // privileged runtime inputs and metadata/unknown nested fields get dropped.
-    const canonical = {
-      ...entry, request: {
-        repository: rawTarget.repository, target_id: rawTarget.id, mode: rawRequest.mode,
-        limit: rawRequest.limit, knowledge_types: rawRequest.knowledge_types, intent: rawRequest.intent,
+    if (!['ok', 'error'].includes(String(rawOutcome.state))
+      || !(rawOutcome.category === null || typeof rawOutcome.category === 'string')
+      || !(rawOutcome.backend === null || typeof rawOutcome.backend === 'string')
+      || !isObject(rawOutcome.fingerprints)
+      || !(rawOutcome.telemetry === null || isObject(rawOutcome.telemetry))) {
+      throw new Error('Outcome inválido')
+    }
+    // Normalize every imported field. Never reflect unknown nested metadata,
+    // provider settings, absolute paths or injected source body in a re-export.
+    const stored: RunManifest = {
+      schema_version: HISTORY_VERSION,
+      id: entry.id,
+      recorded_at: entry.recorded_at,
+      request: {
+        repository: rawTarget.repository,
+        target_id: rawTarget.id,
+        mode: rawRequest.mode as SearchPayload['mode'],
+        limit: rawRequest.limit as number,
+        knowledge_types: [...rawRequest.knowledge_types] as string[],
+        intent: parseValidatedIntent(JSON.stringify(rawRequest.intent)),
       },
-    } as unknown as RunManifest
-    imported.push(JSON.parse(JSON.stringify(canonical)) as RunManifest)
+      target: {
+        id: rawTarget.id,
+        repository: rawTarget.repository,
+        backend: text(rawTarget.backend, 80),
+        collection: rawTarget.collection === null ? null : text(rawTarget.collection, 256),
+        revision: rawTarget.revision === null ? null : text(rawTarget.revision, 256),
+        retrieval: policy(rawTarget.retrieval),
+      },
+      outcome: {
+        state: rawOutcome.state as 'ok' | 'error',
+        category: rawOutcome.category === null ? null : text(rawOutcome.category, 100),
+        backend: rawOutcome.backend === null ? null : text(rawOutcome.backend, 80),
+        total_candidates: optionalNumber(rawOutcome.total_candidates),
+        truncated: rawOutcome.truncated === true,
+        results: rawOutcome.results.map((result: unknown, rank: number) => {
+          const hit = result as Record<string, unknown>
+          return {
+            rank: rank + 1, id: text(hit.id, 256), source_ref: reference(hit.source_ref),
+            revision: text(hit.revision, 256) || null, checksum: text(hit.checksum, 256) || null,
+            knowledge_type: text(hit.knowledge_type, 100), score: finite(hit.score) ?? 0,
+            query_matches: (hit.query_matches as unknown[]).map(item => {
+              const match = isObject(item) ? item : {}
+              return {
+                match_type: text(match.match_type, 80),
+                channels: Array.isArray(match.channels) ? match.channels.slice(0, 8).map(x => text(x, 80)) : [],
+                matched_values: Array.isArray(match.matched_values)
+                  ? match.matched_values.slice(0, 8).map(x => text(x, 128)) : [],
+                source_ref: reference(match.source_ref),
+              }
+            }),
+            observations: (hit.observations as unknown[]).map(item => ({
+              category: isObject(item) ? text(item.category, 80) : '',
+              subtype: isObject(item) ? text(item.subtype, 80) : '',
+            })),
+          }
+        }),
+        telemetry: rawOutcome.telemetry === null ? null : (() => {
+          const tel = rawOutcome.telemetry as Record<string, unknown>
+          return {
+            mode: text(tel.mode, 80), duration_ms: finite(tel.duration_ms) ?? 0,
+            candidates_examined: finite(tel.candidates_examined) ?? 0,
+            candidates_returned: finite(tel.candidates_returned) ?? 0,
+            returned_chars: finite(tel.returned_chars) ?? 0,
+            time_to_first_candidate_ms: optionalNumber(tel.time_to_first_candidate_ms),
+            stages: Array.isArray(tel.stages) ? tel.stages.slice(0, 32).map(item => {
+              const stage = isObject(item) ? item : {}
+              return {
+                name: text(stage.name, 80), duration_ms: finite(stage.duration_ms) ?? 0,
+                candidates_in: optionalNumber(stage.candidates_in),
+                candidates_out: optionalNumber(stage.candidates_out),
+              }
+            }) : [],
+          }
+        })(),
+        fingerprints: fingerprints(rawOutcome.fingerprints),
+      },
+    }
+    if (JSON.stringify(stored).length > 24_000) throw new Error('Manifest importado fora do budget')
+    imported.push(stored)
   }
   return imported
 }
@@ -284,7 +363,7 @@ export function replayGate(run: RunManifest, targets: ExplorerTarget[], readines
   const stored = run.outcome.fingerprints
   const current = readiness.fingerprints
   const verified = Object.entries(stored).filter(([key]) =>
-    Object.hasOwn(current, key) && typeof current[key] === 'string' && current[key] !== '')
+    Object.prototype.hasOwnProperty.call(current, key) && typeof current[key] === 'string' && current[key] !== '')
   if (!Object.keys(stored).length || !verified.length) reasons.push('Fingerprint comparável não disponível (sem prova de equivalência)')
   for (const [key, value] of Object.entries(stored)) {
     if (!(key in current)) reasons.push('Fingerprint não verificável: ' + key)
