@@ -92,7 +92,7 @@ A complete example lives at `examples/github-actions/fetchcore-index.yml`.
 
 `runner_labels_json` is a JSON array passed directly to `runs-on`.
 
-For FetchCore self-dogfood, set the repository variable:
+For FetchCore's post-merge operational index, set the repository variable:
 
 ```text
 FETCHCORE_INDEX_RUNNER_LABELS_JSON
@@ -104,18 +104,16 @@ Example:
 ["self-hosted","Linux","X64","local-runner","fetchcore"]
 ```
 
-If the variable is absent, the self-dogfood workflow defaults to:
+If the variable is absent, the operational-index workflow defaults to:
 
 ```json
 ["self-hosted","Linux","X64","fetchcore"]
 ```
 
 The repository-specific label prevents an unrelated self-hosted runner from
-claiming the job. Runner lifecycle remains an operator concern: on-demand
-runners must be made available before a manual dispatch, while continuous
-post-merge dogfood requires an explicitly configured always-on runner. Pull
-request code is validated on GitHub-hosted runners and is not sent to this
-self-hosted path.
+claiming the operational job. Runner lifecycle remains an operator concern.
+Pull-request self-dogfood runs on GitHub-hosted runners with an owned ephemeral
+Solr runtime and never writes to the persistent operational resource.
 
 ## Reuse-first Solr lifecycle
 
@@ -186,8 +184,8 @@ and shared-volume ownership are unsupported.
 
 ## Isolating a second repository
 
-Every repository gets its own core/collection. For example, a second repository
-must not use FetchCore's `fetchcore-self-dogfood` core:
+Every persistent repository index gets its own core/collection. For example, a
+second repository must not use FetchCore's operational `fetchcore` core:
 
 ```yaml
 jobs:
@@ -272,41 +270,56 @@ the workflow does not pretend to provide a distributed lock.
 
 ## FetchCore self-dogfood
 
-`.github/workflows/self-dogfood.yml` runs only after the `CI` workflow succeeds
-for `master`, and can also be dispatched manually. A failed or cancelled CI run
-does not enqueue self-dogfood. Only a `push` run originating from the FetchCore
-repository is accepted; pull request and fork revisions cannot reach the
-self-hosted job through this trigger. The workflow indexes the exact successful
-CI `head_sha`, rather than a later moving branch head.
+`.github/workflows/self-dogfood.yml` runs for pull requests and can also be
+dispatched manually. It checks out the candidate revision as both the target
+repository and FetchCore runtime, provisions only an owned ephemeral local Solr
+when the configured endpoint is unavailable, creates the disposable
+`fetchcore-self-dogfood` resource explicitly, performs an explicit rebuild, and
+evaluates the result through the real MCP path.
 
-It indexes `oalangomes/fetchcore` into the dedicated
-`fetchcore-self-dogfood` core/collection, reuses the configured Solr service, and
-then evaluates the index through the real MCP stdio server. The normal wrapper
-requests `sync` with `create_if_missing: false`; initialization remains a separate
-explicit `create_if_missing: true` and `index_lifecycle: rebuild` dispatch. If the
-dedicated resource is absent, the normal run fails with `resource_missing`.
-
-The flow is:
+The pull-request flow is:
 
 ```text
-FetchCore source
-→ self-hosted runner
-→ incremental FetchCore index
-→ persisted Solr snapshot
+PR candidate revision
+→ GitHub-hosted runner
+→ owned ephemeral Solr
+→ fetchcore-self-dogfood
+→ explicit rebuild
 → fetchcore-mcp
-→ MCP client
 → reviewed repository-local scenarios
-→ JSON + Markdown PASS/FAIL report
+→ bounded evidence
+→ owned cleanup
 ```
 
+The disposable resource is not an operational index and is not reused between
+pull requests. Pull requests never write to the persistent `fetchcore` resource.
+
 Self-evaluation scenarios live in `dogfood/scenarios/fetchcore-self.yaml`.
+At least one scenario verifies `get_source`, so the gate exercises bounded
+source serving as well as search. The currently supported default arm is
+`lexical`; dense/hybrid remain explicit capability-dependent work under #130.
 
-At least one scenario verifies `get_source`, so the gate tests bounded source serving as well as search.
+## FetchCore operational index
 
-The operational evaluation mode is currently `lexical`. Requests for `dense` or
-`hybrid` fail validation explicitly and identify #130 as the missing vector-ready
-index/provider contract. They are never reported as lexical success. A schema that
-contains a vector field is not evidence that vectors were indexed.
+`.github/workflows/operational-index.yml` runs only after a successful `CI`
+workflow for a `master` push from this repository, or by explicit manual
+dispatch. It consumes the successful CI run's immutable `head_sha` and updates
+the persistent `fetchcore` resource on the repository-affine self-hosted runner.
+
+The normal operational contract is deliberately fail-closed:
+
+```yaml
+collection: fetchcore
+create_if_missing: false
+solr_provision_mode: reuse_only
+index_lifecycle: sync
+evaluate: false
+```
+
+An absent resource, absent snapshot, or incompatible fingerprint is not repaired
+or rebuilt automatically. Initial persistent bootstrap/rebuild is an explicit
+operator action through the reusable indexing workflow. Subsequent master runs
+must resolve to measured incremental work or no-op when compatible.
 
 ## What this dogfood proves
 

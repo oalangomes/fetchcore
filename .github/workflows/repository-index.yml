@@ -150,7 +150,7 @@ on:
         description: Dedicated Solr core or collection.
         required: false
         type: string
-        default: fetchcore-self-dogfood
+        default: fetchcore
       create_if_missing:
         description: Authorize creation of only the named core/collection.
         required: false
@@ -193,10 +193,10 @@ on:
         options: [plan, sync, rebuild]
         default: sync
       evaluate:
-        description: Run MCP dogfood scenarios.
+        description: Run MCP evaluation after indexing.
         required: false
         type: boolean
-        default: true
+        default: false
       evaluation_modes_json:
         description: JSON retrieval mode list; currently only lexical is operational.
         required: false
@@ -208,10 +208,10 @@ on:
         type: boolean
         default: false
       scenarios_path:
-        description: Scenario YAML in target repository.
+        description: Scenario YAML in target repository when evaluate=true.
         required: false
         type: string
-        default: dogfood/scenarios/fetchcore-self.yaml
+        default: ""
       artifact_retention_days:
         description: Artifact retention days.
         required: false

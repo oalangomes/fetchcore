@@ -1,7 +1,8 @@
 # Deprecated compatibility entrypoint for PR #116.
 # Prefer docker compose up from the repository root (compose.yml).
-# This wrapper retains the fetchcore-lab Compose project name and volume namespace.
-name: fetchcore-lab
+# This wrapper is an alias of the canonical FetchCore Compose project and does
+# not create a separate Search Lab runtime/volume namespace.
+name: fetchcore
 include:
   - ../../infra/compose/app.yml
   - ../../infra/compose/solr.yml

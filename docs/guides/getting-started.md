@@ -154,11 +154,12 @@ No silent fallback to Solr/local-semantic occurs.
 ### Compatibility and teardown
 
 The original `docker compose -f tools/explorer/compose.yaml ...` entrypoint
-remains as a compatibility wrapper using the **old** `fetchcore-lab` Compose
-project/volume namespace. The new root stack uses project `fetchcore`, so
-**Solr named volumes are different**: no index/data migration is implied.
-Reindex explicitly or intentionally migrate an existing volume yourself; never
-run `down -v` unless you intend to delete all data in that project.
+remains as a compatibility alias, but it now uses the same `fetchcore`
+Compose project and persistent Solr volume as the root stack. Search Lab does
+not create a second `fetchcore-lab` runtime namespace.
+
+Never run `down -v` unless you intentionally want to delete the canonical
+local FetchCore volume.
 
 The old standalone `fetchcore` MCP **stdio image** remains available:
 

@@ -46,7 +46,7 @@ jobs:
           docker run -d --name fetchcore-explorer-solr \
             -p 127.0.0.1:8983:8983 \
             -v "$GITHUB_WORKSPACE/infra/solr/configset:/fetchcore-configset:ro" \
-            "$FETCHCORE_SOLR_IMAGE" solr-precreate fetchcore-lab /fetchcore-configset
+            "$FETCHCORE_SOLR_IMAGE" solr-precreate fetchcore /fetchcore-configset
       - name: Wait for Solr readiness
         run: |
           python - <<'PY'
@@ -68,7 +68,7 @@ jobs:
           FETCHCORE_INDEX_WORKSPACE: ${{ github.workspace }}/tools/explorer/fixtures/demo-repo
           FETCHCORE_INDEX_REPOSITORY: demo/catalog
           FETCHCORE_INDEX_BACKEND: solr
-          FETCHCORE_INDEX_BACKEND_SETTINGS: '{"url":"http://127.0.0.1:8983/solr","collection":"fetchcore-lab","projection_version":"3"}'
+          FETCHCORE_INDEX_BACKEND_SETTINGS: '{"url":"http://127.0.0.1:8983/solr","collection":"fetchcore","projection_version":"3"}'
         run: |
           fetchcore index bootstrap
           fetchcore index sync
@@ -101,7 +101,7 @@ jobs:
     env:
       FETCHCORE_SOURCE_PATH: ${{ github.workspace }}/tools/explorer/fixtures/demo-repo
       FETCHCORE_REPOSITORY: demo/catalog
-      FETCHCORE_SOLR_COLLECTION: fetchcore-lab
+      FETCHCORE_SOLR_COLLECTION: fetchcore
     steps:
       - uses: actions/checkout@v4
       - name: Pull pinned stack images
@@ -136,7 +136,7 @@ jobs:
           import json
           from urllib.request import urlopen
 
-          url = "http://127.0.0.1:8983/solr/fetchcore-lab/select?q=*:*&rows=0&wt=json"
+          url = "http://127.0.0.1:8983/solr/fetchcore/select?q=*:*&rows=0&wt=json"
           with urlopen(url, timeout=10) as response:
               payload = json.load(response)
           assert payload["response"]["numFound"] == 0, payload
