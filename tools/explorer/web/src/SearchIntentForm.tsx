@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { parseIntent } from './api'
+import { ExpressionEditor } from './ExpressionEditor'
+import type { Expression } from './intentBuilder'
 
 /** A form is only a view over SearchIntent v2; JSON remains the lossless source. */
 type AnchorKind = 'identifier' | 'qualified_symbol' | 'path' | 'route' | 'source_ref'
@@ -151,8 +153,10 @@ export function SearchIntentForm({ intentText, onChange }: {
         </div>,
       )}
     </div>
-    {intent.expression != null && <div className="rounded-lg border border-amber-700/40 bg-amber-900/20 p-3 text-xs text-amber-100">
-      Este SearchIntent contém uma expressão booleana. Ela será preservada; edite seus branches/conjunctions na aba JSON.
-    </div>}
+    <ExpressionEditor
+      expression={(intent.expression ?? null) as Expression | null}
+      occupiedNodes={anchorRows.length + expansionRows.length}
+      onChange={value => update('expression', value)}
+    />
   </div>
 }

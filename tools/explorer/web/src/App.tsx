@@ -13,6 +13,7 @@ import {
 import { Button } from './components/ui/button'
 import { getConfig, getReadiness, parseIntent, readSource, search, sourcePayloadForHit } from './api'
 import { SearchIntentForm } from './SearchIntentForm'
+import { applyPreset, intentPresets, parseValidatedIntent, validateVisualIntent } from './intentBuilder'
 import type { ExplorerTarget, SearchHit, SearchPayload, SearchResponse, RetrievalTelemetry } from './types'
 
 const initialQuery = 'where is authentication validated?'
@@ -218,6 +219,12 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activePanel, setActivePanel] = useState<'results' | 'telemetry'>('results')
   const [intentView, setIntentView] = useState<'form' | 'json'>('form')
+  const [editorEpoch, setEditorEpoch] = useState(0)
+  const [presetId, setPresetId] = useState(intentPresets[0].id)
+  const [presetAction, setPresetAction] = useState<'replace' | 'merge'>('replace')
+  const [importOpen, setImportOpen] = useState(false)
+  const [importDraft, setImportDraft] = useState('')
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [selectedRepository, setSelectedRepository] = useState('')
   const [selectedTargetId, setSelectedTargetId] = useState('default')
   const run = useMutation({ mutationFn: search, onSuccess: (response) => {
@@ -260,7 +267,7 @@ export function App() {
   function switchIntentView(next: 'form' | 'json') {
     if (next === 'form') {
       try {
-        parseIntent(intentText)
+        validateVisualIntent(intentText)
       } catch {
         setParseError('Corrija o JSON antes de abrir o formulário; suas edições foram preservadas.')
         return
@@ -274,7 +281,7 @@ export function App() {
     setQuery(value)
     try {
       const parsed = parseIntent(intentText)
-      setIntentText(JSON.stringify({ ...parsed, schema_version: 2, canonical_query: value }, null, 2))
+      setIntentText(JSON.stringify({ ...parsed, canonical_query: value }, null, 2))
       setParseError('')
     } catch {
       // Preserve the invalid JSON instead of silently overwriting user edits.
@@ -293,7 +300,8 @@ export function App() {
   function submit(event: FormEvent) {
     event.preventDefault()
     try {
-      const intent = parseIntent(intentText)
+      const intent = parseValidatedIntent(intentText)
+      if (previewError) throw new Error(previewError)
       setParseError('')
       run.mutate({
         repository: activeTarget?.repository ?? '',
@@ -307,6 +315,65 @@ export function App() {
     }
   }
 
+  function replaceIntent(next: Record<string, unknown>) {
+    setIntentText(JSON.stringify(next, null, 2))
+    setQuery(typeof next.canonical_query === 'string' ? next.canonical_query : '')
+    setEditorEpoch(epoch => epoch + 1)
+    setParseError('')
+  }
+  const selectedPreset = intentPresets.find(item => item.id === presetId) ?? intentPresets[0]
+  function usePreset() {
+    try {
+      const next = presetAction === 'replace'
+        ? applyPreset({ schema_version: 2 }, selectedPreset, 'replace')
+        : applyPreset(parseValidatedIntent(intentText), selectedPreset, 'merge')
+      replaceIntent(next)
+    } catch (error) {
+      setParseError(error instanceof Error ? error.message : 'Preset incompatível')
+    }
+  }
+  function importIntent() {
+    try {
+      const next = parseValidatedIntent(importDraft)
+      replaceIntent(next)
+      if (next.schema_version !== 2) setIntentView('json')
+      setImportOpen(false)
+      setImportDraft('')
+    } catch (error) {
+      setParseError(error instanceof Error ? error.message : 'Importação inválida')
+    }
+  }
+  function exportIntent() {
+    try {
+      const next = parseValidatedIntent(intentText)
+      const blob = new Blob([JSON.stringify(next, null, 2) + '\n'], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = 'fetchcore-search-intent-v2.json'
+      anchor.click()
+      setTimeout(() => URL.revokeObjectURL(url), 0)
+      setParseError('')
+    } catch (error) {
+      setParseError(error instanceof Error ? error.message : 'Exportação inválida')
+    }
+  }
+  let finalPayload: SearchPayload | null = null
+  let previewError: string | null = null
+  try {
+    finalPayload = {
+      target_id: activeTarget?.id,
+      repository: activeTarget?.repository ?? '',
+      mode,
+      limit,
+      knowledge_types: knowledgeTypes.split(',').map(value => value.trim()).filter(Boolean),
+      intent: parseValidatedIntent(intentText),
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) previewError = 'Max results deve estar entre 1 e 100'
+    if (!activeTarget) previewError = 'Nenhum destino autorizado foi carregado'
+  } catch (error) {
+    previewError = error instanceof Error ? error.message : 'SearchIntent inválido'
+  }
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="mb-10 flex items-center gap-3">
@@ -393,6 +460,49 @@ export function App() {
               <div><label className="field-label" htmlFor="knowledge-types">Knowledge types <span className="font-normal normal-case text-muted">(opcional)</span></label>
                 <input id="knowledge-types" value={knowledgeTypes} onChange={event => setKnowledgeTypes(event.target.value)} className="field-input" placeholder="code, documentation (separados por vírgula)"/>
               </div>
+              <section className="space-y-3 rounded-xl border border-line bg-background/20 p-3" aria-label="Presets versionados">
+                <div>
+                  <strong className="text-xs text-white">Presets de SearchIntent v2</strong>
+                  <p className="mt-1 text-xs text-muted">Escolha explicitamente o resultado: substituir todo o JSON ou combinar sem inventar operadores booleanos. Presets v1.</p>
+                </div>
+                <select className="field-input" aria-label="Preset" value={presetId}
+                  onChange={event => setPresetId(event.target.value)}>
+                  {intentPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.name} · v{preset.version}</option>)}
+                </select>
+                <p className="text-xs text-muted">{selectedPreset.detail}</p>
+                <fieldset className="flex flex-wrap gap-4 text-xs text-muted">
+                  <legend className="mb-2">Operação explícita</legend>
+                  <label className="flex items-center gap-1.5">
+                    <input type="radio" name="preset-action" checked={presetAction === 'replace'}
+                      onChange={() => setPresetAction('replace')}/> Substituir intenção
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    <input type="radio" name="preset-action" checked={presetAction === 'merge'}
+                      onChange={() => setPresetAction('merge')}/> Combinar listas (sem OR/AND automático)
+                  </label>
+                </fieldset>
+                <details>
+                  <summary className="cursor-pointer text-xs text-accent">Prévia do preset (JSON v2)</summary>
+                  <pre className="json-output mt-2">{JSON.stringify(selectedPreset.intent, null, 2)}</pre>
+                </details>
+                <button type="button" className="switch-button border border-line"
+                  onClick={usePreset}>Aplicar preset</button>
+              </section>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="switch-button border border-line"
+                  onClick={() => { setImportOpen(open => !open); setParseError('') }}>Importar JSON</button>
+                <button type="button" className="switch-button border border-line"
+                  onClick={exportIntent}>Exportar JSON</button>
+              </div>
+              {importOpen && <section className="space-y-2 rounded-lg border border-line p-3">
+                <label htmlFor="import-intent" className="field-label">Cole JSON completo para importar (até 100 KB)</label>
+                <textarea id="import-intent" className="field-input min-h-[130px] font-mono text-xs"
+                  value={importDraft} onChange={event => setImportDraft(event.target.value)}
+                  placeholder='{"schema_version":2,"canonical_query":"..."}'/>
+                <p className="text-xs text-muted">Substituir o editor só ocorre ao clicar em Confirmar importação. Nenhuma query é executada.</p>
+                <button type="button" className="switch-button border border-line"
+                  onClick={importIntent}>Confirmar importação</button>
+              </section>}
               <div className="rounded-xl border border-line bg-background/30">
                 <div className="flex gap-1 border-b border-line p-2" role="group" aria-label="Modo de edição da query">
                   <button type="button" className={'switch-button ' + (intentView === 'form' ? 'switch-active' : '')}
@@ -401,7 +511,7 @@ export function App() {
                     aria-pressed={intentView === 'json'} onClick={() => switchIntentView('json')}><Braces size={15}/> JSON completo</button>
                 </div>
                 <div className="p-3">
-                  {intentView === 'form' ? <SearchIntentForm intentText={intentText} onChange={updateIntent}/> :
+                  {intentView === 'form' ? <SearchIntentForm key={editorEpoch} intentText={intentText} onChange={updateIntent}/> :
                     <div>
                       <CodeMirror aria-label="SearchIntent JSON" value={intentText} height="330px" theme="dark" extensions={editorExtensions} onChange={updateIntent}
                         basicSetup={{ lineNumbers: true, foldGutter: true }}/>
@@ -442,6 +552,16 @@ export function App() {
                 <code className="break-all">{activeTarget?.retrieval ? text(activeTarget.retrieval) : 'configuração padrão do backend'}</code>
                 <p className="mt-2">Lexical / dense / hybrid vêm da configuração do destino autorizado. Selecionar outro índice não gera embeddings.</p>
               </div>
+              <section className="rounded-lg border border-line bg-background/30 p-3" aria-label="Prévia de payload">
+                <button type="button" className="switch-button border border-line"
+                  onClick={() => setPreviewOpen(value => !value)}>
+                  {previewOpen ? 'Ocultar payload final' : 'Inspecionar payload final'}
+                </button>
+                {previewOpen && (previewError
+                  ? <p className="mt-2 text-xs text-rose-300" role="alert">Payload bloqueado: {previewError}</p>
+                  : <pre className="json-output mt-2" aria-label="JSON final da busca">{JSON.stringify(finalPayload, null, 2)}</pre>)}
+                <p className="mt-2 text-xs text-muted">Scope e budget não são SearchIntent. Payload exibido inclui o destino autorizado, modo, limite e knowledge types.</p>
+              </section>
               {parseError && <div className="error-panel" role="alert">{parseError}</div>}
               {run.isError && <div className="error-panel" role="alert"><strong>Busca falhou:</strong> {run.error.message}</div>}
               <Button type="submit" className="w-full py-3" disabled={!config.data || run.isPending} data-testid="run-search">
