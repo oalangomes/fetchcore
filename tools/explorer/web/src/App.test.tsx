@@ -98,7 +98,10 @@ describe('Query builder and authorized target selectors', () => {
   it('generates typed required anchors and selects an operator-bound collection', async () => {
     mount()
     await screen.findByLabelText('Repositório autorizado')
+    await screen.findByRole('option', { name: /other-collection/ })
+    await waitFor(() => expect(screen.getByLabelText('Coleção / índice configurado')).toBeEnabled())
     fireEvent.change(screen.getByLabelText('Coleção / índice configurado'), { target: { value: 'alternate' } })
+    expect((screen.getByLabelText('Coleção / índice configurado') as HTMLSelectElement).value).toBe('alternate')
     fireEvent.click(screen.getByRole('button', { name: '+ Anchor' }))
     fireEvent.change(screen.getByLabelText('Valor do anchor 1'), { target: { value: 'eligibility.py' } })
     fireEvent.click(screen.getByTestId('run-search'))
