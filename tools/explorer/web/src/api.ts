@@ -28,6 +28,7 @@ export const getConfig = () => call<ExplorerConfig>('/api/config')
 export const search = (payload: SearchPayload) => call<SearchResponse>('/api/search', payload)
 export const readSource = (payload: {
   source_ref: string
+  target_id?: string
   repository: string
   revision?: string
   line_start?: number
@@ -44,10 +45,11 @@ export function parseIntent(text: string): Record<string, unknown> {
 }
 
 /** Build a source request without pretending result provenance authorizes a workspace revision. */
-export function sourcePayloadForHit(hit: SearchHit, repository: string, boundRevision: string | null) {
+export function sourcePayloadForHit(hit: SearchHit, repository: string, boundRevision: string | null, targetId?: string) {
   return {
     source_ref: hit.source_ref,
     repository,
+    ...(targetId ? { target_id: targetId } : {}),
     ...(hit.revision && hit.revision === boundRevision ? { revision: hit.revision } : {}),
     ...(hit.line_start ? { line_start: hit.line_start } : {}),
     ...(hit.line_end ? { line_end: hit.line_end } : {}),

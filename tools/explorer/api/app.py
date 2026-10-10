@@ -6,9 +6,13 @@ Launch on 127.0.0.1; never publish directly to an untrusted network.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dataclass_replace
 from functools import lru_cache
+import json
 import os
+from pathlib import Path
+import re
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
@@ -17,12 +21,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from fetchcore.application import (
     BackendRegistry,
+    FetchCoreRuntimeConfig,
     RetrievalApplicationService,
     SearchRequest,
     SourceReadRequest,
     load_runtime_config,
     service_from_runtime_config,
 )
+from fetchcore.retrieval import RetrievalConfig
 from fetchcore.retrieval.contracts import KnowledgeSearchError, SearchIntent
 
 
@@ -34,12 +40,131 @@ class ExplorerContext:
     revision: str | None
     capabilities: dict[str, bool]
     retrieval: dict[str, object] | None
+    targets: Mapping[str, ExplorerTarget] | None = None
+
+
+@dataclass(frozen=True)
+class ExplorerTarget:
+    """Explicit operator-bound retrieval destination; never selected by raw endpoint."""
+    id: str
+    service: RetrievalApplicationService
+    repository: str
+    backend: str
+    revision: str | None
+    collection: str | None
+    capabilities: dict[str, bool]
+    retrieval: dict[str, object] | None
+
+    def public(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "repository": self.repository,
+            "backend": self.backend,
+            "revision": self.revision,
+            "collection": self.collection,
+            "capabilities": self.capabilities,
+            "retrieval": self.retrieval,
+        }
+
+
+def _collection(backend: str, settings: Mapping[str, object]) -> str | None:
+    field = "index" if backend == "opensearch" else "collection"
+    value = settings.get(field)
+    return value if isinstance(value, str) and value else None
+
+
+def _operator_targets(base: FetchCoreRuntimeConfig) -> dict[str, ExplorerTarget]:
+    """Operator-owned allowlist. Do not enumerate arbitrary backend collections."""
+    default_service = service_from_runtime_config(base)
+    default = ExplorerTarget(
+        id="default", service=default_service,
+        repository=base.repository or base.workspace.name,
+        backend=base.backend, revision=base.revision,
+        collection=_collection(base.backend, base.backend_settings),
+        capabilities=BackendRegistry().create(base.backend).retrieval_capabilities.to_mapping(),
+        retrieval=base.retrieval.to_mapping() if base.retrieval else None,
+    )
+    targets = {"default": default}
+    raw = os.environ.get("FETCHCORE_EXPLORER_TARGETS", "").strip()
+    if not raw:
+        return targets
+    try:
+        entries = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("FETCHCORE_EXPLORER_TARGETS must be valid JSON") from exc
+    if not isinstance(entries, list) or len(entries) > 16:
+        raise ValueError("FETCHCORE_EXPLORER_TARGETS must be an array of up to 16 targets")
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) - {
+            "id", "backend", "backend_settings", "repository", "workspace", "revision", "retrieval"
+        }:
+            raise ValueError("Explorer targets contain unsupported fields")
+        target_id = entry.get("id")
+        if (not isinstance(target_id, str)
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", target_id)
+                or target_id in targets):
+            raise ValueError("Explorer target id is invalid or duplicated")
+        repository = entry.get("repository")
+        workspace = entry.get("workspace")
+        if not isinstance(repository, str) or not repository.strip():
+            raise ValueError("Explorer target repository is required")
+        if not isinstance(workspace, str) or not Path(workspace).is_absolute():
+            raise ValueError("Explorer target workspace must be an absolute mounted path")
+        if not Path(workspace).is_dir():
+            raise ValueError("Explorer target workspace does not exist")
+        settings = entry.get("backend_settings")
+        if not isinstance(settings, dict):
+            raise ValueError("Explorer target backend_settings must be an object")
+        backend = entry.get("backend", base.backend)
+        if not isinstance(backend, str):
+            raise ValueError("Explorer target backend must be a string")
+        revision = entry.get("revision")
+        if revision is not None and (not isinstance(revision, str) or not revision.strip()):
+            raise ValueError("Explorer target revision must be null or a nonempty string")
+        retrieval = base.retrieval
+        if "retrieval" in entry:
+            if not isinstance(entry["retrieval"], dict):
+                raise ValueError("Explorer target retrieval must be an object")
+            retrieval = RetrievalConfig.from_mapping(entry["retrieval"])
+        configured = dataclass_replace(
+            base, backend=backend, backend_settings=settings,
+            workspace=Path(workspace).resolve(strict=True), repository=repository,
+            revision=revision, retrieval=retrieval, sources={},
+        )
+        targets[target_id] = ExplorerTarget(
+            id=target_id, service=service_from_runtime_config(configured),
+            repository=repository, backend=backend, revision=revision,
+            collection=_collection(backend, settings),
+            capabilities=BackendRegistry().create(backend).retrieval_capabilities.to_mapping(),
+            retrieval=retrieval.to_mapping() if retrieval else None,
+        )
+    return targets
+
+
+def _available_targets(ctx: ExplorerContext) -> Mapping[str, ExplorerTarget]:
+    if ctx.targets is not None:
+        return ctx.targets
+    return {"default": ExplorerTarget(
+        "default", ctx.service, ctx.repository, ctx.backend, ctx.revision,
+        None, ctx.capabilities, ctx.retrieval,
+    )}
+
+
+def _selected_target(ctx: ExplorerContext, target_id: str | None) -> ExplorerTarget:
+    value = (target_id or "default").strip()
+    selected = _available_targets(ctx).get(value)
+    if selected is None:
+        raise KnowledgeSearchError(
+            "target is not configured or authorized", category="unauthorized_target",
+        )
+    return selected
 
 
 class SearchPayload(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     repository: str | None = None
+    target_id: str | None = Field(default=None, min_length=1, max_length=64)
     limit: int = Field(default=10, ge=1, le=100)
     mode: Literal["discovery", "targeted", "repository_source"] = "discovery"
     knowledge_types: list[str] = Field(default_factory=list, max_length=30)
@@ -50,6 +175,7 @@ class SourcePayload(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     source_ref: str = Field(min_length=1, max_length=4096)
+    target_id: str | None = Field(default=None, min_length=1, max_length=64)
     repository: str | None = None
     revision: str | None = None
     line_start: int | None = Field(default=None, ge=1)
@@ -74,15 +200,16 @@ def _explorer_runtime_config():
 @lru_cache(maxsize=1)
 def _runtime() -> ExplorerContext:
     config = _explorer_runtime_config()
-    service = service_from_runtime_config(config)
-    capabilities = BackendRegistry().create(config.backend).retrieval_capabilities.to_mapping()
+    targets = _operator_targets(config)
+    default = targets["default"]
     return ExplorerContext(
-        service=service,
-        repository=config.repository or config.workspace.name,
-        backend=config.backend,
-        revision=config.revision,
-        capabilities=capabilities,
-        retrieval=config.retrieval.to_mapping() if config.retrieval else None,
+        service=default.service,
+        repository=default.repository,
+        backend=default.backend,
+        revision=default.revision,
+        capabilities=default.capabilities,
+        retrieval=default.retrieval,
+        targets=targets,
     )
 
 
@@ -124,16 +251,19 @@ def create_app(context: ExplorerContext | None = None) -> FastAPI:
             "retrieval": ctx.retrieval,
             "search_modes": ["discovery", "targeted", "repository_source"],
             "max_results": 100,
+            "default_target": "default",
+            "targets": [target.public() for target in _available_targets(ctx).values()],
         }
 
     @app.post("/api/search")
     def search(payload: SearchPayload) -> dict[str, object]:
         ctx = resolved()
         try:
+            target = _selected_target(ctx, payload.target_id)
             intent = SearchIntent.from_mapping(payload.intent)
-            response = ctx.service.search(
+            response = target.service.search(
                 SearchRequest(
-                    repository=payload.repository,
+                    repository=payload.repository or target.repository,
                     limit=payload.limit,
                     mode=payload.mode,
                     knowledge_types=tuple(payload.knowledge_types),
@@ -153,10 +283,11 @@ def create_app(context: ExplorerContext | None = None) -> FastAPI:
     def source(payload: SourcePayload) -> dict[str, object]:
         ctx = resolved()
         try:
-            result = ctx.service.get_source(
+            target = _selected_target(ctx, payload.target_id)
+            result = target.service.get_source(
                 SourceReadRequest(
                     source_ref=payload.source_ref,
-                    repository=payload.repository,
+                    repository=payload.repository or target.repository,
                     revision=payload.revision,
                     line_start=payload.line_start,
                     line_end=payload.line_end,

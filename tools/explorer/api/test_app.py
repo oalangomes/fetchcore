@@ -5,7 +5,9 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from fetchcore.application import RepositoryBinding, RetrievalApplicationService
-from tools.explorer.api.app import ExplorerContext, _explorer_runtime_config, create_app
+from tools.explorer.api.app import (
+    ExplorerContext, ExplorerTarget, _explorer_runtime_config, _operator_targets, create_app,
+)
 
 
 def _client(tmp_path: Path) -> TestClient:
@@ -179,3 +181,88 @@ def test_default_solr_never_silently_falls_back_on_failure(monkeypatch, tmp_path
             assert search_response.json().get("backend") != "local-semantic"
     finally:
         _runtime.cache_clear()
+
+
+def test_authorized_target_selection_binds_collection_and_repository(tmp_path: Path) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    (first / "alpha.py").write_text("def alpha_evidence(): return True", encoding="utf-8")
+    (second / "beta.py").write_text("def beta_evidence(): return True", encoding="utf-8")
+    service_a = RetrievalApplicationService({
+        "alpha/repo": RepositoryBinding(repository="alpha/repo", workspace=first, backend="local-semantic"),
+    })
+    service_b = RetrievalApplicationService({
+        "beta/repo": RepositoryBinding(repository="beta/repo", workspace=second, backend="local-semantic"),
+    })
+    caps = {"lexical": True, "dense": False, "hybrid": False}
+    ctx = ExplorerContext(
+        service=service_a, repository="alpha/repo", backend="local-semantic", revision=None,
+        capabilities=caps, retrieval=None,
+        targets={
+            "default": ExplorerTarget("default", service_a, "alpha/repo", "local-semantic", None, "main", caps, None),
+            "alternate": ExplorerTarget("alternate", service_a, "alpha/repo", "local-semantic", None, "alt", caps, None),
+            "other-repo": ExplorerTarget("other-repo", service_b, "beta/repo", "local-semantic", None, "beta", caps, None),
+        },
+    )
+    client = TestClient(create_app(ctx))
+    public = client.get("/api/config").json()
+    assert [item["id"] for item in public["targets"]] == ["default", "alternate", "other-repo"]
+    assert all("workspace" not in item and "backend_settings" not in item for item in public["targets"])
+    result = client.post("/api/search", json={
+        "target_id": "other-repo", "repository": "beta/repo",
+        "intent": {"schema_version": 2, "canonical_query": "beta_evidence"},
+    })
+    assert result.status_code == 200, result.text
+    hit = result.json()["results"][0]
+    assert "beta.py" in hit["source_ref"]
+    source = client.post("/api/source", json={
+        "target_id": "other-repo", "repository": "beta/repo", "source_ref": hit["source_ref"],
+    })
+    assert source.status_code == 200
+    assert "beta_evidence" in source.json()["content"]
+    forbidden = client.post("/api/search", json={
+        "target_id": "other-repo", "repository": "alpha/repo",
+        "intent": {"schema_version": 2, "canonical_query": "alpha_evidence"},
+    })
+    assert forbidden.status_code == 403
+    assert forbidden.json()["error"]["category"] == "unauthorized_repository"
+    missing = client.post("/api/search", json={
+        "target_id": "unlisted", "intent": {"schema_version": 2, "canonical_query": "beta"},
+    })
+    assert missing.status_code == 403
+    assert missing.json()["error"]["category"] == "unauthorized_target"
+
+
+def test_target_registry_is_operator_owned_and_fails_closed(monkeypatch, tmp_path: Path) -> None:
+    from fetchcore.application import FetchCoreRuntimeConfig
+
+    base = FetchCoreRuntimeConfig(
+        backend="local-semantic", workspace=tmp_path, repository="demo/default",
+    )
+    monkeypatch.setenv("FETCHCORE_EXPLORER_TARGETS", '{"id":"wrong-shape"}')
+    try:
+        _operator_targets(base)
+        assert False, "a non-array target config must fail"
+    except ValueError as exc:
+        assert "array" in str(exc)
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    monkeypatch.setenv("FETCHCORE_EXPLORER_TARGETS", (
+        '[{"id":"allowed","backend":"local-semantic",'
+        '"backend_settings":{},"repository":"demo/allowed","workspace":"' + str(allowed) + '"}]'
+    ))
+    targets = _operator_targets(base)
+    assert set(targets) == {"default", "allowed"}
+    assert targets["allowed"].repository == "demo/allowed"
+    assert targets["allowed"].public()["collection"] is None
+    monkeypatch.setenv("FETCHCORE_EXPLORER_TARGETS", (
+        '[{"id":"default","backend":"local-semantic",'
+        '"backend_settings":{},"repository":"demo/allowed","workspace":"' + str(allowed) + '"}]'
+    ))
+    try:
+        _operator_targets(base)
+        assert False, "duplicate default target id must fail"
+    except ValueError as exc:
+        assert "duplicated" in str(exc)

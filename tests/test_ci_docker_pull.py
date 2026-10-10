@@ -105,7 +105,7 @@ def test_container_inputs_are_immutable_and_match_dockerfile() -> None:
     assert values["FETCHCORE_SOLR_IMAGE"] in (
         ROOT / "infra" / "compose" / "solr.yml"
     ).read_text(encoding="utf-8")
-    assert "/var/solr/data/configsets/fetchcore:ro" in (
+    assert "/opt/solr/server/solr/configsets/fetchcore:ro" in (
         ROOT / "infra" / "compose" / "solr.yml"
     ).read_text(encoding="utf-8")
     assert values["FETCHCORE_SOLR_IMAGE"] in (

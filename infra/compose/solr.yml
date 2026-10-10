@@ -8,9 +8,9 @@ services:
     volumes:
       - solr-data:/var/solr
       - ../solr/configset:/fetchcore-configset:ro
-      # Keep the pinned configset server-side so reuse-first workflows can
-      # create a separately authorized core without changing this service.
-      - ../solr/configset:/var/solr/data/configsets/fetchcore:ro
+      # Keep the pinned configset available to explicit provisioning without
+      # creating a root-owned subdirectory under /var/solr/data (Solr runs non-root).
+      - ../solr/configset:/opt/solr/server/solr/configsets/fetchcore:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8983/solr/admin/info/system >/dev/null"]
       interval: 10s

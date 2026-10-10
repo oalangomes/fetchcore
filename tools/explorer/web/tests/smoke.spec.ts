@@ -8,7 +8,9 @@ test('real Solr search → provenance → authorized source read (FetchCore)', a
   await page.getByTestId('run-search').click()
 
   await expect(page.getByText('Trecho recuperado')).toBeVisible()
-  await expect(page.getByText('Repository binding autorizado')).toBeVisible()
+  await expect(page.getByLabel('Repositório autorizado')).toHaveValue('demo/catalog')
+  await expect(page.getByLabel('Coleção / índice configurado')).toHaveValue('default')
+  await expect(page.getByText('Destino: default')).toBeVisible()
   await expect(page.getByText(/eligibility.py/).first()).toBeVisible()
   await expect(page.getByText('QueryMatchEvidence')).toBeVisible()
   await expect(page.getByText('Provenance e identidade')).toBeVisible()

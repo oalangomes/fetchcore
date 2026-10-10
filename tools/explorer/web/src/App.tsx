@@ -12,7 +12,8 @@ import {
 } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { getConfig, parseIntent, readSource, search, sourcePayloadForHit } from './api'
-import type { SearchHit, SearchPayload, SearchResponse, RetrievalTelemetry } from './types'
+import { SearchIntentForm } from './SearchIntentForm'
+import type { ExplorerTarget, SearchHit, SearchPayload, SearchResponse, RetrievalTelemetry } from './types'
 
 const initialQuery = 'where is authentication validated?'
 const initialIntent = JSON.stringify({
@@ -133,14 +134,14 @@ function TelemetryPanel({ data }: { data?: RetrievalTelemetry }) {
   </div>
 }
 
-function ResultDetails({ hit, repository, boundRevision }: { hit: SearchHit; repository: string; boundRevision: string | null }) {
+function ResultDetails({ hit, repository, boundRevision, targetId }: { hit: SearchHit; repository: string; boundRevision: string | null; targetId: string }) {
   // A result revision is observed provenance, not authority over materialized workspace bytes.
   // SourceReadRequest.revision is an exact precondition on the authorized binding only.
   const revisionPrecondition = hit.revision && hit.revision === boundRevision ? hit.revision : undefined
   const [tab, setTab] = useState('evidence')
   const source = useQuery({
-    queryKey: ['source', repository, hit.source_ref, revisionPrecondition, hit.line_start, hit.line_end],
-    queryFn: () => readSource(sourcePayloadForHit(hit, repository, boundRevision)),
+    queryKey: ['source', targetId, repository, hit.source_ref, revisionPrecondition, hit.line_start, hit.line_end],
+    queryFn: () => readSource(sourcePayloadForHit(hit, repository, boundRevision, targetId)),
     enabled: tab === 'source',
     retry: false,
   })
@@ -216,13 +217,48 @@ export function App() {
   const [parseError, setParseError] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activePanel, setActivePanel] = useState<'results' | 'telemetry'>('results')
-  const [editorOpen, setEditorOpen] = useState(true)
+  const [intentView, setIntentView] = useState<'form' | 'json'>('form')
+  const [selectedRepository, setSelectedRepository] = useState('')
+  const [selectedTargetId, setSelectedTargetId] = useState('default')
   const run = useMutation({ mutationFn: search, onSuccess: (response) => {
     setSelectedId(response.results[0]?.id ?? null)
     setActivePanel('results')
   } })
+  const targets: ExplorerTarget[] = config.data?.targets?.length ? config.data.targets : config.data ? [{
+    id: 'default', repository: config.data.repository, backend: config.data.backend,
+    collection: null, revision: config.data.revision, capabilities: config.data.capabilities,
+    retrieval: config.data.retrieval,
+  }] : []
+  const repositories = Array.from(new Set(targets.map(target => target.repository)))
+  const activeRepository = repositories.includes(selectedRepository) ? selectedRepository : (config.data?.repository ?? '')
+  const repositoryTargets = targets.filter(target => target.repository === activeRepository)
+  const activeTarget = repositoryTargets.find(target => target.id === selectedTargetId) ?? repositoryTargets[0]
+  const resultTarget = targets.find(target => target.id === run.variables?.target_id) ?? activeTarget
   const response = run.data
   const selectedHit = response?.results.find(hit => hit.id === selectedId) ?? response?.results[0]
+  function changeRepository(value: string) {
+    setSelectedRepository(value)
+    setSelectedTargetId(targets.find(target => target.repository === value)?.id ?? 'default')
+    setSelectedId(null)
+    run.reset()
+  }
+  function changeTarget(value: string) {
+    setSelectedTargetId(value)
+    setSelectedId(null)
+    run.reset()
+  }
+  function switchIntentView(next: 'form' | 'json') {
+    if (next === 'form') {
+      try {
+        parseIntent(intentText)
+      } catch {
+        setParseError('Corrija o JSON antes de abrir o formulário; suas edições foram preservadas.')
+        return
+      }
+    }
+    setParseError('')
+    setIntentView(next)
+  }
 
   function updateQuery(value: string) {
     setQuery(value)
@@ -250,7 +286,8 @@ export function App() {
       const intent = parseIntent(intentText)
       setParseError('')
       run.mutate({
-        repository: config.data?.repository ?? '',
+        repository: activeTarget?.repository ?? '',
+        target_id: activeTarget?.id,
         limit, mode,
         knowledge_types: knowledgeTypes.split(',').map(item => item.trim()).filter(Boolean),
         intent,
@@ -272,9 +309,9 @@ export function App() {
       <div className="nav-caption mt-10">AMBIENTE</div>
       <div className="space-y-3 rounded-xl border border-line bg-surface/40 p-4">
         <div className="flex items-center gap-2 text-xs"><span className={'status-dot ' + (config.isSuccess ? 'bg-accent' : 'bg-amber-400')}/>{config.isSuccess ? 'API conectada' : config.isLoading ? 'Conectando...' : 'Indisponível'}</div>
-        <p className="break-all font-mono text-xs text-white">{config.data?.repository ?? 'repository indisponível'}</p>
-        <div className="flex items-center gap-2 text-xs text-muted"><Database size={13}/>{config.data?.backend ?? '—'}</div>
-        <div className="flex items-center gap-2 text-xs text-muted"><GitBranch size={13}/>{shorten(config.data?.revision ?? 'working tree', 20)}</div>
+        <p className="break-all font-mono text-xs text-white">{activeTarget?.repository ?? 'repository indisponível'}</p>
+        <div className="flex items-center gap-2 text-xs text-muted"><Database size={13}/>{activeTarget?.backend ?? '—'} · {activeTarget?.collection ?? 'sem coleção declarada'}</div>
+        <div className="flex items-center gap-2 text-xs text-muted"><GitBranch size={13}/>{shorten(activeTarget?.revision ?? 'working tree', 20)}</div>
       </div>
       <div className="mt-auto rounded-xl border border-line p-4">
         <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-white"><ShieldCheck size={15} className="text-accent"/> Retrieval ≠ Authority</div>
@@ -295,7 +332,7 @@ export function App() {
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Investigue buscas reais, inspecione evidências tipadas e entenda o comportamento do backend — sem inferir autoridade.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            {Object.entries(config.data?.capabilities ?? {}).filter(([,enabled]) => enabled).map(([capability]) => <span key={capability} className="chip chip-teal"><Check size={11}/>{capability}</span>)}
+            {Object.entries(activeTarget?.capabilities ?? {}).filter(([,enabled]) => enabled).map(([capability]) => <span key={capability} className="chip chip-teal"><Check size={11}/>{capability}</span>)}
           </div>
         </div>
         {config.isError && <div role="alert" className="error-panel mb-5 flex items-start gap-3"><CircleAlert size={18}/><div><strong>API indisponível</strong><p className="mt-1 text-sm">{config.error.message}. Confirme que o FastAPI está rodando em 127.0.0.1:8765.</p></div></div>}
@@ -304,6 +341,25 @@ export function App() {
           <section className="panel self-start" aria-label="Editor de busca">
             <div className="panel-heading"><div className="flex items-center gap-2"><TerminalSquare size={17} className="text-accent"/><h2>Configurar busca</h2></div><span className="chip">SearchIntent v2</span></div>
             <form className="space-y-5 p-5" onSubmit={submit}>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="field-label" htmlFor="repository-select">Repositório autorizado</label>
+                  <select id="repository-select" className="field-input" value={activeRepository}
+                    onChange={event => changeRepository(event.target.value)} disabled={!repositories.length}>
+                    {repositories.map(repository => <option key={repository} value={repository}>{repository}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="field-label" htmlFor="collection-select">Coleção / índice configurado</label>
+                  <select id="collection-select" className="field-input" value={activeTarget?.id ?? ''}
+                    onChange={event => changeTarget(event.target.value)} disabled={!repositoryTargets.length}>
+                    {repositoryTargets.map(target => <option key={target.id} value={target.id}>
+                      {target.backend} · {target.collection ?? 'default'} ({target.id})
+                    </option>)}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs leading-5 text-muted">Opções autorizadas pelo operador. A seleção troca o destino, não realiza busca federada.</p>
               <div>
                 <label className="field-label" htmlFor="canonical-query">Canonical query</label>
                 <textarea
@@ -328,18 +384,25 @@ export function App() {
                 <input id="knowledge-types" value={knowledgeTypes} onChange={event => setKnowledgeTypes(event.target.value)} className="field-input" placeholder="code, documentation (separados por vírgula)"/>
               </div>
               <div className="rounded-xl border border-line bg-background/30">
-                <button type="button" className="flex w-full items-center justify-between p-3 text-sm font-semibold text-white" onClick={() => setEditorOpen(!editorOpen)} aria-expanded={editorOpen}>
-                  <span className="flex items-center gap-2"><Braces size={16} className="text-blue"/> Editor JSON · SearchIntent</span><SlidersHorizontal size={16} className="text-muted"/>
-                </button>
-                {editorOpen && <div className="border-t border-line p-2">
-                  <CodeMirror aria-label="SearchIntent JSON" value={intentText} height="295px" theme="dark" extensions={editorExtensions} onChange={updateIntent} basicSetup={{ lineNumbers: true, foldGutter: true }}/>
-                  <div className="px-2 pt-2 text-xs text-muted">O JSON enviado é validado pelo contrato Python do FetchCore.</div>
-                </div>}
+                <div className="flex gap-1 border-b border-line p-2" role="group" aria-label="Modo de edição da query">
+                  <button type="button" className={'switch-button ' + (intentView === 'form' ? 'switch-active' : '')}
+                    aria-pressed={intentView === 'form'} onClick={() => switchIntentView('form')}><SlidersHorizontal size={15}/> Formulário</button>
+                  <button type="button" className={'switch-button ' + (intentView === 'json' ? 'switch-active' : '')}
+                    aria-pressed={intentView === 'json'} onClick={() => switchIntentView('json')}><Braces size={15}/> JSON completo</button>
+                </div>
+                <div className="p-3">
+                  {intentView === 'form' ? <SearchIntentForm intentText={intentText} onChange={updateIntent}/> :
+                    <div>
+                      <CodeMirror aria-label="SearchIntent JSON" value={intentText} height="330px" theme="dark" extensions={editorExtensions} onChange={updateIntent}
+                        basicSetup={{ lineNumbers: true, foldGutter: true }}/>
+                      <p className="mt-2 text-xs leading-5 text-muted">Edite ou cole um SearchIntent v2 válido. O formulário preserva as expressões avançadas.</p>
+                    </div>}
+                </div>
               </div>
               <div className="rounded-lg border border-line bg-surface/50 px-3 py-2.5 text-xs text-muted">
                 <div className="mb-1 flex items-center gap-2 font-semibold text-white"><Workflow size={14}/> Retrieval policy</div>
-                <code className="break-all">{config.data?.retrieval ? text(config.data.retrieval) : 'configuração padrão do backend'}</code>
-                <p className="mt-2">Lexical / dense / hybrid vêm da configuração do servidor. Não alteramos o backend pela UI.</p>
+                <code className="break-all">{activeTarget?.retrieval ? text(activeTarget.retrieval) : 'configuração padrão do backend'}</code>
+                <p className="mt-2">Lexical / dense / hybrid vêm da configuração do destino autorizado. Selecionar outro índice não gera embeddings.</p>
               </div>
               {parseError && <div className="error-panel" role="alert">{parseError}</div>}
               {run.isError && <div className="error-panel" role="alert"><strong>Busca falhou:</strong> {run.error.message}</div>}
@@ -347,7 +410,7 @@ export function App() {
                 {run.isPending ? <LoaderCircle size={16} className="animate-spin"/> : <Play size={16}/>}
                 {run.isPending ? 'Buscando evidências...' : 'Executar busca'} <ArrowRight size={16} className="ml-auto"/>
               </Button>
-              <div className="flex items-center justify-between text-[11px] text-muted"><span>Repository binding autorizado</span><span>limit 1–100</span></div>
+              <div className="flex items-center justify-between text-[11px] text-muted"><span>Destino: {activeTarget?.id ?? 'não configurado'}</span><span>limit 1–100</span></div>
             </form>
           </section>
 
@@ -356,7 +419,7 @@ export function App() {
               <Metric label="Candidatos" value={response?.results.length ?? '—'} hint="retornados"/>
               <Metric label="Duração" value={response ? String(response.duration_ms) + ' ms' : '—'} hint="response"/>
               <Metric label="Examinados" value={response?.telemetry?.candidates_examined ?? '—'} hint="telemetry"/>
-              <Metric label="Backend" value={response?.backend ?? config.data?.backend ?? '—'} hint="operador define"/>
+              <Metric label="Backend" value={response?.backend ?? activeTarget?.backend ?? '—'} hint="destino autorizado"/>
             </div>
             <section className="panel min-h-[640px]">
               <div className="panel-heading flex-wrap gap-3">
@@ -373,7 +436,7 @@ export function App() {
                     <div className="mb-3 flex items-center justify-between px-2 text-xs text-muted"><span>{response.results.length} candidatos</span><ArrowDownRight size={13}/></div>
                     <ResultList response={response} selected={selectedHit?.id ?? null} onSelect={setSelectedId}/>
                   </div>
-                  <div className="min-w-0 p-5">{selectedHit ? <ResultDetails key={selectedHit.id} hit={selectedHit} repository={config.data?.repository ?? ''} boundRevision={config.data?.revision ?? null}/> : <EmptyPanel icon={Code2} title="Nenhuma evidência selecionada" message="Execute outra busca ou ajuste os critérios."/>}</div>
+                  <div className="min-w-0 p-5">{selectedHit ? <ResultDetails key={selectedHit.id} hit={selectedHit} repository={resultTarget?.repository ?? ''} boundRevision={resultTarget?.revision ?? null} targetId={resultTarget?.id ?? 'default'}/> : <EmptyPanel icon={Code2} title="Nenhuma evidência selecionada" message="Execute outra busca ou ajuste os critérios."/>}</div>
                 </div>}
             </section>
             {response && <section className="panel p-4">
