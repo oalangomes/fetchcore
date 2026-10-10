@@ -54,7 +54,7 @@ function DiffView({ diff, a, b, onInspect }: {
       <td className="min-w-[180px] max-w-[340px] break-all px-3 py-3 align-top">
         <code className="text-xs text-white">{candidate.identity}</code>
         <div className="mt-1 text-[11px] text-muted">{candidate.identity_confidence === 'run-local-id' ?
-          'ID local do backend — identidade fraca' : 'source_ref com revisão/checksum'}</div>
+          'ID local do backend — identidade fraca' : candidate.identity_confidence === 'partial-source-ref' ? 'source_ref sem revisão/checksum — correspondência não verificada' : 'source_ref com revisão/checksum'}</div>
       </td>
       <td className="px-3 py-3 align-top font-mono text-xs">{candidate.a?.rank ?? '—'}</td>
       <td className="px-3 py-3 align-top font-mono text-xs">{candidate.b?.rank ?? '—'}</td>
