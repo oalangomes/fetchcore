@@ -45,7 +45,9 @@ These values cover solid token pairs, not visual verification of every possible 
 - [`mark-mono.svg`](mark-mono.svg) and [`mark-mono-inverse.svg`](mark-mono-inverse.svg): one-color fallbacks
 - [`lockup-horizontal.svg`](lockup-horizontal.svg) and [`lockup-horizontal-inverse.svg`](lockup-horizontal-inverse.svg): mark + editable wordmark + tagline
 - [`avatar.svg`](avatar.svg): 512×512 artboard with navy background, rounded corners and the inverse symbol
-- `avatar-256.png`, `avatar-512.png` and `mark-128.png`: raster exports, reproducible from SVG using `python scripts/brand/export.py`
+- Checked-in PNGs: `avatar-256.png`, `mark-128.png`, `mark-inverse-128.png`. Extra high-resolution outputs such as `avatar-512.png` are produced from the same SVG with `python scripts/brand/export.py` (optional `cairosvg` dependency)
+
+**Visual preview:** [brand board](preview.svg), showing the icon and lockup on light/dark surfaces.
 
 **Typography:** Inter if present, then IBM Plex Sans, then system sans. SVG wordmark text remains editable and uses font fallbacks; rendering may vary by environment. Do not embed or redistribute font files. Before use in a fixed print/media master, convert type to outlines in the chosen design application.
 
