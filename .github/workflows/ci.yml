@@ -57,7 +57,7 @@ jobs:
       - name: Run tests with coverage
         run: python -m coverage run -m pytest -q
       - name: Report coverage
-        run: python -m coverage report --fail-under=0
+        run: python -m coverage report
       - name: Re-evaluate frozen baseline ContextYield
         run: |
           python benchmarks/baseline-v1/context_yield.py \
