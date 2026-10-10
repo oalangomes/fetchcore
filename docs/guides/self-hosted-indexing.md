@@ -147,13 +147,21 @@ the named, server-side `solr_configset` (default `fetchcore`). An external Solr
 operator must install that configset first. If it is unavailable, creation fails
 explicitly; the workflow does not upload, repair, or replace a configset.
 
-For an initial dedicated resource, use an explicitly authorized initialization
-run:
+For an initial dedicated resource, manually dispatch
+`.github/workflows/repository-index.yml` as a separate initialization run. Set
+`collection` to the repository's dedicated resource, keep
+`solr_provision_mode: reuse_only`, and explicitly set:
 
 ```yaml
 create_if_missing: true
 index_lifecycle: rebuild
 ```
+
+This authorizes creation of only that resource using the already-installed
+`fetchcore` configset, followed by the explicitly requested initial rebuild.
+The operation is idempotent: if the resource already exists, it is reused and
+is not recreated. Schema and repository-binding incompatibilities remain
+fail-closed. If no initial indexing is needed, select `plan` instead.
 
 After that succeeds, change the normal workflow to:
 
@@ -264,6 +272,12 @@ endpoint, deployment mode, reused/provisioned instance, existing/created resourc
 repository binding, schema compatibility, observed snapshot/currentness, requested
 and executed lifecycle, and evaluation modes. It composes existing facts and does
 not anticipate the generic telemetry platform tracked by #137.
+
+The Solr preflight also writes `solr-preflight.json` before returning a known
+failure, including `resource_missing`, service connectivity/authentication
+failures, and repository-binding collisions. The artifact is bounded and omits
+credential-bearing URLs. A missing resource is reported separately from an
+unavailable or incompatible Solr service.
 
 Writers are serialized by core/collection identity within the caller repository's
 GitHub Actions concurrency scope. GitHub does not provide a cross-repository global
