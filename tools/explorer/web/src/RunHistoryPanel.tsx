@@ -109,7 +109,7 @@ export function RunHistoryPanel({ runs, targets, busy, onChange, onRestore, onRe
         aria-label={'Selecionar execução ' + run.id} aria-pressed={selected?.id === run.id}
         className={'result-card w-full text-left ' + (selected?.id === run.id ? 'result-active' : '')}
         onClick={() => setSelectedId(run.id)}>
-        <span className="block text-xs text-white">{run.request.intent.canonical_query || '(sem consulta canônica)'}</span>
+        <span className="block text-xs text-white">{typeof run.request.intent.canonical_query === 'string' && run.request.intent.canonical_query || '(sem consulta canônica)'}</span>
         <span className="mt-1 block text-xs text-muted">{run.recorded_at} · {run.target.id} · {run.outcome.state}
           {run.outcome.truncated && ' · truncado'}</span>
       </button>)}
