@@ -28,43 +28,73 @@ on:
         required: false
         type: string
         default: master
-      collection:
-        description: Solr collection used for repository knowledge.
-        required: false
-        type: string
-        default: fetchcore-knowledge
-      managed_solr:
-        description: Start a local persistent Solr container on the self-hosted runner.
-        required: false
-        type: boolean
-        default: true
       solr_url:
-        description: External Solr base URL when managed_solr is false.
+        description: Credential-free Solr base URL ending in /solr.
         required: false
         type: string
         default: http://127.0.0.1:8983/solr
-      solr_port:
-        description: Host port for managed Solr.
+      solr_deployment_mode:
+        description: Expected deployment mode (auto, standalone, or solrcloud).
         required: false
         type: string
-        default: "8983"
-      solr_volume:
-        description: Persistent Docker volume for managed Solr state.
+        default: auto
+      collection:
+        description: Dedicated Solr core (standalone) or collection (SolrCloud).
         required: false
         type: string
-        default: fetchcore-index-solr
-      solr_image:
-        description: Digest-pinned Solr image used when managed_solr is true.
-        required: false
-        type: string
-        default: solr:9.10.1@sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb
-      evaluate:
-        description: Run MCP dogfood scenarios after indexing.
+        default: fetchcore-knowledge
+      create_if_missing:
+        description: Authorize creation of only the named core/collection.
         required: false
         type: boolean
         default: false
+      solr_provision_mode:
+        description: Reuse the configured service or provision an owned local service when missing.
+        required: false
+        type: string
+        default: reuse_only
+      managed_solr:
+        description: Deprecated compatibility alias for solr_provision_mode=provision_if_missing.
+        required: false
+        type: boolean
+        default: false
+      solr_configset:
+        description: Pinned server-side configset name used for authorized resource creation.
+        required: false
+        type: string
+        default: fetchcore
+      solr_image:
+        description: Digest-pinned image used only by explicit owned provisioning.
+        required: false
+        type: string
+        default: solr:9.10.1@sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb
+      solr_port:
+        description: Deprecated; owned provisioning always selects a free loopback port.
+        required: false
+        type: string
+        default: ""
+      solr_volume:
+        description: Deprecated; owned provisioning uses no pre-existing volume.
+        required: false
+        type: string
+        default: ""
+      index_lifecycle:
+        description: Explicit indexing intent (plan, sync, or rebuild).
+        required: false
+        type: string
+        default: sync
+      evaluate:
+        description: Run configured MCP dogfood scenarios after indexing.
+        required: false
+        type: boolean
+        default: false
+      evaluation_modes_json:
+        description: Retrieval modes to evaluate; dense/hybrid remain blocked until issue 130.
+        required: false
+        type: string
+        default: '["lexical"]'
       evaluation_gate:
-        description: Fail the workflow when one or more MCP evaluation scenarios miss expected evidence.
+        description: Fail when one or more MCP evaluation scenarios miss expected evidence.
         required: false
         type: boolean
         default: false
@@ -106,41 +136,72 @@ on:
         required: false
         type: string
         default: master
-      collection:
-        description: Solr collection.
-        required: false
-        type: string
-        default: fetchcore-self
-      managed_solr:
-        description: Start local persistent Solr.
-        required: false
-        type: boolean
-        default: true
       solr_url:
-        description: External Solr URL when managed_solr is false.
+        description: Credential-free Solr base URL ending in /solr.
         required: false
         type: string
         default: http://127.0.0.1:8983/solr
-      solr_port:
-        description: Host port for managed Solr.
+      solr_deployment_mode:
+        description: Expected deployment mode (auto, standalone, or solrcloud).
         required: false
         type: string
-        default: "8983"
-      solr_volume:
-        description: Persistent Docker volume.
+        default: auto
+      collection:
+        description: Dedicated Solr core or collection.
         required: false
         type: string
-        default: fetchcore-self-solr
+        default: fetchcore-self-dogfood
+      create_if_missing:
+        description: Authorize creation of only the named core/collection.
+        required: false
+        type: boolean
+        default: false
+      solr_provision_mode:
+        description: reuse_only or provision_if_missing.
+        required: false
+        type: string
+        default: reuse_only
+      managed_solr:
+        description: Deprecated compatibility alias for provision_if_missing.
+        required: false
+        type: boolean
+        default: false
+      solr_configset:
+        description: Server-side configset name for authorized resource creation.
+        required: false
+        type: string
+        default: fetchcore
       solr_image:
-        description: Digest-pinned managed Solr image.
+        description: Digest-pinned image used only by explicit owned provisioning.
         required: false
         type: string
         default: solr:9.10.1@sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb
+      solr_port:
+        description: Deprecated; a free port is selected automatically.
+        required: false
+        type: string
+        default: ""
+      solr_volume:
+        description: Deprecated; no pre-existing volume is used.
+        required: false
+        type: string
+        default: ""
+      index_lifecycle:
+        description: Explicit indexing intent (plan, sync, or rebuild).
+        required: false
+        type: choice
+        options: [plan, sync, rebuild]
+        default: sync
       evaluate:
         description: Run MCP dogfood scenarios.
         required: false
         type: boolean
         default: true
+      evaluation_modes_json:
+        description: JSON retrieval mode list; currently only lexical is operational.
+        required: false
+        type: string
+        default: '["lexical"]'
       evaluation_gate:
         description: Fail when MCP evaluation scenarios miss expected evidence.
         required: false
@@ -160,8 +221,11 @@ on:
 permissions:
   contents: read
 
+# GitHub scopes concurrency to the caller repository. The resource-only key
+# serializes writers inside that scope; cross-repository callers still require
+# distinct resources because Actions cannot provide a global distributed lock.
 concurrency:
-  group: fetchcore-index-${{ inputs.collection }}-${{ inputs.target_repository || github.repository }}
+  group: fetchcore-solr-resource-${{ inputs.collection }}
   cancel-in-progress: false
 
 jobs:
@@ -199,6 +263,48 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".fetchcore-runtime[mcp]"
 
+      - name: Validate workflow policy
+        env:
+          DEPLOYMENT_MODE: ${{ inputs.solr_deployment_mode }}
+          PROVISION_MODE: ${{ inputs.solr_provision_mode }}
+          INDEX_LIFECYCLE: ${{ inputs.index_lifecycle }}
+          EVALUATION_MODES_JSON: ${{ inputs.evaluation_modes_json }}
+          TARGET_REPOSITORY: ${{ inputs.target_repository || github.repository }}
+          SOLR_PORT: ${{ inputs.solr_port }}
+          SOLR_VOLUME: ${{ inputs.solr_volume }}
+        run: |
+          set -euo pipefail
+          case "$DEPLOYMENT_MODE" in auto|standalone|solrcloud) ;; *) echo "invalid solr_deployment_mode" >&2; exit 2;; esac
+          case "$PROVISION_MODE" in reuse_only|provision_if_missing) ;; *) echo "invalid solr_provision_mode" >&2; exit 2;; esac
+          case "$INDEX_LIFECYCLE" in plan|sync|rebuild) ;; *) echo "invalid index_lifecycle" >&2; exit 2;; esac
+          if [ -n "$SOLR_PORT" ]; then
+            echo "solr_port is deprecated and no longer controls owned provisioning; configure solr_url for a persistent/external service" >&2
+            exit 2
+          fi
+          if [ -n "$SOLR_VOLUME" ]; then
+            echo "solr_volume is deprecated and is no longer used; persistent state must belong to the explicitly configured external Solr service" >&2
+            exit 2
+          fi
+          python - <<'PY'
+          import json
+          import os
+          import re
+
+          repository = os.environ["TARGET_REPOSITORY"]
+          if not re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+", repository):
+              raise SystemExit("target_repository must use owner/name form")
+
+          modes = json.loads(os.environ["EVALUATION_MODES_JSON"])
+          if not isinstance(modes, list) or not modes or any(not isinstance(mode, str) for mode in modes):
+              raise SystemExit("evaluation_modes_json must be a non-empty JSON string array")
+          unsupported = sorted(set(modes) - {"lexical"})
+          if unsupported:
+              raise SystemExit(
+                  "requested evaluation modes are unavailable until #130 provides a vector-ready "
+                  "index/provider contract: " + ", ".join(unsupported)
+              )
+          PY
+
       - name: Resolve indexing identity
         id: identity
         env:
@@ -207,88 +313,59 @@ jobs:
         run: |
           set -euo pipefail
           revision="$(git -C target rev-parse HEAD)"
+          git check-ref-format --branch "$TARGET_BRANCH" >/dev/null
+          git -C target switch --force-create "$TARGET_BRANCH" "$revision" >/dev/null
           printf 'repository=%s\n' "$TARGET_REPOSITORY" >> "$GITHUB_OUTPUT"
           printf 'branch=%s\n' "$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
           printf 'revision=%s\n' "$revision" >> "$GITHUB_OUTPUT"
+          run_root="$RUNNER_TEMP/fetchcore-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf 'FETCHCORE_RUN_ROOT=%s\n' "$run_root" >> "$GITHUB_ENV"
+          printf 'FETCHCORE_DOGFOOD_OUTPUT=%s/evidence\n' "$run_root" >> "$GITHUB_ENV"
+          printf 'FETCHCORE_REPOSITORY_CACHE=%s/repository-cache\n' "$run_root" >> "$GITHUB_ENV"
+          mkdir -p "$run_root/evidence"
 
-      - name: Start managed Solr
-        if: ${{ inputs.managed_solr }}
-        env:
-          COLLECTION: ${{ inputs.collection }}
-          SOLR_IMAGE: ${{ inputs.solr_image }}
-          SOLR_PORT: ${{ inputs.solr_port }}
-          SOLR_VOLUME: ${{ inputs.solr_volume }}
-        run: |
-          set -euo pipefail
-          case "$SOLR_PORT" in
-            *[!0-9]*|"") echo "solr_port must be numeric" >&2; exit 2 ;;
-          esac
-          case "$SOLR_VOLUME" in
-            *[!A-Za-z0-9_.-]*|"") echo "solr_volume contains unsupported characters" >&2; exit 2 ;;
-          esac
-          pull_helper="$GITHUB_WORKSPACE/.fetchcore-runtime/scripts/ci/docker-pull.sh"
-          if [[ -x "$pull_helper" ]]; then
-            "$pull_helper" "$SOLR_IMAGE"
-          else
-            [[ "$SOLR_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]] || {
-              echo "solr_image must be pinned by sha256 digest" >&2
-              exit 2
-            }
-            docker pull "$SOLR_IMAGE"
-          fi
-          container="fetchcore-solr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          docker rm -f "$container" >/dev/null 2>&1 || true
-          docker volume create "$SOLR_VOLUME" >/dev/null
-          docker run -d \
-            --name "$container" \
-            -p "127.0.0.1:${SOLR_PORT}:8983" \
-            -v "${SOLR_VOLUME}:/var/solr" \
-            -v "$GITHUB_WORKSPACE/.fetchcore-runtime/infra/solr/configset:/fetchcore-configset:ro" \
-            "$SOLR_IMAGE" \
-            solr-precreate "$COLLECTION" /fetchcore-configset >/dev/null
-          printf 'FETCHCORE_SOLR_CONTAINER=%s\n' "$container" >> "$GITHUB_ENV"
-          printf 'FETCHCORE_SOLR_URL=http://127.0.0.1:%s/solr\n' "$SOLR_PORT" >> "$GITHUB_ENV"
-
-      - name: Use external Solr
-        if: ${{ !inputs.managed_solr }}
+      - name: Discover and prepare Solr resource
         env:
           SOLR_URL: ${{ inputs.solr_url }}
-        run: printf 'FETCHCORE_SOLR_URL=%s\n' "$SOLR_URL" >> "$GITHUB_ENV"
-
-      - name: Wait for Solr
+          DEPLOYMENT_MODE: ${{ inputs.solr_deployment_mode }}
+          COLLECTION: ${{ inputs.collection }}
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
+          CREATE_IF_MISSING: ${{ inputs.create_if_missing }}
+          PROVISION_MODE: ${{ inputs.solr_provision_mode }}
+          MANAGED_SOLR: ${{ inputs.managed_solr }}
+          CONFIGSET: ${{ inputs.solr_configset }}
+          SOLR_IMAGE: ${{ inputs.solr_image }}
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import os
-          import time
-          from urllib.error import URLError
-          from urllib.request import urlopen
-
-          url = os.environ["FETCHCORE_SOLR_URL"].rstrip("/") + "/admin/info/system"
-          error = None
-          for _ in range(60):
-              try:
-                  with urlopen(url, timeout=2) as response:
-                      if 200 <= response.status < 300:
-                          raise SystemExit(0)
-              except (OSError, URLError) as exc:
-                  error = exc
-                  time.sleep(2)
-          raise SystemExit(f"Solr did not become ready at {url}: {error}")
-          PY
+          effective_provision_mode="$PROVISION_MODE"
+          if [ "$MANAGED_SOLR" = "true" ]; then
+            effective_provision_mode="provision_if_missing"
+            echo "::warning::managed_solr is deprecated; use solr_provision_mode=provision_if_missing"
+          fi
+          args=(
+            prepare
+            --solr-url "$SOLR_URL"
+            --deployment-mode "$DEPLOYMENT_MODE"
+            --resource "$COLLECTION"
+            --repository "$REPOSITORY"
+            --provision-mode "$effective_provision_mode"
+            --configset "$CONFIGSET"
+            --solr-image "$SOLR_IMAGE"
+            --configset-dir "$GITHUB_WORKSPACE/.fetchcore-runtime/infra/solr/configset"
+            --owner-token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            --output-json "$FETCHCORE_DOGFOOD_OUTPUT/solr-preflight.json"
+            --output-env "$FETCHCORE_RUN_ROOT/solr.env"
+          )
+          if [ "$CREATE_IF_MISSING" = "true" ]; then args+=(--create-if-missing); fi
+          python -m fetchcore.operational.solr_runtime "${args[@]}"
+          cat "$FETCHCORE_RUN_ROOT/solr.env" >> "$GITHUB_ENV"
 
       - name: Configure FetchCore indexing
         env:
           REPOSITORY: ${{ steps.identity.outputs.repository }}
-          BRANCH: ${{ steps.identity.outputs.branch }}
-          REVISION: ${{ steps.identity.outputs.revision }}
           COLLECTION: ${{ inputs.collection }}
         run: |
           set -euo pipefail
-          printf 'FETCHCORE_INDEX_WORKSPACE=%s/target\n' "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
-          printf 'FETCHCORE_INDEX_REPOSITORY=%s\n' "$REPOSITORY" >> "$GITHUB_ENV"
-          printf 'FETCHCORE_INDEX_BRANCH=%s\n' "$BRANCH" >> "$GITHUB_ENV"
-          printf 'FETCHCORE_INDEX_REVISION=%s\n' "$REVISION" >> "$GITHUB_ENV"
           printf 'FETCHCORE_INDEX_BACKEND=solr\n' >> "$GITHUB_ENV"
           python - <<'PY' >> "$GITHUB_ENV"
           import json
@@ -300,36 +377,81 @@ jobs:
           }
           print("FETCHCORE_INDEX_BACKEND_SETTINGS=" + json.dumps(payload, separators=(",", ":")))
           PY
-          printf 'FETCHCORE_DOGFOOD_OUTPUT=%s/fetchcore-dogfood\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-          mkdir -p "$RUNNER_TEMP/fetchcore-dogfood"
+          fetchcore repo \
+            --cache-root "$FETCHCORE_REPOSITORY_CACHE" \
+            --allowed-root "$GITHUB_WORKSPACE" \
+            add target --provider local-workspace --json \
+            | tee "$FETCHCORE_DOGFOOD_OUTPUT/repository-registration.json"
 
       - name: Bootstrap FetchCore Solr schema
+        env:
+          FETCHCORE_INDEX_WORKSPACE: ${{ github.workspace }}/target
+          FETCHCORE_INDEX_REPOSITORY: ${{ steps.identity.outputs.repository }}
+          FETCHCORE_INDEX_BRANCH: ${{ steps.identity.outputs.branch }}
+          FETCHCORE_INDEX_REVISION: ${{ steps.identity.outputs.revision }}
         run: |
           set -o pipefail
           fetchcore index bootstrap | tee "$FETCHCORE_DOGFOOD_OUTPUT/bootstrap.json"
 
-      - name: Index status before sync
+      - name: Index status before execution
+        env:
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
         run: |
           set -o pipefail
-          fetchcore index status | tee "$FETCHCORE_DOGFOOD_OUTPUT/status-before.json"
+          fetchcore index \
+            --cache-root "$FETCHCORE_REPOSITORY_CACHE" \
+            --allowed-root "$GITHUB_WORKSPACE" \
+            status "$REPOSITORY" --json \
+            | tee "$FETCHCORE_DOGFOOD_OUTPUT/status-before.json"
 
-      - name: Preview index mutation
+      - name: Plan index lifecycle
+        env:
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
         run: |
           set -o pipefail
-          fetchcore index dry-run | tee "$FETCHCORE_DOGFOOD_OUTPUT/dry-run.json"
+          fetchcore index \
+            --cache-root "$FETCHCORE_REPOSITORY_CACHE" \
+            --allowed-root "$GITHUB_WORKSPACE" \
+            plan "$REPOSITORY" --json \
+            | tee "$FETCHCORE_DOGFOOD_OUTPUT/plan.json"
 
       - name: Synchronize repository index
+        if: ${{ inputs.index_lifecycle == 'sync' }}
+        env:
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
         run: |
           set -o pipefail
-          fetchcore index sync | tee "$FETCHCORE_DOGFOOD_OUTPUT/sync.json"
+          fetchcore index \
+            --cache-root "$FETCHCORE_REPOSITORY_CACHE" \
+            --allowed-root "$GITHUB_WORKSPACE" \
+            sync "$REPOSITORY" --json \
+            | tee "$FETCHCORE_DOGFOOD_OUTPUT/execution.json"
 
-      - name: Index status after sync
+      - name: Explicitly rebuild repository index
+        if: ${{ inputs.index_lifecycle == 'rebuild' }}
+        env:
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
         run: |
           set -o pipefail
-          fetchcore index status | tee "$FETCHCORE_DOGFOOD_OUTPUT/status-after.json"
+          fetchcore index \
+            --cache-root "$FETCHCORE_REPOSITORY_CACHE" \
+            --allowed-root "$GITHUB_WORKSPACE" \
+            rebuild "$REPOSITORY" --json \
+            | tee "$FETCHCORE_DOGFOOD_OUTPUT/execution.json"
 
-      - name: Evaluate through MCP
-        if: ${{ inputs.evaluate }}
+      - name: Index status after execution
+        env:
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
+        run: |
+          set -o pipefail
+          fetchcore index \
+            --cache-root "$FETCHCORE_REPOSITORY_CACHE" \
+            --allowed-root "$GITHUB_WORKSPACE" \
+            status "$REPOSITORY" --json \
+            | tee "$FETCHCORE_DOGFOOD_OUTPUT/status-after.json"
+
+      - name: Evaluate lexical retrieval through MCP
+        if: ${{ inputs.evaluate && inputs.index_lifecycle != 'plan' }}
         env:
           REPOSITORY: ${{ steps.identity.outputs.repository }}
           REVISION: ${{ steps.identity.outputs.revision }}
@@ -349,25 +471,55 @@ jobs:
             --output-json "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation.json"
             --output-markdown "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation.md"
           )
-          if [ "$EVALUATION_GATE" != "true" ]; then
-            args+=(--report-only)
-          fi
+          if [ "$EVALUATION_GATE" != "true" ]; then args+=(--report-only); fi
           python .fetchcore-runtime/scripts/dogfood_mcp_eval.py "${args[@]}"
           cat "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Compose bounded run evidence
+        if: ${{ success() }}
+        env:
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
+          REVISION: ${{ steps.identity.outputs.revision }}
+          INDEX_LIFECYCLE: ${{ inputs.index_lifecycle }}
+          EVALUATION_MODES_JSON: ${{ inputs.evaluate && inputs.evaluation_modes_json || '[]' }}
+        run: |
+          set -euo pipefail
+          args=(
+            --repository "$REPOSITORY"
+            --revision "$REVISION"
+            --lifecycle "$INDEX_LIFECYCLE"
+            --evaluation-modes-json "$EVALUATION_MODES_JSON"
+            --preflight "$FETCHCORE_DOGFOOD_OUTPUT/solr-preflight.json"
+            --bootstrap "$FETCHCORE_DOGFOOD_OUTPUT/bootstrap.json"
+            --plan "$FETCHCORE_DOGFOOD_OUTPUT/plan.json"
+            --status "$FETCHCORE_DOGFOOD_OUTPUT/status-after.json"
+            --output "$FETCHCORE_DOGFOOD_OUTPUT/run-evidence.json"
+          )
+          if [ -f "$FETCHCORE_DOGFOOD_OUTPUT/execution.json" ]; then
+            args+=(--execution "$FETCHCORE_DOGFOOD_OUTPUT/execution.json")
+          fi
+          python .fetchcore-runtime/scripts/ci/build-index-evidence.py "${args[@]}"
+          {
+            echo '### FetchCore index evidence'
+            echo '```json'
+            cat "$FETCHCORE_DOGFOOD_OUTPUT/run-evidence.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload FetchCore indexing evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: fetchcore-index-${{ inputs.collection }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/fetchcore-dogfood/
+          path: ${{ runner.temp }}/fetchcore-${{ github.run_id }}-${{ github.run_attempt }}/evidence/
           if-no-files-found: warn
           include-hidden-files: true
           retention-days: ${{ inputs.artifact_retention_days }}
 
-      - name: Stop managed Solr
-        if: ${{ always() && inputs.managed_solr }}
+      - name: Clean up owned Solr runtime
+        if: ${{ always() }}
         run: |
-          if [ -n "${FETCHCORE_SOLR_CONTAINER:-}" ]; then
-            docker rm -f "$FETCHCORE_SOLR_CONTAINER" >/dev/null 2>&1 || true
+          state="$FETCHCORE_DOGFOOD_OUTPUT/solr-preflight.json"
+          if [ -f "$state" ]; then
+            python -m fetchcore.operational.solr_runtime cleanup --state "$state"
           fi

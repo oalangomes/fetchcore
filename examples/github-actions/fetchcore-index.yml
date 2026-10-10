@@ -19,11 +19,15 @@ jobs:
       target_ref: ${{ github.sha }}
       target_branch: ${{ github.ref_name }}
       fetchcore_ref: master
+      solr_url: ${{ vars.FETCHCORE_SOLR_URL || 'http://127.0.0.1:8983/solr' }}
+      solr_deployment_mode: auto
+      # This second repository owns a distinct resource. Never share the
+      # fetchcore-self-dogfood core used by FetchCore itself.
       collection: my-project-knowledge
-
-      # Stable self-hosted runner: keep Solr state in a local Docker volume.
-      managed_solr: true
-      solr_volume: my-project-fetchcore-solr
+      create_if_missing: false
+      solr_provision_mode: reuse_only
+      index_lifecycle: sync
 
       # Set evaluate=true after adding repository-local dogfood scenarios.
       evaluate: false
+      evaluation_modes_json: '["lexical"]'

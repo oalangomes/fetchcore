@@ -25,10 +25,14 @@ jobs:
       target_ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       target_branch: master
       fetchcore_ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-      collection: fetchcore-self
-      managed_solr: true
-      solr_volume: fetchcore-self-solr
+      solr_url: http://127.0.0.1:8983/solr
+      solr_deployment_mode: standalone
+      collection: fetchcore-self-dogfood
+      create_if_missing: false
+      solr_provision_mode: reuse_only
+      index_lifecycle: sync
       evaluate: true
+      evaluation_modes_json: '["lexical"]'
       evaluation_gate: false
       scenarios_path: dogfood/scenarios/fetchcore-self.yaml
       artifact_retention_days: 30

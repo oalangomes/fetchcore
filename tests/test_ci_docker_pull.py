@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import yaml
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -104,6 +105,9 @@ def test_container_inputs_are_immutable_and_match_dockerfile() -> None:
     assert values["FETCHCORE_SOLR_IMAGE"] in (
         ROOT / "infra" / "compose" / "solr.yml"
     ).read_text(encoding="utf-8")
+    assert "/var/solr/data/configsets/fetchcore:ro" in (
+        ROOT / "infra" / "compose" / "solr.yml"
+    ).read_text(encoding="utf-8")
     assert values["FETCHCORE_SOLR_IMAGE"] in (
         ROOT / ".github" / "workflows" / "repository-index.yml"
     ).read_text(encoding="utf-8")
@@ -118,6 +122,7 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     localization = (workflow_dir / "docs-localization.yml").read_text(encoding="utf-8")
     ci = (workflow_dir / "ci.yml").read_text(encoding="utf-8")
     explorer = (workflow_dir / "explorer.yml").read_text(encoding="utf-8")
+    repository_index = (workflow_dir / "repository-index.yml").read_text(encoding="utf-8")
 
     assert "workflow_run:" in self_dogfood
     assert "github.event.workflow_run.conclusion == 'success'" in self_dogfood
@@ -129,3 +134,62 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     assert "Validate localization configuration" in localization
     assert ci.count("scripts/ci/docker-pull.sh") == 2
     assert explorer.count("scripts/ci/docker-pull.sh") == 3
+    assert "workflow_call:" in repository_index
+    assert "workflow_dispatch:" in repository_index
+    assert "default: reuse_only" in repository_index
+    assert "group: fetchcore-solr-resource-${{ inputs.collection }}" in repository_index
+    assert "inputs.target_repository || github.repository" not in repository_index.split(
+        "concurrency:", 1
+    )[1].split("jobs:", 1)[0]
+    assert "docker run" not in repository_index
+    assert repository_index.count("fetchcore index \\") == 5
+    assert "sync \"$REPOSITORY\" --json" in repository_index
+    assert "rebuild \"$REPOSITORY\" --json" in repository_index
+    assert "unavailable until #130" in repository_index
+    assert "fetchcore-self-dogfood" in self_dogfood
+    assert "solr_provision_mode: reuse_only" in self_dogfood
+    self_inputs = yaml.safe_load(self_dogfood)["jobs"]["self-index"]["with"]
+    assert self_inputs["create_if_missing"] is False
+    assert self_inputs["solr_provision_mode"] == "reuse_only"
+    assert self_inputs["index_lifecycle"] == "sync"
+    assert "managed_solr: true" not in self_dogfood
+
+
+@pytest.mark.parametrize(
+    ("input_name", "value", "message"),
+    [
+        ("SOLR_PORT", "8983", "solr_port is deprecated"),
+        ("SOLR_VOLUME", "fetchcore-index-solr", "solr_volume is deprecated"),
+    ],
+)
+def test_workflow_rejects_deprecated_inputs_with_actionable_error(
+    input_name: str, value: str, message: str,
+) -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "repository-index.yml").read_text(encoding="utf-8")
+    )
+    policy = next(
+        step["run"] for step in workflow["jobs"]["index"]["steps"]
+        if step.get("name") == "Validate workflow policy"
+    )
+    env = {
+        **os.environ,
+        "DEPLOYMENT_MODE": "standalone",
+        "PROVISION_MODE": "reuse_only",
+        "INDEX_LIFECYCLE": "sync",
+        "EVALUATION_MODES_JSON": '["lexical"]',
+        "TARGET_REPOSITORY": "oalangomes/fetchcore",
+        "SOLR_PORT": "",
+        "SOLR_VOLUME": "",
+    }
+    accepted = subprocess.run(
+        ["bash", "-c", policy], env=env, capture_output=True, text=True, check=False,
+    )
+    assert accepted.returncode == 0, accepted.stderr
+
+    env[input_name] = value
+    rejected = subprocess.run(
+        ["bash", "-c", policy], env=env, capture_output=True, text=True, check=False,
+    )
+    assert rejected.returncode == 2
+    assert message in rejected.stderr
