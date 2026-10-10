@@ -4,12 +4,69 @@ An **optional, local-only** retrieval workbench. The core remains headless throu
 
 ## Features
 - Live retrieval through existing `RetrievalApplicationService`, never mock data.
-- Editable `SearchIntent v2` JSON (anchors, expression, signals, expansions and hints).
+- Dual `SearchIntent v2` editors: visual form for exact/semantic terms, hints, required anchors, expansions and typed signals; lossless full JSON editor for expressions and all advanced fields.
+- Operator-authorized repository and collection/index selector; selecting an index does **not** perform federated retrieval. Backend/provenance/source authorization remains application-owned.
 - Read-only operator backend/capabilities; bounded request scope mode, result limit and knowledge types.
 - Result inspection: source ref, revision, checksum, line ranges, content, `QueryMatchEvidence`, `EvidenceObservation`, relationships and raw metadata.
 - Authorized source reads; telemetry/stages, candidate counts and fingerprints when returned.
 - Explicit structured errors with no silent fallback.
 
+
+## Query builder and operator-owned targets
+
+The Search Lab has **Formulário** and **JSON completo** modes. Both operate on
+the **same SearchIntent v2 JSON**; changing a visible field in the form preserves
+unrepresented fields (notably boolean expression branches, signal metadata,
+expansion provenance and schema_version). Invalid/incomplete JSON is preserved,
+reported and never submitted; it cannot be silently converted to a broad query.
+
+The API exposes an allowlisted set of retrieval targets in `/api/config`.
+A target is **one repository binding + one backend projection/index + one
+retrieval policy**, not an unrestricted collection browser. The browser sends
+only `target_id` and the existing SearchIntent to the application service.
+Raw Solr URL, filesystem workspace, backend credentials and runtime settings
+cannot be supplied by browser requests. A missing/unauthorized target fails
+explicitly. Source reads use the same target binding.
+
+The default target is the existing configured `FETCHCORE_BACKEND`,
+`FETCHCORE_REPOSITORY` and collection/index settings. To expose **additional**
+operator-authorized targets, inject `FETCHCORE_EXPLORER_TARGETS` as a JSON array
+via the API process environment (or your root `.env` file):
+
+```dotenv
+FETCHCORE_EXPLORER_TARGETS=[{"id":"second-index","repository":"oalangomes/fetchcore","workspace":"/workspace","backend":"solr","backend_settings":{"url":"http://solr:8983/solr","collection":"fetchcore-other"}}]
+```
+
+The entry's `id` must be unique, and `workspace` must be an **absolute
+existing container path**. `repository` is the exact authorized canonical
+repository identity. Optional `revision` and `retrieval` settings may be set
+per target. Schema/backend/embedding compatibility is validated through the
+existing FetchCore application/adapter contracts. The second collection must
+already exist and be indexed: listing a target does **not** create/provision it.
+
+To expose a **second repository**, mount its source read-only into the
+`api` container **explicitly** using an operator-owned Compose override:
+
+```yaml
+# compose.override.yml, repository root, local-only example
+services:
+  api:
+    volumes:
+      - /absolute/host/path/to/other-repo:/repos/other:ro
+```
+
+Then add an allowlist entry with `workspace: "/repos/other"`,
+`repository: "owner/other"` and the corresponding existing indexed backend
+collection. Do not mount your entire filesystem root or use client-supplied
+paths. API targets are **not** automatically exposed to the default MCP
+process or the on-demand indexer; those retain their own explicit binding.
+To configure those consumers, use their existing operator-owned runtime
+settings.
+
+**Limit:** each choice executes a **single-target** search. This is neither
+multi-repository federation (#42) nor dynamic Solr collection enumeration.
+The UI cannot change indexing policy or activate dense/hybrid on an
+unprepared index (#123).
 
 ## Docker Compose: repository-root default
 
