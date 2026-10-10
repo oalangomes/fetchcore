@@ -2,9 +2,12 @@
 
 <p align="center"><a href="README.md">English</a> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
 
-<p align="center"><img src="assets/brand/lockup-horizontal.svg" alt="FetchCore — Repositories into evidence" width="420"></p>
-
-<p align="center"><strong>Repositories into evidence.</strong></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/lockup-horizontal-inverse.svg">
+    <img src="assets/brand/lockup-horizontal.svg" alt="FetchCore — Repositories into evidence" width="420">
+  </picture>
+</p>
 <p align="center">Backend-neutral repository knowledge and retrieval for developer tools, MCP clients, and coding agents.</p>
 
 <p align="center">
