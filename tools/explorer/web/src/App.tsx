@@ -14,8 +14,9 @@ import { Button } from './components/ui/button'
 import { ApiError, getConfig, getReadiness, parseIntent, readSource, search, sourcePayloadForHit } from './api'
 import { SearchIntentForm } from './SearchIntentForm'
 import { RunHistoryPanel } from './RunHistoryPanel'
+import { ComparisonLab } from './ComparisonLab'
 import { captureRun, prependRun, replayGate } from './runHistory'
-import type { RunManifest } from './runHistory'
+import type { RunManifest, RecordedHit } from './runHistory'
 import { applyPreset, intentPresets, parseValidatedIntent, validateVisualIntent } from './intentBuilder'
 import type { ExplorerTarget, SearchHit, SearchPayload, SearchResponse, RetrievalTelemetry } from './types'
 
@@ -343,6 +344,19 @@ export function App() {
       setParseError(error instanceof Error ? error.message : 'SearchIntent JSON inválido')
     }
   }
+  function inspectRecordedCandidate(record: RunManifest, recorded: RecordedHit): boolean {
+    // A recorded historical source never authorizes a read. Only navigate a
+    // verified current response on the same operator-bound target/provenance.
+    if (!run.data || !run.variables || run.variables.target_id !== record.target.id
+      || run.variables.repository !== record.target.repository
+      || !recorded.source_ref || !recorded.checksum) return false
+    const found = run.data.results.find(hit => hit.source_ref === recorded.source_ref
+      && hit.checksum === recorded.checksum && hit.revision === recorded.revision)
+    if (!found) return false
+    setSelectedId(found.id)
+    setActivePanel('results')
+    return true
+  }
   function restoreRecordedQuery(record: RunManifest) {
     const target = targets.find(candidate => candidate.id === record.target.id
       && candidate.repository === record.target.repository)
@@ -666,6 +680,7 @@ export function App() {
             </section>}
           </div>
         </div>
+        <ComparisonLab runs={runs} onInspect={inspectRecordedCandidate}/>
         <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-line py-5 text-xs text-muted"><span>FetchCore · Repositories → evidence</span><span>Local-only tooling · Sem agentes · Sem authority</span></footer>
       </div>
     </main>
