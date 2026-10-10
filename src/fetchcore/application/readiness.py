@@ -7,7 +7,7 @@ This module does not write, index, migrate, or implicitly repair projections.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, TYPE_CHECKING
+from typing import Literal, TYPE_CHECKING
 
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 from fetchcore.retrieval.config import EmbeddingConfig
@@ -162,7 +162,7 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
 
     try:
         from fetchcore.adapters.retrieval.solr.backend import (
-            SolrIndexStore, SolrSettings, UrllibSolrTransport,
+            SolrIndexStore, SolrIndexSnapshot, SolrSettings, UrllibSolrTransport,
             SOLR_VECTOR_DIMENSIONS,
         )
         from fetchcore.adapters.retrieval.opensearch.backend import (
@@ -173,12 +173,17 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
         )
         provider = None
         if mode in {"dense", "hybrid"}:
-            selected = (config.retrieval.dense.embedding
-                        if config.retrieval is not None else EmbeddingConfig())
+            selected = (
+                config.retrieval.dense.embedding
+                if config.retrieval is not None
+                else EmbeddingConfig(
+                    model=str(config.backend_settings.get("embedding_model", EmbeddingConfig.model)),
+                )
+            )
             provider = inspector.providers.create(
                 selected, backend_id=config.backend, backend_name=config.backend,
             )
-        store: Any  # Adapter-specific snapshot readers share the same typed load_snapshot port.
+        store: SolrIndexStore | OpenSearchIndexStore | QdrantVectorIndexStore
         if config.backend == "solr":
             # Read the canonical indexing fingerprint from the bound store.
             # The legacy SolrIndexSnapshot silently discards the canonical payload.
@@ -224,7 +229,9 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
             snapshot, "embedding_serializer_fingerprint"
         ) else getattr(snapshot, "serializer_fingerprint", None)
         if config.backend == "solr":
-            # Reuse the exact indexing contract and cheap git-delta status.
+            # The runtime branch always composes a Solr-backed, contract-bound store.
+            assert isinstance(store, SolrIndexStore)
+            assert isinstance(snapshot, SolrIndexSnapshot)
             status = repository_index_status(store, index.runtime)
             expected = index.runtime.fingerprint
             actual = snapshot_indexing_fingerprint(snapshot)
