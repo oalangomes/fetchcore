@@ -104,6 +104,9 @@ def test_container_inputs_are_immutable_and_match_dockerfile() -> None:
     assert values["FETCHCORE_SOLR_IMAGE"] in (
         ROOT / "infra" / "compose" / "solr.yml"
     ).read_text(encoding="utf-8")
+    assert "/var/solr/data/configsets/fetchcore:ro" in (
+        ROOT / "infra" / "compose" / "solr.yml"
+    ).read_text(encoding="utf-8")
     assert values["FETCHCORE_SOLR_IMAGE"] in (
         ROOT / ".github" / "workflows" / "repository-index.yml"
     ).read_text(encoding="utf-8")
@@ -118,6 +121,7 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     localization = (workflow_dir / "docs-localization.yml").read_text(encoding="utf-8")
     ci = (workflow_dir / "ci.yml").read_text(encoding="utf-8")
     explorer = (workflow_dir / "explorer.yml").read_text(encoding="utf-8")
+    repository_index = (workflow_dir / "repository-index.yml").read_text(encoding="utf-8")
 
     assert "workflow_run:" in self_dogfood
     assert "github.event.workflow_run.conclusion == 'success'" in self_dogfood
@@ -129,3 +133,18 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     assert "Validate localization configuration" in localization
     assert ci.count("scripts/ci/docker-pull.sh") == 2
     assert explorer.count("scripts/ci/docker-pull.sh") == 3
+    assert "workflow_call:" in repository_index
+    assert "workflow_dispatch:" in repository_index
+    assert "default: reuse_only" in repository_index
+    assert "group: fetchcore-solr-resource-${{ inputs.collection }}" in repository_index
+    assert "inputs.target_repository || github.repository" not in repository_index.split(
+        "concurrency:", 1
+    )[1].split("jobs:", 1)[0]
+    assert "docker run" not in repository_index
+    assert repository_index.count("fetchcore index \\") == 5
+    assert "sync \"$REPOSITORY\" --json" in repository_index
+    assert "rebuild \"$REPOSITORY\" --json" in repository_index
+    assert "unavailable until #130" in repository_index
+    assert "fetchcore-self-dogfood" in self_dogfood
+    assert "solr_provision_mode: reuse_only" in self_dogfood
+    assert "managed_solr: true" not in self_dogfood

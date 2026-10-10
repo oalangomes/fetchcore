@@ -5,7 +5,7 @@ FetchCore can index a repository from GitHub Actions on a self-hosted runner whi
 ```text
 GitHub Actions
     ↓
-fetchcore index status / dry-run / sync
+fetchcore index bootstrap / status / plan / sync / rebuild
     ↓
 RepositoryIndexRuntime
     ↓
@@ -38,7 +38,11 @@ fetchcore index ... dry-run
 fetchcore index ... sync
 ```
 
-Every successful command emits JSON. `bootstrap` validates the active Solr collection against the FetchCore Projection v3 schema. Managed Solr is provisioned from `infra/solr/configset`, which preserves the behavior-proven analyzers, BM25 parameters and vector field contract extracted from AgentsOrchNext. The CLI never silently rewrites an incompatible schema. `dry-run` performs no persistent writes.
+Every successful command emits JSON. `bootstrap` validates the active Solr
+resource against the FetchCore Projection v3 schema. Explicit owned provisioning
+uses `infra/solr/configset`, which preserves the behavior-proven analyzers, BM25
+parameters and vector field contract extracted from AgentsOrchNext. The CLI never
+silently rewrites an incompatible schema. `dry-run` performs no persistent writes.
 
 Equivalent environment variables are available:
 
@@ -49,16 +53,18 @@ Equivalent environment variables are available:
 - `FETCHCORE_INDEX_BACKEND`;
 - `FETCHCORE_INDEX_BACKEND_SETTINGS`.
 
-The repository-targeted [indexing lifecycle](repository-indexing.md) is available
-in parallel. Existing workflows retain this explicit workspace/identity surface,
-including its initial/recovery rebuild behavior. Registered `sync <repo>` requires
-an existing compatible index and never inherits that recovery policy.
+The repository-targeted [indexing lifecycle](repository-indexing.md) is the
+workflow execution surface. The legacy explicit workspace/identity surface remains
+available for compatibility, but the workflow registers its checked-out workspace
+and uses strict `plan <repo>`, `sync <repo>`, and `rebuild <repo>` commands.
+Registered `sync <repo>` requires an existing compatible index and never inherits
+legacy recovery behavior.
 
 ## Reusable workflow
 
 The repository provides `.github/workflows/repository-index.yml` as a reusable workflow and manual workflow.
 
-An adopting repository can call:
+An adopting repository can call a healthy existing Solr service:
 
 ```yaml
 jobs:
@@ -69,9 +75,15 @@ jobs:
       target_repository: ${{ github.repository }}
       target_ref: ${{ github.sha }}
       target_branch: ${{ github.ref_name }}
+      fetchcore_ref: master
+      solr_url: ${{ vars.FETCHCORE_SOLR_URL || 'http://127.0.0.1:8983/solr' }}
+      solr_deployment_mode: auto
       collection: my-project-knowledge
-      managed_solr: true
-      solr_volume: my-project-fetchcore-solr
+      create_if_missing: false
+      solr_provision_mode: reuse_only
+      index_lifecycle: sync
+      evaluate: false
+      evaluation_modes_json: '["lexical"]'
 ```
 
 A complete example lives at `examples/github-actions/fetchcore-index.yml`.
@@ -105,56 +117,156 @@ post-merge dogfood requires an explicitly configured always-on runner. Pull
 request code is validated on GitHub-hosted runners and is not sent to this
 self-hosted path.
 
-## Persistence modes
+## Reuse-first Solr lifecycle
 
-### Managed local Solr
+The safe default is `solr_provision_mode: reuse_only`. The workflow probes the
+configured URL's System Information API and validates the response as Solr; an
+open TCP port alone is not readiness. It distinguishes connection refusal,
+timeout, authentication denial, server errors, a non-Solr HTTP endpoint, and an
+unknown or mismatched deployment mode. Endpoint diagnostics never include URL
+credentials; credential-bearing URLs are rejected.
 
-`managed_solr: true` starts pinned Solr `9.10.1` on the selected self-hosted runner, creates the requested collection from the FetchCore configset in `infra/solr/configset`, and mounts a named Docker volume.
+Deployment mode selects the resource API explicitly:
 
 ```text
-workflow run N
-    ↓
-named Docker volume
+standalone (`mode=std`) → CoreAdmin → dedicated core
+SolrCloud               → Collections API → dedicated collection
+```
+
+An existing compatible service is always reused. That path performs no Docker
+start, stop, restart, volume, or cleanup operation. Resource existence is checked
+separately from service health. Existing resources are never recreated or have
+their schema replaced. FetchCore's public `index bootstrap` validates Projection
+v3 compatibility, while `index plan/status` validate snapshot identity,
+fingerprints, repository binding, and currentness.
+
+### Creating a missing core or collection
+
+Creation requires `create_if_missing: true`. It creates only `collection` and uses
+the named, server-side `solr_configset` (default `fetchcore`). An external Solr
+operator must install that configset first. If it is unavailable, creation fails
+explicitly; the workflow does not upload, repair, or replace a configset.
+
+For an initial dedicated resource, use an explicitly authorized initialization
+run:
+
+```yaml
+create_if_missing: true
+index_lifecycle: rebuild
+```
+
+After that succeeds, change the normal workflow to:
+
+```yaml
+create_if_missing: false
+index_lifecycle: sync
+```
+
+The second and later runs preserve `noop` and incremental behavior. `sync` never
+falls back to rebuilding: an absent snapshot fails with `snapshot_missing`, and
+an incompatible snapshot fails with `rebuild_required`.
+
+### Optional owned provisioning
+
+If no service exists at a loopback HTTP endpoint, provisioning is available only
+with both explicit authorizations:
+
+```yaml
+solr_provision_mode: provision_if_missing
+create_if_missing: true
+```
+
+That path selects a free loopback port, creates a uniquely named ephemeral
+container from the digest-pinned Solr image, and records it as owned by the run.
+Cleanup removes only that exact owned container. It never deletes a pre-existing
+container or volume. `managed_solr: true` remains as a deprecated compatibility
+alias for this opt-in policy; `solr_port` and `solr_volume` are deprecated because
+fixed ports and shared-volume ownership are unsafe.
+
+## Isolating a second repository
+
+Every repository gets its own core/collection. For example, a second repository
+must not use FetchCore's `fetchcore-self-dogfood` core:
+
+```yaml
+jobs:
+  widgets-index:
+    uses: oalangomes/fetchcore/.github/workflows/repository-index.yml@master
+    with:
+      target_repository: acme/widgets
+      target_ref: ${{ github.sha }}
+      target_branch: main
+      solr_url: ${{ vars.FETCHCORE_SOLR_URL }}
+      collection: acme-widgets-knowledge
+      solr_provision_mode: reuse_only
+      create_if_missing: false
+      index_lifecycle: sync
+```
+
+This proves operational isolation, not federated retrieval. A resource containing
+a snapshot for a different repository fails with
+`repository_resource_collision`; it is never silently repurposed.
+
+## Explicit index lifecycle
+
+The reusable input `index_lifecycle` is one of `plan`, `sync`, or `rebuild`. The
+workflow always runs:
+
+```text
+Solr preflight
+→ schema bootstrap/validation
+→ status
+→ plan
+→ requested sync or explicit rebuild (unless plan-only)
+→ status
+→ optional evaluation
+```
+
+The registered repository application service owns `initial`, `incremental`,
+`noop`, and `rebuild_required` semantics. YAML selects an explicit public command;
+it does not import adapters or implement a second indexer.
+
+For a persistent compatible snapshot:
+
+```text
+workflow run N, explicit rebuild
     ↓
 Solr snapshot revision N
 
 workflow run N+1
     ↓
-same named volume
+same dedicated resource
     ↓
 Git delta N..N+1
     ↓
 targeted incremental persistence
 ```
 
-This provides real incremental behavior only while the runner/host retains that Docker volume.
-
-### External Solr
-
-For ephemeral runners or shared infrastructure, the external service must already expose the requested collection with a schema compatible with the FetchCore configset. The workflow validates that contract before indexing:
-
-```yaml
-managed_solr: false
-solr_url: http://solr.internal:8983/solr
-```
-
-The external service owns persistence. FetchCore still owns snapshot compatibility and incremental indexing semantics.
-
 ## Workflow evidence
 
 Each run executes:
 
 ```text
-explicit schema bootstrap/validation
+service/resource preflight
+→ explicit schema bootstrap/validation
 → status before
-→ dry-run
-→ sync
+→ plan
+→ requested lifecycle
 → status after
 ```
 
 Every piped command enables `pipefail`, so report capture with `tee` cannot turn a failed FetchCore command into a successful workflow step.
 
-and uploads JSON artifacts for each stage. Writers are serialized per repository/collection through GitHub Actions concurrency.
+The bounded `run-evidence.json` records repository, revision, sanitized Solr
+endpoint, deployment mode, reused/provisioned instance, existing/created resource,
+repository binding, schema compatibility, observed snapshot/currentness, requested
+and executed lifecycle, and evaluation modes. It composes existing facts and does
+not anticipate the generic telemetry platform tracked by #137.
+
+Writers are serialized by core/collection identity within the caller repository's
+GitHub Actions concurrency scope. GitHub does not provide a cross-repository global
+concurrency group. Cross-repository callers must therefore use distinct resources;
+the workflow does not pretend to provide a distributed lock.
 
 ## FetchCore self-dogfood
 
@@ -165,7 +277,10 @@ repository is accepted; pull request and fork revisions cannot reach the
 self-hosted job through this trigger. The workflow indexes the exact successful
 CI `head_sha`, rather than a later moving branch head.
 
-It indexes `oalangomes/fetchcore` into the `fetchcore-self` collection, keeps the Solr state in the `fetchcore-self-solr` Docker volume, and then evaluates the index through the real MCP stdio server.
+It indexes `oalangomes/fetchcore` into the dedicated
+`fetchcore-self-dogfood` core/collection, reuses the configured Solr service, and
+then evaluates the index through the real MCP stdio server. The normal wrapper
+requests `sync`; initialization remains a separate explicit `rebuild` dispatch.
 
 The flow is:
 
@@ -183,6 +298,11 @@ FetchCore source
 Self-evaluation scenarios live in `dogfood/scenarios/fetchcore-self.yaml`.
 
 At least one scenario verifies `get_source`, so the gate tests bounded source serving as well as search.
+
+The operational evaluation mode is currently `lexical`. Requests for `dense` or
+`hybrid` fail validation explicitly and identify #130 as the missing vector-ready
+index/provider contract. They are never reported as lexical success. A schema that
+contains a vector field is not evidence that vectors were indexed.
 
 ## What this dogfood proves
 

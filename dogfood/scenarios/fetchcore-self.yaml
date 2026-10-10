@@ -14,8 +14,8 @@ scenarios:
   - id: targeted-incremental-sync
     query: "TargetedGitAwareSolrSynchronizer indexing_contract_changed incremental sync"
     expected_paths:
-      - src/fetchcore/backends/solr_incremental_persistence.py
-      - src/fetchcore/backends/solr_incremental.py
+      - src/fetchcore/adapters/retrieval/solr/incremental_persistence.py
+      - src/fetchcore/adapters/retrieval/solr/incremental.py
     min_expected_path_hits: 1
 
   - id: repository-source-safety
