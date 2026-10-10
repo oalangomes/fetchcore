@@ -5,7 +5,7 @@ import type { ExplorerTarget, SearchPayload, SearchResponse } from './types'
 
 const target: ExplorerTarget = {
   id: 'default', repository: 'demo/catalog', backend: 'solr', collection: 'fetchcore-lab',
-  revision: 'revision-1', capabilities: { lexical: true }, retrieval: null,
+  revision: 'revision-1', capabilities: { lexical: true }, retrieval: { candidate_budget: 80 },
 }
 const request: SearchPayload = {
   repository: 'demo/catalog', target_id: 'default',
