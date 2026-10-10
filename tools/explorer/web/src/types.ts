@@ -107,7 +107,8 @@ export interface SourceResult {
   total_lines: number
   truncated: boolean
 }
-\nexport interface ReadinessReport {
+
+export interface ReadinessReport {
   schema_version: number
   status: string
   ready: boolean
