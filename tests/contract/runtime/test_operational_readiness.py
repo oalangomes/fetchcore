@@ -36,13 +36,20 @@ def _doctor(**statuses: tuple[str, str | None]) -> DoctorReport:
 
 
 def test_report_never_promotes_unknown_and_does_not_claim_satisfaction() -> None:
-    facts = {"service": ReadinessFact("ready"), "snapshot": ReadinessFact("unknown")}
+    facts = {
+        key: ReadinessFact("ready")
+        for key in ("service", "schema", "snapshot", "currentness",
+                    "indexing_fingerprint", "embedding", "retrieval")
+    }
+    facts["embedding"] = ReadinessFact("not_required")
+    facts["snapshot"] = ReadinessFact("unknown")
     report = ReadinessReport("solr", "demo/repo", "a", None, "lexical", facts, {})
     assert not report.ready
     payload = report.to_mapping()
     assert payload["schema_version"] == 1
     assert payload["status"] == "not_ready"
     assert "satisfaction" not in payload and "relevance" not in payload
+    assert not ReadinessReport("solr", "demo/repo", None, None, "lexical", {}, {}).ready
     facts["snapshot"] = ReadinessFact("ready")
     assert report.ready
 
