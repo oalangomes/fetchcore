@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="FetchCore GitHub avatar">
+<title>FetchCore avatar</title>
+<rect x="0" y="0" width="512" height="512" rx="112" fill="#0C172A"/>
+<rect x="4" y="4" width="504" height="504" rx="108" fill="none" stroke="#27384F" stroke-width="8"/>
+<g transform="translate(64 64) scale(4)"><g fill="none" stroke="#EAF7F8" stroke-width="7" stroke-linejoin="round" stroke-linecap="square">
+  <path d="M37 23H23V73H37"/>
+  <path d="M59 23H73V73H59"/>
+  <path d="M39 34H55"/>
+  <path d="M39 63H55"/>
+  <path d="M39 49H46"/>
+</g>
+<rect x="52" y="41" width="15" height="15" rx="2" fill="#32E2C1"/></g>
+</svg>

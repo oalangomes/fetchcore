@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="FetchCore evidence mark">
+<title>FetchCore evidence mark</title>
+<g fill="none" stroke="#12213A" stroke-width="7" stroke-linejoin="round" stroke-linecap="square">
+  <path d="M37 23H23V73H37"/>
+  <path d="M59 23H73V73H59"/>
+  <path d="M39 34H55"/>
+  <path d="M39 63H55"/>
+  <path d="M39 49H46"/>
+</g>
+<rect x="52" y="41" width="15" height="15" rx="2" fill="#12213A"/>
+</svg>

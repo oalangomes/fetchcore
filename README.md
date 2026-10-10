@@ -2,7 +2,12 @@
 
 <p align="center"><a href="README.md">English</a> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
 
-<p align="center"><strong>Repositories into evidence.</strong></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/lockup-horizontal-inverse.svg">
+    <img src="assets/brand/lockup-horizontal.svg" alt="FetchCore — Repositories into evidence" width="420">
+  </picture>
+</p>
 <p align="center">Backend-neutral repository knowledge and retrieval for developer tools, MCP clients, and coding agents.</p>
 
 <p align="center">
@@ -107,6 +112,7 @@ Features such as **federated multi-repository retrieval, optional graph expansio
 - [Benchmarks](docs/benchmarks/baseline-v1.md) — reproduce the existing baseline instead of relying on unverified performance claims.
 - [Release policy](docs/release-policy.md) — technical preview, initial bootstrap and versioning rules.
 - [Documentation index](docs/README.md) — guides, references, ADRs, migrations and historical extraction records.
+- [Visual identity](assets/brand/README.md) — SVG marks, GitHub avatar, palette, accessibility and asset provenance.
 
 ## Project status
 
