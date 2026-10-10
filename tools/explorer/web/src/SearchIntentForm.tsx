@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { parseIntent } from './api'
 
 /** A form is only a view over SearchIntent v2; JSON remains the lossless source. */
@@ -46,6 +47,12 @@ export function SearchIntentForm({ intentText, onChange }: {
   intentText: string; onChange: (value: string) => void
 }) {
   const intent = parseIntent(intentText)
+  // Keep raw draft whitespace so pressing Enter doesn't erase separators.
+  const [termDraft, setTermDraft] = useState(() => ({
+    exact_terms: lines(intent.exact_terms),
+    semantic_terms: lines(intent.semantic_terms),
+    hints: lines(intent.hints),
+  }))
   function update(field: string, value: unknown) {
     onChange(JSON.stringify({ ...intent, [field]: value }, null, 2))
   }
@@ -69,8 +76,12 @@ export function SearchIntentForm({ intentText, onChange }: {
           <label htmlFor={field} className="field-label">{{
             exact_terms: 'Termos exatos', semantic_terms: 'Termos semânticos', hints: 'Hints (opcionais)',
           }[field]}</label>
-          <textarea id={field} className="field-input min-h-[76px] resize-y" value={lines(intent[field])}
-            onChange={event => update(field, list(event.target.value))}
+          <textarea id={field} className="field-input min-h-[76px] resize-y" value={termDraft[field]}
+            onChange={event => {
+              const value = event.target.value
+              setTermDraft(current => ({ ...current, [field]: value }))
+              update(field, list(value))
+            }}
             placeholder="Um termo por linha" rows={3}/>
         </div>,
       )}
