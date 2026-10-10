@@ -26,6 +26,12 @@ beforeEach(() => {
         { id: 'other-repo', repository: 'demo/other', backend: 'local-semantic', collection: 'other-repo-collection', revision: null, capabilities: { lexical: true }, retrieval: null },
       ],
     }) }
+    if (path.startsWith('/api/readiness?target_id=')) return { ok: true, json: async () => ({
+      schema_version: 1, status: 'not_ready', ready: false, backend: 'local-semantic',
+      repository: 'demo/catalog', indexed_revision: null, requested_revision: 'head', mode: 'lexical',
+      checks: { service: { state: 'ready' }, snapshot: { state: 'absent', category: 'snapshot_missing' },
+        currentness: { state: 'absent', category: 'snapshot_missing' } }, fingerprints: {},
+    }) }
     if (path === '/api/search') {
       const request = JSON.parse(String(options?.body))
       return { ok: true, json: async () => ({
@@ -128,5 +134,17 @@ describe('Query builder and authorized target selectors', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Formulário' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Corrija o JSON')
     expect((screen.getByLabelText('SearchIntent JSON') as HTMLTextAreaElement).value).toBe('{ broken')
+  })
+})
+
+describe('On-demand operational readiness', () => {
+  it('does not probe until explicitly requested and never conflates healthy service with ready index', async () => {
+    mount()
+    await screen.findByLabelText('Repositório autorizado')
+    expect(vi.mocked(globalThis.fetch).mock.calls.some(call => String(call[0]).includes('readiness'))).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Inspecionar índice' }))
+    expect(await screen.findByText('Not ready')).toBeInTheDocument()
+    expect(screen.getAllByText(/snapshot_missing/).length).toBeGreaterThan(0)
+    expect(vi.mocked(globalThis.fetch).mock.calls.some(call => call[0] === '/api/readiness?target_id=default')).toBe(true)
   })
 })
