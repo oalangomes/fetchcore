@@ -341,6 +341,25 @@ export function App() {
           <section className="panel self-start" aria-label="Editor de busca">
             <div className="panel-heading"><div className="flex items-center gap-2"><TerminalSquare size={17} className="text-accent"/><h2>Configurar busca</h2></div><span className="chip">SearchIntent v2</span></div>
             <form className="space-y-5 p-5" onSubmit={submit}>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="field-label" htmlFor="repository-select">Repositório autorizado</label>
+                  <select id="repository-select" className="field-input" value={activeRepository}
+                    onChange={event => changeRepository(event.target.value)} disabled={!repositories.length}>
+                    {repositories.map(repository => <option key={repository} value={repository}>{repository}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="field-label" htmlFor="collection-select">Coleção / índice configurado</label>
+                  <select id="collection-select" className="field-input" value={activeTarget?.id ?? ''}
+                    onChange={event => changeTarget(event.target.value)} disabled={!repositoryTargets.length}>
+                    {repositoryTargets.map(target => <option key={target.id} value={target.id}>
+                      {target.backend} · {target.collection ?? 'default'} ({target.id})
+                    </option>)}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs leading-5 text-muted">Opções autorizadas pelo operador. A seleção troca o destino, não realiza busca federada.</p>
               <div>
                 <label className="field-label" htmlFor="canonical-query">Canonical query</label>
                 <textarea
@@ -365,13 +384,20 @@ export function App() {
                 <input id="knowledge-types" value={knowledgeTypes} onChange={event => setKnowledgeTypes(event.target.value)} className="field-input" placeholder="code, documentation (separados por vírgula)"/>
               </div>
               <div className="rounded-xl border border-line bg-background/30">
-                <button type="button" className="flex w-full items-center justify-between p-3 text-sm font-semibold text-white" onClick={() => setEditorOpen(!editorOpen)} aria-expanded={editorOpen}>
-                  <span className="flex items-center gap-2"><Braces size={16} className="text-blue"/> Editor JSON · SearchIntent</span><SlidersHorizontal size={16} className="text-muted"/>
-                </button>
-                {editorOpen && <div className="border-t border-line p-2">
-                  <CodeMirror aria-label="SearchIntent JSON" value={intentText} height="295px" theme="dark" extensions={editorExtensions} onChange={updateIntent} basicSetup={{ lineNumbers: true, foldGutter: true }}/>
-                  <div className="px-2 pt-2 text-xs text-muted">O JSON enviado é validado pelo contrato Python do FetchCore.</div>
-                </div>}
+                <div className="flex gap-1 border-b border-line p-2" role="group" aria-label="Modo de edição da query">
+                  <button type="button" className={'switch-button ' + (intentView === 'form' ? 'switch-active' : '')}
+                    aria-pressed={intentView === 'form'} onClick={() => switchIntentView('form')}><SlidersHorizontal size={15}/> Formulário</button>
+                  <button type="button" className={'switch-button ' + (intentView === 'json' ? 'switch-active' : '')}
+                    aria-pressed={intentView === 'json'} onClick={() => switchIntentView('json')}><Braces size={15}/> JSON completo</button>
+                </div>
+                <div className="p-3">
+                  {intentView === 'form' ? <SearchIntentForm intentText={intentText} onChange={updateIntent}/> :
+                    <div>
+                      <CodeMirror aria-label="SearchIntent JSON" value={intentText} height="330px" theme="dark" extensions={editorExtensions} onChange={updateIntent}
+                        basicSetup={{ lineNumbers: true, foldGutter: true }}/>
+                      <p className="mt-2 text-xs leading-5 text-muted">Edite ou cole um SearchIntent v2 válido. O formulário preserva as expressões avançadas.</p>
+                    </div>}
+                </div>
               </div>
               <div className="rounded-lg border border-line bg-surface/50 px-3 py-2.5 text-xs text-muted">
                 <div className="mb-1 flex items-center gap-2 font-semibold text-white"><Workflow size={14}/> Retrieval policy</div>
