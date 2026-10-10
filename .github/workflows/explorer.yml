@@ -141,10 +141,39 @@ jobs:
               payload = json.load(response)
           assert payload["response"]["numFound"] == 0, payload
           PY
+      - name: Confirm healthy process is not an indexed repository
+        run: |
+          docker compose exec -T api python - <<'PY'
+          import json
+          from urllib.request import urlopen
+
+          with urlopen("http://127.0.0.1:8765/api/readiness", timeout=10) as response:
+              state = json.load(response)
+          assert state["schema_version"] == 1, state
+          assert state["checks"]["service"]["state"] == "ready", state
+          assert state["checks"]["schema"]["state"] == "ready", state
+          assert state["checks"]["snapshot"]["state"] == "absent", state
+          assert state["ready"] is False, state
+          PY
       - name: Explicitly provision and index fixture
         run: |
           docker compose --profile indexing run --rm indexer fetchcore index bootstrap
           docker compose --profile indexing run --rm indexer fetchcore index sync
+      - name: Verify post-index readiness facts without implicit writes
+        run: |
+          docker compose exec -T api python - <<'PY'
+          import json
+          from urllib.request import urlopen
+
+          with urlopen("http://127.0.0.1:8765/api/readiness", timeout=10) as response:
+              state = json.load(response)
+          assert state["checks"]["service"]["state"] == "ready", state
+          assert state["checks"]["schema"]["state"] == "ready", state
+          assert state["checks"]["snapshot"]["state"] == "ready", state
+          assert state["indexed_revision"] is not None, state
+          # A snapshot can be present even when its runtime revision is unbound.
+          assert state["ready"] is False if state["requested_revision"] is None else True
+          PY
       - name: Smoke nginx, API, Solr and MCP Streamable HTTP
         run: docker compose exec -T api python -m tools.explorer.docker.smoke
       - name: Confirm persistent Solr index survives a service restart
