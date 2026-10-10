@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Compose one bounded dogfood artifact from existing measured command outputs."""
 
 from __future__ import annotations
