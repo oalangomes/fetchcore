@@ -8,7 +8,7 @@ export type CandidatePresence = 'shared' | 'only-a' | 'only-b'
 export interface CandidateDiff {
   key: string
   identity: string
-  identity_confidence: 'source-ref' | 'run-local-id'
+  identity_confidence: 'source-ref' | 'partial-source-ref' | 'run-local-id'
   a: RecordedHit | null
   b: RecordedHit | null
   presence: CandidatePresence
@@ -50,14 +50,14 @@ function canonical(value: unknown): string {
 function nonblank(s: string | null | undefined): boolean {
   return typeof s === 'string' && s.trim().length > 0
 }
-function sourceIdentity(hit: RecordedHit): { key: string; identity: string; confidence: 'source-ref' | 'run-local-id' } {
+function sourceIdentity(hit: RecordedHit): { key: string; identity: string; confidence: CandidateDiff['identity_confidence'] } {
   // Candidate granularity is a source ref + revision + checksum, not just a
   // filename. A new checksum must not masquerade as an unchanged candidate.
   if (nonblank(hit.source_ref)) {
     return {
       key: canonical(['source-ref', hit.source_ref, hit.revision, hit.checksum]),
       identity: hit.source_ref!,
-      confidence: 'source-ref',
+      confidence: nonblank(hit.revision) && nonblank(hit.checksum) ? 'source-ref' : 'partial-source-ref',
     }
   }
   return { key: canonical(['run-local-id', hit.id]), identity: hit.id, confidence: 'run-local-id' }
@@ -105,7 +105,10 @@ function reasonsFor(a: RunManifest, b: RunManifest): ComparisonAssessment {
   if (a.request.limit !== b.request.limit) reasons.push('Top-K/result limit difere')
   const budgetA = a.target.retrieval?.candidate_budget
   const budgetB = b.target.retrieval?.candidate_budget
-  if (canonical(budgetA) !== canonical(budgetB)) reasons.push('Candidate budget difere ou não é comparável')
+  const budgetKnown = typeof budgetA === 'number' && Number.isFinite(budgetA)
+    && typeof budgetB === 'number' && Number.isFinite(budgetB)
+  if (budgetKnown && budgetA !== budgetB) reasons.push('Candidate budget difere')
+  if (!budgetKnown) observations.push('Candidate budget não publicado: comparabilidade de esforço não comprovada')
   if (a.outcome.state !== 'ok' || b.outcome.state !== 'ok') {
     reasons.push('Uma ou mais execuções falharam; nenhum vazio significa ausência de evidência')
   }
@@ -129,7 +132,7 @@ function reasonsFor(a: RunManifest, b: RunManifest): ComparisonAssessment {
   if (!a.outcome.telemetry || !b.outcome.telemetry) observations.push('Telemetry ausente em uma ou mais execuções; custos não estimados')
   if (!nonblank(a.target.revision) || !nonblank(b.target.revision)) observations.push('Revisão não vinculada: sem prova de mesma fonte')
   const incompatible = reasons.length > 0
-  const proven = same_index_fingerprint === true && same_projection === true
+  const proven = same_index_fingerprint === true && same_projection === true && budgetKnown
   return {
     status: incompatible ? 'incompatible' : proven ? 'snapshot-aligned' : 'unverified',
     reasons, observations, query_equal, same_corpus, same_index_binding,
