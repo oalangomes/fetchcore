@@ -226,7 +226,7 @@ export function importHistory(raw: string): RunManifest[] {
     const rawOutcome = entry.outcome
     if (!isObject(rawRequest) || !isObject(rawTarget) || !isObject(rawOutcome)
         || typeof entry.id !== 'string' || entry.id.length > 96 || !entry.id.trim()
-        || ids.has(entry.id) || typeof entry.recorded_at !== 'string'
+        || typeof entry.recorded_at !== 'string'
         || Number.isNaN(Date.parse(entry.recorded_at))
         || typeof rawRequest.repository !== 'string'
         || typeof rawTarget.repository !== 'string'
@@ -242,6 +242,7 @@ export function importHistory(raw: string): RunManifest[] {
         || rawRequest.knowledge_types.some(value => typeof value !== 'string' || value.length > 128)) {
       throw new Error('Manifest incompleto ou destino não verificável')
     }
+    if (ids.has(entry.id)) throw new Error('Manifest ID duplicado')
     ids.add(entry.id)
     parseValidatedIntent(JSON.stringify(rawRequest.intent))
     if (rawOutcome.state !== 'ok' && rawOutcome.state !== 'error') throw new Error('Outcome desconhecido')

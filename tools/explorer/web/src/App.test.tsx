@@ -268,7 +268,8 @@ describe('Bounded query run history', () => {
   })
   it('imports safely without executing and requires confirmation to clear history', async () => {
     mount()
-    await screen.findByLabelText('Repositório autorizado')
+    await screen.findByText('API conectada')
+    await waitFor(() => expect(screen.getByTestId('run-search')).toBeEnabled())
     fireEvent.click(screen.getByTestId('run-search'))
     await screen.findByText('Trecho recuperado')
     expect(await screen.findByText('1/20')).toBeInTheDocument()

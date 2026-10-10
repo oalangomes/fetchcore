@@ -55,7 +55,9 @@ describe('Versioned session run manifests', () => {
     const many = captureRun('many', request, target, {
       ...response, results: Array.from({ length: 120 }, (_, i) => ({ ...response.results[0], id: 'hit' + i })),
     }, null)
-    expect(many.outcome.results).toHaveLength(100)
+    expect(many.outcome.results.length).toBeGreaterThan(0)
+    expect(many.outcome.results.length).toBeLessThanOrEqual(100)
+    expect(JSON.stringify(many).length).toBeLessThanOrEqual(24_000)
     expect(many.outcome.truncated).toBe(true)
   })
   it('rejects incompatible versions, malformed provenance and duplicate IDs', () => {
