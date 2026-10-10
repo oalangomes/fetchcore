@@ -134,7 +134,9 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
             mode, checks, fingerprints,
         )
 
-    if connectivity.state != "ready" or schema.state in {"incompatible", "unavailable", "absent"}:
+    if (connectivity.state != "ready"
+            or schema.state in {"incompatible", "unavailable", "absent"}
+            or (mode in {"dense", "hybrid"} and checks["embedding"].state != "ready")):
         checks["snapshot"] = ReadinessFact("unknown", "probe_blocked")
         return ReadinessReport(
             config.backend, config.repository, config.revision, None,
