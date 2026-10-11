@@ -1,7 +1,7 @@
 {
   "product": "FetchCore",
   "source": "Images approved in ChatGPT conversation, 2026-10-10",
-  "status": "pending_binary_upload",
+  "status": "committed_and_git_blob_verified",
   "assets": [
     {
       "path": "assets/launch/banner/hero-banner.png",
