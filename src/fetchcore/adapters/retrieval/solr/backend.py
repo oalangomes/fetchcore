@@ -69,6 +69,8 @@ from fetchcore.repository.indexing import (
 )
 from fetchcore.projection import (
     PROJECTION_VERSION,
+    ProjectionCompatibilityError,
+    ProjectionParsingError,
     ProjectionV3CanonicalDocumentReader,
     ProjectionV3Compiler,
     corpus_checksum as _corpus_checksum,
@@ -640,7 +642,20 @@ class SolrDocumentMapper:
 
     def from_solr(self, value: Mapping[str, object]) -> KnowledgeDocument:
         """Read canonical knowledge from the compatibility Solr representation."""
-        return self.reader.read(value)
+        try:
+            return self.reader.read(value)
+        except ProjectionCompatibilityError as exc:
+            raise KnowledgeSearchError(
+                str(exc),
+                category="schema_mismatch",
+                metadata=exc.metadata,
+            ) from exc
+        except ProjectionParsingError as exc:
+            raise KnowledgeSearchError(
+                str(exc),
+                category="response_parsing_failure",
+                metadata=exc.metadata,
+            ) from exc
 
 
 @dataclass(frozen=True)

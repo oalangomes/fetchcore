@@ -5,11 +5,12 @@ import json
 import pytest
 
 from fetchcore.projection import (
+    ProjectionCompatibilityError,
+    ProjectionParsingError,
     ProjectionV3CanonicalDocumentReader,
     ProjectionV3Compiler,
 )
 from fetchcore.repository.indexing import KnowledgeDocument, KnowledgeProvenance
-from fetchcore.search import KnowledgeSearchError
 
 
 def _document() -> KnowledgeDocument:
@@ -59,7 +60,65 @@ def test_projection_reader_rejects_corrupt_semantic_evidence_safely() -> None:
         separators=(",", ":"),
     )
 
-    with pytest.raises(KnowledgeSearchError) as raised:
+    with pytest.raises(ProjectionParsingError, match="Canonical payload is invalid"):
         ProjectionV3CanonicalDocumentReader().read(mapping)
 
-    assert raised.value.category == "response_parsing_failure"
+
+def test_projection_reader_rejects_incompatible_version_with_metadata() -> None:
+    mapping = ProjectionV3Compiler().compile(_document()).to_mapping()
+    mapping["projection_version"] = "2"
+
+    with pytest.raises(ProjectionCompatibilityError) as raised:
+        ProjectionV3CanonicalDocumentReader().read(mapping)
+
+    assert raised.value.metadata == {
+        "expected_projection_version": "3",
+        "actual_projection_version": "2",
+    }
+
+
+def test_projection_reader_rejects_incompatible_fingerprint_with_metadata() -> None:
+    reader = ProjectionV3CanonicalDocumentReader()
+    mapping = ProjectionV3Compiler().compile(_document()).to_mapping()
+    mapping["projection_fingerprint"] = "sha256:incompatible"
+
+    with pytest.raises(ProjectionCompatibilityError) as raised:
+        reader.read(mapping)
+
+    assert raised.value.metadata == {
+        "expected_projection_fingerprint": reader.projection_fingerprint,
+        "actual_projection_fingerprint": "sha256:incompatible",
+        "rebuild_required": True,
+    }
+
+
+def test_projection_reader_rejects_corrupt_canonical_payload() -> None:
+    mapping = ProjectionV3Compiler().compile(_document()).to_mapping()
+    mapping["canonical_payload"] = "{invalid"
+
+    with pytest.raises(ProjectionParsingError, match="Canonical payload is invalid") as raised:
+        ProjectionV3CanonicalDocumentReader().read(mapping)
+
+    assert isinstance(raised.value.__cause__, json.JSONDecodeError)
+
+
+def test_projection_reader_rejects_missing_canonical_payload() -> None:
+    mapping = ProjectionV3Compiler().compile(_document()).to_mapping()
+    del mapping["canonical_payload"]
+
+    with pytest.raises(
+        ProjectionParsingError,
+        match="Knowledge projection record has no canonical payload",
+    ):
+        ProjectionV3CanonicalDocumentReader().read(mapping)
+
+
+def test_projection_reader_rejects_non_knowledge_record() -> None:
+    mapping = ProjectionV3Compiler().compile(_document()).to_mapping()
+    mapping["record_kind"] = "snapshot"
+
+    with pytest.raises(
+        ProjectionParsingError,
+        match="Projection control record cannot be reconstructed as knowledge",
+    ):
+        ProjectionV3CanonicalDocumentReader().read(mapping)
