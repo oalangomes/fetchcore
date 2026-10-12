@@ -95,6 +95,17 @@ class ApiEvidenceV1:
             raise ValueError("API evidence format is unsupported")
         if _VERSION.fullmatch(_nonempty(self.format_version, "format_version")) is None:
             raise ValueError("API evidence format_version is invalid")
+        supported = (
+            bool(re.fullmatch(r"3\.(?:0|1)\.\d+", self.format_version))
+            if self.format == "openapi"
+            else self.format_version == {
+                "swagger": "2.0",
+                "postman_collection": "2.1.0",
+                "postman_v3": "3.0.0",
+            }.get(self.format)
+        )
+        if not supported:
+            raise ValueError("API evidence format/version is incompatible")
         if not isinstance(self.locator, ApiSourceLocatorV1):
             raise ValueError("API evidence locator is invalid")
         method = _optional(self.method, "method", max_length=12)
