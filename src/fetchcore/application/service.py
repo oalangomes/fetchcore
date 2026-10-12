@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import unquote
 
 from fetchcore.retrieval import RetrievalConfig
+from fetchcore.repository.api_artifact_policy import blocked_api_artifact_kind
 from .targeted import search_with_targeted
 from fetchcore.retrieval.contracts import (
     KnowledgeSearchError,
@@ -219,6 +220,11 @@ class RetrievalApplicationService:
             requested_repository=request.repository,
         )
         binding = self._bindings[repository]
+        if blocked_api_artifact_kind(relative_path) is not None:
+            raise KnowledgeSearchError(
+                "raw API artifact serving is blocked pending sanitized extraction",
+                category="unsafe_source",
+            )
         if request.revision is not None and request.revision != binding.revision:
             raise KnowledgeSearchError(
                 "source revision does not match the authorized materialization",
@@ -254,6 +260,11 @@ class RetrievalApplicationService:
             )
 
         text = candidate.read_text(encoding="utf-8", errors="replace")
+        if blocked_api_artifact_kind(relative_path, text) is not None:
+            raise KnowledgeSearchError(
+                "raw API artifact serving is blocked pending sanitized extraction",
+                category="unsafe_source",
+            )
         lines = text.splitlines()
         total_lines = len(lines)
         if total_lines == 0:
