@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import runpy
 from pathlib import Path
 
 import pytest
@@ -196,3 +197,16 @@ def test_interpreter_has_deterministic_id_and_source_pointer(tmp_path: Path) -> 
     }
     assert "#/paths/~1customers/post" in pointers
     assert "#/paths/~1customers/get" in pointers
+
+
+
+def test_frozen_s2_operation_recovery_protocol() -> None:
+    protocol = Path(__file__).resolve().parents[3] / "benchmarks/api-extraction-s2/run.py"
+    metrics = runpy.run_path(str(protocol))["evaluate"](repeats=2)
+    assert metrics["protocol"] == "fetchcore.api-extraction-s2"
+    assert metrics["expected_operations"] == 3
+    assert metrics["recovered_operations"] == 3
+    assert metrics["operation_ground_truth_recovery"] == 1.0
+    assert metrics["postman_quarantined"]
+    assert metrics["distinct_indexing_fingerprint"]
+    assert not metrics["secret_sentinel_present"]
