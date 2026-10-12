@@ -96,6 +96,13 @@ def _validate_evidence_representation(raw: object, canonical: object, field: str
                     "Canonical evidence contains an unsupported field",
                     metadata={"field": f"{field}.{key}"},
                 )
+        for key in canonical:
+            if key not in raw:
+                raise ProjectionParsingError(
+                    "Canonical evidence is missing a serialized field",
+                    metadata={"field": f"{field}.{key}"},
+                )
+        for key, item in raw.items():
             _validate_evidence_representation(item, canonical[key], f"{field}.{key}")
         return
     if isinstance(canonical, list) and isinstance(raw, list):

@@ -52,6 +52,16 @@ def _document() -> KnowledgeDocument:
     )
 
 
+def _document_with_symbol() -> KnowledgeDocument:
+    return replace(
+        _document(),
+        evidence=KnowledgeEvidence(
+            symbol=SymbolEvidence(name="example", kind="function", line_start=1, line_end=2),
+            structure=StructureEvidence(exports=("example",)),
+        ),
+    )
+
+
 def _mapping_with_payload_change(
     field: str, value: object, *, provenance: bool = False
 ) -> dict[str, object]:
@@ -64,19 +74,47 @@ def _mapping_with_payload_change(
 
 
 def test_projection_compiler_reader_round_trip_preserves_canonical_document() -> None:
-    document = replace(
-        _document(),
-        evidence=KnowledgeEvidence(
-            symbol=SymbolEvidence(name="example", kind="function", line_start=1, line_end=2),
-            structure=StructureEvidence(exports=("example",)),
-        ),
-    )
+    document = _document_with_symbol()
     mapping = ProjectionV3Compiler().compile(document).to_mapping()
 
     hydrated = ProjectionV3CanonicalDocumentReader().read(mapping)
 
     assert hydrated == document
     assert hydrated.to_mapping() == document.to_mapping()
+
+
+def test_projection_reader_rejects_empty_nested_symbol() -> None:
+    mapping = ProjectionV3Compiler().compile(_document_with_symbol()).to_mapping()
+    payload = json.loads(str(mapping["canonical_payload"]))
+    payload["evidence"]["symbol"] = {}
+    mapping["canonical_payload"] = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+    with pytest.raises(ProjectionParsingError) as raised:
+        ProjectionV3CanonicalDocumentReader().read(mapping)
+
+    assert raised.value.metadata == {"field": "evidence.symbol.name"}
+
+
+@pytest.mark.parametrize("field", ["kind", "qualified_name"])
+def test_projection_reader_rejects_missing_nested_symbol_field(field: str) -> None:
+    mapping = ProjectionV3Compiler().compile(_document_with_symbol()).to_mapping()
+    payload = json.loads(str(mapping["canonical_payload"]))
+    del payload["evidence"]["symbol"][field]
+    mapping["canonical_payload"] = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+    with pytest.raises(ProjectionParsingError) as raised:
+        ProjectionV3CanonicalDocumentReader().read(mapping)
+
+    assert raised.value.metadata == {"field": f"evidence.symbol.{field}"}
+
+
+def test_projection_reader_accepts_explicit_none_in_nested_symbol() -> None:
+    document = _document_with_symbol()
+    mapping = ProjectionV3Compiler().compile(document).to_mapping()
+    payload = json.loads(str(mapping["canonical_payload"]))
+    assert payload["evidence"]["symbol"]["qualified_name"] is None
+
+    assert ProjectionV3CanonicalDocumentReader().read(mapping) == document
 
 
 @pytest.mark.parametrize(
