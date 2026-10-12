@@ -209,11 +209,15 @@ def attach_api_evidence(document: KnowledgeDocument, observation: ApiEvidenceV1)
     if (document.path != observation.locator.path
             or document.provenance.path != observation.locator.path):
         raise ValueError("API evidence locator does not match canonical source provenance")
-    if observation.locator.line_start is not None:
-        if (observation.locator.line_start < document.line_start
-                or (observation.locator.line_end or observation.locator.line_start)
-                > document.line_end):
-            raise ValueError("API evidence span lies outside canonical source unit")
+    if (
+        observation.locator.line_start is not None
+        and (
+            observation.locator.line_start < document.line_start
+            or (observation.locator.line_end or observation.locator.line_start)
+            > document.line_end
+        )
+    ):
+        raise ValueError("API evidence span lies outside canonical source unit")
     envelope = observation.to_envelope()
     for prior in document.evidence.semantic:
         if (prior.namespace == "api_contract" and prior.kind == envelope.kind
