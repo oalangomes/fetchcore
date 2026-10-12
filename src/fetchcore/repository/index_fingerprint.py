@@ -10,7 +10,9 @@ from dataclasses import asdict
 from fetchcore.repository.indexing import RepositoryIndexer
 
 
-INDEXING_CONTRACT_VERSION = "23"
+# P0 API-artifact quarantine changes canonical corpus admission.
+# Existing snapshots must explicitly rebuild to drop formerly raw-indexed contracts.
+INDEXING_CONTRACT_VERSION = "24"
 
 
 def indexing_contract_fingerprint(indexer: RepositoryIndexer) -> str:
