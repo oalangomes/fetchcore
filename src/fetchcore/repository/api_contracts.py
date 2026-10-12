@@ -7,7 +7,9 @@ created only after format-specific extractors prove and sanitize input in S2/S3.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+
+from fetchcore.repository.indexing import KnowledgeDocument
 from pathlib import PurePosixPath
 from typing import Literal
 
@@ -194,3 +196,32 @@ def _optional_line(value: object) -> int | None:
     if type(value) is not int:
         raise ValueError("API evidence line value is invalid")
     return value
+
+
+
+def attach_api_evidence(document: KnowledgeDocument, observation: ApiEvidenceV1) -> KnowledgeDocument:
+    """Enrich canonical evidence only; never change source identity or content.
+
+    Intended for a future sanitizing KnowledgeDocumentEnricher. This method does
+    not read raw source, grant API-file admission or infer implementation authority.
+    """
+
+    if (document.path != observation.locator.path
+            or document.provenance.path != observation.locator.path):
+        raise ValueError("API evidence locator does not match canonical source provenance")
+    if observation.locator.line_start is not None:
+        if (observation.locator.line_start < document.line_start
+                or (observation.locator.line_end or observation.locator.line_start)
+                > document.line_end):
+            raise ValueError("API evidence span lies outside canonical source unit")
+    envelope = observation.to_envelope()
+    for prior in document.evidence.semantic:
+        if (prior.namespace == "api_contract" and prior.kind == envelope.kind
+                and prior.version == envelope.version
+                and prior.payload().get("pointer") == observation.locator.pointer):
+            raise ValueError("duplicate source-local API evidence identity")
+    evidence = replace(
+        document.evidence,
+        semantic=(*document.evidence.semantic, envelope),
+    )
+    return replace(document, evidence=evidence)
