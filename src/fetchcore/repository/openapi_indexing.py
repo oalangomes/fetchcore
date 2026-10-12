@@ -23,7 +23,7 @@ from fetchcore.repository.semantic_indexing import (
 class OpenApiSourceInterpreter:
     """Claim only sanitized OpenAPI/Swagger units for exactly one format."""
 
-    indexing_contract_version = "1"
+    indexing_contract_version = "2"
 
     def __init__(self, api_format: str) -> None:
         if api_format not in {"openapi", "swagger"}:

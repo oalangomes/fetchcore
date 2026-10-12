@@ -9,6 +9,7 @@ OpenAPI validator and MUST only be used through the opt-in safe scanner hook.
 from __future__ import annotations
 
 import json
+import posixpath
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -92,6 +93,15 @@ def _safe_name(value: object) -> str | None:
     return value
 
 
+def _safe_schema_name(value: object) -> str | None:
+    """Allow RFC 6901 escaping in schema keys without admitting prose or secrets."""
+    if (not isinstance(value, str) or len(value) > 80
+            or re.fullmatch(r"[A-Za-z0-9_./~-]+", value) is None
+            or _SENSITIVE.search(value)):
+        return None
+    return value
+
+
 def _safe_route(value: object) -> str | None:
     if not isinstance(value, str) or _ROUTE.fullmatch(value) is None:
         return None
@@ -122,20 +132,44 @@ def _map(value: object) -> Mapping[str, object]:
     return value if isinstance(value, Mapping) else {}
 
 
-def _ref(value: object) -> str | None:
-    if not isinstance(value, str) or not value.startswith("#/"):
+def _ref(value: object, source_path: str) -> str | None:
+    if not isinstance(value, str) or "#" not in value:
         return None
     if len(value) > 512 or _SENSITIVE.search(value):
         return None
-    # No external / relative-file dereference, traversal, or remote reference.
-    segments = value[2:].split("/")
+    relative, _, fragment = value.partition("#")
+    if not fragment.startswith("/"):
+        return None
+    # Normalize repository-local paths without opening them. The safe scanner
+    # remains the only source admission boundary; traversal outside root fails.
+    normalized = ""
+    if relative:
+        if ("://" in relative or relative.startswith(("/", "\\"))
+                or "\\" in relative or ":" in relative
+                or not re.fullmatch(r"[A-Za-z0-9_./~-]+", relative)):
+            return None
+        parts = (posixpath.dirname(source_path) + "/" + relative).split("/")
+        depth = 0
+        for part in parts:
+            if part == "..":
+                depth -= 1
+            elif part not in {"", "."}:
+                depth += 1
+            if depth < 0:
+                return None
+        normalized = posixpath.normpath(posixpath.join(
+            posixpath.dirname(source_path), relative,
+        ))
+        if normalized in {"", "."}:
+            return None
+    segments = fragment[1:].split("/")
     if not segments or any(
         not segment or "~" in re.sub(r"~[01]", "", segment)
         or not re.fullmatch(r"[A-Za-z0-9_.~-]+", segment)
         for segment in segments
     ):
         return None
-    return value
+    return normalized + "#" + fragment
 
 
 def _effective_parameters(
@@ -263,7 +297,7 @@ def sanitize_openapi(relative: str, raw: str) -> SanitizedApiExtraction | None:
                                 _map(_map(raw_media).get("schema")).get("$ref"),
                             ))
                 for p, target in ref_candidates:
-                    local = _ref(target)
+                    local = _ref(target, relative)
                     if local is not None:
                         outputs.append(SanitizedApiUnit(
                             kind="api_reference", format=kind, format_version=version,
@@ -274,7 +308,7 @@ def sanitize_openapi(relative: str, raw: str) -> SanitizedApiExtraction | None:
         if kind == "openapi":
             schemas = _map(schemas.get("schemas"))
         for name, schema_definition in sorted(schemas.items()):
-            safe_name = _safe_name(name)
+            safe_name = _safe_schema_name(name)
             if safe_name is None:
                 continue
             pointer = _pointer(
