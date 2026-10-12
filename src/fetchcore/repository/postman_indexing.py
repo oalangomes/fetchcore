@@ -65,6 +65,7 @@ class PostmanRepositoryIndexer(SemanticDocumentRepositoryIndexer):
             semantic_enrichers=(OpenApiEvidenceEnricher(),),
         )
         self._api_sanitizer = sanitize_postman_collection
+        self._api_sanitizer_kinds = frozenset({"postman_collection"})
 
 
 class ApiContractRepositoryIndexer(SemanticDocumentRepositoryIndexer):
@@ -85,3 +86,6 @@ class ApiContractRepositoryIndexer(SemanticDocumentRepositoryIndexer):
             semantic_enrichers=(OpenApiEvidenceEnricher(),),
         )
         self._api_sanitizer = _api_contract_sanitizer
+        self._api_sanitizer_kinds = frozenset(
+            {"openapi", "swagger", "postman_collection"}
+        )
