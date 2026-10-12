@@ -188,7 +188,7 @@ def scan_repository_text(
         # Known API artifact paths must not be read or enter raw chunking.
         blocked_kind = blocked_api_artifact_kind(relative)
         if blocked_kind is not None and (
-            api_sanitizer is None or blocked_kind not in {"openapi", "swagger"}
+            api_sanitizer is None or blocked_kind not in {"openapi", "swagger", "postman_collection"}
         ):
             record_skip(f"api_artifact_blocked_{blocked_kind}", relative)
             api_artifact_status_counts["quarantined_by_filename"] += 1
@@ -236,7 +236,7 @@ def scan_repository_text(
             api_artifact_status_counts[decision.status] += 1
             if (
                 api_sanitizer is not None
-                and blocked_kind in {"openapi", "swagger"}
+                and blocked_kind in {"openapi", "swagger", "postman_collection"}
                 and decision.status == "supported"
             ):
                 try:
