@@ -7,7 +7,6 @@ created only after format-specific extractors prove and sanitize input in S2/S3.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Literal
