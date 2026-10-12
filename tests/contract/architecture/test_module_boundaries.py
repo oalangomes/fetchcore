@@ -185,9 +185,9 @@ def test_persisted_identities_preserve_projection_with_explicit_indexing_rebuild
         RepositoryIndexConfig(),
         symbol_extractors=default_structural_symbol_extractors(),
     )
-    # S4 changes canonical Markdown units; persisted indexes require an explicit rebuild.
+    # S4.1 changes canonical Markdown evidence locality and size; rebuild explicitly.
     assert indexing_contract_fingerprint(indexer) == (
-        "sha256:55ef10df67405c137077decb1185faada8cfc982af52e504cc6dad34ff4cf00f"
+        "sha256:d7145ace791affc3f36d658b4d84f07fe16315547dfadfcf575009ea716f66fc"
     )
 
 

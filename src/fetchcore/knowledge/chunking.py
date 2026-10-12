@@ -22,6 +22,13 @@ from fetchcore.knowledge.evidence import MarkdownReferenceEvidence, SectionEvide
 
 
 DEFAULT_MARKDOWN_MAX_CHARS = 48_000
+MAX_MARKDOWN_SECTION_NAME_CHARS = 256
+MAX_MARKDOWN_ANCESTRY_CHARS = 1_024
+MAX_MARKDOWN_CODE_LANGUAGE_CHARS = 64
+MAX_MARKDOWN_CODE_LANGUAGES_PER_CHUNK = 8
+MAX_MARKDOWN_REFERENCE_TARGET_CHARS = 256
+MAX_MARKDOWN_REFERENCES_PER_CHUNK = 16
+MAX_MARKDOWN_EVIDENCE_BYTES = 8_192
 _MARKDOWN_ATX_HEADING = re.compile(
     r"^ {0,3}(?P<markers>#{1,6})(?:[ \t]+(?P<title>.*?)|[ \t]*)$"
 )
@@ -29,7 +36,10 @@ _MARKDOWN_SETEXT_HEADING = re.compile(r"^ {0,3}(?P<markers>=+|-+)[ \t]*$")
 _MARKDOWN_FENCE_OPEN = re.compile(r"^ {0,3}(?P<marker>`{3,}|~{3,})(?P<info>.*)$")
 _MARKDOWN_FENCE_CLOSE = re.compile(r"^ {0,3}(?P<marker>`+|~+)[ \t]*$")
 _MARKDOWN_LIST_MARKER = re.compile(r"^(?P<indent> {0,3})(?:[-+*]|\d+[.)])[ \t]+")
-_MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))")
+_MARKDOWN_LINK = re.compile(
+    r"""!?\[[^\]]*\]\(\s*(?:<([^>\n]+)>|([^\s)]+))"""
+    r"""(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*\)"""
+)
 _MARKDOWN_LINK_DEFINITION = re.compile(
     r"^ {0,3}\[[^\]]+\]:[ \t]*(?:<([^>]+)>|(\S+))"
 )
@@ -68,6 +78,14 @@ class _MarkdownBlock:
     end_line: int
     kind: str
     language: str | None = None
+
+
+@dataclass(frozen=True)
+class _MarkdownFence:
+    marker: str
+    length: int
+    language: str | None
+    language_omitted: bool
 
 
 def chunks_for_knowledge(
@@ -131,12 +149,9 @@ def _markdown_chunks(
     lines = content.splitlines(keepends=True)
     headings = _markdown_headings(lines)
     if not headings:
-        references, languages = _markdown_observations(lines, 1, len(lines))
         section = SectionEvidence(
             strategy="lines",
             kind="markdown-document",
-            references=references,
-            code_languages=languages,
         )
         return _pack_markdown_blocks(
             lines,
@@ -152,16 +167,9 @@ def _markdown_chunks(
 
     chunks: list[KnowledgeChunk] = []
     if headings[0].start_line > 1:
-        references, languages = _markdown_observations(
-            lines,
-            1,
-            headings[0].start_line - 1,
-        )
         section = SectionEvidence(
             strategy="markdown-preamble",
             kind="markdown-preamble",
-            references=references,
-            code_languages=languages,
         )
         chunks.extend(
             _pack_markdown_blocks(
@@ -200,22 +208,30 @@ def _markdown_chunks(
             if index + 1 < len(headings)
             else len(lines)
         )
-        references, languages = _markdown_observations(
-            lines,
-            heading.start_line,
-            end,
-        )
+        heading_path = tuple(item[1] for item in stack)
+        heading_levels = tuple(item[0] for item in stack)
+        section_name: str | None = heading.title
+        section_diagnostics: list[str] = []
+        if len(heading.title) > MAX_MARKDOWN_SECTION_NAME_CHARS:
+            section_name = None
+            section_diagnostics.append("markdown-heading-omitted")
+        if (
+            any(len(title) > MAX_MARKDOWN_SECTION_NAME_CHARS for title in heading_path)
+            or sum(map(len, heading_path)) > MAX_MARKDOWN_ANCESTRY_CHARS
+        ):
+            heading_path = ()
+            heading_levels = ()
+            section_diagnostics.append("markdown-heading-ancestry-omitted")
         section = SectionEvidence(
             strategy="markdown-heading",
             kind="heading",
-            name=heading.title,
+            name=section_name,
             heading_level=heading.level,
-            heading_path=tuple(item[1] for item in stack),
-            heading_levels=tuple(item[0] for item in stack),
+            heading_path=heading_path,
+            heading_levels=heading_levels,
             section_id=section_id,
             fragment_id=fragment_id,
-            code_languages=languages,
-            references=references,
+            diagnostics=tuple(section_diagnostics),
         )
         chunks.extend(
             _pack_markdown_blocks(
@@ -256,7 +272,7 @@ def _markdown_headings(lines: list[str]) -> list[_MarkdownHeading]:
 
         opening = _markdown_fence_open(line)
         if opening is not None:
-            fence = (opening[0], opening[1])
+            fence = (opening.marker, opening.length)
             paragraph_start = None
             paragraph_lines.clear()
             continue
@@ -300,7 +316,7 @@ def _markdown_headings(lines: list[str]) -> list[_MarkdownHeading]:
     return headings
 
 
-def _markdown_fence_open(line: str) -> tuple[str, int, str | None] | None:
+def _markdown_fence_open(line: str) -> _MarkdownFence | None:
     match = _MARKDOWN_FENCE_OPEN.match(line)
     if match is None:
         return None
@@ -309,7 +325,9 @@ def _markdown_fence_open(line: str) -> tuple[str, int, str | None] | None:
     if marker[0] == "`" and "`" in info:
         return None
     language = info.split(maxsplit=1)[0].strip("{}") if info else None
-    return marker[0], len(marker), language or None
+    if language and len(language) > MAX_MARKDOWN_CODE_LANGUAGE_CHARS:
+        return _MarkdownFence(marker[0], len(marker), None, True)
+    return _MarkdownFence(marker[0], len(marker), language or None, False)
 
 
 def _is_markdown_block_start(line: str) -> bool:
@@ -332,7 +350,14 @@ def _markdown_section_identity(
     identity = "\0".join((parent_id, str(level), normalized_title, str(occurrence)))
     digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
     section_id = f"mds-{digest[:20]}"
-    slug = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
+    slug = (
+        unicodedata.normalize(
+            "NFKD",
+            title[:MAX_MARKDOWN_SECTION_NAME_CHARS],
+        )
+        .encode("ascii", "ignore")
+        .decode()
+    )
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", slug).strip("-").lower()[:40] or "section"
     return section_id, f"fc-{slug}-{digest[:12]}"
 
@@ -341,14 +366,22 @@ def _markdown_observations(
     lines: list[str],
     first: int,
     last: int,
-) -> tuple[tuple[MarkdownReferenceEvidence, ...], tuple[str, ...]]:
+    *,
+    source_line_offset: int = 0,
+) -> tuple[
+    tuple[MarkdownReferenceEvidence, ...],
+    tuple[str, ...],
+    tuple[str, ...],
+]:
     references: list[MarkdownReferenceEvidence] = []
     seen: set[tuple[str, str, int]] = set()
     languages: list[str] = []
+    diagnostics: list[str] = []
     fence: tuple[str, int] | None = None
 
     for number in range(first, last + 1):
         line = lines[number - 1].rstrip("\r\n")
+        source_line = number + source_line_offset
         if fence is not None:
             closing = _MARKDOWN_FENCE_CLOSE.match(line)
             if (
@@ -361,9 +394,15 @@ def _markdown_observations(
 
         opening = _markdown_fence_open(line)
         if opening is not None:
-            fence = (opening[0], opening[1])
-            if opening[2] is not None and opening[2] not in languages:
-                languages.append(opening[2])
+            fence = (opening.marker, opening.length)
+            if opening.language_omitted:
+                if "markdown-code-language-omitted" not in diagnostics:
+                    diagnostics.append("markdown-code-language-omitted")
+            elif opening.language is not None and opening.language not in languages:
+                if len(languages) < MAX_MARKDOWN_CODE_LANGUAGES_PER_CHUNK:
+                    languages.append(opening.language)
+                elif "markdown-code-language-omitted" not in diagnostics:
+                    diagnostics.append("markdown-code-language-omitted")
             continue
 
         searchable = _MARKDOWN_INLINE_CODE.sub("", line)
@@ -381,15 +420,26 @@ def _markdown_observations(
             )
             if target is None:
                 continue
-            reference = _safe_markdown_reference(target, number)
-            if reference is None:
+            if len(target) > MAX_MARKDOWN_REFERENCE_TARGET_CHARS:
+                if "markdown-reference-omitted:target-limit" not in diagnostics:
+                    diagnostics.append("markdown-reference-omitted:target-limit")
                 continue
-            key = (reference.target, reference.kind, number)
-            if key not in seen:
-                seen.add(key)
-                references.append(reference)
+            reference = _safe_markdown_reference(target, source_line)
+            if reference is None:
+                if "markdown-reference-omitted:unsafe-target" not in diagnostics:
+                    diagnostics.append("markdown-reference-omitted:unsafe-target")
+                continue
+            key = (reference.target, reference.kind, source_line)
+            if key in seen:
+                continue
+            if len(references) >= MAX_MARKDOWN_REFERENCES_PER_CHUNK:
+                if "markdown-references-budget-exceeded" not in diagnostics:
+                    diagnostics.append("markdown-references-budget-exceeded")
+                continue
+            seen.add(key)
+            references.append(reference)
 
-    return tuple(references), tuple(languages)
+    return tuple(references), tuple(languages), tuple(diagnostics)
 
 
 def _safe_markdown_reference(
@@ -466,8 +516,14 @@ def _markdown_block_ranges(
         opening = _markdown_fence_open(raw)
         if opening is not None:
             kind = "code_fence"
-            language = opening[2]
-            end = _markdown_fence_end(lines, number, last, opening[0], opening[1])
+            language = opening.language
+            end = _markdown_fence_end(
+                lines,
+                number,
+                last,
+                opening.marker,
+                opening.length,
+            )
         elif _is_markdown_table(lines, number, last):
             kind = "table"
             language = None
@@ -589,21 +645,51 @@ def _pack_markdown_blocks(
             return
         start_line = selected[0].start_line
         last_line = selected[-1].end_line if end_line is None else end_line
-        rendered = (
-            "".join(lines[start_line - 1 : last_line])
-            if text is None
-            else text
-        )
+        source_lines = lines[start_line - 1 : last_line]
+        source_content = "".join(source_lines)
+        rendered = source_content if text is None else text
+        partial_line = text is not None and rendered != source_content
         if not rendered.strip():
             return
+        observation_diagnostics: tuple[str, ...] = ()
         chunk_section = section
-        if chunk_section is not None and diagnostics:
+        if chunk_section is not None:
+            observation_lines = source_lines.copy() if partial_line else source_lines
+            if partial_line and observation_lines:
+                # A partial final line cannot prove a complete link or fence token.
+                observation_lines[-1] = ""
+            references, languages, observation_diagnostics = _markdown_observations(
+                observation_lines,
+                1,
+                len(observation_lines),
+                source_line_offset=start_line - 1,
+            )
+            chunk_diagnostics = tuple(
+                dict.fromkeys(
+                    (
+                        *chunk_section.diagnostics,
+                        *diagnostics,
+                        *observation_diagnostics,
+                    )
+                )
+            )
             chunk_section = replace(
                 chunk_section,
-                diagnostics=tuple(
-                    dict.fromkeys((*chunk_section.diagnostics, *diagnostics))
-                ),
+                code_languages=languages,
+                references=references,
+                diagnostics=chunk_diagnostics,
             )
+            chunk_section, evidence_budget_exceeded = _bound_markdown_evidence(
+                chunk_section
+            )
+            if evidence_budget_exceeded:
+                chunk_diagnostics = tuple(
+                    dict.fromkeys(
+                        (*chunk_diagnostics, "markdown-evidence-budget-exceeded")
+                    )
+                )
+        else:
+            chunk_diagnostics = tuple(dict.fromkeys(diagnostics))
         chunks.append(
             KnowledgeChunk(
                 discriminator=f"{prefix}:segment:{segment}",
@@ -612,7 +698,7 @@ def _pack_markdown_blocks(
                 line_end=max(start_line, last_line),
                 strategy=strategy,
                 section=chunk_section,
-                diagnostics=diagnostics,
+                diagnostics=chunk_diagnostics,
             )
         )
         segment += 1
@@ -658,6 +744,72 @@ def _pack_markdown_blocks(
         current.append(block)
     emit(current)
     return tuple(chunks)
+
+
+def _bound_markdown_evidence(
+    section: SectionEvidence,
+) -> tuple[SectionEvidence, bool]:
+    string_values = [
+        section.strategy,
+        section.kind,
+        *section.heading_path,
+        *section.code_languages,
+        *(reference.target for reference in section.references),
+        *section.diagnostics,
+    ]
+    if section.name is not None:
+        string_values.append(section.name)
+    if section.section_id is not None:
+        string_values.append(section.section_id)
+    if section.fragment_id is not None:
+        string_values.append(section.fragment_id)
+    upper_bound = (
+        1_024
+        + 6 * sum(len(value) for value in string_values)
+        + 256 * len(section.references)
+    )
+    if upper_bound <= MAX_MARKDOWN_EVIDENCE_BYTES:
+        return section, False
+
+    serialized = json.dumps(
+        section.to_mapping(),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    if len(serialized) <= MAX_MARKDOWN_EVIDENCE_BYTES:
+        return section, False
+
+    diagnostics = tuple(
+        dict.fromkeys(
+            (*section.diagnostics, "markdown-evidence-budget-exceeded")
+        )
+    )
+    bounded = replace(
+        section,
+        name=None,
+        heading_path=(),
+        heading_levels=(),
+        code_languages=(),
+        references=(),
+        diagnostics=diagnostics,
+    )
+    bounded_size = json.dumps(
+        bounded.to_mapping(),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    if len(bounded_size) > MAX_MARKDOWN_EVIDENCE_BYTES:
+        bounded = SectionEvidence(
+            strategy=section.strategy,
+            kind=section.kind,
+            heading_level=section.heading_level,
+            section_id=section.section_id,
+            fragment_id=section.fragment_id,
+            diagnostics=("markdown-evidence-budget-exceeded",),
+        )
+    return bounded, True
 
 
 def _markdown_blocks_fit(

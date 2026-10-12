@@ -22,6 +22,12 @@ rewritten.
 Canonical documents retain their exact one-based source line span, repository,
 revision, source path, and checksum. A section split into multiple bounded
 documents retains the same section identity and heading path in each document.
+`section_id`, `fragment_id`, heading name/level, and ancestry describe the
+observed section. References and declared fence languages are local to each
+emitted chunk: every reference line is inside that chunk's source span and the
+target text is present in its retained content. Real overlap can therefore
+repeat an observation; section-wide observations are not copied to nonoverlapping
+chunks.
 
 ## Bounded structural units
 
@@ -47,6 +53,20 @@ chunking:
 Markdown-only limit; JSON, YAML, XML, source-code, and test chunkers retain their
 existing algorithms.
 
+Markdown evidence has additional fixed bounds: heading names at 256 characters,
+heading ancestry at 1,024 aggregate characters, eight code-language labels of
+64 characters each, sixteen references per chunk with 256-character targets,
+and 8 KiB for serialized `SectionEvidence`. If a heading name or ancestry does
+not fit, the corresponding field is omitted rather than persisted as a complete
+value; diagnostics identify the omission. Excess languages/references are
+omitted with diagnostics, and an aggregate evidence overflow omits the
+variable-size fields with `markdown-evidence-budget-exceeded`.
+
+The 8 KiB cap applies to the Markdown `SectionEvidence`, not the entire
+`KnowledgeDocument` or Projection v3 `canonical_payload`. Canonical repository,
+revision, path, checksum, provenance, content, and other evidence fields retain
+their existing contracts and contribute unavoidable serialized overhead.
+
 ## Links and safety
 
 `SectionEvidence.references` records only conservatively parsed relative,
@@ -66,10 +86,11 @@ S0–S3 are unchanged.
 ## Identity and compatibility
 
 The Markdown unit boundaries and discriminators change under
-`INDEXING_CONTRACT_VERSION = 25`. Existing snapshots with the prior indexing
-fingerprint are incompatible and require the existing explicit rebuild path.
-S4 does not change Projection v3 or its fingerprint, and it does not silently
-reuse or rewrite persisted indexes.
+`INDEXING_CONTRACT_VERSION = 26`. S4.1 also scopes local observations to the
+retained chunk and bounds their serialized metadata. Existing snapshots with
+the prior indexing fingerprint are incompatible and require the existing
+explicit rebuild path. S4.1 does not change Projection v3 or its fingerprint,
+and it does not silently reuse or rewrite persisted indexes.
 
 The Markdown parser is a lightweight scanner; no third-party parser dependency
 was added. Its conservative block recognition is covered by synthetic fixtures

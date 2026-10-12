@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
 
-from fetchcore.knowledge.chunking import chunks_for_knowledge
+from fetchcore.knowledge.chunking import (
+    MAX_MARKDOWN_EVIDENCE_BYTES,
+    _bound_markdown_evidence,
+    chunks_for_knowledge,
+)
 from fetchcore.knowledge.evidence import (
     KnowledgeEvidence,
     MarkdownReferenceEvidence,
@@ -12,6 +18,10 @@ from fetchcore.knowledge.evidence import (
 )
 from fetchcore.repository.indexing import RepositoryIndexConfig, RepositoryIndexer
 from fetchcore.repository.index_policy import load_repository_index_policy
+from fetchcore.projection import (
+    ProjectionV3CanonicalDocumentReader,
+    ProjectionV3Compiler,
+)
 
 
 def _markdown(
@@ -465,3 +475,383 @@ def test_policy_round_trip_exposes_markdown_character_budget(tmp_path: Path) -> 
     chunking = policy.to_mapping()["chunking"]
     assert isinstance(chunking, dict)
     assert chunking["markdown_max_chars"] == 1234
+
+
+def test_references_are_scoped_to_each_emitted_chunk() -> None:
+    chunks = _markdown(
+        "# Guide\n\nIntro.\n\n[api](../api.md)\n",
+        max_lines=3,
+        overlap=0,
+    )
+
+    assert [(chunk.line_start, chunk.line_end) for chunk in chunks] == [(1, 2), (3, 5)]
+    assert chunks[0].section is not None
+    assert chunks[1].section is not None
+    assert chunks[0].section.section_id == chunks[1].section.section_id
+    assert chunks[0].section.references == ()
+    assert len(chunks[1].section.references) == 1
+    reference = chunks[1].section.references[0]
+    assert reference.line == 5
+    assert chunks[1].line_start <= reference.line <= chunks[1].line_end
+    assert reference.target in chunks[1].content
+
+
+def test_links_in_a_truncated_table_are_not_published() -> None:
+    content = """# Links
+
+| Name | Reference |
+| --- | --- |
+| first | [kept](first.md) |
+| second | [discarded](later.md) |
+| third | [also-discarded](last.md) |
+"""
+    chunks = _markdown(content, max_lines=4, overlap=0, max_chars=256)
+    table_chunk = next(
+        chunk for chunk in chunks if "markdown-block-truncated:table" in chunk.diagnostics
+    )
+
+    assert table_chunk.section is not None
+    assert [reference.target for reference in table_chunk.section.references] == [
+        "first.md",
+        "later.md",
+    ]
+    assert all(
+        table_chunk.line_start <= reference.line <= table_chunk.line_end
+        and reference.target in table_chunk.content
+        for reference in table_chunk.section.references
+    )
+
+
+def test_partial_destination_at_character_boundary_is_not_observed() -> None:
+    chunks = _markdown(
+        "# Partial link\n\nprefix [partial](later.md)\n",
+        max_lines=4,
+        overlap=0,
+        max_chars=18,
+    )
+    truncated = next(
+        chunk for chunk in chunks if "markdown-block-truncated:paragraph" in chunk.diagnostics
+    )
+
+    assert truncated.section is not None
+    assert truncated.section.references == ()
+    assert len(truncated.content) <= 18
+    assert "later.md" not in truncated.content
+
+
+def test_two_links_in_different_segments_keep_original_lines() -> None:
+    content = (
+        "# References\n\n"
+        "[first](first.md)\n\n"
+        + "".join(f"Paragraph {number}.\n\n" for number in range(8))
+        + "[second](second.md)\n"
+    )
+    chunks = _markdown(content, max_lines=4, overlap=0)
+
+    observations = [
+        (index, reference)
+        for index, chunk in enumerate(chunks)
+        if chunk.section is not None
+        for reference in chunk.section.references
+    ]
+    first = [(index, ref) for index, ref in observations if ref.target == "first.md"]
+    second = [(index, ref) for index, ref in observations if ref.target == "second.md"]
+    assert len(first) == len(second) == 1
+    assert first[0][0] != second[0][0]
+    for index, reference in observations:
+        chunk = chunks[index]
+        assert chunk.line_start <= reference.line <= chunk.line_end
+        assert reference.target in chunk.content
+
+
+def test_code_language_is_only_attached_to_the_chunk_containing_its_fence() -> None:
+    content = """# Examples
+
+Introductory text.
+
+Additional prose that fills an earlier chunk.
+
+```yaml
+enabled: true
+```
+"""
+    chunks = _markdown(content, max_lines=4, overlap=0)
+    language_chunks = [
+        chunk
+        for chunk in chunks
+        if chunk.section is not None and chunk.section.code_languages
+    ]
+
+    assert len(language_chunks) == 1
+    assert language_chunks[0].section is not None
+    assert language_chunks[0].section.code_languages == ("yaml",)
+    assert "```yaml" in language_chunks[0].content
+
+
+def test_truncated_fence_does_not_publish_discarded_links_or_long_languages() -> None:
+    long_language = "x" * 200
+    content = (
+        "# Examples\n\n"
+        f"```{long_language}\n"
+        "retained line\n"
+        "[discarded](outside.md)\n"
+        "```\n"
+    )
+    chunks = _markdown(content, max_lines=3, overlap=0, max_chars=512)
+    truncated = next(
+        chunk for chunk in chunks if "markdown-block-truncated:code_fence" in chunk.diagnostics
+    )
+
+    assert truncated.section is not None
+    assert truncated.section.references == ()
+    assert truncated.section.code_languages == ()
+    assert "markdown-code-language-omitted" in truncated.section.diagnostics
+    assert all(
+        reference.target in truncated.content
+        and truncated.line_start <= reference.line <= truncated.line_end
+        for reference in truncated.section.references
+    )
+
+
+def test_overlapping_chunks_repeat_only_observations_in_the_shared_lines() -> None:
+    chunks = _markdown(
+        """# Links
+
+[overlap](shared.md)
+
+First paragraph.
+
+Second paragraph.
+""",
+        max_lines=4,
+        overlap=2,
+    )
+    occurrences = [
+        chunk
+        for chunk in chunks
+        if chunk.section is not None
+        and any(reference.target == "shared.md" for reference in chunk.section.references)
+    ]
+
+    assert len(occurrences) == 2
+    assert all("shared.md" in chunk.content for chunk in occurrences)
+    assert all(
+        any(
+            chunk.line_start <= reference.line <= chunk.line_end
+            for reference in chunk.section.references
+            if reference.target == "shared.md"
+        )
+        for chunk in occurrences
+        if chunk.section is not None
+    )
+
+
+def test_many_references_are_capped_and_section_evidence_is_bounded() -> None:
+    links = "\n".join(f"[reference {number}](ref-{number}.md)" for number in range(1_000))
+    chunk = _markdown(f"# Many links\n\n{links}\n", max_lines=1_200, overlap=0)[0]
+
+    assert chunk.section is not None
+    assert len(chunk.section.references) == 16
+    assert "markdown-references-budget-exceeded" in chunk.section.diagnostics
+    evidence_bytes = len(
+        json.dumps(
+            chunk.section.to_mapping(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    assert evidence_bytes <= MAX_MARKDOWN_EVIDENCE_BYTES
+    assert all(reference.target in chunk.content for reference in chunk.section.references)
+
+
+def test_aggregate_evidence_overflow_omits_variable_fields_with_diagnostic() -> None:
+    oversized = SectionEvidence(
+        strategy="markdown-heading",
+        kind="heading",
+        name="H" * (MAX_MARKDOWN_EVIDENCE_BYTES * 2),
+        heading_level=1,
+        heading_path=("H" * (MAX_MARKDOWN_EVIDENCE_BYTES * 2),),
+        heading_levels=(1,),
+        section_id="mds-stable",
+        fragment_id="fc-stable",
+    )
+
+    bounded, exceeded = _bound_markdown_evidence(oversized)
+
+    assert exceeded is True
+    assert bounded.name is None
+    assert bounded.heading_path == ()
+    assert bounded.heading_levels == ()
+    assert bounded.diagnostics == ("markdown-evidence-budget-exceeded",)
+    assert len(
+        json.dumps(
+            bounded.to_mapping(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ) <= MAX_MARKDOWN_EVIDENCE_BYTES
+
+
+def test_repeated_links_on_one_line_are_not_duplicated() -> None:
+    chunk = _markdown("# Repeated\n\n[link](same.md) then [link](same.md)\n")[0]
+
+    assert chunk.section is not None
+    assert len(chunk.section.references) == 1
+    assert chunk.section.references[0].target == "same.md"
+    assert chunk.section.references[0].line == 3
+
+
+def test_multiple_headings_keep_only_local_links_and_fence_languages() -> None:
+    chunks = _markdown(
+        """# Guide
+
+## First
+
+[first](first.md)
+
+```python
+print(1)
+```
+
+## Second
+
+[second](second.md)
+
+```yaml
+enabled: true
+```
+"""
+    )
+    first = next(chunk for chunk in chunks if chunk.section and chunk.section.name == "First")
+    second = next(chunk for chunk in chunks if chunk.section and chunk.section.name == "Second")
+
+    assert [item.target for item in first.section.references] == ["first.md"]
+    assert first.section.code_languages == ("python",)
+    assert [item.target for item in second.section.references] == ["second.md"]
+    assert second.section.code_languages == ("yaml",)
+
+
+def test_oversized_headings_and_ancestry_are_omitted_from_bounded_evidence(
+    tmp_path: Path,
+) -> None:
+    huge_title = "A" * 100_000
+    document_path = tmp_path / "README.md"
+    document_path.write_text(f"# {huge_title}\n\nbody\n", encoding="utf-8")
+    indexer = RepositoryIndexer(
+        RepositoryIndexConfig(
+            repository="example/oversized-heading",
+            revision="oversized",
+            max_markdown_chunk_chars=100,
+        )
+    )
+    document = indexer.index(tmp_path).documents[0]
+
+    assert document.evidence.section is not None
+    assert len(document.content) <= 100
+    assert document.evidence.section.name is None
+    assert document.evidence.section.heading_path == ()
+    assert "markdown-heading-omitted" in document.evidence.section.diagnostics
+    section_bytes = len(
+        json.dumps(
+            document.evidence.section.to_mapping(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    projection = ProjectionV3Compiler().compile(document)
+    canonical_payload = str(projection.fields["canonical_payload"])
+    assert section_bytes <= MAX_MARKDOWN_EVIDENCE_BYTES
+    assert len(canonical_payload.encode("utf-8")) < 16_384
+    assert document.provenance.source_checksum == (
+        "sha256:" + hashlib.sha256(document_path.read_bytes()).hexdigest()
+    )
+
+    deep = _markdown(
+        "\n".join(f"{'#' * level} {'T' * 200}" for level in range(1, 7)) + "\n"
+    )[-1]
+    assert deep.section is not None
+    assert deep.section.heading_path == ()
+    assert deep.section.heading_levels == ()
+    assert "markdown-heading-ancestry-omitted" in deep.section.diagnostics
+
+
+def test_indexing_near_the_default_file_limit_keeps_evidence_bounded(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "large.md"
+    source_path.write_text(
+        "# " + ("H" * 200_000) + "\n\n" + ("x" * 789_000) + "\n",
+        encoding="utf-8",
+    )
+    assert source_path.stat().st_size < 1_000_000
+    indexer = RepositoryIndexer(
+        RepositoryIndexConfig(
+            repository="example/near-file-limit",
+            revision="near-limit",
+            max_total_bytes=2_000_000,
+            max_markdown_chunk_chars=256,
+        )
+    )
+    result = indexer.index(tmp_path)
+
+    assert result.telemetry.files_read == 1
+    assert result.documents
+    for document in result.documents:
+        assert document.evidence.section is not None
+        section_bytes = len(
+            json.dumps(
+                document.evidence.section.to_mapping(),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        assert section_bytes <= MAX_MARKDOWN_EVIDENCE_BYTES
+        assert len(document.content) <= 256
+
+
+def test_links_and_evidence_round_trip_through_projection_v3(tmp_path: Path) -> None:
+    source_path = tmp_path / "guide.md"
+    source_path.write_text(
+        "# Guide\n\nIntro.\n\n[api](../api.md)\n\n```yaml\nenabled: true\n```\n",
+        encoding="utf-8",
+    )
+    indexer = RepositoryIndexer(
+        RepositoryIndexConfig(repository="example/projection", revision="rev-evidence")
+    )
+    document = indexer.index(tmp_path).documents[-1]
+    assert document.evidence.section is not None
+    assert document.evidence.section.references
+    restored_evidence = KnowledgeEvidence.from_mapping(document.evidence.to_mapping())
+    assert restored_evidence == document.evidence
+
+    record = ProjectionV3Compiler().compile(document)
+    restored = ProjectionV3CanonicalDocumentReader().read(record.to_mapping())
+
+    assert restored.evidence == document.evidence
+    assert restored.provenance == document.provenance
+    assert restored.checksum == document.checksum
+    assert restored.revision == document.revision
+
+
+def test_markdown_identity_and_provenance_are_deterministic_across_runs(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "README.md"
+    source.write_text("# Guide\n\n[api](../api.md)\n\n## Details\n\nContent.\n", encoding="utf-8")
+    config = RepositoryIndexConfig(repository="example/stable", revision="rev-stable")
+    first = RepositoryIndexer(config, clock=lambda: "fixed-time").index(tmp_path)
+    second = RepositoryIndexer(config, clock=lambda: "fixed-time").index(tmp_path)
+
+    assert [item.id for item in first.documents] == [item.id for item in second.documents]
+    assert [item.chunk_ref for item in first.documents] == [
+        item.chunk_ref for item in second.documents
+    ]
+    assert [item.provenance for item in first.documents] == [
+        item.provenance for item in second.documents
+    ]
+    assert [item.evidence for item in first.documents] == [
+        item.evidence for item in second.documents
+    ]
+    assert first.documents[0].provenance.source_checksum == (
+        "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest()
+    )
