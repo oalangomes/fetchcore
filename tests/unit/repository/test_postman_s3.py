@@ -211,7 +211,8 @@ def test_opt_in_safe_scan_never_admits_environment(tmp_path: Path) -> None:
     normal = scan_repository_text(tmp_path, **params)
     assert not normal.sources
     selected = scan_repository_text(
-        tmp_path, api_sanitizer=sanitize_postman_collection, **params,
+        tmp_path, api_sanitizer=sanitize_postman_collection,
+        api_sanitizer_kinds=frozenset({"postman_collection"}), **params,
     )
     assert [item.relative for item in selected.sources] == ["source.json"]
     assert len(selected.sources[0].api_units) == 4
