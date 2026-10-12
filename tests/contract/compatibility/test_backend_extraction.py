@@ -52,6 +52,21 @@ def test_solr_projection_remains_compatibility_facade_only() -> None:
     assert SolrCanonicalDocumentReader is ProjectionV3CanonicalDocumentReader
 
 
+def test_historical_solr_reader_exposes_projection_native_errors() -> None:
+    reader = SolrCanonicalDocumentReader()
+    mapping: dict[str, object] = {
+        "record_kind": "knowledge",
+        "projection_version": PROJECTION_VERSION,
+        "projection_fingerprint": "sha256:incompatible",
+    }
+
+    with pytest.raises(ProjectionCompatibilityError):
+        reader.read(mapping)
+
+    with pytest.raises(ProjectionParsingError):
+        reader.read({"record_kind": "snapshot"})
+
+
 def test_solr_mapper_translates_projection_compatibility_errors() -> None:
     mapping: dict[str, object] = {
         "record_kind": "knowledge",
