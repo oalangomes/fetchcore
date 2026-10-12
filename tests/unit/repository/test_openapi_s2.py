@@ -210,3 +210,104 @@ def test_frozen_s2_operation_recovery_protocol() -> None:
     assert metrics["postman_quarantined"]
     assert metrics["distinct_indexing_fingerprint"]
     assert not metrics["secret_sentinel_present"]
+
+
+
+@pytest.mark.parametrize("version", ["3.0.3", "3.1.0"])
+@pytest.mark.parametrize("extension", ["json", "yaml"])
+def test_openapi_3_x_json_and_yaml_operation_extraction(
+    version: str, extension: str,
+) -> None:
+    operation = {
+        "openapi": version,
+        "paths": {"/products": {
+            "get": {"operationId": "listProducts", "responses": {"200": {"description": "OK"}}},
+        }},
+    }
+    raw = (
+        json.dumps(operation)
+        if extension == "json"
+        else f"openapi: '{version}'\npaths:\n  /products:\n    get:\n"
+             "      operationId: listProducts\n      responses:\n"
+             "        '200':\n          description: OK\n"
+    )
+    result = sanitize_openapi(f"spec.{extension}", raw)
+    assert result is not None
+    units = result.units
+    assert len(units) == 1
+    assert units[0].format == "openapi"
+    assert units[0].format_version == version
+    assert units[0].pointer == "#/paths/~1products/get"
+    assert (units[0].method, units[0].route) == ("GET", "/products")
+
+
+def test_operation_override_and_nested_refs_are_observed_without_dereferencing() -> None:
+    root = {
+        "openapi": "3.1.0",
+        "security": [{"BearerAuth": []}],
+        "paths": {"/inventory/{id}": {
+            "parameters": [
+                {"name": "id", "in": "path", "schema": {"type": "string"}},
+                {"name": "limit", "in": "query", "schema": {"type": "string"}},
+            ],
+            "get": {
+                "operationId": "getInventory",
+                "parameters": [
+                    {"name": "limit", "in": "query", "schema": {"type": "integer"}},
+                ],
+                "requestBody": {"content": {
+                    "application/json": {"schema": {"$ref": "#/components/schemas/Input"}},
+                }},
+                "responses": {"200": {"content": {
+                    "application/json": {"schema": {"$ref": "#/components/schemas/Output"}},
+                }}, "400": {"$ref": "https://malicious.invalid/openapi.yaml"}},
+            },
+        }},
+    }
+    result = sanitize_openapi("openapi.json", json.dumps(root))
+    assert result is not None
+    op = [u for u in result.units if u.kind == "api_operation"]
+    assert len(op) == 1
+    assert op[0].content.count("query:limit") == 1
+    assert "path:id" in op[0].content
+    assert "security required" in op[0].content
+    targets = {unit.target for unit in result.units if unit.kind == "api_reference"}
+    assert targets == {"#/components/schemas/Input", "#/components/schemas/Output"}
+    assert all("malicious.invalid" not in u.content for u in result.units)
+    assert any(
+        u.pointer.endswith("/content/application~1json/schema/$ref")
+        for u in result.units if u.kind == "api_reference"
+    )
+
+
+def test_swagger_2_json_and_yaml_are_equivalent() -> None:
+    original = {
+        "swagger": "2.0",
+        "paths": {"/orders": {"post": {
+            "operationId": "createOrder",
+            "responses": {"201": {"description": "Created"}},
+        }}},
+    }
+    yaml_raw = (
+        "swagger: '2.0'\npaths:\n  /orders:\n    post:\n"
+        "      operationId: createOrder\n      responses:\n"
+        "        '201':\n          description: Created\n"
+    )
+    json_units = sanitize_openapi("swagger.json", json.dumps(original))
+    yaml_units = sanitize_openapi("swagger.yaml", yaml_raw)
+    assert json_units is not None and yaml_units is not None
+    assert json_units.units == yaml_units.units
+
+
+def test_raw_secret_in_description_cannot_enter_safe_units() -> None:
+    document = {
+        "openapi": "3.0.3",
+        "paths": {"/health": {"get": {
+            "summary": SECRET,
+            "description": SECRET,
+            "responses": {"200": {"description": SECRET}},
+        }}},
+    }
+    result = sanitize_openapi("contracts/health.json", json.dumps(document))
+    assert result is not None
+    assert SECRET not in json.dumps([u.__dict__ for u in result.units])
