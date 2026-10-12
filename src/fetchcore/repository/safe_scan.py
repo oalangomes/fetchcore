@@ -12,6 +12,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from fetchcore.repository.api_artifact_policy import blocked_api_artifact_kind
+
 
 @dataclass(frozen=True)
 class SafeSource:
@@ -149,6 +151,11 @@ def scan_repository_text(
                 continue
         eligible += 1
         eligible_by_source_kind[source_kind(relative)] += 1
+        # Known API artifact paths must not be read or enter raw chunking.
+        blocked_kind = blocked_api_artifact_kind(relative)
+        if blocked_kind is not None:
+            record_skip(f"api_artifact_blocked_{blocked_kind}", relative)
+            continue
         if len(sources) >= max_files:
             record_skip("max_files", relative)
             _append_unique(truncation_reasons, "max_files")
@@ -184,12 +191,17 @@ def scan_repository_text(
             _append_unique(truncation_reasons, "changed_or_oversized")
             continue
         bytes_read += len(payload)
+        decoded = payload.decode("utf-8", errors="replace")
+        blocked_kind = blocked_api_artifact_kind(relative, decoded)
+        if blocked_kind is not None:
+            record_skip(f"api_artifact_blocked_{blocked_kind}", relative)
+            continue
         read_by_source_kind[source_kind(relative)] += 1
         sources.append(
             SafeSource(
                 path=safe_path,
                 relative=relative,
-                content=payload.decode("utf-8", errors="replace"),
+                content=decoded,
                 size_bytes=len(payload),
                 checksum="sha256:" + hashlib.sha256(payload).hexdigest(),
             )
