@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import struct
-from pathlib import Path
 
 from scripts.brand.export_social_preview import SOURCE, SOURCE_DIMENSIONS, SOURCE_SHA256, OUTPUT_DIMENSIONS
 
