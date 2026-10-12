@@ -130,10 +130,8 @@ def _raw_route(raw: str) -> tuple[str | None, tuple[str, ...]]:
             cleaned = cleaned[base_match.end():]
         if not cleaned.startswith("/"):
             return None, ()
-        cleaned, _, suffix = cleaned.partition("#")
+        cleaned, _, _fragment = cleaned.partition("#")
         cleaned, _, query = cleaned.partition("?")
-        if "#" in cleaned:
-            return None, ()
     segments = []
     for segment in cleaned.split("/")[1:]:
         if not segment:
@@ -170,7 +168,7 @@ def _request_url(value: object) -> tuple[str | None, tuple[str, ...]]:
     if isinstance(raw, str):
         route, query = _raw_route(raw)
         explicit = _query_names(value.get("query"))
-        return route, tuple(sorted(set((*query, *explicit))))[:24]
+        return route, tuple(sorted({*query, *explicit}))[:24]
     return None, ()
 
 
@@ -210,12 +208,16 @@ def _mimes(value: object) -> tuple[str, ...]:
         return ()
     names: set[str] = set()
     for item in value[:100]:
-        for header in _mapping(item).get("header", []) or []:
+        headers = _mapping(item).get("header")
+        if not isinstance(headers, list):
+            continue
+        for header in headers:
             data = _mapping(header)
+            mime = data.get("value")
             if (str(data.get("key", "")).casefold() == "content-type"
-                    and isinstance(data.get("value"), str)
-                    and _MIME.fullmatch(data["value"])):
-                names.add(data["value"])
+                    and isinstance(mime, str)
+                    and _MIME.fullmatch(mime)):
+                names.add(mime)
     return tuple(sorted(names))[:12]
 
 
