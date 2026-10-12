@@ -145,7 +145,7 @@ def _effective_parameters(
     """Operation-level (name,in) overrides the same observed path parameter."""
 
     merged: dict[tuple[str, str], object] = {}
-    for holder in (path_item, operation):
+    for holder_index, holder in enumerate((path_item, operation)):
         parameters = holder.get("parameters")
         if not isinstance(parameters, list):
             continue
@@ -156,7 +156,7 @@ def _effective_parameters(
             if name is not None and location in {"path", "query", "header", "cookie", "body"}:
                 merged[(location, name)] = raw
             else:
-                merged[(str(id(holder)), str(index))] = raw
+                merged[(str(holder_index), str(index))] = raw
     return list(merged.values())
 
 
