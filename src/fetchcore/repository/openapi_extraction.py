@@ -103,8 +103,19 @@ def _safe_route(value: object) -> str | None:
     return value
 
 
+def _escape(value: str) -> str:
+    return value.replace("~", "~0").replace("/", "~1")
+
+
+def _safe_media(media: str) -> bool:
+    return (
+        len(media) < 80
+        and re.fullmatch(r"[a-zA-Z0-9_.+*-]+/[a-zA-Z0-9_.+*-]+", media) is not None
+    )
+
+
 def _pointer(*parts: str) -> str:
-    return "#/" + "/".join(part.replace("~", "~0").replace("/", "~1") for part in parts)
+    return "#/" + "/".join(_escape(part) for part in parts)
 
 
 def _map(value: object) -> Mapping[str, object]:
@@ -194,6 +205,20 @@ def sanitize_openapi(relative: str, raw: str) -> SanitizedApiExtraction | None:
                 ref_candidates: list[tuple[str, object]] = []
                 request = _map(operation.get("requestBody"))
                 ref_candidates.append((loc + "/requestBody/$ref", request.get("$ref")))
+                for media, raw_media in sorted(_map(request.get("content")).items()):
+                    if isinstance(media, str) and _safe_media(media):
+                        schema_ref = _map(_map(raw_media).get("schema")).get("$ref")
+                        ref_candidates.append((
+                            loc + "/requestBody/content/" + _escape(media) + "/schema/$ref",
+                            schema_ref,
+                        ))
+                for index, parameter in enumerate(parameters):
+                    param = _map(parameter)
+                    ref_candidates.extend((
+                        (loc + "/parameters/" + str(index) + "/$ref", param.get("$ref")),
+                        (loc + "/parameters/" + str(index) + "/schema/$ref",
+                         _map(param.get("schema")).get("$ref")),
+                    ))
                 for status, response in sorted(responses.items()):
                     response_map = _map(response)
                     ref_candidates.append(
@@ -202,9 +227,16 @@ def sanitize_openapi(relative: str, raw: str) -> SanitizedApiExtraction | None:
                     )
                     schema = _map(response_map.get("schema"))
                     ref_candidates.append(
-                        (loc + "/responses/" + status.replace("~", "~0").replace("/", "~1") + "/schema/$ref",
+                        (loc + "/responses/" + _escape(status) + "/schema/$ref",
                          schema.get("$ref"))
                     )
+                    for media, raw_media in sorted(_map(response_map.get("content")).items()):
+                        if isinstance(media, str) and _safe_media(media):
+                            ref_candidates.append((
+                                loc + "/responses/" + _escape(status) + "/content/"
+                                + _escape(media) + "/schema/$ref",
+                                _map(_map(raw_media).get("schema")).get("$ref"),
+                            ))
                 for p, target in ref_candidates:
                     local = _ref(target)
                     if local is not None:
