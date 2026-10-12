@@ -191,8 +191,8 @@ def test_interpreter_has_deterministic_id_and_source_pointer(tmp_path: Path) -> 
     pointers = {
         fact.locator.pointer
         for doc in first.documents
-        for fact in [ApiEvidenceV1.from_envelope(doc.evidence.semantic[0])]
         if doc.evidence.semantic
+        for fact in [ApiEvidenceV1.from_envelope(doc.evidence.semantic[0])]
     }
     assert "#/paths/~1customers/post" in pointers
     assert "#/paths/~1customers/get" in pointers
