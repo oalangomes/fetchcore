@@ -120,6 +120,8 @@ def test_canonical_index_never_projects_recognized_raw_api_content(
     indexer = RepositoryIndexer(RepositoryIndexConfig(repository="test/api-s0"))
     result = indexer.index(tmp_path)
     assert {doc.path for doc in result.documents} == {"README.md"}
+    assert result.changes.removal_detection_complete is True
+    assert result.telemetry.removal_detection_blockers == ()
     assert SENTINEL not in json.dumps([doc.to_mapping() for doc in result.documents])
     assert SENTINEL not in json.dumps(result.telemetry.to_mapping(), default=str)
     for doc in result.documents:
