@@ -7,7 +7,7 @@ import re
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, cast
 
-from fetchcore.projection.semantics import (
+from fetchcore.retrieval.projection_matching import (
     QUERY_FIELDS_BY_SIGNAL_TYPE, SIGNAL_FIELD_FACTORS, dedupe,
     query_field_boost, typed_query_entries,
 )

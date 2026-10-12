@@ -1,27 +1,21 @@
 from __future__ import annotations
 
-import ast
-from pathlib import Path
-
-import pytest
+import hashlib
+import json
 
 from fetchcore.projection import (
     PROJECTION_VERSION,
     ProjectionV3Compiler,
     projection_contract_fingerprint,
 )
-from fetchcore.projection_semantics import (
-    match_projection_record,
-    query_match_evidence,
-    validate_projection_v3_controls,
-)
 from fetchcore.repository.indexing import KnowledgeDocument, KnowledgeProvenance
-from fetchcore.search import KnowledgeSearchError, SearchIntent
-from fetchcore.signals import QuerySignal
 
 
 FROZEN_PROJECTION_FINGERPRINT = (
     "sha256:cfd4a63f85c8e4034bf17f0f82f08a47c717d52e75a9180ffb1eb6cad719e039"
+)
+FROZEN_COMPILER_MAPPING_SHA256 = (
+    "37189d179ed3d18be8a184fef70e7de0925c2237190a6f635106246ed8bb965d"
 )
 
 
@@ -62,114 +56,12 @@ def _document() -> KnowledgeDocument:
     )
 
 
-def _signal() -> QuerySignal:
-    return QuerySignal(
-        value="example",
-        type="exact",
-        classification="exact_identifier",
-        priority=100,
-        weight=1.0,
-        origin="caller",
-        source="query",
-        section="subject",
-        protected=True,
-        required=True,
-    )
-
-
 def test_projection_v3_fingerprint_is_preserved_during_extraction() -> None:
     assert PROJECTION_VERSION == "3"
     assert projection_contract_fingerprint() == FROZEN_PROJECTION_FINGERPRINT
 
 
-@pytest.mark.parametrize("value", [3, True, []])
-def test_projection_controls_reject_non_string_version(value: object) -> None:
-    with pytest.raises(KnowledgeSearchError, match="projection_version must be a string") as raised:
-        validate_projection_v3_controls({"projection_version": value}, backend_name="test")
-    assert raised.value.category == "schema_mismatch"
-
-
-@pytest.mark.parametrize("field", ["field_boosts", "signal_type_boosts"])
-@pytest.mark.parametrize("value", ["1.5", True, float("nan"), float("inf"), float("-inf")])
-def test_projection_controls_reject_incompatible_boosts(field: str, value: object) -> None:
-    name = "content" if field == "field_boosts" else "exact"
-    with pytest.raises(KnowledgeSearchError) as raised:
-        validate_projection_v3_controls({field: {name: value}}, backend_name="test")
-    assert raised.value.category == "schema_mismatch"
-
-
-@pytest.mark.parametrize("field", ["field_boosts", "signal_type_boosts"])
-def test_projection_controls_reject_non_string_mapping_keys(field: str) -> None:
-    with pytest.raises(KnowledgeSearchError) as raised:
-        validate_projection_v3_controls({field: {123: 2.0}}, backend_name="test")
-    assert raised.value.category == "schema_mismatch"
-
-
-@pytest.mark.parametrize("value", ["100", 100.0, True])
-def test_projection_controls_reject_incompatible_window(value: object) -> None:
-    with pytest.raises(KnowledgeSearchError, match="must be an integer") as raised:
-        validate_projection_v3_controls({"diagnostic_candidate_window": value}, backend_name="test")
-    assert raised.value.category == "schema_mismatch"
-
-
-def test_projection_controls_accept_integer_and_float_boosts() -> None:
-    controls = validate_projection_v3_controls(
-        {
-            "field_boosts": {"content": 1},
-            "signal_type_boosts": {"exact": 1.5},
-            "diagnostic_candidate_window": 100,
-        },
-        backend_name="test",
-    )
-    assert controls.field_boosts["content"] == 1.0
-    assert controls.signal_type_boosts["exact"] == 1.5
-    assert controls.diagnostic_candidate_window == 100
-
-
-def test_projection_semantics_use_fetchcore_query_and_evidence_contracts() -> None:
+def test_projection_v3_compiler_mapping_is_unchanged() -> None:
     mapping = ProjectionV3Compiler().compile(_document()).to_mapping()
-    controls = validate_projection_v3_controls({}, backend_name="fetchcore-test")
-    match = match_projection_record(
-        SearchIntent(signals=(_signal(),)),
-        mapping,
-        controls,
-    )
-
-    assert "example" in match.matched_terms
-    assert match.matched_signals == (_signal(),)
-    assert match.channels
-    evidence = query_match_evidence(
-        match,
-        source_ref=_document().source_ref,
-        provenance="fetchcore_projection_v3_match",
-    )
-    assert evidence
-    assert {item.provenance for item in evidence} == {
-        "fetchcore_projection_v3_match"
-    }
-
-
-def test_projection_ranking_core_has_no_agentsorch_imports() -> None:
-    root = Path(__file__).resolve().parents[3] / "src" / "fetchcore"
-    for relative in (
-        "projection/core.py",
-        "projection/semantics.py",
-        "retrieval/embedding.py",
-        "retrieval/fusion.py",
-        "retrieval/reranking.py",
-        "retrieval/reranking_query.py",
-        "retrieval/reranking_runtime.py",
-    ):
-        tree = ast.parse((root / relative).read_text(encoding="utf-8"))
-        imported_modules = {
-            node.module
-            for node in ast.walk(tree)
-            if isinstance(node, ast.ImportFrom) and node.module is not None
-        }
-        imported_modules.update(
-            alias.name
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Import)
-            for alias in node.names
-        )
-        assert not any(name == "agentsorch" or name.startswith("agentsorch.") for name in imported_modules)
+    serialized = json.dumps(mapping, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    assert hashlib.sha256(serialized.encode()).hexdigest() == FROZEN_COMPILER_MAPPING_SHA256

@@ -36,7 +36,7 @@ from fetchcore.retrieval.fusion import (
     FusionKernel,
     FusionRequest,
 )
-from fetchcore.projection.semantics import (
+from fetchcore.retrieval.projection_matching import (
     DEFAULT_FIELD_BOOSTS,
     DEFAULT_SIGNAL_TYPE_BOOSTS,
     ValidatedProjectionV3Controls,

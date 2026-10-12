@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, cast
 
-from fetchcore.projection.semantics import (
+from fetchcore.retrieval.projection_matching import (
     QUERY_FIELDS_BY_SIGNAL_TYPE, SIGNAL_FIELD_FACTORS, float_value,
     query_field_boost, typed_query_entries,
 )
