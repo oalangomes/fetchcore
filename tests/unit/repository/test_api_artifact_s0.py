@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import runpy
 from pathlib import Path
 
 import pytest
@@ -198,3 +199,23 @@ def test_safe_source_still_available_via_get_source(tmp_path: Path) -> None:
         )
     )
     assert "Safe heading" in read.content
+
+
+
+def test_synthetic_protocol_reports_safe_current_index() -> None:
+    root = Path(__file__).resolve().parents[3]
+    protocol = runpy.run_path(str(root / "benchmarks/api-extraction-s0/run.py"))
+    truth = json.loads(
+        (root / "benchmarks/api-extraction-s0/ground-truth.json").read_text(encoding="utf-8")
+    )
+    metrics = protocol["measure"](
+        root,
+        root / "benchmarks/api-extraction-s0/fixtures",
+        truth["queries"],
+        truth["security_sentinel"],
+        2,
+    )
+    assert metrics["secret_in_canonical"] is False
+    assert metrics["indexing_latency_ms"]["repetitions"] == 2
+    assert all(not row["secret_in_results"] for row in metrics["queries"])
+    assert all(row["blocked"] and not row["secret_exposed"] for row in metrics["source_access"])
