@@ -3,10 +3,12 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 from fetchcore.backends.local_semantic import LocalSemanticBackend
 from fetchcore.backends.opensearch import OpenSearchBackend, OpenSearchSettings
 from fetchcore.backends.qdrant_vector import QdrantVectorBackend, QdrantVectorSettings
-from fetchcore.backends.solr import SolrBackend, SolrSettings
+from fetchcore.backends.solr import SolrBackend, SolrDocumentMapper, SolrSettings
 from fetchcore.backends.solr_projection import (
     SOLR_PROJECTION_VERSION,
     SolrCanonicalDocumentReader,
@@ -14,15 +16,18 @@ from fetchcore.backends.solr_projection import (
 )
 from fetchcore.projection import (
     PROJECTION_VERSION,
+    ProjectionCompatibilityError,
+    ProjectionParsingError,
     ProjectionV3CanonicalDocumentReader,
     ProjectionV3Compiler,
+    projection_contract_fingerprint,
 )
 from fetchcore.backends.qdrant_sparse import (
     SPARSE_ANALYZER_FINGERPRINT,
     intent_sparse_terms,
     sparse_vector_from_terms,
 )
-from fetchcore.search import SearchIntent, SearchScope
+from fetchcore.search import KnowledgeSearchError, SearchIntent, SearchScope
 
 
 def test_backend_capabilities_are_explicit() -> None:
@@ -45,6 +50,34 @@ def test_solr_projection_remains_compatibility_facade_only() -> None:
     assert SOLR_PROJECTION_VERSION == PROJECTION_VERSION
     assert SolrProjectionCompiler is ProjectionV3Compiler
     assert SolrCanonicalDocumentReader is ProjectionV3CanonicalDocumentReader
+
+
+def test_solr_mapper_translates_projection_compatibility_errors() -> None:
+    mapping: dict[str, object] = {
+        "record_kind": "knowledge",
+        "projection_version": PROJECTION_VERSION,
+        "projection_fingerprint": "sha256:incompatible",
+    }
+
+    with pytest.raises(KnowledgeSearchError) as raised:
+        SolrDocumentMapper().from_solr(mapping)
+
+    assert raised.value.category == "schema_mismatch"
+    assert raised.value.metadata == {
+        "expected_projection_fingerprint": projection_contract_fingerprint(),
+        "actual_projection_fingerprint": "sha256:incompatible",
+        "rebuild_required": True,
+    }
+    assert isinstance(raised.value.__cause__, ProjectionCompatibilityError)
+
+
+def test_solr_mapper_translates_projection_parsing_errors() -> None:
+    with pytest.raises(KnowledgeSearchError) as raised:
+        SolrDocumentMapper().from_solr({"record_kind": "snapshot"})
+
+    assert raised.value.category == "response_parsing_failure"
+    assert raised.value.metadata == {}
+    assert isinstance(raised.value.__cause__, ProjectionParsingError)
 
 
 def test_backend_settings_parse_without_network_access() -> None:

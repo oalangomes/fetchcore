@@ -14,7 +14,27 @@ from typing import cast
 from fetchcore.knowledge.evidence import KnowledgeEvidence
 from fetchcore.repository.indexing import KnowledgeDocument, KnowledgeProvenance
 from fetchcore.repository.lexical import supports_lexical_analysis
-from fetchcore.retrieval.contracts import KnowledgeSearchError
+
+
+class ProjectionError(ValueError):
+    """Base failure while validating or hydrating a projected representation."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        metadata: Mapping[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.metadata = dict(metadata or {})
+
+
+class ProjectionCompatibilityError(ProjectionError):
+    """Projection version or contract fingerprint is incompatible."""
+
+
+class ProjectionParsingError(ProjectionError):
+    """Projected or canonical data cannot be reconstructed safely."""
 
 
 PROJECTION_VERSION = "3"
@@ -427,15 +447,13 @@ class ProjectionV3CanonicalDocumentReader:
         """Hydrate one canonical document from a compatible projected record."""
 
         if value.get("record_kind") != "knowledge":
-            raise KnowledgeSearchError(
+            raise ProjectionParsingError(
                 "Projection control record cannot be reconstructed as knowledge",
-                category="response_parsing_failure",
             )
         actual_projection_version = value.get("projection_version")
         if actual_projection_version != self.projection_version:
-            raise KnowledgeSearchError(
+            raise ProjectionCompatibilityError(
                 "Knowledge projection version is incompatible",
-                category="schema_mismatch",
                 metadata={
                     "expected_projection_version": self.projection_version,
                     "actual_projection_version": actual_projection_version,
@@ -443,9 +461,8 @@ class ProjectionV3CanonicalDocumentReader:
             )
         actual_projection_fingerprint = value.get("projection_fingerprint")
         if actual_projection_fingerprint != self.projection_fingerprint:
-            raise KnowledgeSearchError(
+            raise ProjectionCompatibilityError(
                 "Knowledge projection contract is incompatible",
-                category="schema_mismatch",
                 metadata={
                     "expected_projection_fingerprint": self.projection_fingerprint,
                     "actual_projection_fingerprint": actual_projection_fingerprint,
@@ -454,9 +471,8 @@ class ProjectionV3CanonicalDocumentReader:
             )
         payload = value.get("canonical_payload")
         if not isinstance(payload, str):
-            raise KnowledgeSearchError(
+            raise ProjectionParsingError(
                 "Knowledge projection record has no canonical payload",
-                category="response_parsing_failure",
             )
         try:
             data = json.loads(payload)
@@ -492,9 +508,8 @@ class ProjectionV3CanonicalDocumentReader:
                     str(key) for key in raw_evidence if key not in _KNOWN_EVIDENCE_FIELDS
                 )
                 if unknown_fields:
-                    raise KnowledgeSearchError(
+                    raise ProjectionParsingError(
                         "Canonical payload contains unsupported evidence fields",
-                        category="response_parsing_failure",
                         metadata={"unknown_evidence_fields": unknown_fields},
                     )
 
@@ -532,10 +547,9 @@ class ProjectionV3CanonicalDocumentReader:
                 corpus_purpose=str(data.get("corpus_purpose", "unknown")),
                 source_origin=str(data.get("source_origin", "unknown")),
             )
-        except KnowledgeSearchError:
+        except ProjectionParsingError:
             raise
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise KnowledgeSearchError(
+            raise ProjectionParsingError(
                 "Canonical payload is invalid",
-                category="response_parsing_failure",
             ) from exc

@@ -74,6 +74,27 @@ def test_canonical_and_transport_modules_do_not_import_concrete_backends() -> No
                 ), path
 
 
+def test_projection_core_does_not_import_retrieval_contracts() -> None:
+    path = SOURCE / "projection" / "core.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    imported_modules = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
+    imported_modules.update(
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    )
+
+    assert not any(
+        name == "fetchcore.retrieval" or name.startswith("fetchcore.retrieval.")
+        for name in imported_modules
+    )
+
+
 def test_capability_adapter_dependencies_point_inward() -> None:
     """Concrete selection belongs to composition, not core or another adapter."""
     core_roots = ("knowledge", "projection", "retrieval", "repository", "serving")
