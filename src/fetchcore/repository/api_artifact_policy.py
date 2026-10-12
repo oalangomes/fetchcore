@@ -46,7 +46,7 @@ def blocked_api_artifact_kind(relative: str, content: str | None = None) -> str 
         return "postman_environment"
     if name.endswith(".postman_collection.json"):
         return "postman_collection"
-    if name.endswith(".request.yaml") or name.endswith(".request.yml"):
+    if name.endswith((".request.yaml", ".request.yml")):
         return "postman_v3"
     for stem, kind in _API_NAMES.items():
         if path.stem.casefold() == stem or name.startswith((stem + "-", stem + "_")):
