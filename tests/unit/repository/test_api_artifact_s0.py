@@ -15,6 +15,8 @@ from fetchcore.application.service import (
     SourceReadRequest,
 )
 from fetchcore.repository.api_artifact_policy import blocked_api_artifact_kind
+from fetchcore.projection import ProjectionV3Compiler
+from fetchcore.retrieval.embedding import ProjectionV3EmbeddingSerializer
 from fetchcore.repository.index_fingerprint import indexing_contract_fingerprint
 from fetchcore.repository.indexing import RepositoryIndexConfig, RepositoryIndexer
 from fetchcore.repository.safe_scan import scan_repository_text
@@ -120,6 +122,10 @@ def test_canonical_index_never_projects_recognized_raw_api_content(
     assert {doc.path for doc in result.documents} == {"README.md"}
     assert SENTINEL not in json.dumps([doc.to_mapping() for doc in result.documents])
     assert SENTINEL not in json.dumps(result.telemetry.to_mapping(), default=str)
+    for doc in result.documents:
+        projected = ProjectionV3Compiler().compile(doc)
+        assert SENTINEL not in json.dumps(projected.to_mapping(), default=str)
+        assert SENTINEL not in ProjectionV3EmbeddingSerializer().serialize_record(projected)
     assert indexing_contract_fingerprint(indexer).startswith("sha256:")
 
 
