@@ -12,6 +12,10 @@ import re
 from pathlib import PurePosixPath
 
 _API_EXTENSIONS = frozenset({".json", ".yaml", ".yml"})
+API_ARTIFACT_BLOCK_REASONS = frozenset(
+    "api_artifact_blocked_" + kind
+    for kind in ("postman_environment", "postman_collection", "postman_v3", "swagger", "openapi")
+)
 _API_NAMES = {
     "swagger": "swagger",
     "openapi": "openapi",
