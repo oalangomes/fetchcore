@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Reproducible synthetic API corpus baseline, without persisting source content.
 
 Compare independently with an unchanged checkout:
@@ -49,10 +48,9 @@ def measure(implementation_root: Path, fixture_root: Path, cases: list[dict[str,
         started = time.perf_counter()
         result = indexer.index(fixture_root)
         elapsed = (time.perf_counter() - started) * 1000
-        if durations or result is not None and len(durations) == 0:
-            # The first iteration is a warm-up; subsequent runs are measured.
-            if _ > 0:
-                durations.append(elapsed)
+        # First iteration is a warm-up; subsequent runs are measured.
+        if _ > 0:
+            durations.append(elapsed)
 
     assert result is not None
     scan = scan_repository_text(
