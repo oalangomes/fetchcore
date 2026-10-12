@@ -42,6 +42,7 @@ Inputs:
 - optional `repository`
 - `limit` (1..100)
 - optional `knowledge_types`
+- optional typed `intent` (`SearchIntent` mapping validated by the application boundary)
 
 The tool returns the native FetchCore `KnowledgeSearchResponse` mapping,
 including source identity, provenance and backend metadata.
@@ -115,5 +116,5 @@ than being improvised in this serving slice.
 - `find_symbol`
 - graph-backed `get_related`
 - multi-repository result fusion
-- Streamable HTTP deployment and authentication
+- standalone authenticated Streamable HTTP deployment (distinct from the local Explorer's loopback HTTP transport)
 - organization-level ACL providers

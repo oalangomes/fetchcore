@@ -46,14 +46,14 @@ MCP -> RetrievalApplicationService -> KnowledgeSearchBackend
 The local-semantic backend is the default serving backend:
 
 ```bash
-export FETCHCORE_MCP_WORKSPACE="$PWD"
-export FETCHCORE_MCP_REPOSITORY="owner/repository"
-export FETCHCORE_MCP_BACKEND="local-semantic"
+export FETCHCORE_WORKSPACE="$PWD"
+export FETCHCORE_REPOSITORY="owner/repository"
+export FETCHCORE_BACKEND="local-semantic"
 
 fetchcore-mcp
 ```
 
-The process serves MCP over stdio. See [MCP serving](mcp.md) for the complete environment contract and backend examples.
+The process serves MCP over stdio. The historical `FETCHCORE_MCP_*` aliases remain accepted, but the canonical operator runtime names above take precedence. Starting the server alone does not index a repository; retrieval requires a compatible, authorized source/index. See [MCP serving](mcp.md) for the complete environment contract and backend examples.
 
 ## Build the FetchCore container
 
