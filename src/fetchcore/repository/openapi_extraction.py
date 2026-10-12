@@ -138,6 +138,28 @@ def _ref(value: object) -> str | None:
     return value
 
 
+def _effective_parameters(
+    path_item: Mapping[str, object],
+    operation: Mapping[str, object],
+) -> list[object]:
+    """Operation-level (name,in) overrides the same observed path parameter."""
+
+    merged: dict[tuple[str, str], object] = {}
+    for holder in (path_item, operation):
+        parameters = holder.get("parameters")
+        if not isinstance(parameters, list):
+            continue
+        for index, raw in enumerate(parameters):
+            param = _map(raw)
+            name = _safe_name(param.get("name"))
+            location = param.get("in")
+            if name is not None and location in {"path", "query", "header", "cookie", "body"}:
+                merged[(location, name)] = raw
+            else:
+                merged[(str(id(holder)), str(index))] = raw
+    return list(merged.values())
+
+
 def sanitize_openapi(relative: str, raw: str) -> SanitizedApiExtraction | None:
     """Parse bounded supported specs and emit only safe method/path/schema facts.
 
@@ -179,19 +201,22 @@ def sanitize_openapi(relative: str, raw: str) -> SanitizedApiExtraction | None:
                 tokens = [method.upper(), route]
                 if name:
                     tokens.append(name)
-                raw_params = operation.get("parameters")
-                parameters = raw_params if isinstance(raw_params, list) else []
-                path_params = entry.get("parameters")
-                if isinstance(path_params, list):
-                    parameters = [*path_params, *parameters]
+                parameters = _effective_parameters(entry, operation)
                 param_names = sorted({
-                    val for param in parameters
-                    if isinstance(param, dict)
-                    for val in [_safe_name(param.get("name"))]
-                    if val is not None
+                    f"{param.get('in')}:{name}"
+                    for raw_param in parameters
+                    for param in [_map(raw_param)]
+                    for name in [_safe_name(param.get("name"))]
+                    if name is not None
+                    and param.get("in") in {"path", "query", "header", "cookie", "body"}
                 })
                 if param_names:
                     tokens.extend(("parameters", *param_names[:30]))
+                effective_security = operation.get(
+                    "security", root.get("security"),
+                )
+                if isinstance(effective_security, list):
+                    tokens.extend(("security", "required" if effective_security else "none"))
                 responses = _map(operation.get("responses"))
                 statuses = sorted(key for key in responses if _STATUS.fullmatch(key))
                 if statuses:
