@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -1218,6 +1219,27 @@ PROJECTION_V3_QUERY_FIELDS_BY_SIGNAL_TYPE = QUERY_FIELDS_BY_SIGNAL_TYPE
 PROJECTION_V3_SIGNAL_FIELD_FACTORS = SIGNAL_FIELD_FACTORS
 
 
+def _finite_control_number(value: object, name: str, backend_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise KnowledgeSearchError(
+            f"{backend_name} {name} must be a finite number",
+            category="schema_mismatch",
+        )
+    try:
+        number = float(value)
+    except OverflowError as exc:
+        raise KnowledgeSearchError(
+            f"{backend_name} {name} must be a finite number",
+            category="schema_mismatch",
+        ) from exc
+    if not math.isfinite(number):
+        raise KnowledgeSearchError(
+            f"{backend_name} {name} must be a finite number",
+            category="schema_mismatch",
+        )
+    return number
+
+
 def validate_projection_v3_controls(
     value: Mapping[str, object],
     *,
@@ -1225,7 +1247,13 @@ def validate_projection_v3_controls(
 ) -> ValidatedProjectionV3Controls:
     """Validate only the shared Projection v3 controls for a backend."""
 
-    projection_version = str(value.get("projection_version", PROJECTION_VERSION)).strip()
+    raw_projection_version = value.get("projection_version", PROJECTION_VERSION)
+    if not isinstance(raw_projection_version, str):
+        raise KnowledgeSearchError(
+            f"{backend_name} projection_version must be a string",
+            category="schema_mismatch",
+        )
+    projection_version = raw_projection_version.strip()
     if not projection_version:
         raise KnowledgeSearchError(
             f"{backend_name} projection_version must not be empty",
@@ -1240,19 +1268,18 @@ def validate_projection_v3_controls(
         )
     boosts = dict(DEFAULT_FIELD_BOOSTS)
     for raw_name, raw_boost in raw_boosts.items():
-        name = str(raw_name)
+        if not isinstance(raw_name, str):
+            raise KnowledgeSearchError(
+                f"{backend_name} boost field name must be a string",
+                category="schema_mismatch",
+            )
+        name = raw_name
         if name not in _ALLOWED_BOOST_FIELDS:
             raise KnowledgeSearchError(
                 f"unsupported {backend_name} boost field {name!r}",
                 category="schema_mismatch",
             )
-        try:
-            boost = float(raw_boost)
-        except (TypeError, ValueError) as exc:
-            raise KnowledgeSearchError(
-                f"{backend_name} boost for {name!r} must be numeric",
-                category="schema_mismatch",
-            ) from exc
+        boost = _finite_control_number(raw_boost, f"boost for {name!r}", backend_name)
         if not 0 < boost <= 100:
             raise KnowledgeSearchError(
                 f"{backend_name} boost for {name!r} must be between 0 and 100",
@@ -1268,19 +1295,18 @@ def validate_projection_v3_controls(
         )
     signal_boosts = dict(DEFAULT_SIGNAL_TYPE_BOOSTS)
     for raw_name, raw_boost in raw_signal_boosts.items():
-        name = str(raw_name)
+        if not isinstance(raw_name, str):
+            raise KnowledgeSearchError(
+                f"{backend_name} query signal type must be a string",
+                category="schema_mismatch",
+            )
+        name = raw_name
         if name not in DEFAULT_SIGNAL_TYPE_BOOSTS:
             raise KnowledgeSearchError(
                 f"unsupported {backend_name} query signal type {name!r}",
                 category="schema_mismatch",
             )
-        try:
-            boost = float(raw_boost)
-        except (TypeError, ValueError) as exc:
-            raise KnowledgeSearchError(
-                f"{backend_name} signal boost for {name!r} must be numeric",
-                category="schema_mismatch",
-            ) from exc
+        boost = _finite_control_number(raw_boost, f"signal boost for {name!r}", backend_name)
         if not 0 < boost <= 10:
             raise KnowledgeSearchError(
                 f"{backend_name} signal boost for {name!r} must be between 0 and 10",
@@ -1291,13 +1317,12 @@ def validate_projection_v3_controls(
     raw_window = value.get("diagnostic_candidate_window")
     diagnostic_candidate_window: int | None = None
     if raw_window is not None:
-        try:
-            diagnostic_candidate_window = int(cast(float | int | str, raw_window))
-        except (TypeError, ValueError) as exc:
+        if isinstance(raw_window, bool) or not isinstance(raw_window, int):
             raise KnowledgeSearchError(
                 f"{backend_name} diagnostic_candidate_window must be an integer",
                 category="schema_mismatch",
-            ) from exc
+            )
+        diagnostic_candidate_window = raw_window
         if not 1 <= diagnostic_candidate_window <= 5_000:
             raise KnowledgeSearchError(
                 f"{backend_name} diagnostic_candidate_window must be between 1 and 5000",

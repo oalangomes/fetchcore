@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -35,6 +36,91 @@ class ProjectionCompatibilityError(ProjectionError):
 
 class ProjectionParsingError(ProjectionError):
     """Projected or canonical data cannot be reconstructed safely."""
+
+
+def _required_string(value: object, field: str) -> str:
+    if not isinstance(value, str):
+        raise ProjectionParsingError(
+            "Canonical payload field has an invalid type",
+            metadata={
+                "field": field,
+                "expected_type": "str",
+                "actual_type": type(value).__name__,
+            },
+        )
+    return value
+
+
+def _optional_string(value: object, field: str) -> str | None:
+    return None if value is None else _required_string(value, field)
+
+
+def _required_integer(value: object, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ProjectionParsingError(
+            "Canonical payload field has an invalid type",
+            metadata={
+                "field": field,
+                "expected_type": "int",
+                "actual_type": type(value).__name__,
+            },
+        )
+    return value
+
+
+def _string_list(value: object, field: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ProjectionParsingError(
+            "Canonical payload field has an invalid type",
+            metadata={
+                "field": field,
+                "expected_type": "list[str]",
+                "actual_type": type(value).__name__,
+            },
+        )
+    return tuple(_required_string(item, f"{field}[{index}]") for index, item in enumerate(value))
+
+
+def _validate_evidence_representation(raw: object, canonical: object, field: str) -> None:
+    """Reject evidence values that its typed hydration silently changed or discarded."""
+
+    if isinstance(raw, float) and not math.isfinite(raw):
+        raise ProjectionParsingError(
+            "Canonical evidence field has a non-finite number",
+            metadata={"field": field},
+        )
+    if isinstance(canonical, dict) and isinstance(raw, dict):
+        for key, item in raw.items():
+            if key not in canonical:
+                raise ProjectionParsingError(
+                    "Canonical evidence contains an unsupported field",
+                    metadata={"field": f"{field}.{key}"},
+                )
+            _validate_evidence_representation(item, canonical[key], f"{field}.{key}")
+        return
+    if isinstance(canonical, list) and isinstance(raw, list):
+        if len(raw) == len(canonical):
+            for index, (item, hydrated) in enumerate(zip(raw, canonical, strict=True)):
+                _validate_evidence_representation(item, hydrated, f"{field}[{index}]")
+            return
+    elif (
+        (type(raw) is type(canonical) and raw == canonical)
+        or (
+            isinstance(raw, int)
+            and not isinstance(raw, bool)
+            and isinstance(canonical, float)
+            and raw == canonical
+        )
+    ):
+        return
+    raise ProjectionParsingError(
+        "Canonical evidence field has an invalid representation",
+        metadata={
+            "field": field,
+            "expected_type": type(canonical).__name__,
+            "actual_type": type(raw).__name__,
+        },
+    )
 
 
 PROJECTION_VERSION = "3"
@@ -482,14 +568,22 @@ class ProjectionV3CanonicalDocumentReader:
             if not isinstance(provenance_data, Mapping):
                 raise TypeError("provenance must be an object")
             provenance = KnowledgeProvenance(
-                source_ref=str(provenance_data["source_ref"]),
-                chunk_ref=str(provenance_data["chunk_ref"]),
-                repository=str(provenance_data["repository"]),
-                revision=str(provenance_data["revision"]),
-                path=str(provenance_data["path"]),
-                line_start=int(provenance_data["line_start"]),
-                line_end=int(provenance_data["line_end"]),
-                source_checksum=str(provenance_data["source_checksum"]),
+                source_ref=_required_string(provenance_data["source_ref"], "provenance.source_ref"),
+                chunk_ref=_required_string(provenance_data["chunk_ref"], "provenance.chunk_ref"),
+                repository=_required_string(
+                    provenance_data["repository"], "provenance.repository"
+                ),
+                revision=_required_string(provenance_data["revision"], "provenance.revision"),
+                path=_required_string(provenance_data["path"], "provenance.path"),
+                line_start=_required_integer(
+                    provenance_data["line_start"], "provenance.line_start"
+                ),
+                line_end=_required_integer(
+                    provenance_data["line_end"], "provenance.line_end"
+                ),
+                source_checksum=_required_string(
+                    provenance_data["source_checksum"], "provenance.source_checksum"
+                ),
             )
             metadata = data.get("metadata", {})
             if not isinstance(metadata, dict):
@@ -518,38 +612,44 @@ class ProjectionV3CanonicalDocumentReader:
                 if isinstance(raw_evidence, Mapping)
                 else KnowledgeEvidence()
             )
+            if isinstance(raw_evidence, dict):
+                _validate_evidence_representation(
+                    raw_evidence, evidence.to_mapping(), "evidence"
+                )
 
             return KnowledgeDocument(
-                id=str(data["id"]),
-                source_type=str(data["source_type"]),
-                source_ref=str(data["source_ref"]),
-                chunk_ref=str(data["chunk_ref"]),
-                repository=str(data["repository"]),
-                branch=None if data.get("branch") is None else str(data["branch"]),
-                revision=str(data["revision"]),
-                path=str(data["path"]),
-                filename=str(data["filename"]),
-                language=None if data.get("language") is None else str(data["language"]),
-                knowledge_type=str(data["knowledge_type"]),
-                technical_role=(
-                    None if data.get("technical_role") is None else str(data["technical_role"])
-                ),
-                symbols=tuple(str(item) for item in data.get("symbols", [])),
-                symbol_types=tuple(str(item) for item in data.get("symbol_types", [])),
-                content=str(data["content"]),
-                line_start=int(data["line_start"]),
-                line_end=int(data["line_end"]),
-                checksum=str(data["checksum"]),
+                id=_required_string(data["id"], "id"),
+                source_type=_required_string(data["source_type"], "source_type"),
+                source_ref=_required_string(data["source_ref"], "source_ref"),
+                chunk_ref=_required_string(data["chunk_ref"], "chunk_ref"),
+                repository=_required_string(data["repository"], "repository"),
+                branch=_optional_string(data.get("branch"), "branch"),
+                revision=_required_string(data["revision"], "revision"),
+                path=_required_string(data["path"], "path"),
+                filename=_required_string(data["filename"], "filename"),
+                language=_optional_string(data.get("language"), "language"),
+                knowledge_type=_required_string(data["knowledge_type"], "knowledge_type"),
+                technical_role=_optional_string(data.get("technical_role"), "technical_role"),
+                symbols=_string_list(data.get("symbols", []), "symbols"),
+                symbol_types=_string_list(data.get("symbol_types", []), "symbol_types"),
+                content=_required_string(data["content"], "content"),
+                line_start=_required_integer(data["line_start"], "line_start"),
+                line_end=_required_integer(data["line_end"], "line_end"),
+                checksum=_required_string(data["checksum"], "checksum"),
                 provenance=provenance,
                 metadata=cast(dict[str, object], metadata),
-                indexed_at=str(data["indexed_at"]),
+                indexed_at=_required_string(data["indexed_at"], "indexed_at"),
                 evidence=evidence,
-                corpus_purpose=str(data.get("corpus_purpose", "unknown")),
-                source_origin=str(data.get("source_origin", "unknown")),
+                corpus_purpose=_required_string(
+                    data.get("corpus_purpose", "unknown"), "corpus_purpose"
+                ),
+                source_origin=_required_string(
+                    data.get("source_origin", "unknown"), "source_origin"
+                ),
             )
         except ProjectionParsingError:
             raise
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        except (KeyError, TypeError, ValueError, OverflowError, json.JSONDecodeError) as exc:
             raise ProjectionParsingError(
                 "Canonical payload is invalid",
             ) from exc

@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 from fetchcore.projection import (
     PROJECTION_VERSION,
     ProjectionV3Compiler,
@@ -14,7 +16,7 @@ from fetchcore.projection_semantics import (
     validate_projection_v3_controls,
 )
 from fetchcore.repository.indexing import KnowledgeDocument, KnowledgeProvenance
-from fetchcore.search import SearchIntent
+from fetchcore.search import KnowledgeSearchError, SearchIntent
 from fetchcore.signals import QuerySignal
 
 
@@ -78,6 +80,50 @@ def _signal() -> QuerySignal:
 def test_projection_v3_fingerprint_is_preserved_during_extraction() -> None:
     assert PROJECTION_VERSION == "3"
     assert projection_contract_fingerprint() == FROZEN_PROJECTION_FINGERPRINT
+
+
+@pytest.mark.parametrize("value", [3, True, []])
+def test_projection_controls_reject_non_string_version(value: object) -> None:
+    with pytest.raises(KnowledgeSearchError, match="projection_version must be a string") as raised:
+        validate_projection_v3_controls({"projection_version": value}, backend_name="test")
+    assert raised.value.category == "schema_mismatch"
+
+
+@pytest.mark.parametrize("field", ["field_boosts", "signal_type_boosts"])
+@pytest.mark.parametrize("value", ["1.5", True, float("nan"), float("inf"), float("-inf")])
+def test_projection_controls_reject_incompatible_boosts(field: str, value: object) -> None:
+    name = "content" if field == "field_boosts" else "exact"
+    with pytest.raises(KnowledgeSearchError) as raised:
+        validate_projection_v3_controls({field: {name: value}}, backend_name="test")
+    assert raised.value.category == "schema_mismatch"
+
+
+@pytest.mark.parametrize("field", ["field_boosts", "signal_type_boosts"])
+def test_projection_controls_reject_non_string_mapping_keys(field: str) -> None:
+    with pytest.raises(KnowledgeSearchError) as raised:
+        validate_projection_v3_controls({field: {123: 2.0}}, backend_name="test")
+    assert raised.value.category == "schema_mismatch"
+
+
+@pytest.mark.parametrize("value", ["100", 100.0, True])
+def test_projection_controls_reject_incompatible_window(value: object) -> None:
+    with pytest.raises(KnowledgeSearchError, match="must be an integer") as raised:
+        validate_projection_v3_controls({"diagnostic_candidate_window": value}, backend_name="test")
+    assert raised.value.category == "schema_mismatch"
+
+
+def test_projection_controls_accept_integer_and_float_boosts() -> None:
+    controls = validate_projection_v3_controls(
+        {
+            "field_boosts": {"content": 1},
+            "signal_type_boosts": {"exact": 1.5},
+            "diagnostic_candidate_window": 100,
+        },
+        backend_name="test",
+    )
+    assert controls.field_boosts["content"] == 1.0
+    assert controls.signal_type_boosts["exact"] == 1.5
+    assert controls.diagnostic_candidate_window == 100
 
 
 def test_projection_semantics_use_fetchcore_query_and_evidence_contracts() -> None:
