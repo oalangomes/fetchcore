@@ -74,25 +74,67 @@ def test_canonical_and_transport_modules_do_not_import_concrete_backends() -> No
                 ), path
 
 
-def test_projection_core_does_not_import_retrieval_contracts() -> None:
-    path = SOURCE / "projection" / "core.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    imported_modules = {
-        node.module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module is not None
-    }
-    imported_modules.update(
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    )
+def test_canonical_projection_modules_do_not_import_retrieval() -> None:
+    for path in (SOURCE / "projection").glob("*.py"):
+        if path.name == "semantics.py":  # Historical compatibility alias.
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        imported_modules = {
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        }
+        imported_modules.update(
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        assert not any(
+            name == "fetchcore.retrieval" or name.startswith("fetchcore.retrieval.")
+            for name in imported_modules
+        ), path
 
-    assert not any(
-        name == "fetchcore.retrieval" or name.startswith("fetchcore.retrieval.")
-        for name in imported_modules
+
+def test_projection_semantics_is_only_a_compatibility_alias() -> None:
+    path = SOURCE / "projection" / "semantics.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    assert not any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) for node in ast.walk(tree))
+    assert not any(isinstance(node, (ast.Dict, ast.List, ast.Set)) for node in ast.walk(tree))
+    owner = importlib.import_module("fetchcore.retrieval.projection_matching")
+    facade = importlib.import_module("fetchcore.projection.semantics")
+    historical = importlib.import_module("fetchcore.projection_semantics")
+    assert facade is historical is owner
+    assert facade.match_projection_record is owner.match_projection_record
+
+
+def test_projection_and_retrieval_matching_do_not_import_agentsorch() -> None:
+    files = (
+        *(SOURCE / "projection").glob("*.py"),
+        SOURCE / "retrieval" / "projection_matching.py",
+        SOURCE / "retrieval" / "embedding.py",
+        SOURCE / "retrieval" / "fusion.py",
+        SOURCE / "retrieval" / "reranking.py",
+        SOURCE / "retrieval" / "reranking_query.py",
+        SOURCE / "retrieval" / "reranking_runtime.py",
     )
+    for path in files:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        imported_modules = {
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        }
+        imported_modules.update(
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        assert not any(
+            name == "agentsorch" or name.startswith("agentsorch.")
+            for name in imported_modules
+        ), path
 
 
 def test_capability_adapter_dependencies_point_inward() -> None:

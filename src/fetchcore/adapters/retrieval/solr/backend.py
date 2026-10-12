@@ -78,7 +78,7 @@ from fetchcore.projection import (
     extract_identifiers as _extract_identifiers,
     projection_contract_fingerprint,
 )
-from fetchcore.projection.semantics import (
+from fetchcore.retrieval.projection_matching import (
     DEFAULT_FIELD_BOOSTS,
     DEFAULT_SIGNAL_TYPE_BOOSTS,
     QUERY_CHANNELS_BY_SIGNAL_TYPE,
