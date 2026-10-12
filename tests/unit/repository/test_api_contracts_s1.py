@@ -230,3 +230,35 @@ def test_unknown_generic_config_remains_unchanged(tmp_path: Path) -> None:
     )
     assert len(scan.sources) == 1
     assert "api_artifact_status_counts" not in scan.coverage.to_mapping()
+
+
+
+@pytest.mark.parametrize(
+    ("format_name", "version"),
+    [
+        ("openapi", "3.2.0"),
+        ("swagger", "3.0"),
+        ("postman_collection", "2.0.0"),
+        ("postman_v3", "2.1.0"),
+    ],
+)
+def test_typed_api_fact_rejects_unsupported_format_version(
+    format_name: str, version: str,
+) -> None:
+    with pytest.raises(ValueError, match="incompatible"):
+        ApiEvidenceV1(
+            kind="api_schema",  # type: ignore[arg-type]
+            format=format_name,  # type: ignore[arg-type]
+            format_version=version,
+            locator=ApiSourceLocatorV1("api/spec.json", "#/components/schemas/Name"),
+            name="Name",
+        )
+
+
+def test_source_lines_require_strict_integral_span() -> None:
+    with pytest.raises(ValueError, match="line_start"):
+        ApiSourceLocatorV1("api.json", "#/paths", line_start=True)
+    with pytest.raises(ValueError, match="line_end"):
+        ApiSourceLocatorV1("api.json", "#/paths", line_start=10, line_end=9)
+    with pytest.raises(ValueError, match="line_end requires"):
+        ApiSourceLocatorV1("api.json", "#/paths", line_end=10)
