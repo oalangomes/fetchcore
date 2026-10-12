@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "corpus_id": "fetchcore-api-s0-synthetic",
+  "queries": [
+    {
+      "id": "q01",
+      "query": "createCustomer",
+      "source": "openapi.json",
+      "kind": "openapi",
+      "operation": "POST /customers"
+    },
+    {
+      "id": "q02",
+      "query": "getCustomer",
+      "source": "openapi.json",
+      "kind": "openapi",
+      "operation": "GET /customers/{id}"
+    },
+    {
+      "id": "q03",
+      "query": "listOrders",
+      "source": "swagger.yaml",
+      "kind": "swagger",
+      "operation": "GET /orders"
+    },
+    {
+      "id": "q04",
+      "query": "Create customer",
+      "source": "demo.postman_collection.json",
+      "kind": "postman_collection",
+      "operation": "POST /customers"
+    },
+    {
+      "id": "q05",
+      "query": "customer HTTP API",
+      "source": "README.md",
+      "kind": "documentation"
+    }
+  ],
+  "security_sentinel": "S0_FAKE_SECRET_MUST_NEVER_APPEAR_IN_EVIDENCE",
+  "expected_api_records": {
+    "openapi_operations": 2,
+    "swagger_operations": 1,
+    "postman_requests": 2
+  },
+  "notes": "S0 guard intentionally blocks API files; S2/S3 must recover their typed content while retaining the sentinel gate. Query↔source references are diagnostic; operation-level correctness must be separately reviewed in S2/S3."
+}
