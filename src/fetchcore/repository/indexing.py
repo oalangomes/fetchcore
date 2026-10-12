@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Protocol, cast
 from urllib.parse import quote, urlparse
 
+from fetchcore.repository.api_artifact_policy import API_ARTIFACT_BLOCK_REASONS
 from fetchcore.repository.corpus_policy import (
     CorpusPurposeRule,
     SourceOriginRule,
@@ -48,6 +49,7 @@ from fetchcore.repository.source_coverage import (
 
 _INTENTIONAL_INELIGIBILITY_REASONS = frozenset(
     {"excluded", "not_included", "max_file_bytes"}
+    | API_ARTIFACT_BLOCK_REASONS
 )
 _INCOMPLETE_OBSERVATION_REASONS = frozenset(
     {"invalid_path", "io_error", "changed_or_oversized", "unsafe_path_or_symlink"}

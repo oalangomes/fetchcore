@@ -1,0 +1,41 @@
+{
+  "info": {
+    "name": "S0 synthetic collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "Create customer",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/customers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer S0_FAKE_SECRET_MUST_NEVER_APPEAR_IN_EVIDENCE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Find customer",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/customers/42"
+          }
+        }
+      ]
+    }
+  ]
+}
