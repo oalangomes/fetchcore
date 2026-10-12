@@ -8,7 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from fetchcore.repository.api_contracts import ApiEvidenceV1, ApiSourceLocatorV1
+from fetchcore.repository.api_contracts import (
+    ApiEvidenceV1, ApiSourceLocatorV1, attach_api_evidence,
+)
+from fetchcore.repository.indexing import RepositoryIndexConfig, RepositoryIndexer
+from fetchcore.knowledge.evidence import KnowledgeEvidence
 from fetchcore.repository.api_detection import (
     ApiArtifactClassification,
     detect_api_artifact,
@@ -262,3 +266,37 @@ def test_source_lines_require_strict_integral_span() -> None:
         ApiSourceLocatorV1("api.json", "#/paths", line_start=10, line_end=9)
     with pytest.raises(ValueError, match="line_end requires"):
         ApiSourceLocatorV1("api.json", "#/paths", line_end=10)
+
+
+
+def test_enrichment_preserves_canonical_identity_and_provenance(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# Verified safe fixture\n", encoding="utf-8")
+    result = RepositoryIndexer(RepositoryIndexConfig(repository="test/s1")).index(tmp_path)
+    original = result.documents[0]
+    fact = ApiEvidenceV1(
+        kind="api_operation", format="openapi", format_version="3.1.0",
+        locator=ApiSourceLocatorV1(
+            original.path, "#/paths/~1customers/post",
+            line_start=original.line_start, line_end=original.line_end,
+        ),
+        method="POST", route="/customers",
+    )
+    enriched = attach_api_evidence(original, fact)
+    assert enriched.id == original.id
+    assert enriched.provenance == original.provenance
+    assert enriched.content == original.content
+    assert enriched.evidence.semantic[0] == fact.to_envelope()
+    restored = KnowledgeEvidence.from_mapping(enriched.evidence.to_mapping())
+    assert restored == enriched.evidence
+    assert ApiEvidenceV1.from_envelope(restored.semantic[0]) == fact
+    with pytest.raises(ValueError, match="duplicate"):
+        attach_api_evidence(enriched, fact)
+    with pytest.raises(ValueError, match="provenance"):
+        attach_api_evidence(
+            original,
+            ApiEvidenceV1(
+                kind="api_operation", format="openapi", format_version="3.1.0",
+                locator=ApiSourceLocatorV1("other.json", "#/paths/~1customers/post"),
+                method="POST", route="/customers",
+            ),
+        )
