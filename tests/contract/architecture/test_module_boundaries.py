@@ -19,6 +19,23 @@ from fetchcore.repository.structure import default_structural_symbol_extractors
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "src" / "fetchcore"
+_RETRIEVAL_OWNED_IMPORT_ROOTS = frozenset(
+    {
+        "fetchcore.retrieval",
+        "fetchcore.search",
+        "fetchcore.signals",
+        "fetchcore.evidence",
+        "fetchcore.fusion",
+        "fetchcore.embedding",
+    }
+)
+
+
+def _is_retrieval_owned_import(module: str) -> bool:
+    return any(
+        module == root or module.startswith(f"{root}.")
+        for root in _RETRIEVAL_OWNED_IMPORT_ROOTS
+    )
 
 
 def test_historical_imports_resolve_to_the_same_implementations() -> None:
@@ -91,9 +108,25 @@ def test_canonical_projection_modules_do_not_import_retrieval() -> None:
             for alias in node.names
         )
         assert not any(
-            name == "fetchcore.retrieval" or name.startswith("fetchcore.retrieval.")
-            for name in imported_modules
+            _is_retrieval_owned_import(name) for name in imported_modules
         ), path
+
+
+def test_historical_retrieval_aliases_are_classified_as_retrieval_owned() -> None:
+    for module in (
+        "fetchcore.retrieval",
+        "fetchcore.retrieval.contracts",
+        "fetchcore.search",
+        "fetchcore.signals",
+        "fetchcore.evidence",
+        "fetchcore.fusion",
+        "fetchcore.embedding",
+    ):
+        assert _is_retrieval_owned_import(module)
+
+    assert not _is_retrieval_owned_import("fetchcore.projection")
+    assert not _is_retrieval_owned_import("fetchcore.knowledge")
+    assert not _is_retrieval_owned_import("fetchcore.repository")
 
 
 def test_projection_semantics_is_only_a_compatibility_alias() -> None:
