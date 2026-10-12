@@ -42,7 +42,7 @@ def _yaml_root(raw: str) -> object:
         raise ValueError("YAML parser is unavailable") from exc
 
     class RestrictedLoader(yaml.SafeLoader):
-        def compose_node(self, parent: object, index: object) -> Any:
+        def compose_node(self, parent: Any, index: Any) -> Any:
             if self.check_event(yaml.AliasEvent):
                 raise ValueError("YAML alias is disallowed")
             self._observed_nodes = getattr(self, "_observed_nodes", 0) + 1
@@ -50,10 +50,10 @@ def _yaml_root(raw: str) -> object:
                 raise ValueError("YAML node budget exceeded")
             return super().compose_node(parent, index)
 
-        def construct_mapping(self, node: Any, deep: bool = False) -> dict[str, object]:
+        def construct_mapping(self, node: Any, deep: bool = False) -> dict[Any, Any]:
             if not isinstance(node, yaml.MappingNode):
                 raise ValueError("YAML mapping required")
-            result: dict[str, object] = {}
+            result: dict[Any, Any] = {}
             for key_node, value_node in node.value:
                 key = self.construct_object(key_node, deep=deep)
                 if not isinstance(key, str) or key in result or key == "<<":
@@ -216,14 +216,14 @@ def sanitize_openapi(relative: str, raw: str) -> SanitizedApiExtraction | None:
         schemas = _map(root.get("definitions" if kind == "swagger" else "components"))
         if kind == "openapi":
             schemas = _map(schemas.get("schemas"))
-        for name, schema in sorted(schemas.items()):
+        for name, schema_definition in sorted(schemas.items()):
             safe_name = _safe_name(name)
             if safe_name is None:
                 continue
             pointer = _pointer(
                 *(("definitions", name) if kind == "swagger" else ("components", "schemas", name))
             )
-            properties = _map(_map(schema).get("properties"))
+            properties = _map(_map(schema_definition).get("properties"))
             fields = sorted(
                 key for key in properties if _safe_name(key) is not None
             )[:40]
