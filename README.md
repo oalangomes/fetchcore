@@ -38,7 +38,7 @@ FetchCore turns source repositories into **searchable, typed, traceable technica
 | **Canonical first** | Repository Knowledge is independent of the index; lexical and vector stores are rebuildable projections. |
 | **Retrieval without lock-in** | Backend adapters and capabilities keep the application contract separate from Solr, OpenSearch, Qdrant and local implementations. |
 | **Measurable changes** | Frozen benchmark inputs and retrieval telemetry make quality and efficiency changes testable. |
-| **Headless by design** | CLI supports repository/index operations; MCP and Python application services expose retrieval to tools. |
+| **Headless by design** | CLI exposes repository registration, explicit indexing, scoped `search`/`source` and diagnostics; MCP and Python services serve retrieval to tools. |
 
 ## How it works
 
@@ -49,7 +49,7 @@ flowchart LR
     C --> D["Projection v3"]
     D --> E["Lexical / vector stores"]
     E --> F["Backend-neutral retrieval"]
-    F --> G["MCP / Python consumers"]
+    F --> G["CLI / MCP / Python consumers"]
     B -. "Operations" .-> H["FetchCore CLI"]
 ```
 
@@ -58,50 +58,73 @@ flowchart LR
 > **retrieval ≠ satisfaction ≠ authority**  
 > FetchCore acquires evidence. Consumers decide whether it satisfies their task and what to do with it.
 
+## What FetchCore is — and is not
+
+FetchCore is **repository knowledge and retrieval infrastructure**. It registers repository sources, acquires canonical typed knowledge with repository/revision provenance, maintains rebuildable retrieval projections, and returns bounded evidence candidates.
+
+It is **not** an agent framework, a task planner, an artifact-approval system or an execution authority. Backend relevance scores are ranking signals, not the truth of the consumer's task.
+
 ## Quick start
 
-Requires **Python 3.11+**. From a checkout of this repository:
+Prerequisites: **Python 3.11+** and **Git**. From a fresh checkout, the following registration commands need neither Docker nor an embedding provider:
 
 ```bash
+git clone https://github.com/oalangomes/fetchcore.git
+cd fetchcore
 python -m pip install -e ".[dev]"
 fetchcore --help
-fetchcore repo add .
-fetchcore repo list
+fetchcore repo add . --json
+fetchcore repo list --json
 ```
 
-Registration does **not** index the repository. It safely records a canonical repository source. To index it, see the [repository indexing lifecycle](docs/guides/repository-indexing.md) and the [self-hosted indexing guide](docs/guides/self-hosted-indexing.md).
+This is a **working first step**, not a retrieval demo. `repo add` stores a canonical identity in the operator registry and `repo list` reports it. Registration **does not scan, index, embed or serve** the source. Local paths are restricted to explicitly allowed roots (by default, the current directory). See [repository registration](docs/guides/repository-registry.md).
 
-### Serve retrieval over MCP
+### Index, then retrieve (explicit prerequisites)
 
-Install the optional transport:
+The operational indexing CLI currently targets **Solr**. First [provision and validate the backend](docs/guides/self-hosted-indexing.md), configure the [operator runtime](docs/guides/runtime-configuration.md), and use the [repository indexing lifecycle](docs/guides/repository-indexing.md) to plan and explicitly rebuild the first snapshot. Registered `index sync <repo>` needs an existing compatible snapshot and never silently rebuilds it.
+
+**Only after** those prerequisites are satisfied, these commands illustrate the repository-targeted path:
+
+```bash
+fetchcore index plan fetchcore --json
+fetchcore index rebuild fetchcore --json
+fetchcore index status fetchcore --json
+fetchcore search "RepositoryIndexer" --repo fetchcore --limit 5 --json
+```
+
+The repository leaf `fetchcore` is an example; substitute the canonical identity returned by `repo list` if different. **The commands above require a compatible provisioned index and runtime configuration**; a fresh registration alone is insufficient. CLI `search` exists and requires `--repo`, rather than a global unscoped search. Use `fetchcore source --help` with an actual returned `source_ref` to retrieve bounded lines. Neither retrieval command mutates the index.
+
+For an optional local UI, the [Compose Explorer stack](docs/guides/getting-started.md#docker-compose-default-explorer-stack) starts the web/API/MCP/Solr services, but an operator must still invoke indexing explicitly. **Healthy service ≠ indexed repository ≠ usable retrieval.** The [readiness check](docs/guides/runtime-configuration.md#operational-readiness-issue-134) observes repository binding, compatible snapshot and selected retrieval mode separately.
+
+### Serve retrieval over MCP (optional)
+
+The MCP stdio server exposes `search` and `get_source` for a configured, authorized repository. Server startup does **not** register, index or make an absent snapshot searchable.
 
 ```bash
 python -m pip install -e ".[mcp]"
-
 export FETCHCORE_WORKSPACE="$PWD"
-export FETCHCORE_REPOSITORY="owner/repository"
+export FETCHCORE_REPOSITORY="oalangomes/fetchcore"
 export FETCHCORE_BACKEND="local-semantic"
-
 fetchcore-mcp
 ```
 
-The server uses **stdio**, exposes `search` and `get_source`, and must be configured for an authorized repository. Retrieval depends on the configured source/index and backend capabilities; starting the server alone does not create an index.
+Change the repository identity to the source you are authorized to serve. Connect an MCP client to the **stdio** process; useful results require a compatible populated source/index. If you use a Solr snapshot, select Solr and its settings through the [runtime configuration](docs/guides/runtime-configuration.md), not the local-semantic example. See [MCP serving](docs/guides/mcp.md) and [searching](docs/guides/searching.md).
 
-See [MCP serving](docs/guides/mcp.md), [runtime configuration](docs/guides/runtime-configuration.md), and [searching](docs/guides/searching.md).
+## Current vs planned
 
-## What's available
+| Area | Availability | Product boundary |
+| --- | --- | --- |
+| Repository registry | **Current** | Local/Git registration, materialization, safe roots; no implicit indexing |
+| Canonical knowledge | **Current** | Typed evidence, source/revision provenance, symbols and relations |
+| Indexing | **Current (Solr operational CLI)** | Projection v3, explicit initial rebuild, compatible incremental sync |
+| Retrieval | **Current, capability-dependent** | Lexical, dense and hybrid require a compatible backend and indexed/embedding state |
+| CLI | **Current** | `repo`, `index`, scoped `search`/`source`, `config`, `doctor`, `readiness`, `capabilities` |
+| MCP stdio | **Current** | `search` and `get_source` with an authorized repository binding |
+| Dedicated symbol tools | **Planned** | `find_symbol`, `get_related`; extracted relations are not the same as dedicated tools |
+| Federated multi-repository retrieval | **Planned** | Bounded routing and cross-repo fusion rather than implicit concatenation |
+| Graph expansion | **Planned, optional** | Bounded navigation from strong seeds; not a mandatory retrieval path |
 
-| Surface | Current capability |
-| --- | --- |
-| **Repository sources** | Local workspaces and Git acquisition, canonical registry and safe scanning |
-| **Knowledge** | Typed evidence, repository/revision/source identity, symbols and relationships |
-| **Indexing** | Projection v3, incremental indexing, Solr-oriented operational CLI |
-| **Retrieval** | Lexical, dense and hybrid paths according to backend capabilities; explicit SearchIntent semantics and supported targeted lookups |
-| **Adapters** | Local semantic, Solr, OpenSearch and Qdrant vector |
-| **Consumers** | Repository/index CLI, MCP `search` and `get_source`, Python application service |
-| **Evaluation** | Frozen retrieval baseline and recorded telemetry |
-
-Features such as **federated multi-repository retrieval, optional graph expansion, and graph-backed symbol navigation** remain future work. FetchCore does **not** implement agent planning, task workflows, approvals or execution authority.
+Backend indexes are rebuildable projections, not semantic authorities. **retrieval ≠ satisfaction ≠ authority**. The consumer retains task satisfaction, approvals and execution decisions.
 
 ## Explore the project
 
