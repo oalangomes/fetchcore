@@ -174,7 +174,7 @@ def test_top_level_module_import_graph_is_acyclic() -> None:
         visit(module)
 
 
-def test_persisted_identities_preserve_projection_with_explicit_s0_rebuild() -> None:
+def test_persisted_identities_preserve_projection_with_explicit_indexing_rebuild() -> None:
     assert projection_contract_fingerprint() == (
         "sha256:cfd4a63f85c8e4034bf17f0f82f08a47c717d52e75a9180ffb1eb6cad719e039"
     )
@@ -185,10 +185,9 @@ def test_persisted_identities_preserve_projection_with_explicit_s0_rebuild() -> 
         RepositoryIndexConfig(),
         symbol_extractors=default_structural_symbol_extractors(),
     )
-    # S0 deliberately changes canonical corpus admission; persisted old indexes
-    # cannot be considered compatible with the new safety policy.
+    # S4 changes canonical Markdown units; persisted indexes require an explicit rebuild.
     assert indexing_contract_fingerprint(indexer) == (
-        "sha256:8d50fbeedb1e20686dc6bb391464937e5112269eab48bca63b1b3a858e5bc05a"
+        "sha256:55ef10df67405c137077decb1185faada8cfc982af52e504cc6dad34ff4cf00f"
     )
 
 

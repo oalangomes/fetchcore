@@ -42,11 +42,15 @@ def test_fingerprint_ignores_repository_observation_identity() -> None:
 def test_fingerprint_changes_when_corpus_policy_changes() -> None:
     baseline = indexing_contract_fingerprint(_indexer())
     changed_chunking = indexing_contract_fingerprint(_indexer(max_chunk_lines=80))
+    changed_markdown_budget = indexing_contract_fingerprint(
+        _indexer(max_markdown_chunk_chars=32_000)
+    )
     changed_excludes = indexing_contract_fingerprint(
         _indexer(exclude_patterns=("node_modules", "generated", "vendor"))
     )
 
     assert changed_chunking != baseline
+    assert changed_markdown_budget != baseline
     assert changed_excludes != baseline
     assert changed_chunking != changed_excludes
 

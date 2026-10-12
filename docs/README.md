@@ -11,6 +11,7 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Review typed API-contract evidence and format preflight | [API evidence v1](architecture/api-contract-evidence-v1.md) |
 | Implement safe OpenAPI/Swagger acquisition | [OpenAPI extraction S2](architecture/openapi-extraction.md) |
 | Implement safe Postman Collection 2.1 acquisition | [Postman extraction S3](architecture/postman-collection-extraction.md) |
+| Retrieve traceable Markdown sections | [Technical Markdown extraction S4](architecture/markdown-extraction-s4.md) |
 | Understand retrieval and adapters | [Retrieval](architecture/retrieval.md) and [adapters/composition](architecture/adapters-and-composition.md) |
 | Understand serving | [Serving boundary](architecture/serving.md) |
 | Look up contracts and capabilities | [Contracts](reference/contracts.md) and [capabilities](reference/capabilities.md) |
@@ -22,7 +23,7 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Configure or add a backend | [Runtime configuration](guides/runtime-configuration.md), [configuration reference](reference/configuration.md), and [adding a backend](guides/adding-a-backend.md) |
 | Maintain PT-BR documentation | [Documentation localization](guides/documentation-localization.md) |
 | Understand release gates, labels and the initial version | [Release policy](release-policy.md) and [v0.0.1 technical overview](releases/initial-release.md) |
-| Reproduce a benchmark | [Experiment convention](benchmarks/protocol.md), [baseline v1 protocol](benchmarks/baseline-v1.md), [SearchIntent v2 experiment](benchmarks/search-intent-v2.md), and [Repository Learning Benchmark](benchmarks/repository-learning.md) |
+| Reproduce a benchmark | [Experiment convention](benchmarks/protocol.md), [baseline v1 protocol](benchmarks/baseline-v1.md), [Markdown extraction S4](../benchmarks/markdown-extraction-s4/README.md), [SearchIntent v2 experiment](benchmarks/search-intent-v2.md), and [Repository Learning Benchmark](benchmarks/repository-learning.md) |
 | Understand a durable decision | [ADR index](adr/README.md) |
 | Follow a migration or inspect extraction provenance | [Namespace migration](migrations/fetchcore-namespace.md) and [historical extraction](history/extraction/README.md) |
 
