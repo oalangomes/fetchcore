@@ -9,3 +9,5 @@
 Repository-owned `.fetchcore` policy controls corpus admission and indexing behavior, not runtime network endpoints or provider selection. Persisted projection/schema identities are versioned contracts, not arbitrary runtime preferences. See [ADR-0003](../adr/ADR-0003-operator-runtime-configuration.md).
 
 `retrieval.targeted` selects `exact_unique` (default) or `disabled` at the application boundary; see [targeted retrieval](../concepts/targeted-retrieval.md). It does not change the lexical/dense/hybrid mode or persisted projection identity.
+
+Shared Projection v3 controls require a string `projection_version`, string keys in `field_boosts` and `signal_type_boosts`, and finite numeric boost values. Field boosts retain the range `0 < value <= 100`; signal type boosts retain `0 < value <= 10`. `diagnostic_candidate_window`, when set, must be a JSON integer from 1 through 5000. Booleans, numeric strings, floats for the window, and non-finite boosts are invalid.
