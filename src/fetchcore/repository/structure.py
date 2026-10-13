@@ -102,6 +102,8 @@ class StructuralExtractor(SymbolExtractor, Protocol):
 class PythonStructuralExtractor:
     """Extract Python declarations with the standard-library AST."""
 
+    indexing_contract_version = "2"
+
     def extract(self, content: str) -> tuple[SymbolSpan, ...]:
         """Extract non-overlapping Python symbols for repository chunking."""
 

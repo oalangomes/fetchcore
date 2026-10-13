@@ -185,9 +185,9 @@ def test_persisted_identities_preserve_projection_with_explicit_indexing_rebuild
         RepositoryIndexConfig(),
         symbol_extractors=default_structural_symbol_extractors(),
     )
-    # S4.1 changes canonical Markdown evidence locality and size; rebuild explicitly.
+    # S5 receiver proof changes canonical Python route evidence; rebuild explicitly.
     assert indexing_contract_fingerprint(indexer) == (
-        "sha256:d7145ace791affc3f36d658b4d84f07fe16315547dfadfcf575009ea716f66fc"
+        "sha256:357dba1238e8789688ace070d7d9afa533f7c64434ba331433fc15f1d6856e11"
     )
 
 

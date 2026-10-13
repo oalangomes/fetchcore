@@ -29,6 +29,7 @@ class LocalResolutionObservationV1:
     target_revision: str | None = None
     target_checksum: str | None = None
     target_locator: str | None = None
+    target_scope: str | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in {"api_reference", "markdown_reference", "route_correspondence"}:
@@ -40,23 +41,32 @@ class LocalResolutionObservationV1:
             raise ValueError("local reference declaration and basis are required")
         if type(self.candidate_count) is not int or self.candidate_count < 0:
             raise ValueError("local reference candidate count is invalid")
-        if self.status != "resolved" and self.target_document_id is not None:
-            raise ValueError("inconclusive reference cannot name a target document")
-        if self.target_document_id is not None and (
-            self.target_source_ref is None or self.target_path is None
-            or self.target_revision is None or self.target_checksum is None
-        ):
-            raise ValueError("resolved target provenance is incomplete")
+        target_fields = (self.target_document_id, self.target_source_ref,
+                         self.target_path, self.target_revision, self.target_checksum,
+                         self.target_locator)
+        if self.status != "resolved":
+            if self.target_scope is not None or any(value is not None for value in target_fields):
+                raise ValueError("inconclusive reference cannot name a target")
+        elif self.target_scope == "document":
+            if any(not value for value in target_fields[:5]):
+                raise ValueError("resolved target provenance is incomplete")
+        elif self.target_scope == "file":
+            if (self.kind != "markdown_reference" or not self.target_path
+                    or not self.target_revision or self.target_document_id is not None
+                    or self.target_checksum is not None or self.target_locator is not None):
+                raise ValueError("resolved file identity is invalid")
+        else:
+            raise ValueError("resolved target scope is required")
 
     def to_envelope(self) -> SemanticEvidenceEnvelope:
         return SemanticEvidenceEnvelope.from_payload(
-            namespace="local_reference", kind="resolution", version="1",
+            namespace="local_reference", kind="resolution", version="2",
             payload=asdict(self),
         )
 
     @classmethod
     def from_envelope(cls, value: SemanticEvidenceEnvelope) -> LocalResolutionObservationV1:
-        if value.schema_id != "local_reference/resolution@1":
+        if value.schema_id != "local_reference/resolution@2":
             raise ValueError("local reference schema is incompatible")
         payload = value.payload()
         if set(payload) != set(cls.__dataclass_fields__):
@@ -67,10 +77,49 @@ class LocalResolutionObservationV1:
         if any(payload[key] is not None and not isinstance(payload[key], str)
                for key in ("source_locator", "target_document_id", "target_source_ref",
                            "target_path", "target_revision", "target_checksum",
-                           "target_locator")):
+                           "target_locator", "target_scope")):
             raise ValueError("local reference optional strings are invalid")
         if type(payload["candidate_count"]) is not int:
             raise ValueError("local reference candidate count is invalid")
+        return cls(**payload)  # type: ignore[arg-type]
+
+
+@dataclass(frozen=True)
+class LocalResolutionCoverageV1:
+    """One bounded, exact pass-level accounting record."""
+
+    examined: int
+    resolved: int
+    inconclusive: int
+    omitted_by_budget: int
+    resolution_complete: bool
+    scope: str = "corpus"
+
+    def __post_init__(self) -> None:
+        counts = (self.examined, self.resolved, self.inconclusive, self.omitted_by_budget)
+        if any(type(value) is not int or value < 0 for value in counts):
+            raise ValueError("local resolution coverage counts are invalid")
+        if self.examined != self.resolved + self.inconclusive:
+            raise ValueError("local resolution coverage counts disagree")
+        if type(self.resolution_complete) is not bool or (
+            self.resolution_complete != (self.omitted_by_budget == 0)
+        ):
+            raise ValueError("local resolution coverage completeness is invalid")
+        if self.scope != "corpus":
+            raise ValueError("local resolution coverage scope is invalid")
+
+    def to_envelope(self) -> SemanticEvidenceEnvelope:
+        return SemanticEvidenceEnvelope.from_payload(
+            namespace="local_reference", kind="coverage", version="1", payload=asdict(self),
+        )
+
+    @classmethod
+    def from_envelope(cls, value: SemanticEvidenceEnvelope) -> LocalResolutionCoverageV1:
+        if value.schema_id != "local_reference/coverage@1":
+            raise ValueError("local resolution coverage schema is incompatible")
+        payload = value.payload()
+        if set(payload) != set(cls.__dataclass_fields__):
+            raise ValueError("local resolution coverage payload has missing or unknown fields")
         return cls(**payload)  # type: ignore[arg-type]
 
 
@@ -98,12 +147,12 @@ class LocalReferenceResolver:
     """
 
     indexing_contract_id = "fetchcore.local-reference"
-    indexing_contract_version = "1"
+    indexing_contract_version = "2"
 
     def __init__(self, budget: LocalReferenceBudget | None = None) -> None:
         self.budget = budget or LocalReferenceBudget()
         self.indexing_contract_version = (
-            "1:" + ":".join(str(value) for value in (
+            "2:" + ":".join(str(value) for value in (
                 self.budget.max_references, self.budget.max_candidates,
                 self.budget.max_relations, self.budget.max_documents,
                 self.budget.max_evidence_bytes,
@@ -114,6 +163,30 @@ class LocalReferenceResolver:
         budget = self.budget
         if len(documents) > budget.max_documents:
             raise ValueError("local reference document budget exceeded")
+        # Re-resolving canonical input replaces this pass's derived evidence.
+        # Never carry a prior positive relation into a partial new pass.
+        derived_kinds = {"api_reference", "markdown_reference", "route_correspondence"}
+        derived_bases = {"exact_api_pointer", "canonical_path", "fetchcore_fragment_id",
+                         "observed_method_and_path"}
+        cleaned: list[KnowledgeDocument] = []
+        for doc in documents:
+            has_prior = any(item.namespace == "local_reference" for item in doc.evidence.semantic)
+            has_prior = has_prior or any(
+                item.kind in derived_kinds and item.evidence_basis in derived_bases
+                for item in doc.evidence.relations.semantic
+            )
+            if has_prior:
+                doc = replace(doc, evidence=replace(
+                    doc.evidence,
+                    semantic=tuple(item for item in doc.evidence.semantic
+                                   if item.namespace != "local_reference"),
+                    relations=replace(doc.evidence.relations, semantic=tuple(
+                        item for item in doc.evidence.relations.semantic
+                        if not (item.kind in derived_kinds and item.evidence_basis in derived_bases)
+                    )),
+                ))
+            cleaned.append(doc)
+        documents = tuple(cleaned)
         # A document's sanitized evidence and reference lists are bounded at their
         # extraction boundary. Bound the aggregate before building any indexes.
         evidence_bytes = sum(len(json.dumps(doc.evidence.to_mapping(), sort_keys=True,
@@ -122,12 +195,18 @@ class LocalReferenceResolver:
         if evidence_bytes > budget.max_evidence_bytes:
             raise ValueError("local reference evidence byte budget exceeded")
 
+        ordered_documents = tuple(sorted(
+            documents,
+            key=lambda item: (item.repository, item.revision, item.path, item.line_start,
+                              item.id),
+        ))
         paths: dict[tuple[str, str, str], list[KnowledgeDocument]] = defaultdict(list)
         schemas: dict[tuple[str, str, str, str], list[KnowledgeDocument]] = defaultdict(list)
         sections: dict[tuple[str, str, str, str], list[KnowledgeDocument]] = defaultdict(list)
         routes: dict[tuple[str, str, str, str], list[KnowledgeDocument]] = defaultdict(list)
+        unproven_routes: dict[tuple[str, str, str, str], int] = defaultdict(int)
         facts: dict[str, ApiEvidenceV1] = {}
-        for doc in documents:
+        for doc in ordered_documents:
             scope = (doc.repository, doc.revision, doc.path)
             paths[scope].append(doc)
             for envelope in doc.evidence.semantic:
@@ -144,35 +223,45 @@ class LocalReferenceResolver:
                 sections[(*scope, section.fragment_id)].append(doc)
             for route in doc.evidence.behavior.routes:
                 if (route.http_method and route.path.startswith("/")
-                        and route.resolution == "framework_pattern"
-                        and route.mechanism and route.mechanism.startswith("@app.")
+                        and route.resolution in {"proven_binding", "observed"}
+                        and route.mechanism
+                        and route.mechanism.startswith(("@app.", "@router."))
                         and route.line is not None):
-                    routes[(doc.repository, doc.revision,
-                            route.http_method.upper(), route.path)].append(doc)
+                    key = (doc.repository, doc.revision,
+                           route.http_method.upper(), route.path)
+                    if route.resolution == "proven_binding" and route.mechanism.startswith(
+                        "@app."
+                    ):
+                        routes[key].append(doc)
+                    else:
+                        unproven_routes[key] += 1
 
         examined = 0
         emitted = 0
+        inconclusive = 0
+        omitted = 0
         result: list[KnowledgeDocument] = []
-        for doc in documents:
+        for doc in ordered_documents:
             observations: list[SemanticEvidenceEnvelope] = []
             relations: list[SemanticRelationEvidence] = []
 
             def record(kind: str, declaration: str, locator: str | None,
                        candidates: list[KnowledgeDocument], status: str,
                        basis: str, target_path: str | None = None,
-                       candidate_count: int | None = None) -> None:
-                nonlocal examined, emitted
-                if examined > budget.max_references:
-                    return
+                       candidate_count: int | None = None,
+                       file_identity: bool = False) -> None:
+                nonlocal examined, emitted, inconclusive
                 examined += 1
                 candidate_count = len(candidates) if candidate_count is None else candidate_count
-                if examined > budget.max_references or candidate_count > budget.max_candidates:
+                if not file_identity and candidate_count > budget.max_candidates:
                     status = "truncated"
                     candidates = []
                 if status == "resolved" and emitted >= budget.max_relations:
                     status = "truncated"
                     candidates = []
-                target = candidates[0] if status == "resolved" and len(candidates) == 1 else None
+                target = (candidates[0] if status == "resolved" and len(candidates) == 1
+                          and not file_identity else None)
+                file_target = candidates[0] if status == "resolved" and file_identity else None
                 target_locator: str | None = None
                 if target is not None:
                     target_fact = facts.get(target.id)
@@ -184,18 +273,21 @@ class LocalReferenceResolver:
                         route_matches = [route for route in target.evidence.behavior.routes
                                          if route.http_method and route.path
                                          and f"{route.http_method} {route.path}" == declaration
-                                         and route.mechanism and route.mechanism.startswith("@app.")]
+                                         and route.resolution == "proven_binding"]
                         if len(route_matches) == 1 and route_matches[0].line is not None:
                             target_locator = str(route_matches[0].line)
                 observations.append(LocalResolutionObservationV1(  # noqa: B023
                     kind=kind, declaration=declaration, source_locator=locator,
                     status=status, evidence_basis=basis, candidate_count=candidate_count,
                     target_document_id=target.id if target else None,
-                    target_source_ref=target.source_ref if target else None,
-                    target_path=target.path if target else target_path,
-                    target_revision=target.revision if target else None,
+                    target_source_ref=(target.source_ref if target else
+                                       file_target.source_ref if file_target else None),
+                    target_path=(target.path if target else target_path if file_target else None),
+                    target_revision=(target.revision if target else
+                                     file_target.revision if file_target else None),
                     target_checksum=target.checksum if target else None,
                     target_locator=target_locator,
+                    target_scope=("document" if target else "file" if file_target else None),
                 ).to_envelope())
                 if status == "resolved":
                     emitted += 1
@@ -203,33 +295,50 @@ class LocalReferenceResolver:
                         kind=kind, target=declaration, resolution="resolved",
                         evidence_basis=basis,
                         target_document_id=target.id if target else None,
-                        target_source_ref=target.source_ref if target else None,
-                        target_path=target.path if target else target_path,
+                        target_source_ref=(target.source_ref if target else
+                                           file_target.source_ref if file_target else None),
+                        target_path=(target.path if target else target_path),
                     ))
+                else:
+                    inconclusive += 1
 
             fact = facts.get(doc.id)
             if fact is not None and fact.kind == "api_reference" and fact.target:
-                target_path, sep, pointer = fact.target.partition("#")
-                if not sep or not pointer.startswith("/"):
-                    record("api_reference", fact.target, fact.locator.pointer,
-                           [], "unsupported", "api_pointer")
+                if examined >= budget.max_references:
+                    omitted += 1
                 else:
-                    matches = schemas.get((doc.repository, doc.revision,
-                                           target_path or doc.path,
-                                           "#" + pointer), [])
-                    status = _candidate_status(matches)
-                    record("api_reference", fact.target, fact.locator.pointer,
-                           matches, status, "exact_api_pointer")
+                    target_path, sep, pointer = fact.target.partition("#")
+                    if not sep or not pointer.startswith("/"):
+                        record("api_reference", fact.target, fact.locator.pointer,
+                               [], "unsupported", "api_pointer")
+                    else:
+                        matches = schemas.get((doc.repository, doc.revision,
+                                               target_path or doc.path,
+                                               "#" + pointer), [])
+                        status = _candidate_status(matches)
+                        record("api_reference", fact.target, fact.locator.pointer,
+                               matches, status, "exact_api_pointer")
             if fact is not None and fact.kind == "api_operation" and fact.method and fact.route:
-                matches = routes.get((doc.repository, doc.revision,
-                                      fact.method, fact.route), [])
-                record("route_correspondence", f"{fact.method} {fact.route}",
-                       fact.locator.pointer, matches, _candidate_status(matches),
-                       "observed_method_and_path")
+                if examined >= budget.max_references:
+                    omitted += 1
+                else:
+                    key = (doc.repository, doc.revision, fact.method, fact.route)
+                    matches = routes.get(key, [])
+                    unproven_count = unproven_routes.get(key, 0)
+                    status = (_candidate_status(matches) if not unproven_count else
+                              "unsupported" if not matches else "ambiguous")
+                    record("route_correspondence", f"{fact.method} {fact.route}",
+                           fact.locator.pointer, matches, status,
+                           "unproven_framework_receiver" if unproven_count else
+                           "observed_method_and_path",
+                           candidate_count=len(matches) + unproven_count)
 
             section = doc.evidence.section
             if section is not None:
                 for reference in section.references:
+                    if examined >= budget.max_references:
+                        omitted += 1
+                        continue
                     if reference.kind == "external":
                         record("markdown_reference", reference.target,
                                str(reference.line) if reference.line else None,
@@ -269,7 +378,8 @@ class LocalReferenceResolver:
                         record("markdown_reference", reference.target,
                                str(reference.line) if reference.line else None,
                                file_docs,
-                               "resolved", "canonical_path", target_path=path)
+                               "resolved", "canonical_path", target_path=path,
+                               file_identity=True)
 
             if observations or relations:
                 evidence = replace(doc.evidence,
@@ -279,7 +389,17 @@ class LocalReferenceResolver:
                 result.append(replace(doc, evidence=evidence))
             else:
                 result.append(doc)
-        return tuple(result)
+        if result and (examined or omitted):
+            coverage = LocalResolutionCoverageV1(
+                examined=examined, resolved=emitted, inconclusive=inconclusive,
+                omitted_by_budget=omitted, resolution_complete=omitted == 0,
+            ).to_envelope()
+            first = result[0]
+            result[0] = replace(first, evidence=replace(
+                first.evidence, semantic=first.evidence.semantic + (coverage,),
+            ))
+        resolved_by_id = {doc.id: doc for doc in result}
+        return tuple(resolved_by_id[doc.id] for doc in documents)
 
 
 def _candidate_status(matches: list[KnowledgeDocument]) -> str:

@@ -32,6 +32,7 @@ from fetchcore.repository.framework import (
     FrameworkEvidence,
     RouteEvidence,
     extract_framework_evidence,
+    proven_fastapi_receivers,
 )
 from fetchcore.repository.imports import ImportEvidence, extract_import_evidence
 from fetchcore.repository.manifest import ManifestEvidence, extract_manifest_evidence
@@ -625,6 +626,9 @@ class _StructureObservation(Protocol):
     def dynamic_binding_invalidations(self) -> tuple[tuple[str, int], ...]: ...
 
     @property
+    def proven_fastapi_receivers(self) -> tuple[str, ...]: ...
+
+    @property
     def exports(self) -> tuple[str, ...]: ...
 
     @property
@@ -650,6 +654,7 @@ class _EnrichedStructureObservation:
     imports: tuple[str, ...]
     typed_imports: tuple[ImportEvidence, ...]
     dynamic_binding_invalidations: tuple[tuple[str, int], ...]
+    proven_fastapi_receivers: tuple[str, ...]
     exports: tuple[str, ...]
     symbols: tuple[_SymbolObservation, ...]
     chunk_symbols: tuple[_SymbolObservation, ...]
@@ -687,6 +692,7 @@ def extract_source_structure(
             imports=(),
             typed_imports=(),
             dynamic_binding_invalidations=(),
+            proven_fastapi_receivers=(),
             exports=(),
             symbols=(),
             chunk_symbols=(),
@@ -726,6 +732,9 @@ def extract_source_structure(
         imports=structure.imports,
         typed_imports=typed_imports,
         dynamic_binding_invalidations=dynamic_binding_invalidations,
+        proven_fastapi_receivers=(
+            proven_fastapi_receivers(content) if structure.language.casefold() == "python" else ()
+        ),
         exports=structure.exports,
         symbols=structure.symbols,
         chunk_symbols=_safe_rich_chunk_symbols(structure.chunk_symbols),
@@ -867,6 +876,7 @@ def build_knowledge_evidence(
                 line_start=chunk_line_start,
                 scopes=behavior_scopes,
                 lexical_content=lexical_content,
+                proven_fastapi_receivers=structure.proven_fastapi_receivers,
             )
 
             relation_symbol = (
