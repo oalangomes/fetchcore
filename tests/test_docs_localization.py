@@ -192,20 +192,13 @@ def test_local_ollama_request_never_sends_ambient_key(monkeypatch: pytest.Monkey
     import json
     from scripts.docs.localize import translator_from_environment
 
-    class FakeResponse(io.BytesIO):
-        def __enter__(self) -> "FakeResponse":
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            self.close()
-
     observed: list[object] = []
 
-    def fake_urlopen(request: object, timeout: int) -> FakeResponse:
+    def fake_urlopen(request: object, timeout: int) -> io.BytesIO:
         observed.append(request)
         assert timeout == 180
         data = {"choices": [{"finish_reason": "stop", "message": {"content": '["Olá mundo"]'}}]}
-        return FakeResponse(json.dumps(data).encode())
+        return io.BytesIO(json.dumps(data).encode())
 
     monkeypatch.setattr(localize, "urlopen", fake_urlopen)
     client = translator_from_environment({
