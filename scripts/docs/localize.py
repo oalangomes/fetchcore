@@ -146,15 +146,17 @@ class ChatTranslator:
             + json.dumps(glossary, ensure_ascii=False)
         )
         payload = json.dumps({"model": self.model, "messages": [
-            {"role": "developer", "content": instructions},
+            {"role": "system" if self.provider == "ollama-local" else "developer",
+             "content": instructions},
             {"role": "user", "content": json.dumps(lines, ensure_ascii=False)},
         ]}).encode("utf-8")
-        request = Request(self.endpoint, payload, {
-            "Authorization": "Bearer " + self.key, "Content-Type": "application/json",
-        })
+        headers = {"Content-Type": "application/json"}
+        if self.key:
+            headers["Authorization"] = "Bearer " + self.key
+        request = Request(self.endpoint, payload, headers)
         for attempt in range(3):
             try:
-                with urlopen(request, timeout=60) as response:
+                with urlopen(request, timeout=180 if self.provider == "ollama-local" else 60) as response:
                     result = json.load(response)
                 choice = result["choices"][0]
                 if choice["finish_reason"] != "stop":
@@ -174,6 +176,37 @@ class ChatTranslator:
             time.sleep(2 ** attempt)
         raise LocalizationError("provider unavailable")
 
+
+
+def translator_from_environment(environ: dict[str, str]) -> ChatTranslator:
+    """Resolve translation transport with an explicit local-only Ollama mode."""
+    mode = environ.get("FETCHCORE_DOCS_TRANSLATION_PROVIDER", "chat-completions")
+    model = environ.get("FETCHCORE_DOCS_TRANSLATION_MODEL", "")
+    endpoint = environ.get("FETCHCORE_DOCS_TRANSLATION_API_URL", "")
+    key = environ.get("FETCHCORE_DOCS_TRANSLATION_API_KEY", "")
+
+    if mode == "ollama-local":
+        if not endpoint:
+            endpoint = "http://127.0.0.1:11434/v1/chat/completions"
+        parts = urlsplit(endpoint)
+        try:
+            port = parts.port
+        except ValueError as exc:
+            raise LocalizationError("invalid local Ollama port") from exc
+        if (parts.scheme != "http" or parts.hostname not in {"localhost", "127.0.0.1", "::1"}
+            or port is None or parts.path != "/v1/chat/completions" or parts.query
+            or parts.fragment or parts.username is not None or parts.password is not None):
+            raise LocalizationError("local Ollama requires HTTP loopback /v1/chat/completions")
+        if not model:
+            raise LocalizationError("FETCHCORE_DOCS_TRANSLATION_MODEL is required")
+        # Never forward any ambient cloud API key to the unauthenticated loopback endpoint.
+        return ChatTranslator(endpoint=endpoint, key="", model=model, provider="ollama-local")
+
+    if mode != "chat-completions":
+        raise LocalizationError("unknown documentation translation provider")
+    if not key or not endpoint or not model or not endpoint.startswith("https://"):
+        raise LocalizationError("HTTPS endpoint, model and API key are required")
+    return ChatTranslator(endpoint=endpoint, key=key, model=model)
 
 def protect(text: str, preserved: list[str]) -> tuple[str, dict[str, str]]:
     values: dict[str, str] = {}
@@ -484,12 +517,7 @@ def main() -> None:
             if args.fake:
                 translator: Translator = FakeTranslator()
             else:
-                key = os.getenv("FETCHCORE_DOCS_TRANSLATION_API_KEY", "")
-                endpoint = os.getenv("FETCHCORE_DOCS_TRANSLATION_API_URL", "")
-                model = os.getenv("FETCHCORE_DOCS_TRANSLATION_MODEL", "")
-                if not key or not endpoint or not model or not endpoint.startswith("https://"):
-                    raise LocalizationError("HTTPS endpoint, model and API key are required")
-                translator = ChatTranslator(endpoint, key, model)
+                translator = translator_from_environment(dict(os.environ))
             result = sync(root, translator, args.force)
         report = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
         if args.report:
