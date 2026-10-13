@@ -146,7 +146,8 @@ class ChatTranslator:
             + json.dumps(glossary, ensure_ascii=False)
         )
         payload = json.dumps({"model": self.model, "messages": [
-            {"role": "developer", "content": instructions},
+            {"role": "system" if self.provider == "ollama-local" else "developer",
+             "content": instructions},
             {"role": "user", "content": json.dumps(lines, ensure_ascii=False)},
         ]}).encode("utf-8")
         headers = {"Content-Type": "application/json"}

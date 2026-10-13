@@ -62,7 +62,7 @@ Review the PR for semantic fidelity, technical terms, natural PT-BR, links, and 
 The **project-local** script and its glossary, source selection, protected placeholders,
 source hashes, stable anchors, strict checks and human review remain the canonical
 localization contract. The shared automation in
-[ai-Ops-Alan](https://github.com/oalangomes/ai-Ops-Alan/tree/master/automation/docs-localization)
+the **private ai-Ops-Alan tooling repository** (to be published separately)
 only supplies an allowlisted self-hosted execution environment, local model
 preflight, and a review PR. It does not own FetchCore translation semantics.
 

@@ -209,6 +209,8 @@ def test_local_ollama_request_never_sends_ambient_key(monkeypatch: pytest.Monkey
     assert client.translate(["Hello world"], {"preserve": []}) == ["Olá mundo"]
     assert observed
     assert not observed[0].has_header("Authorization")
+    payload = json.loads(observed[0].data)
+    assert payload["messages"][0]["role"] == "system"
 
 
 def test_cloud_translation_still_requires_https_and_key() -> None:
