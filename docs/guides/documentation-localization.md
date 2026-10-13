@@ -56,3 +56,40 @@ network, 429, or 5xx failures. A provider or validation failure fails the
 workflow; canonical CI and release remain independent.
 
 Review the PR for semantic fidelity, technical terms, natural PT-BR, links, and formatting. Generated output is evidence for review, not automatically trusted. Correct ambiguous English in the canonical file; correct recurring translation errors through the glossary or translation instructions, then regenerate. Do not maintain PT-BR files independently. A provider outage leaves the canonical docs valid and the localization run visibly failed. For offline pipeline testing, `python scripts/docs/localize.py sync --fake --root <temporary-copy>` uses a deterministic identity translator; it is not suitable for a published PT-BR translation.
+
+## Reusable local Ollama orchestration (ai-Ops-Alan)
+
+The **project-local** script and its glossary, source selection, protected placeholders,
+source hashes, stable anchors, strict checks and human review remain the canonical
+localization contract. The shared automation in
+[ai-Ops-Alan](https://github.com/oalangomes/ai-Ops-Alan/tree/master/automation/docs-localization)
+only supplies an allowlisted self-hosted execution environment, local model
+preflight, and a review PR. It does not own FetchCore translation semantics.
+
+The local-only provider is explicitly selected by:
+
+```bash
+export FETCHCORE_DOCS_TRANSLATION_PROVIDER=ollama-local
+export FETCHCORE_DOCS_TRANSLATION_MODEL=qwen3.5:9b
+export FETCHCORE_DOCS_TRANSLATION_API_URL=http://127.0.0.1:11434/v1/chat/completions
+python scripts/docs/localize.py sync
+python scripts/docs/localize.py check --strict
+python scripts/check_docs.py --include-localizations
+```
+
+This local provider requires an **HTTP loopback** chat endpoint, never HTTP on a
+remote/LAN address. It does not require an API key and never transmits an ambient
+cloud key. The selected provider and model are recorded in the translation
+fingerprint, so switching from an earlier cloud/bootstrap identity may require
+regenerating the corpus; use `--force` only intentionally.
+
+The existing FetchCore `Localize documentation (PT-BR)` workflow remains the
+opt-in **HTTPS cloud** transport. It is not needed for the ai-Ops-Alan local
+workflow and may remain disabled. The shared workflow is manual-first, runs only
+on a dedicated trusted self-hosted runner, and never auto-merges translation PRs.
+Successful structural checks alone do **not** validate translation quality; review
+the Portuguese prose and protected technical meaning before merging.
+
+**FetchCore #108** may be closed only after a real Ollama translation is generated,
+reviewed and the translated PR passes strict documentation checks. Dry-run
+identity translations (`--fake`) are not publishable translations.

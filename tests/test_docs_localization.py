@@ -153,3 +153,88 @@ def test_broken_link_and_markdown_fail_closed(repository: Path) -> None:
     with pytest.raises(LocalizationError, match="unclosed Markdown fence"):
         render("# Topic\n```\n", "docs/README.md", "docs/pt-BR/README.md",
                {"docs/README.md"}, FakeTranslator(), {"preserve": []}, repository)
+
+
+
+def test_local_ollama_transport_is_explicit_and_loopback_only() -> None:
+    from scripts.docs.localize import translator_from_environment
+
+    env = {
+        "FETCHCORE_DOCS_TRANSLATION_PROVIDER": "ollama-local",
+        "FETCHCORE_DOCS_TRANSLATION_MODEL": "qwen3.5:9b",
+        "FETCHCORE_DOCS_TRANSLATION_API_URL": "http://127.0.0.1:11434/v1/chat/completions",
+        "FETCHCORE_DOCS_TRANSLATION_API_KEY": "ambient-cloud-key",
+    }
+    translator = translator_from_environment(env)
+    assert translator.provider == "ollama-local"
+    assert translator.key == ""
+    assert translator.model == "qwen3.5:9b"
+    assert translator.endpoint == env["FETCHCORE_DOCS_TRANSLATION_API_URL"]
+
+    for invalid in (
+        "http://192.168.1.9:11434/v1/chat/completions",
+        "http://127.0.0.1.evil.example:11434/v1/chat/completions",
+        "https://127.0.0.1:11434/v1/chat/completions",
+        "http://user@127.0.0.1:11434/v1/chat/completions",
+        "http://127.0.0.1:11434/other",
+        "http://127.0.0.1:11434/v1/chat/completions?unsafe=1",
+        "http://127.0.0.1:99999/v1/chat/completions",
+    ):
+        with pytest.raises(LocalizationError):
+            translator_from_environment({**env, "FETCHCORE_DOCS_TRANSLATION_API_URL": invalid})
+
+    with pytest.raises(LocalizationError, match="unknown"):
+        translator_from_environment({**env, "FETCHCORE_DOCS_TRANSLATION_PROVIDER": "other"})
+
+
+def test_local_ollama_request_never_sends_ambient_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+    import json
+    from scripts.docs.localize import translator_from_environment
+
+    class FakeResponse(io.BytesIO):
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            self.close()
+
+    observed: list[object] = []
+
+    def fake_urlopen(request: object, timeout: int) -> FakeResponse:
+        observed.append(request)
+        assert timeout == 180
+        data = {"choices": [{"finish_reason": "stop", "message": {"content": '["Olá mundo"]'}}]}
+        return FakeResponse(json.dumps(data).encode())
+
+    monkeypatch.setattr(localize, "urlopen", fake_urlopen)
+    client = translator_from_environment({
+        "FETCHCORE_DOCS_TRANSLATION_PROVIDER": "ollama-local",
+        "FETCHCORE_DOCS_TRANSLATION_MODEL": "qwen3.5:9b",
+        "FETCHCORE_DOCS_TRANSLATION_API_KEY": "never-send",
+    })
+    assert client.translate(["Hello world"], {"preserve": []}) == ["Olá mundo"]
+    assert observed
+    assert not observed[0].has_header("Authorization")
+
+
+def test_cloud_translation_still_requires_https_and_key() -> None:
+    from scripts.docs.localize import translator_from_environment
+
+    env = {"FETCHCORE_DOCS_TRANSLATION_MODEL": "provider-model",
+           "FETCHCORE_DOCS_TRANSLATION_API_URL": "https://example.org/v1/chat/completions",
+           "FETCHCORE_DOCS_TRANSLATION_API_KEY": "secret"}
+    assert translator_from_environment(env).provider == "chat-completions"
+    with pytest.raises(LocalizationError, match="HTTPS"):
+        translator_from_environment({**env, "FETCHCORE_DOCS_TRANSLATION_API_URL": "http://example.org/v1/chat/completions"})
+    with pytest.raises(LocalizationError, match="HTTPS"):
+        translator_from_environment({**env, "FETCHCORE_DOCS_TRANSLATION_API_KEY": ""})
+
+
+def test_provider_identity_changes_translation_fingerprint() -> None:
+    from scripts.docs.localize import fingerprint
+
+    common = ("sha", "glossary")
+    assert fingerprint(*common, "ollama-local", "qwen3.5:9b") != fingerprint(
+        *common, "chat-completions", "qwen3.5:9b"
+    )
