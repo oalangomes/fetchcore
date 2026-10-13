@@ -136,6 +136,7 @@ Backend indexes are rebuildable projections, not semantic authorities. **retriev
 - [Release policy](docs/release-policy.md) — technical preview, initial bootstrap and versioning rules.
 - [Documentation index](docs/README.md) — guides, references, ADRs, migrations and historical extraction records.
 - [Visual identity](assets/brand/README.md) — SVG marks, GitHub avatar, palette, accessibility and asset provenance.
+- [MIT license](LICENSE) · [Contributing](CONTRIBUTING.md) · [Security reporting](SECURITY.md) — reuse, contributions and responsible disclosure.
 
 ## Project status
 
