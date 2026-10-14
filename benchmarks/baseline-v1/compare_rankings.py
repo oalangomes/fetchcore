@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
 from fetchcore.application import BackendRegistry
+from fetchcore.application.composition import EmbeddingProviderRegistry
 from fetchcore.baseline import BaselineArm, load_baseline_suite
 from fetchcore.retrieval import RetrievalConfig
 from fetchcore.retrieval.contracts import SearchScope
@@ -51,7 +51,10 @@ def main() -> int:
     suite.validate_workspace_regions(workspace)
 
     manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
-    os.environ["OLLAMA_URL"] = manifest["environment"]["service_endpoints"]["ollama"]
+    ollama_url = manifest["environment"]["service_endpoints"]["ollama"]
+    backends = BackendRegistry(
+        providers=EmbeddingProviderRegistry(settings={"ollama": {"url": ollama_url}})
+    )
     raw_arms = manifest.get("arms")
     if not isinstance(raw_arms, list):
         raise ValueError("baseline manifest requires an arms list")
@@ -95,7 +98,7 @@ def main() -> int:
             for observation in artifact["observations"]
             if observation["iteration"] == 1
         }
-        backend = BackendRegistry().create(arm.backend)
+        backend = backends.create(arm.backend)
         differences: list[str] = []
         for case in suite.cases:
             results = backend.search(case.intent, scope, ()).results
