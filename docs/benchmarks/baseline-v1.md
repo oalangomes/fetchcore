@@ -265,6 +265,10 @@ satisfaction and never grants authority.
 
 ## Running
 
+The manifest's Ollama endpoint is used for both index preparation and dense or
+hybrid query embeddings. It must be reachable from the process running the
+benchmark.
+
 The exact private checkout must already exist locally:
 
 ```bash
@@ -281,6 +285,23 @@ python benchmarks/baseline-v1/run.py \
   --arm opensearch-hybrid \
   --prepare-index
 ```
+
+To resume an interrupted run in its existing version directory:
+
+```bash
+python benchmarks/baseline-v1/run.py \
+  --workspace /path/to/the/same/NeuroTrack_MS/checkout \
+  --resume V0.2
+```
+
+The runner checks completed artifacts against the current corpus, workspace,
+environment, source revision, configuration and fingerprints before skipping
+them. New runs save indexing telemetry before retrieval begins. For a legacy
+partial run whose `--prepare-index` telemetry was lost, add
+`--allow-missing-indexing-telemetry`; the retrieval report will be marked
+`retrieval_complete` and cannot serve as a complete promotion artifact.
+For a legacy partial run started without index preparation, use
+`--assume-no-index-preparation` to state that explicitly.
 
 The runner validates the revision, clean worktree and Ground Truth coordinates
 before probing services or starting measurement.

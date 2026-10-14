@@ -3,7 +3,15 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+
+import pytest
+
+from fetchcore.adapters.embedding.ollama.provider import OllamaEmbeddingProvider
+from fetchcore.adapters.retrieval.qdrant.backend import QdrantVectorSettings
+from fetchcore.application import BackendRegistry
+from fetchcore.retrieval.contracts import SearchScope
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -54,6 +62,38 @@ def _fixture_context() -> object:
         settings={"fixture": {}},
         diagnostic_candidate_window=12,
     )
+
+
+def test_dense_arms_use_manifest_ollama_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FETCHCORE_OLLAMA_URL", "http://wrong-host:11434")
+    context = RUN_MODULE.BenchmarkBackendContext(
+        endpoints={
+            "ollama": "http://benchmark-host:11434",
+            "qdrant": "http://qdrant-host:6333",
+        },
+        embedding_identity={"provider": "ollama", "model": "embeddinggemma"},
+        settings={"qdrant-vector": {}},
+        diagnostic_candidate_window=80,
+    )
+    retrieval = RUN_MODULE._retrieval_for_mode(
+        "dense", provider="ollama", model="embeddinggemma"
+    )
+    backends = BackendRegistry(providers=RUN_MODULE._embedding_providers(context))
+
+    for backend_id in ("solr", "opensearch"):
+        provider = backends.create(backend_id).embedding_factory(retrieval)
+        assert isinstance(provider, OllamaEmbeddingProvider)
+        assert provider.url == "http://benchmark-host:11434"
+
+    qdrant = backends.create("qdrant-vector")
+    settings = QdrantVectorSettings.from_mapping(
+        RUN_MODULE.QdrantBenchmarkAdapter().build_settings(context)
+    )
+    provider = qdrant.embedding_factory(settings, retrieval.dense.embedding)
+    assert isinstance(provider, OllamaEmbeddingProvider)
+    assert provider.url == "http://benchmark-host:11434"
 
 
 def test_manifest_and_adapter_registry_are_the_backend_extension_boundary() -> None:
@@ -124,6 +164,79 @@ def test_allocate_run_output_dir_advances_monotonically(tmp_path: Path) -> None:
     assert next_version == "V0.5"
     assert next_output == tmp_path / "V0.5"
     assert next_output.is_dir()
+
+
+def test_resume_reuses_only_matching_artifact(tmp_path: Path) -> None:
+    arm = RUN_MODULE._manifest_arms(
+        {"arms": [{"id": "fixture-lexical", "backend": "fixture", "mode": "lexical"}]}
+    )[0]
+    scope = SearchScope(
+        workspace=tmp_path,
+        revision="revision",
+        repository="owner/repo",
+        knowledge_types=("code",),
+        max_results=20,
+    )
+    suite = SimpleNamespace(
+        fingerprint="sha256:ground-truth",
+        corpus={"repository": "owner/repo", "revision": "revision"},
+        cases=(object(), object()),
+    )
+    identity = {"fetchcore_revision": "source-revision"}
+    environment = {"services": {"fixture": "1"}}
+    measurement = {"repetitions": 2, "warmups": 1, "k": 20}
+    config = {
+        "scope": scope.to_mapping(),
+        "arm": arm.to_mapping(),
+        "repetitions": 2,
+        "warmups": 1,
+        "k": 20,
+        "identity": identity,
+    }
+    artifact = {
+        "schema_version": RUN_MODULE.BASELINE_ARTIFACT_SCHEMA_VERSION,
+        "protocol": "fetchcore.baseline-v1",
+        "ground_truth_schema_version": RUN_MODULE.BASELINE_GROUND_TRUTH_SCHEMA_VERSION,
+        "ground_truth_fingerprint": suite.fingerprint,
+        "metrics_schema_version": RUN_MODULE.BASELINE_METRICS_SCHEMA_VERSION,
+        "metrics_fingerprint": RUN_MODULE.mapping_fingerprint(
+            RUN_MODULE.BASELINE_V1_METRICS_SPEC
+        ),
+        "arm": arm.to_mapping(),
+        "corpus": suite.corpus,
+        "config": config,
+        "config_fingerprint": RUN_MODULE.mapping_fingerprint(config),
+        "environment": environment,
+        "observations": [{}, {}, {}, {}],
+        "aggregate": {"run_count": 4},
+    }
+    kwargs = {
+        "arm": arm,
+        "scope": scope,
+        "identity": identity,
+        "suite": suite,
+        "environment": environment,
+        "measurement": measurement,
+    }
+
+    RUN_MODULE._validate_resumed_artifact(artifact, **kwargs)
+
+    incompatible = {**artifact, "config": {**config, "identity": {"fetchcore_revision": "other"}}}
+    with pytest.raises(RUN_MODULE.BaselineConfigurationError, match="config"):
+        RUN_MODULE._validate_resumed_artifact(incompatible, **kwargs)
+
+    truncated = {**artifact, "observations": [{}]}
+    with pytest.raises(RUN_MODULE.BaselineConfigurationError, match="observations"):
+        RUN_MODULE._validate_resumed_artifact(truncated, **kwargs)
+
+
+def test_resume_requires_existing_version_directory(tmp_path: Path) -> None:
+    (tmp_path / "V0.2").mkdir()
+    assert RUN_MODULE._resume_directory(tmp_path, "V0.2") == tmp_path / "V0.2"
+    with pytest.raises(RUN_MODULE.BaselineConfigurationError, match="V0.N"):
+        RUN_MODULE._resume_directory(tmp_path, "../other")
+    with pytest.raises(RUN_MODULE.BaselineConfigurationError, match="does not exist"):
+        RUN_MODULE._resume_directory(tmp_path, "V0.3")
 
 
 def test_write_metrics_report_includes_retrieval_and_indexing_metrics(
@@ -222,3 +335,22 @@ def test_metrics_report_marks_indexing_as_not_requested() -> None:
 
     assert "Index preparation was not requested for this run." in report
     assert "indexing.json" not in report
+
+
+def test_metrics_report_discloses_lost_indexing_telemetry() -> None:
+    report = RUN_MODULE._render_metrics_report(
+        run_manifest={
+            "run_version": "V0.2",
+            "protocol": "fetchcore.baseline-v1",
+            "status": "retrieval_complete",
+            "completed_at": "2026-10-01T18:00:00+00:00",
+            "fetchcore_revision": "source-revision",
+            "corpus": {"repository": "owner/repo", "revision": "corpus-revision"},
+            "prepare_index": True,
+        },
+        retrieval_artifacts=(),
+        indexing_payload=None,
+    )
+
+    assert "telemetry was not preserved" in report
+    assert "not complete for baseline promotion" in report

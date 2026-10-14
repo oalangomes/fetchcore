@@ -197,8 +197,19 @@ This is important: two otherwise identical executions remain directly
 comparable even when they are `V0.1` and `V0.2`.
 
 A run that fails after reserving its directory may leave a partial `V0.N`
-directory without a complete `run.json`. That version remains evidence of the
-attempt and is not reused. The next execution advances monotonically.
+directory without a complete `run.json`. Use `--resume V0.N` with the same
+workspace to validate and reuse completed arm artifacts, then measure only
+missing arms. The runner writes `.run-state.json` before measurement and saves
+`indexing.json` immediately after index preparation so future interrupted runs
+retain their indexing evidence. Resuming a completed run is rejected.
+
+Older partial runs created before this checkpoint behavior may have lost their
+indexing telemetry. `--allow-missing-indexing-telemetry` permits retrieval-only
+completion of such a run; its status is `retrieval_complete`, which is not a
+promotion-ready complete baseline. Existing artifacts must match the selected
+arms, corpus, workspace, environment, source revision and fingerprints.
+For an older partial run that did not prepare indexes, use
+`--assume-no-index-preparation` so the missing indexing record is explicit.
 
 The evidence-aware artifacts captured before automatic versioning are preserved
 as `V0.1`. Their JSON payloads were moved without modification, and the

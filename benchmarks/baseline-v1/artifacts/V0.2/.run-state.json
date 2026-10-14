@@ -1,0 +1,47 @@
+{
+  "arms": [
+    "local-lexical",
+    "solr-lexical",
+    "solr-dense",
+    "solr-hybrid",
+    "opensearch-lexical",
+    "opensearch-dense",
+    "opensearch-hybrid",
+    "qdrant-dense",
+    "qdrant-hybrid"
+  ],
+  "config_identity": {
+    "corpus_revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7",
+    "fetchcore_revision": "3888cffd30f01321982d3607cbdac88bbb8b4de4",
+    "manifest_fingerprint": "sha256:c6edcb980d0c96e0ac4dd18073f7cef445fd514fa7131ed39304189e04503af8"
+  },
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+  },
+  "environment": {
+    "cpu_count": 8,
+    "embedding": {
+      "dimensions": 768,
+      "model": "embeddinggemma",
+      "provider": "ollama"
+    },
+    "machine": "x86_64",
+    "platform_release": "6.18.33.2-microsoft-standard-WSL2",
+    "platform_system": "Linux",
+    "profile_id": "fetchcore-local-benchmark-v1",
+    "python_version": "3.11.16",
+    "services": {
+      "ollama": "0.35.1",
+      "opensearch": "3.8.0",
+      "qdrant": "1.19.0",
+      "solr": "9.10.1"
+    }
+  },
+  "indexing_telemetry_unavailable": true,
+  "prepare_index": true,
+  "protocol": "fetchcore.baseline-v1",
+  "schema_version": 1,
+  "workspace": "/home/alangomes/projetos/GitHub/NeuroTrack_MS.worktrees/benchmark-fetchCore"
+}

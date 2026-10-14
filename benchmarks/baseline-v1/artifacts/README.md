@@ -33,11 +33,19 @@ fingerprints.
 
 A complete versioned run has a `run.json` with `status: "complete"`. If an
 execution fails after reserving a version, its directory may remain partial and
-must not be treated as a completed baseline run. Versions are never reused.
+must not be treated as a completed baseline run. Resume that same directory with
+`--resume V0.N`; the runner validates existing arm artifacts and measures only
+missing arms. It checkpoints index telemetry and run state for new executions.
+Completed runs cannot be resumed, and new executions receive new versions.
 
-Every completed run has a generated `README.md` containing retrieval quality,
-latency and volume tables. When indexing is prepared, the same report includes
-canonical scan and per-backend indexing metrics.
+`V0.2` was resumed after an interruption. Its nine retrieval arms are present,
+but index preparation telemetry from the original execution was lost. Its
+`run.json` therefore has `status: "retrieval_complete"`; it is not a complete
+baseline run for promotion.
+
+Every finished run has a generated `README.md` containing retrieval quality,
+latency and volume tables. When indexing telemetry is available, the same report
+includes canonical scan and per-backend indexing metrics.
 
 `V0.1/run.json` was reconstructed during the layout migration. Its
 `completed_at` value uses the timestamp of commit `5ca5278`, which incorporated
