@@ -25,12 +25,14 @@ ROOT = Path(__file__).resolve().parent
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--workspace", required=True)
     parser.add_argument("--arm", action="append", default=[])
     parser.add_argument("--reference", type=Path, default=ROOT / "artifacts" / "V0.1")
     args = parser.parse_args()
 
-    workspace = args.workspace.resolve(strict=True)
+    if not args.workspace.strip():
+        parser.error("--workspace is empty; set BENCH_REPO to the frozen corpus checkout")
+    workspace = Path(args.workspace).resolve(strict=True)
     suite = load_baseline_suite(ROOT / "ground-truth.json")
     expected_revision = str(suite.corpus["revision"])
     revision = subprocess.check_output(
@@ -39,8 +41,13 @@ def main() -> int:
     dirty = subprocess.check_output(
         ["git", "-C", str(workspace), "status", "--porcelain"], text=True
     ).strip()
-    if revision != expected_revision or dirty:
-        raise ValueError("baseline corpus must be clean at the frozen revision")
+    if revision != expected_revision:
+        raise ValueError(
+            f"baseline corpus revision mismatch for {workspace}: "
+            f"expected {expected_revision}, got {revision}"
+        )
+    if dirty:
+        raise ValueError(f"baseline corpus workspace is dirty: {workspace}\n{dirty}")
     suite.validate_workspace_regions(workspace)
 
     manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
