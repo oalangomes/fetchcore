@@ -33,7 +33,17 @@ fingerprints.
 
 A complete versioned run has a `run.json` with `status: "complete"`. If an
 execution fails after reserving a version, its directory may remain partial and
-must not be treated as a completed baseline run. Versions are never reused.
+must not be treated as a completed baseline run. Resume the same version with
+`--resume V0.N` after compatibility validation; completed arms are reused and
+missing arms are measured. New runs receive monotonic versions.
+
+Indexing telemetry is checkpointed immediately after preparation. A legacy
+interrupted run with lost index telemetry may be restored only as
+`status: "retrieval_complete"` (not promotion-ready) using the explicit
+`--allow-missing-indexing-telemetry` option.
+
+`.run-state.json` is local ephemeral state containing machine-specific details;
+it must not be versioned or treated as a published result.
 
 Every completed run has a generated `README.md` containing retrieval quality,
 latency and volume tables. When indexing is prepared, the same report includes

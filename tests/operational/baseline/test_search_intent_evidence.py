@@ -32,8 +32,10 @@ SPEC.loader.exec_module(MODULE)
 def test_frozen_baseline_bytes_protocol_and_measurement_remain_unchanged():
     for name, digest in MODULE.FROZEN_FILES.items():
         assert hashlib.sha256((MODULE.setup.ROOT / name).read_bytes()).hexdigest() == digest
+    # The runner now uses the manifest Ollama endpoint and resumes validated arms;
+    # the frozen measurement, Ground Truth and metric identities below are unchanged.
     assert hashlib.sha256((MODULE.setup.ROOT / "run.py").read_bytes()).hexdigest() == (
-        "fafa5219a4c8aa33e8d055dae8521c32a66ac81c570f1a2fca1d4d8d367bcd71"
+        "28dce2a372175862ed67375c5164de13c81865f37ec127521d3c19a66e4ebd93"
     )
     assert baseline.BASELINE_PROTOCOL == "fetchcore.baseline-v1"
     assert baseline.BASELINE_ARTIFACT_SCHEMA_VERSION == 2
