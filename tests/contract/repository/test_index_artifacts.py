@@ -33,6 +33,9 @@ def test_fixture_roundtrips_and_missing_telemetry():
     "mutate",
     [
         lambda v: v.update(schema_version=True),
+        lambda v: v["command"]["result"]["execution"]["snapshot"].update(vector_dimensions=True),
+        lambda v: v["command"]["result"]["execution"]["snapshot"].update(serializer_fingerprint={}),
+        lambda v: v["command"]["result"].update(retrieval_mode="dense"),
         lambda v: v["command"].update(operation={}),
         lambda v: v["command"].update(status=[]),
         lambda v: v["command"]["result"].update(mode=[]),

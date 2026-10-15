@@ -169,10 +169,40 @@ def _validate_result(value: object, repository: str, operation: str) -> None:
             if snapshot.get(key) != result[key]:
                 raise ValueError("Snapshot fingerprint mismatch")
         _text(snapshot.get("corpus_checksum"), "corpus_checksum")
+        for key in (
+            "embedding_provider",
+            "embedding_model",
+            "serializer_mode",
+            "serializer_version",
+            "serializer_fingerprint",
+        ):
+            if snapshot.get(key) is not None:
+                _text(snapshot[key], "snapshot." + key)
+        dimensions = snapshot.get("vector_dimensions")
+        if dimensions is not None and (type(dimensions) is not int or dimensions <= 0):
+            raise ValueError("Invalid persisted vector dimensions")
+        if result.get("retrieval_mode") in ("dense", "hybrid") and any(
+            snapshot.get(k) is None
+            for k in (
+                "embedding_provider",
+                "embedding_model",
+                "vector_dimensions",
+                "serializer_mode",
+                "serializer_version",
+                "serializer_fingerprint",
+            )
+        ):
+            raise ValueError("Missing persisted embedding identity for vector execution")
         if type(snapshot.get("document_count")) is not int:
             raise ValueError("Missing or invalid snapshot document_count")
         _metric(snapshot["document_count"], "document_count")
-        if snapshot.get("revision") != result.get("target_revision"):
+        _text(snapshot.get("revision"), "snapshot.revision")
+        # Non-Git workspaces have no target Git revision; the indexer records a
+        # content-derived tree revision. Preserve both without inventing equality.
+        if (
+            result.get("target_revision") is not None
+            and snapshot["revision"] != result["target_revision"]
+        ):
             raise ValueError("Snapshot revision mismatch")
     if operation != "plan" and "planned_mutations" in result:
         raise ValueError("Planned mutations require plan operation")

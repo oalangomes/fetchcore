@@ -319,7 +319,16 @@ def test_dirty_workspace_same_head_is_not_noop(workspace, tmp_path, backend, inv
 def test_non_git_revision_is_unknown_not_current(workspace, tmp_path, backend, invoke):
     shutil.rmtree(workspace / ".git")
     register(workspace, tmp_path)
-    invoke("rebuild", "workspace")
+    rebuilt = invoke("rebuild", "workspace")
+    from fetchcore.application.index_artifacts import IndexRunArtifact, compare_index_artifacts
+    artifact = IndexRunArtifact.from_mapping({
+        "schema_version": 1, "kind": "fetchcore.index-run", "run_id": "non-git",
+        "observed_at": "2026-10-15T12:00:00Z", "repository": "workspace", "backend": "solr",
+        "target": "non-git-fixture", "configuration_fingerprint": "a" * 64, "command": rebuilt,
+    })
+    assert artifact.command["result"]["target_revision"] is None
+    assert artifact.command["result"]["execution"]["snapshot"]["revision"]
+    assert compare_index_artifacts(artifact, artifact)["source_revision_changed"] is None
     result = invoke("status", "workspace")["result"]
     assert result["target_revision"] is None
     assert result["currentness"] == "unknown"
