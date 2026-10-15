@@ -17,8 +17,12 @@
 | `ExactLookupBackend` | `fetchcore.retrieval.contracts` | Optional bounded exact-acquisition port negotiated through `targeted_lookup`; see [targeted retrieval](../concepts/targeted-retrieval.md). |
 | `EvidenceObservation` | `fetchcore.retrieval.evidence` | Validated source-derived category/subtype/value and source trace. |
 | `QueryMatchEvidence` | `fetchcore.retrieval.evidence` | Signal, match type, channels, values, source and bounded contribution details. |
+| `KnowledgeEvidence`, `SectionEvidence`, `MarkdownReferenceEvidence` | `fetchcore.knowledge.evidence` | Canonical source facts; Markdown sections may include heading ancestry, FetchCore section/fragment locators, declared fence languages and safe link destinations marked as observed rather than resolved. |
 | `EmbeddingProvider` | `fetchcore.retrieval.embedding` | Provider ID and embedding operations independent of Ollama transport. |
 | `RetrievalConfig` | `fetchcore.retrieval.config` | Targeted early-return policy, dense, hybrid, reranking and LTR settings; effective mode is lexical, dense or hybrid. |
 | `RetrievalBackendCapabilities` | `fetchcore.retrieval.config` | Advertised lexical, dense, hybrid, LTR, direct canonical-query and lexical requirement support. The serialized reranking flag is retained for compatibility; reranking is post-acquisition. |
 
 `SearchResult.to_mapping()` omits empty/absent fields and validates alignment score and capability source identity. `SearchScope.to_mapping()` excludes runtime-only `settings`. `KnowledgeSearchResponse.to_mapping()` includes telemetry when present. Consult the dataclasses and round-trip tests before changing serialized meaning. See [capabilities](capabilities.md) and [evidence vocabulary](../concepts/evidence-and-provenance.md).
+
+Markdown section details and their explicit rebuild behavior are documented in
+[Technical Markdown extraction S4](../architecture/markdown-extraction-s4.md).

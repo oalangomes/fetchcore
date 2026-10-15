@@ -1,0 +1,134 @@
+{
+  "protocol": "fetchcore.markdown-extraction-s4",
+  "source_revision": "41817e376d8e3c7d7605de3a5c8f75bac1cb7405",
+  "baseline_source_revision": "345d3e2b306aba579d73c062dacd59025c6ab461",
+  "pre_correction_source_revision": "464afef899798ae9f140581dcb732686d153c404",
+  "environment": {
+    "platform": "Linux",
+    "python": "3.12.3",
+    "warmup_runs": 1,
+    "measured_runs": 5
+  },
+  "configuration": {
+    "max_lines": 160,
+    "overlap_lines": 20,
+    "markdown_max_chars": 48000
+  },
+  "metrics": {
+    "canonical_documents": 17,
+    "content_characters": 1789,
+    "content_bytes": 1789,
+    "canonical_document_bytes_total": 38930,
+    "canonical_payload_bytes_total": 38930,
+    "maximum_canonical_payload_bytes": 2740,
+    "maximum_chunk_characters": 252,
+    "ground_truth_cases": 6,
+    "ground_truth_recovered": 6,
+    "ground_truth_recovery": 1.0,
+    "exact_source_locators": 6,
+    "exact_source_locator_rate": 1.0,
+    "fixture_lexical_recall_at_5": 1.0,
+    "fixture_lexical_mrr": 1.0,
+    "fixture_lexical_ndcg_at_5": 1.0,
+    "fixture_useful_evidence_density_at_3": 0.4652773252,
+    "observed_section_references": 3,
+    "references_with_incorrect_provenance": 0,
+    "references_missing_from_retained_content": 0,
+    "references_not_marked_observed": 0,
+    "unjustified_duplicate_reference_observations": 0,
+    "overlap_duplicated_reference_observations": 0,
+    "code_languages_missing_from_retained_content": 0,
+    "observations_from_discarded_regions": 0,
+    "maximum_section_evidence_bytes": 537,
+    "section_evidence_bytes_limit": 8192,
+    "indexing_fingerprint": "sha256:b707fb986db0936b704dcb2958696942353fd66efbf78f0dfcd9a42c6c454a82",
+    "indexing_ms_p50": 8.879,
+    "indexing_ms_p95": 9.651,
+    "indexing_ms_samples": [7.952, 8.805, 8.879, 9.384, 9.651],
+    "time_to_first_candidate_ms": null
+  },
+  "incremental": {
+    "unchanged_added": 0,
+    "unchanged_updated": 0,
+    "unchanged_removed": 0,
+    "unchanged_documents": 17,
+    "one_file_edit_added": 0,
+    "one_file_edit_changed_chunks": 2,
+    "one_file_edit_updated": 2,
+    "one_file_edit_unchanged": 15,
+    "one_file_edit_removed": 0,
+    "one_file_edit_indexing_ms": 7.999,
+    "note": "Document diff only; current semantic indexing paths may require a full scan."
+  },
+  "paired_pre_correction": {
+    "source_revision": "464afef899798ae9f140581dcb732686d153c404",
+    "indexing_ms_p50": 6.804,
+    "indexing_ms_p95": 6.966,
+    "one_file_edit_indexing_ms": 7.696
+  },
+  "previously_recorded_pr_result": {
+    "source_revision": "81aaf2878d29256beb59c527f3b892e3697786ab",
+    "indexing_ms_p50": 7.001,
+    "indexing_ms_p95": 7.966
+  },
+  "cases": [
+    {
+      "id": "adr-decision",
+      "ground_truth_recovered": true,
+      "exact_locator": true,
+      "fixture_rank": 1
+    },
+    {
+      "id": "cli-example",
+      "ground_truth_recovered": true,
+      "exact_locator": true,
+      "fixture_rank": 1
+    },
+    {
+      "id": "architecture-section",
+      "ground_truth_recovered": true,
+      "exact_locator": true,
+      "fixture_rank": 1
+    },
+    {
+      "id": "endpoint-documentation",
+      "ground_truth_recovered": true,
+      "exact_locator": true,
+      "fixture_rank": 1
+    },
+    {
+      "id": "cross-file-reference",
+      "ground_truth_recovered": true,
+      "exact_locator": true,
+      "fixture_rank": 1
+    },
+    {
+      "id": "duplicate-heading-code",
+      "ground_truth_recovered": true,
+      "exact_locator": true,
+      "fixture_rank": 1
+    }
+  ],
+  "notes": [
+    "The fixture lexical ranker scores term overlap over canonical documents; it is not a production backend.",
+    "Time-to-first-candidate is unavailable because this extraction-only benchmark starts no retrieval backend.",
+    "The one-file edit still updates two units due to source-checksum provenance; this is not proof of incremental scanning.",
+    "A paired five-sample same-host run measured a small indexing latency increase after chunk-local observation extraction; README records the trade-off and timing variability.",
+    "Before correction, the minimal provenance probe emitted a line-5 reference in a chunk spanning lines 1-2.",
+    "Before correction, a 100,000-character heading with a 100-character chunk limit produced a 202,234-character canonical_payload."
+  ],
+  "oversized_evidence": {
+    "oversized_heading_source_chars": 100000,
+    "oversized_heading_chunk_chars": 100,
+    "oversized_heading_metadata_name_chars": 0,
+    "oversized_heading_evidence_bytes": 307,
+    "oversized_heading_canonical_document_bytes": 2421,
+    "oversized_heading_canonical_payload_bytes": 2421,
+    "long_fence_language_observed": false,
+    "long_fence_language_omission_diagnostic": true,
+    "thousand_links_source_count": 1000,
+    "thousand_links_chunk_reference_count": 16,
+    "thousand_links_evidence_bytes": 1472,
+    "thousand_links_budget_diagnostic": true
+  }
+}

@@ -49,6 +49,22 @@ Enabling dense/hybrid over an existing lexical snapshot yields
 silently vectorizes the existing corpus. Provider/model/dimension or serializer
 identity changes have the same explicit rebuild requirement.
 
+Repository-owned `.fetchcore/indexing.yaml` can bound Markdown units independently
+of code and configuration chunks:
+
+```yaml
+version: 1
+chunking:
+  max_lines: 160
+  overlap_lines: 20
+  markdown_max_chars: 48000
+```
+
+The Markdown character limit and section-unit contract participate in the
+indexing fingerprint. Updating either may produce `rebuild_required`; review the
+plan and use the explicit rebuild operation rather than treating `sync` as a
+migration.
+
 The #60 commands remain compatible:
 
 ```bash

@@ -1,0 +1,53 @@
+{
+  "protocol": "fetchcore.markdown-extraction-s4",
+  "source_revision": "81aaf2878d29256beb59c527f3b892e3697786ab",
+  "indexing_fingerprint": "sha256:a95e4c47ad7fefaf1e45ff847f26cb7f195cfe8730cae1c70a741e5d6e0ae414",
+  "environment": {
+    "platform": "Linux",
+    "python": "3.12.3",
+    "warmup_runs": 1,
+    "measured_runs": 5
+  },
+  "metrics": {
+    "canonical_documents": 17,
+    "content_characters": 1789,
+    "maximum_chunk_characters": 252,
+    "ground_truth_recovered": 6,
+    "exact_source_locators": 6,
+    "fixture_lexical_recall_at_5": 1.0,
+    "fixture_lexical_mrr": 1.0,
+    "fixture_lexical_ndcg_at_5": 1.0,
+    "fixture_useful_evidence_density_at_3": 0.4652773252,
+    "observed_section_references": 3,
+    "indexing_ms_p50": 7.001,
+    "indexing_ms_p95": 7.966,
+    "time_to_first_candidate_ms": null
+  },
+  "incremental": {
+    "unchanged_added": 0,
+    "unchanged_updated": 0,
+    "unchanged_removed": 0,
+    "unchanged_documents": 17,
+    "one_file_edit_updated": 2,
+    "one_file_edit_indexing_ms": 6.771
+  },
+  "provenance_reproduction": {
+    "chunk_line_start": 1,
+    "chunk_line_end": 2,
+    "reference_line": 5,
+    "incorrect_observation": true
+  },
+  "oversized_heading_reproduction": {
+    "heading_source_characters": 100000,
+    "chunk_max_chars": 100,
+    "chunk_content_characters": 100,
+    "section_name_characters": 100000,
+    "heading_path_characters": 100000,
+    "evidence_json_characters": 200667,
+    "canonical_payload_characters": 202234
+  },
+  "notes": [
+    "Fixture-ranker metrics are not production retrieval measurements.",
+    "This is the pre-correction S4 result from PR commit 464afef; provenance and payload probes were reproduced locally before the correction."
+  ]
+}
