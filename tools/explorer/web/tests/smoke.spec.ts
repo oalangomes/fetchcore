@@ -56,7 +56,7 @@ test('real Solr history capture, restore, and strict replay rejection for unboun
   await expect(page.getByLabel('Histórico de execuções').getByRole('status'))
     .toContainText('não há garantia de replay equivalente')
   await expect(page.getByLabel('Histórico de execuções').getByText('1/20')).toBeVisible()
-  await page.getByRole('button', { name: 'Limpar' }).click()
+  await page.getByRole('button', { name: 'Limpar', exact: true }).click()
   await page.getByRole('button', { name: 'Confirmar limpeza' }).click()
   await expect(page.getByLabel('Histórico de execuções').getByText('0/20')).toBeVisible()
 })
