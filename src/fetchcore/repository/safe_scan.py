@@ -9,7 +9,9 @@ import stat
 import subprocess
 from collections import Counter
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from fetchcore.repository.api_detection import detect_api_artifact
 from pathlib import Path
 
 from fetchcore.repository.api_artifact_policy import blocked_api_artifact_kind
@@ -35,10 +37,11 @@ class SafeScanCoverage:
     read_by_source_kind: dict[str, int]
     unvisited_by_source_kind: dict[str, int]
     skipped_by_reason_and_source_kind: dict[str, dict[str, int]]
+    api_artifact_status_counts: dict[str, int] = field(default_factory=dict)
 
     def to_mapping(self) -> dict[str, object]:
-        return {
-            "discovered_by_source_kind": dict(sorted(self.discovered_by_source_kind.items())),
+        payload: dict[str, object] = {
+            "discovered_by_source_kind": dict(sorted(self.discovered_by_source_kind.items())), 
             "eligible_by_source_kind": dict(sorted(self.eligible_by_source_kind.items())),
             "read_by_source_kind": dict(sorted(self.read_by_source_kind.items())),
             "unvisited_by_source_kind": dict(sorted(self.unvisited_by_source_kind.items())),
@@ -47,6 +50,11 @@ class SafeScanCoverage:
                 for reason, values in sorted(self.skipped_by_reason_and_source_kind.items())
             },
         }
+        if self.api_artifact_status_counts:
+            payload["api_artifact_status_counts"] = dict(
+                sorted(self.api_artifact_status_counts.items())
+            )
+        return payload
 
 
 @dataclass(frozen=True)
@@ -109,6 +117,7 @@ def scan_repository_text(
     sources: list[SafeSource] = []
     skipped: Counter[str] = Counter()
     skipped_by_reason_and_source_kind: dict[str, Counter[str]] = {}
+    api_artifact_status_counts: Counter[str] = Counter()
     truncation_reasons: list[str] = []
     eligible_by_source_kind: Counter[str] = Counter()
     read_by_source_kind: Counter[str] = Counter()
@@ -155,6 +164,7 @@ def scan_repository_text(
         blocked_kind = blocked_api_artifact_kind(relative)
         if blocked_kind is not None:
             record_skip(f"api_artifact_blocked_{blocked_kind}", relative)
+            api_artifact_status_counts["quarantined_by_filename"] += 1
             continue
         if len(sources) >= max_files:
             record_skip("max_files", relative)
@@ -195,6 +205,8 @@ def scan_repository_text(
         blocked_kind = blocked_api_artifact_kind(relative, decoded)
         if blocked_kind is not None:
             record_skip(f"api_artifact_blocked_{blocked_kind}", relative)
+            decision = detect_api_artifact(relative, decoded)
+            api_artifact_status_counts[decision.status] += 1
             continue
         read_by_source_kind[source_kind(relative)] += 1
         sources.append(
@@ -221,6 +233,7 @@ def scan_repository_text(
             reason: dict(values)
             for reason, values in skipped_by_reason_and_source_kind.items()
         },
+        api_artifact_status_counts=dict(api_artifact_status_counts),
     )
 
     return SafeScanResult(
