@@ -33,7 +33,7 @@ The source rendition is an *allowlist* of safe structural tokens — **never sum
 
 - Strict JSON parsing with duplicate-key rejection; bounded YAML SafeLoader, no aliases, duplicate map keys rejected; bounded nesting, nodes, units and source file byte limits.
 - OpenAPI/Swagger content signature and version are required. Wrong, malformed and unsupported formats remain blocked; files with no safe operations or schemas remain blocked.
-- Schema/reference traversal is shallow and bounded. Recursive JSON Schema, composition/anyOf/allOf/oneOf, nested examples and external/multi-file refs are not interpreted.
+- Schema/reference traversal is shallow and bounded. Recursive JSON Schema, composition/anyOf/allOf/oneOf, nested examples and external refs are not interpreted. S5 adds safe relative local reference observations at this sanitizer boundary; see [S5](local-reference-resolution-s5.md).
 - Only local `$ref` *observations* (not resolved links). No HTTP I/O, code execution, spec validation-as-a-service, generated API clients or agent orchestration.
 - Indexing is opt-in through `OpenApiRepositoryIndexer`. Semantic interpreter changes trigger explicit indexing fingerprint incompatibility/rebuild; no silent reuse of old search projections.
 - Existing semantic interpreters cause full-scan behavior on changes. S2 does **not** claim incremental indexing efficiency improvements.

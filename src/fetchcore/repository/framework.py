@@ -178,6 +178,7 @@ def extract_framework_evidence(
     source_path: str | None = None,
     scopes: tuple[BehaviorScope, ...] = (),
     lexical_content: str | None = None,
+    proven_fastapi_receivers: tuple[str, ...] = (),
 ) -> FrameworkEvidence:
     """Extract only framework behavior supported by syntax and typed imports."""
 
@@ -192,6 +193,7 @@ def extract_framework_evidence(
                 line_start=line_start,
                 scopes=scopes,
                 lexical_content=lexical_content,
+                proven_receivers=proven_fastapi_receivers,
             )
         )
 
@@ -256,6 +258,7 @@ def _fastapi_routes(
     line_start: int,
     scopes: tuple[BehaviorScope, ...],
     lexical_content: str | None,
+    proven_receivers: tuple[str, ...],
 ) -> tuple[RouteEvidence, ...]:
     try:
         tree = ast.parse(content)
@@ -263,7 +266,7 @@ def _fastapi_routes(
         return ()
 
     values: list[RouteEvidence] = []
-    for node in ast.walk(tree):
+    for node in tree.body:
         if not isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)):
             continue
         for decorator in node.decorator_list:
@@ -291,13 +294,89 @@ def _fastapi_routes(
                     source_symbol=_caller_for_line(source_symbol, absolute_line, scopes),
                     http_method=verb,
                     path=path,
-                    framework="fastapi",
+                    framework="fastapi" if receiver.id in proven_receivers else None,
                     mechanism=f"@{receiver.id}.{decorator.func.attr}",
                     line=absolute_line,
-                    resolution="framework_pattern",
+                    resolution=("proven_binding" if receiver.id in proven_receivers
+                                else "observed"),
                 )
             )
     return _ordered_routes(values)
+
+
+def proven_fastapi_receivers(content: str) -> tuple[str, ...]:
+    """Prove simple module-level FastAPI() bindings without flow inference.
+
+    Any second binding, including nested shadowing, invalidates the receiver.
+    This deliberately rejects valid but complex programs rather than asserting
+    a framework identity that syntax cannot establish.
+    """
+    try:
+        tree = ast.parse(content)
+    except (SyntaxError, ValueError):
+        return ()
+    factories: set[str] = set()
+    imported: list[str] = []
+    all_import_bindings: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                all_import_bindings.append(alias.asname or alias.name)
+                if node.level == 0 and node.module == "fastapi" and alias.name == "FastAPI":
+                    factories.add(alias.asname or alias.name)
+                    imported.append(alias.asname or alias.name)
+        elif isinstance(node, ast.Import):
+            all_import_bindings.extend(alias.asname or alias.name.split(".")[0]
+                                       for alias in node.names)
+    stores: dict[str, int] = {}
+    has_star_import = False
+    for walked in ast.walk(tree):
+        bound_name: str | None = None
+        if isinstance(walked, ast.Name) and isinstance(walked.ctx, (ast.Store, ast.Del)):
+            bound_name = walked.id
+        elif isinstance(walked, ast.arg):
+            bound_name = walked.arg
+        elif isinstance(walked, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+                                 ast.MatchAs, ast.MatchStar)):
+            bound_name = walked.name
+        elif isinstance(walked, ast.MatchMapping):
+            bound_name = walked.rest
+        elif isinstance(walked, ast.ExceptHandler):
+            bound_name = walked.name
+        elif isinstance(walked, ast.alias):
+            if walked.name == "*":
+                has_star_import = True
+            else:
+                bound_name = walked.asname or walked.name.split(".")[0]
+        if bound_name is not None:
+            stores[bound_name] = stores.get(bound_name, 0) + 1
+    if has_star_import:
+        return ()
+    valid_factories = {name for name in factories
+                       if imported.count(name) == 1 and all_import_bindings.count(name) == 1
+                       and stores.get(name, 0) == 1}
+    receivers: list[str] = []
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Name)
+                and node.value.func.id in valid_factories):
+            name = node.targets[0].id
+            earlier_decorators = all(
+                decorator.lineno > node.lineno
+                for function in tree.body
+                if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef))
+                for decorator in function.decorator_list
+                if isinstance(decorator, ast.Call)
+                and isinstance(decorator.func, ast.Attribute)
+                and isinstance(decorator.func.value, ast.Name)
+                and decorator.func.value.id == name
+            )
+            if (stores.get(name) == 1 and name not in factories
+                    and name not in all_import_bindings and earlier_decorators):
+                receivers.append(name)
+    return tuple(sorted(set(receivers)))
 
 
 def _python_literal_argument(call: ast.Call) -> str | None:

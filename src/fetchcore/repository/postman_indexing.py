@@ -9,6 +9,7 @@ from __future__ import annotations
 from fetchcore.repository.api_detection import detect_api_artifact
 from fetchcore.repository.indexing import RepositoryIndexConfig
 from fetchcore.repository.openapi_extraction import sanitize_openapi
+from fetchcore.repository.local_references import LocalReferenceResolver
 from fetchcore.repository.openapi_indexing import (
     OpenApiEvidenceEnricher,
     OpenApiSourceInterpreter,
@@ -19,6 +20,7 @@ from fetchcore.repository.semantic_indexing import (
     KnowledgeSourceUnit,
     SemanticDocumentRepositoryIndexer,
 )
+from fetchcore.repository.structure import PythonStructuralExtractor
 
 
 class PostmanCollectionSourceInterpreter:
@@ -75,15 +77,22 @@ class ApiContractRepositoryIndexer(SemanticDocumentRepositoryIndexer):
     interpreter and sanitizer requires an explicit fingerprint-compatible rebuild.
     """
 
-    def __init__(self, config: RepositoryIndexConfig | None = None) -> None:
+    def __init__(self, config: RepositoryIndexConfig | None = None, *,
+                 resolve_local_references: bool = False,
+                 structured_python: bool = False) -> None:
         super().__init__(
             config,
+            symbol_extractors=(
+                {"python": PythonStructuralExtractor()}
+                if resolve_local_references or structured_python else None
+            ),
             source_interpreters=(
                 OpenApiSourceInterpreter("openapi"),
                 OpenApiSourceInterpreter("swagger"),
                 PostmanCollectionSourceInterpreter(),
             ),
             semantic_enrichers=(OpenApiEvidenceEnricher(),),
+            corpus_resolvers=(LocalReferenceResolver(),) if resolve_local_references else (),
         )
         self._api_sanitizer = _api_contract_sanitizer
         self._api_sanitizer_kinds = frozenset(
