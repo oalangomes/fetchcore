@@ -329,16 +329,32 @@ def proven_fastapi_receivers(content: str) -> tuple[str, ...]:
             all_import_bindings.extend(alias.asname or alias.name.split(".")[0]
                                        for alias in node.names)
     stores: dict[str, int] = {}
+    has_star_import = False
     for walked in ast.walk(tree):
+        bound_name: str | None = None
         if isinstance(walked, ast.Name) and isinstance(walked.ctx, (ast.Store, ast.Del)):
-            stores[walked.id] = stores.get(walked.id, 0) + 1
+            bound_name = walked.id
         elif isinstance(walked, ast.arg):
-            stores[walked.arg] = stores.get(walked.arg, 0) + 1
-        elif isinstance(walked, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            stores[walked.name] = stores.get(walked.name, 0) + 1
+            bound_name = walked.arg
+        elif isinstance(walked, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+                                 ast.MatchAs, ast.MatchStar)):
+            bound_name = walked.name
+        elif isinstance(walked, ast.MatchMapping):
+            bound_name = walked.rest
+        elif isinstance(walked, ast.ExceptHandler):
+            bound_name = walked.name
+        elif isinstance(walked, ast.alias):
+            if walked.name == "*":
+                has_star_import = True
+            else:
+                bound_name = walked.asname or walked.name.split(".")[0]
+        if bound_name is not None:
+            stores[bound_name] = stores.get(bound_name, 0) + 1
+    if has_star_import:
+        return ()
     valid_factories = {name for name in factories
                        if imported.count(name) == 1 and all_import_bindings.count(name) == 1
-                       and stores.get(name, 0) == 0}
+                       and stores.get(name, 0) == 1}
     receivers: list[str] = []
     for node in tree.body:
         if (isinstance(node, ast.Assign) and len(node.targets) == 1

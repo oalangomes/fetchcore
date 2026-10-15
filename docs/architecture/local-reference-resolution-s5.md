@@ -10,6 +10,10 @@ identity, provenance, content and classification.
 
 Transient exact indexes use `(repository, revision, path)`, API pointer,
 FetchCore fragment ID, and `(repository, revision, HTTP method, route)`. The
+resolver keys document facts and restores original corpus order by
+`(repository, revision, document ID)`. Repeated IDs across revisions are
+supported; duplicate identities within one repository revision fail closed.
+The global document ID format is unchanged. The
 resolver follows no references from a resolved target: its maximum expansion
 depth and hop count are both one, so cycles do not expand work. Defaults cap
 documents at 100,000, aggregate serialized evidence at 16,000,000 bytes,
@@ -23,8 +27,14 @@ individual resolution observation. One `local_reference/coverage@1` envelope
 per nonempty pass records `examined`, `resolved`, `inconclusive`,
 `omitted_by_budget`, `resolution_complete`, and `scope=corpus`. This is a pass-level diagnostic,
 not a claim that a partial pass resolved the whole corpus. Candidate or relation
-caps yield `truncated`; document or evidence-size caps raise a closed error
-before resolution. Budget values enter the resolver indexing fingerprint.
+caps yield `truncated`; document or evidence-size caps raise a closed error.
+A fragment bucket larger than `max_candidates` is truncated from its known
+size before any chunk is examined, even when every chunk shares one section
+identity. `max_evidence_bytes` limits the sum of compact, key-sorted UTF-8 JSON
+bytes from each final `evidence.to_mapping()`; it includes S5 observations,
+coverage and relations but excludes document content. The input is checked
+before indexing, and an over-budget final result fails closed before return.
+Budget values enter the resolver indexing fingerprint.
 
 Each examined source declaration produces
 `local_reference/resolution@2` semantic evidence with kind, declaration,
@@ -66,7 +76,8 @@ Contract-to-code joining requires an exact HTTP method and path from an
 `api_operation` and a structured, source-observed FastAPI `@app` route whose
 receiver is proved by one module-level `app = FastAPI()` assignment or a
 direct `FastAPI` import alias. The proof rejects reassignments, nested
-shadowing, dynamic factories, computed paths, and unknown receivers. Such
+shadowing, match/case captures, exception aliases, import rebinding, dynamic
+factories, computed paths, and unknown receivers. Such
 syntax remains observed and an exact contract join is `unsupported` with
 `unproven_framework_receiver`; no positive relation is emitted. `@router`
 declarations are inconclusive because unresolved inclusion prefixes may change
@@ -82,13 +93,14 @@ semantic extensions still require full scans on changed paths; S5 adds no
 delta-resolution claim. The OpenAPI interpreter identity changes from version
 1 to 2 for relative-reference acquisition; enabling the resolver also changes
 the indexing fingerprint. Those affected persisted corpora require an explicit
-rebuild. The S5 correction bumps the Python structural extractor identity to
-version 2 and resolver identity to version 2, while leaving the global indexing
-contract at version 26. Existing canonical snapshots with old Python route
-evidence or `local_reference/resolution@1` require an explicit rebuild; old
-resolution envelopes are not silently treated as version 2. Projection v3
-fields and fingerprint remain unchanged; its existing `canonical_payload` and
-relation fields carry the new evidence.
+rebuild. This correction bumps the Python structural extractor and local
+reference resolver component identities from version 2 to 3 because binding
+proof and final budget acceptance can change persisted evidence. The global
+indexing contract remains version 26. Affected persisted corpora require an
+explicit rebuild; `local_reference/resolution@2`,
+`local_reference/coverage@1`, API evidence v1, and projection v3 schema and
+fingerprint remain unchanged. Old `local_reference/resolution@1` envelopes
+are not silently treated as version 2.
 
 See the [S5 construction benchmark](../../benchmarks/local-reference-s5/README.md)
 for the frozen corpus, ground truth, paired measurements and limits.

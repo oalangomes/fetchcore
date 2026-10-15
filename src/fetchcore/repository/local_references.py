@@ -147,12 +147,12 @@ class LocalReferenceResolver:
     """
 
     indexing_contract_id = "fetchcore.local-reference"
-    indexing_contract_version = "2"
+    indexing_contract_version = "3"
 
     def __init__(self, budget: LocalReferenceBudget | None = None) -> None:
         self.budget = budget or LocalReferenceBudget()
         self.indexing_contract_version = (
-            "2:" + ":".join(str(value) for value in (
+            "3:" + ":".join(str(value) for value in (
                 self.budget.max_references, self.budget.max_candidates,
                 self.budget.max_relations, self.budget.max_documents,
                 self.budget.max_evidence_bytes,
@@ -205,8 +205,13 @@ class LocalReferenceResolver:
         sections: dict[tuple[str, str, str, str], list[KnowledgeDocument]] = defaultdict(list)
         routes: dict[tuple[str, str, str, str], list[KnowledgeDocument]] = defaultdict(list)
         unproven_routes: dict[tuple[str, str, str, str], int] = defaultdict(int)
-        facts: dict[str, ApiEvidenceV1] = {}
+        facts: dict[tuple[str, str, str], ApiEvidenceV1] = {}
+        identities: set[tuple[str, str, str]] = set()
         for doc in ordered_documents:
+            identity = (doc.repository, doc.revision, doc.id)
+            if identity in identities:
+                raise ValueError("duplicate local reference document identity")
+            identities.add(identity)
             scope = (doc.repository, doc.revision, doc.path)
             paths[scope].append(doc)
             for envelope in doc.evidence.semantic:
@@ -215,7 +220,7 @@ class LocalReferenceResolver:
                 api_fact = ApiEvidenceV1.from_envelope(envelope)
                 if api_fact.locator.path != doc.path:
                     raise ValueError("API evidence path disagrees with canonical provenance")
-                facts[doc.id] = api_fact
+                facts[identity] = api_fact
                 if api_fact.kind == "api_schema":
                     schemas[(*scope, api_fact.locator.pointer)].append(doc)
             section = doc.evidence.section
@@ -264,7 +269,7 @@ class LocalReferenceResolver:
                 file_target = candidates[0] if status == "resolved" and file_identity else None
                 target_locator: str | None = None
                 if target is not None:
-                    target_fact = facts.get(target.id)
+                    target_fact = facts.get((target.repository, target.revision, target.id))
                     if kind == "api_reference" and target_fact is not None:
                         target_locator = target_fact.locator.pointer
                     elif kind == "markdown_reference" and target.evidence.section is not None:
@@ -302,7 +307,7 @@ class LocalReferenceResolver:
                 else:
                     inconclusive += 1
 
-            fact = facts.get(doc.id)
+            fact = facts.get((doc.repository, doc.revision, doc.id))
             if fact is not None and fact.kind == "api_reference" and fact.target:
                 if examined >= budget.max_references:
                     omitted += 1
@@ -359,6 +364,12 @@ class LocalReferenceResolver:
                                [], "unresolved", "canonical_path")
                     elif fragment:
                         matches = sections.get((*scope, fragment), [])
+                        if len(matches) > budget.max_candidates:
+                            record("markdown_reference", reference.target,
+                                   str(reference.line) if reference.line else None,
+                                   [], "truncated", "fetchcore_fragment_id",
+                                   candidate_count=len(matches))
+                            continue
                         unique_sections = {candidate.evidence.section.section_id
                                            for candidate in matches
                                            if candidate.evidence.section is not None}
@@ -398,8 +409,14 @@ class LocalReferenceResolver:
             result[0] = replace(first, evidence=replace(
                 first.evidence, semantic=first.evidence.semantic + (coverage,),
             ))
-        resolved_by_id = {doc.id: doc for doc in result}
-        return tuple(resolved_by_id[doc.id] for doc in documents)
+        output = {(doc.repository, doc.revision, doc.id): doc for doc in result}
+        restored = tuple(output[(doc.repository, doc.revision, doc.id)] for doc in documents)
+        final_evidence_bytes = sum(len(json.dumps(doc.evidence.to_mapping(), sort_keys=True,
+                                                  separators=(",", ":")).encode("utf-8"))
+                                   for doc in restored)
+        if final_evidence_bytes > budget.max_evidence_bytes:
+            raise ValueError("local reference evidence byte budget exceeded")
+        return restored
 
 
 def _candidate_status(matches: list[KnowledgeDocument]) -> str:

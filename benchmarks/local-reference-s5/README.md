@@ -77,3 +77,30 @@ indexing differences are inconclusive. The run does not isolate binding proof
 from coverage diagnostics. No ranked retrieval ran, so these are construction
 metrics, not production Recall@K or MRR. Canonical diff after target removal
 still drops the old relation and updates one document.
+
+## Final corrective review on PR #173
+
+The existing `compare.py` runner was reused for three alternated pairs against
+the reviewed `87025a7` tree and the final corrective tree. The five-file
+corrective fixture, 100 generated Markdown files, ground truth and protocol
+were unchanged. This run was on the same Python 3.11.16 environment; the
+earlier artifacts above remain intact.
+
+| Metric | `87025a7` | Final correction |
+| --- | ---: | ---: |
+| Ground truth positives recovered | 3/3 | 3/3 |
+| False contract/code links | 0 | 0 |
+| Positive relations emitted | 3 | 3 |
+| Additional canonical bytes | 4,717 | 4,717 |
+| Isolated resolution p50 / p95, ms | 1.101 / 1.332 | 1.116 / 1.692 |
+| Small S5 index p50 / p95, ms | 14.069 / 20.090 | 14.016 / 17.437 |
+| 104-file S5 index p50 / p95, ms | 84.289 / 99.803 | 89.953 / 115.302 |
+
+The three-pair median of the large S5 index p50 rose 5.664 ms (6.7%). The
+final serialized-evidence budget check adds another corpus evidence pass,
+while oversized fragment buckets now stop before scanning their chunks.
+The large-arm p95 varied widely across pairs, so these timings do not establish
+a stable latency change. The original positives and canonical bytes were
+unchanged on the frozen fixture. Cross-revision identity collisions, Python
+pattern captures and final-byte-budget failures are covered by regressions,
+not by this construction fixture.

@@ -185,9 +185,9 @@ def test_persisted_identities_preserve_projection_with_explicit_indexing_rebuild
         RepositoryIndexConfig(),
         symbol_extractors=default_structural_symbol_extractors(),
     )
-    # S5 receiver proof changes canonical Python route evidence; rebuild explicitly.
+    # Pattern-capture proof changes canonical Python route evidence; rebuild explicitly.
     assert indexing_contract_fingerprint(indexer) == (
-        "sha256:357dba1238e8789688ace070d7d9afa533f7c64434ba331433fc15f1d6856e11"
+        "sha256:52910ebf9236f50c0b1a07f20beaa16c8a3a9770009bd9bc1cd7a1c2bebb8113"
     )
 
 

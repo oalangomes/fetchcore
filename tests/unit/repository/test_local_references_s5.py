@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fetchcore.projection import ProjectionV3CanonicalDocumentReader, ProjectionV3Compiler
 from fetchcore.repository.api_contracts import ApiEvidenceV1
+from fetchcore.repository.framework import proven_fastapi_receivers
 from fetchcore.repository.index_fingerprint import indexing_contract_fingerprint
 from fetchcore.repository.indexing import RepositoryIndexConfig
 from fetchcore.repository.local_references import (
@@ -507,3 +508,132 @@ def test_same_path_with_different_method_is_not_a_route_match(tmp_path: Path) ->
     route = _observations(result, "route_correspondence")[0]
     assert route[1]["status"] == "unresolved"
     assert not route[0].evidence.relations.semantic
+
+
+def test_same_document_identity_across_revisions_preserves_each_corpus(tmp_path: Path) -> None:
+    (tmp_path / "api.json").write_text(_spec(), encoding="utf-8")
+    first = ApiContractRepositoryIndexer(RepositoryIndexConfig(
+        repository="fixture/s5", revision="r1",
+    )).index(tmp_path).documents
+    (tmp_path / "api.json").write_text(_spec(schema=False), encoding="utf-8")
+    second = ApiContractRepositoryIndexer(RepositoryIndexConfig(
+        repository="fixture/s5", revision="r2",
+    )).index(tmp_path).documents
+    assert {doc.id for doc in first} & {doc.id for doc in second}
+    assert first != second
+
+    source = second + first
+    resolved = LocalReferenceResolver().resolve(source)
+    assert len(resolved) == len(source)
+    assert [(doc.repository, doc.revision, doc.id) for doc in resolved] == [
+        (doc.repository, doc.revision, doc.id) for doc in source
+    ]
+    assert all(replace(after, evidence=before.evidence) == before
+               for before, after in zip(source, resolved, strict=True))
+    references = [(doc.revision, item.payload()) for doc in resolved
+                  for item in doc.evidence.semantic
+                  if item.schema_id == "local_reference/resolution@2"
+                  and item.payload()["kind"] == "api_reference"]
+    assert [(revision, item["status"]) for revision, item in references] == [
+        ("r2", "unresolved"), ("r1", "resolved"),
+    ]
+    assert references[1][1]["target_revision"] == "r1"
+    assert not any(item.kind == "api_reference" for doc in resolved if doc.revision == "r2"
+                   for item in doc.evidence.relations.semantic)
+    assert resolved == LocalReferenceResolver().resolve(source)
+
+    import pytest
+    with pytest.raises(ValueError, match="duplicate local reference document identity"):
+        LocalReferenceResolver().resolve(first + first)
+
+
+def test_pattern_captures_do_not_prove_fastapi_receiver(tmp_path: Path) -> None:
+    (tmp_path / "api.json").write_text(_spec(schema=False), encoding="utf-8")
+    patterns = (
+        "case app:",
+        "case [app]:",
+        "case [*app]:",
+        "case {'outer': [app]}:",
+        "case {'value': value, **app}:",
+    )
+    for pattern in patterns:
+        (tmp_path / "app.py").write_text(
+            'from fastapi import FastAPI\nclass Unrelated:\n'
+            '    def get(self, path):\n        return lambda fn: fn\n'
+            'app = FastAPI()\nmatch Unrelated():\n    '
+            + pattern + '\n        pass\n'
+            '@app.get("/customers/{id}")\ndef handler(id: str):\n    pass\n',
+            encoding="utf-8",
+        )
+        result = _index(tmp_path)
+        route = _observations(result, "route_correspondence")[0]
+        assert route[1]["status"] != "resolved", pattern
+        assert not route[0].evidence.relations.semantic
+
+
+def test_other_implicit_bindings_invalidate_fastapi_proof() -> None:
+    preamble = "from fastapi import FastAPI\napp = FastAPI()\n"
+    assert proven_fastapi_receivers(preamble) == ("app",)
+    assert proven_fastapi_receivers("from fastapi import FastAPI as API\napp = API()\n") == (
+        "app",
+    )
+    for binding in (
+        "try:\n    pass\nexcept Exception as app:\n    pass\n",
+        "import other_module as app\n",
+        "from other_module import *\n",
+        "match object():\n    case [*app]:\n        pass\n",
+    ):
+        assert proven_fastapi_receivers(preamble + binding) == (), binding
+
+
+def test_final_evidence_byte_budget_fails_closed(tmp_path: Path) -> None:
+    (tmp_path / "a.md").write_text("# A\n\n[b](./b.md)\n", encoding="utf-8")
+    (tmp_path / "b.md").write_text("# B\n", encoding="utf-8")
+    source = ApiContractRepositoryIndexer(RepositoryIndexConfig(
+        repository="fixture/s5", revision="r1",
+    )).index(tmp_path).documents
+    input_bytes = sum(len(json.dumps(doc.evidence.to_mapping(), sort_keys=True,
+                                     separators=(",", ":")).encode("utf-8")) for doc in source)
+    output = LocalReferenceResolver().resolve(source)
+    output_bytes = sum(len(json.dumps(doc.evidence.to_mapping(), sort_keys=True,
+                                      separators=(",", ":")).encode("utf-8")) for doc in output)
+    assert output_bytes > input_bytes
+    import pytest
+    with pytest.raises(ValueError, match="evidence byte budget exceeded"):
+        LocalReferenceResolver(LocalReferenceBudget(
+            max_evidence_bytes=input_bytes,
+        )).resolve(source)
+    assert LocalReferenceResolver(LocalReferenceBudget(
+        max_evidence_bytes=output_bytes,
+    )).resolve(source) == output
+
+
+def test_large_fragment_bucket_truncates_repeated_references(tmp_path: Path) -> None:
+    (tmp_path / "target.md").write_text(
+        "# Long section\n\n" + "evidence line\n" * 320,
+        encoding="utf-8",
+    )
+    target = ApiContractRepositoryIndexer(RepositoryIndexConfig(
+        repository="fixture/s5", revision="r1",
+    )).index(tmp_path).documents
+    chunks = [doc for doc in target if doc.path == "target.md"]
+    assert len(chunks) > 1
+    fragment = chunks[0].evidence.section.fragment_id
+    (tmp_path / "source.md").write_text(
+        "# Source\n\n" + f"[section](./target.md#{fragment})\n" * 8,
+        encoding="utf-8",
+    )
+    source = ApiContractRepositoryIndexer(RepositoryIndexConfig(
+        repository="fixture/s5", revision="r1",
+    )).index(tmp_path).documents
+    bounded = LocalReferenceResolver(LocalReferenceBudget(max_candidates=1)).resolve(source)
+    observations = [item.payload() for doc in bounded for item in doc.evidence.semantic
+                    if item.schema_id == "local_reference/resolution@2"]
+    assert len(observations) == 8
+    assert all(item["status"] == "truncated" and item["candidate_count"] == len(chunks)
+               and item["target_document_id"] is None for item in observations)
+    assert not any(item.kind == "markdown_reference" for doc in bounded
+                   for item in doc.evidence.relations.semantic)
+    assert bounded == LocalReferenceResolver(LocalReferenceBudget(max_candidates=1)).resolve(
+        source,
+    )
