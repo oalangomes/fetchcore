@@ -628,6 +628,7 @@ class RepositoryIndexer:
             max_files=self.config.max_files,
             max_file_bytes=self.config.max_file_bytes,
             max_total_bytes=self.config.max_total_bytes,
+            api_sanitizer=getattr(self, "_api_sanitizer", None),
         )
         repository = self.resolve_repository_identity(root)
         branch = self.config.branch if self.config.branch is not None else _git_value(
