@@ -23,6 +23,7 @@ from fetchcore.adapters.retrieval.solr.backend import SolrIndexStore
 from fetchcore.repository.git_source import GitRepositorySourceProvider
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 from memory_solr_transport import MemoryTransport
+from datetime import UTC
 
 
 class LifecycleTransport(MemoryTransport):
@@ -318,7 +319,16 @@ def test_dirty_workspace_same_head_is_not_noop(workspace, tmp_path, backend, inv
 def test_non_git_revision_is_unknown_not_current(workspace, tmp_path, backend, invoke):
     shutil.rmtree(workspace / ".git")
     register(workspace, tmp_path)
-    invoke("rebuild", "workspace")
+    rebuilt = invoke("rebuild", "workspace")
+    from fetchcore.application.index_artifacts import IndexRunArtifact, compare_index_artifacts
+    artifact = IndexRunArtifact.from_mapping({
+        "schema_version": 1, "kind": "fetchcore.index-run", "run_id": "non-git",
+        "observed_at": "2026-10-15T12:00:00Z", "repository": "workspace", "backend": "solr",
+        "target": "non-git-fixture", "configuration_fingerprint": "a" * 64, "command": rebuilt,
+    })
+    assert artifact.command["result"]["target_revision"] is None
+    assert artifact.command["result"]["execution"]["snapshot"]["revision"]
+    assert compare_index_artifacts(artifact, artifact)["source_revision_changed"] is None
     result = invoke("status", "workspace")["result"]
     assert result["target_revision"] is None
     assert result["currentness"] == "unknown"
@@ -395,3 +405,56 @@ def test_plan_reports_canonical_full_scan_reason(workspace, tmp_path, backend, i
     assert plan["reason"] == plan["discovery"]["reason"] == "delta_scan_unsafe"
     assert plan["planned_mutations"]["replace_repository"] is False
     assert backend.post_calls == []
+
+
+def test_index_artifacts_follow_real_cli_lifecycle(workspace, tmp_path, backend, invoke):
+    """Exercise the importer against actual application outputs, including rollback failure."""
+    from fetchcore.application.index_artifacts import (
+        IndexRunArtifact, compare_index_artifacts, load_index_artifact,
+    )
+    register(workspace, tmp_path)
+    commands = [invoke('status'), invoke('plan'), invoke('sync', success=False),
+                invoke('rebuild'), invoke('sync')]
+    (workspace / 'a.py').write_text('def changed():\n    return 2\n')
+    (workspace / 'removed.py').unlink()
+    commit(workspace, 'delta')
+    commands.extend([invoke('plan'), invoke('sync')])
+    previous = copy.deepcopy(backend.documents)
+    (workspace / 'a.py').write_text('def changed_again():\n    return 3\n')
+    commit(workspace, 'rollback test')
+    backend.fail_next_commit = True
+    commands.append(invoke('sync', success=False))
+    assert backend.documents == previous
+    snapshot = next(v for v in backend.documents.values() if v['record_kind'] == 'snapshot')
+    snapshot['canonical_payload'] = '{"indexing_fingerprint":"changed"}'
+    commands.append(invoke('plan'))
+    import hashlib
+    from datetime import datetime
+    configuration = {'backend': 'solr', 'collection': 'fetchcore', 'transport': 'LifecycleTransport'}
+    configuration_fingerprint = hashlib.sha256(json.dumps(
+        configuration, sort_keys=True, separators=(',', ':'),
+    ).encode()).hexdigest()
+    artifacts = []
+    for i, command in enumerate(commands):
+        artifact = IndexRunArtifact.from_mapping({
+            'schema_version': 1, 'kind': 'fetchcore.index-run', 'run_id': f'run-{i}',
+            'observed_at': datetime.now(UTC).isoformat(), 'repository': 'acme/widgets',
+            'backend': 'solr', 'target': 'contract-fixture',
+            'configuration_fingerprint': configuration_fingerprint, 'command': command,
+        })
+        assert load_index_artifact(json.dumps(artifact.to_mapping())) == artifact
+        artifacts.append(artifact)
+    comparison = compare_index_artifacts(artifacts[4], artifacts[6])
+    assert comparison['comparable'] is True
+    assert comparison['source_revision_changed'] is True
+    assert artifacts[5].command['result']['planned_mutations']['deleted'] > 0
+    assert artifacts[6].command['result']['execution']['deleted'] > 0
+    # Optional, explicit fixture refresh for browser tests; never on normal test runs.
+    import os
+    if os.environ.get('FETCHCORE_REFRESH_INDEX_FIXTURES') == '1':
+        destination = Path('tools/explorer/fixtures/index-runs')
+        destination.mkdir(exist_ok=True)
+        names = ['initial-status', 'initial-plan', 'failure', 'rebuild', 'noop', 'delta-plan', 'incremental', 'rollback-failure', 'incompatible-plan']
+        for name, artifact in zip(names, artifacts):
+            (destination / (name + '.json')).write_text(
+                json.dumps(artifact.to_mapping(), sort_keys=True, indent=2) + '\n')

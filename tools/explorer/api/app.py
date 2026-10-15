@@ -229,6 +229,11 @@ def _error(exc: KnowledgeSearchError) -> HTTPException:
     )
 
 
+class IndexArtifactPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    artifacts: list[str] = Field(min_length=1, max_length=2)
+
+
 def create_app(context: ExplorerContext | None = None) -> FastAPI:
     app = FastAPI(
         title="FetchCore Search Lab (local development only)",
@@ -243,6 +248,23 @@ def create_app(context: ExplorerContext | None = None) -> FastAPI:
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.post("/api/indexing/artifacts")
+    def indexing_artifacts(payload: IndexArtifactPayload) -> dict[str, object]:
+        from fetchcore.application.index_artifacts import (
+            compare_index_artifacts, load_index_artifact,
+        )
+        try:
+            artifacts = [load_index_artifact(raw) for raw in payload.artifacts]
+            identities = [(a.repository, a.backend, a.target, a.run_id) for a in artifacts]
+            if len(set(identities)) != len(identities):
+                raise ValueError("Duplicate run identity")
+            return {"artifacts": [a.to_mapping() for a in artifacts],
+                    "comparison": compare_index_artifacts(*artifacts) if len(artifacts) == 2 else None}
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail={
+                "category": "invalid_index_artifact", "message": str(exc),
+            }) from exc
 
     @app.get("/api/config")
     def configuration() -> dict[str, object]:

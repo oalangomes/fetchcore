@@ -1,0 +1,18 @@
+{
+  "backend": "solr",
+  "command": {
+    "error": {
+      "category": "snapshot_missing",
+      "message": "Index absent; call index rebuild explicitly"
+    },
+    "operation": "sync",
+    "status": "failed"
+  },
+  "configuration_fingerprint": "e9646cc33a98248b57cff12e8a7e09feb0cf5c14273011cb13762aa24962328f",
+  "kind": "fetchcore.index-run",
+  "observed_at": "2026-10-15T23:11:53.679811+00:00",
+  "repository": "acme/widgets",
+  "run_id": "run-2",
+  "schema_version": 1,
+  "target": "contract-fixture"
+}

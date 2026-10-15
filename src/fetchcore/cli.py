@@ -476,6 +476,39 @@ def index_group(
     }
 
 
+@index_group.command("artifact")
+@click.option("--input", "input_path", required=True, type=click.Path(path_type=Path, exists=True))
+@click.option("--configuration", required=True, type=click.Path(path_type=Path, exists=True),
+              help="JSON of the effective indexing/backend/embedding configuration (hashed only).")
+@click.option("--run-id", required=True)
+@click.option("--observed-at", required=True, help="Recorded observation time, ISO 8601 with timezone.")
+@click.option("--repository", required=True)
+@click.option("--backend", required=True)
+@click.option("--target", required=True, help="Stable operator label for backend configuration/destination.")
+def index_artifact(input_path: Path, configuration: Path, run_id: str, observed_at: str, repository: str,
+                   backend: str, target: str) -> None:
+    """Wrap repository-targeted --json output offline; never run indexing."""
+    from fetchcore.application.index_artifacts import IndexRunArtifact, parse_index_json
+    try:
+        import hashlib
+        config = parse_index_json(configuration.read_text(encoding="utf-8"))
+        if not isinstance(config, dict) or not config:
+            raise ValueError("Effective configuration must be a nonempty JSON object")
+        fingerprint = hashlib.sha256(json.dumps(
+            config, sort_keys=True, separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")).hexdigest()
+        command = parse_index_json(input_path.read_text(encoding="utf-8"))
+        artifact = IndexRunArtifact.from_mapping({
+            "schema_version": 1, "kind": "fetchcore.index-run", "run_id": run_id,
+            "observed_at": observed_at, "repository": repository, "backend": backend,
+            "target": target, "configuration_fingerprint": fingerprint,
+            "command": command,
+        })
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps(artifact.to_mapping(), sort_keys=True, indent=2))
+
+
 def _dispatch_index(ctx: click.Context, operation: str, reference: str | None,
                     as_json: bool) -> None:
     assert ctx.parent is not None

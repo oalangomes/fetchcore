@@ -1,3 +1,4 @@
+import { IndexingTimeline } from './IndexingTimeline'
 import { useRef, useState, type ReactNode, type FormEvent } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import CodeMirror from '@uiw/react-codemirror'
@@ -690,6 +691,7 @@ export function App() {
           request={run.variables} response={response}
           repository={resultTarget?.repository ?? ''}
           revision={resultTarget?.revision ?? null} onInspect={inspectCurrentCoverageCandidate}/>}
+        <IndexingTimeline/>
         <ComparisonLab runs={runs} onInspect={inspectRecordedCandidate}/>
         <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-line py-5 text-xs text-muted"><span>FetchCore · Repositories → evidence</span><span>Local-only tooling · Sem agentes · Sem authority</span></footer>
       </div>
