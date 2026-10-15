@@ -301,3 +301,19 @@ def test_readiness_is_on_demand_and_uses_authorized_target(tmp_path: Path) -> No
     assert report["ready"] is True
     assert report["checks"]["snapshot"]["state"] == "not_required"
     assert RuntimeInspectionService(config).readiness() == report
+
+
+def test_api_is_offline_atomic_and_rejects_duplicate_runs(monkeypatch):
+    import json
+    def forbidden(*a, **kw):
+        raise AssertionError('Artifact import must not resolve any runtime')
+    monkeypatch.setattr('tools.explorer.api.app._runtime', forbidden)
+    client = TestClient(create_app())
+    raw = (Path(__file__).resolve().parents[1] / 'fixtures/index-runs/incremental.json').read_text()
+    result = client.post('/api/indexing/artifacts', json={'artifacts': [raw]})
+    assert result.status_code == 200
+    assert result.json()['artifacts'][0] == json.loads(raw)
+    assert client.post('/api/indexing/artifacts', json={'artifacts': [raw, raw]}).status_code == 422
+    assert client.post('/api/indexing/artifacts', json={'artifacts': [raw, '{}']}).status_code == 422
+    assert client.post('/api/indexing/artifacts', json={'artifacts': []}).status_code == 422
+    assert client.post('/api/indexing/artifacts', json={'artifacts': [raw] * 3}).status_code == 422

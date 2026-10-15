@@ -457,3 +457,87 @@ No agent workflow, graph requirement, consumer ranking, LLM inference or new pro
 - Solr is the default Explorer backend; explicitly configured other backends are respected. Switching requires operator reconfiguration/restart.
 - Graph Explorer belongs to #31, not this MVP.
 - Quality/ground-truth evaluation is the responsibility of retrievalgate, not this interface.
+
+## Indexing Timeline and Incremental Projection Diff
+
+The existing Lab imports one or two `fetchcore.index-run` v1 JSON artifacts.
+The optional local HTTP route `POST /api/indexing/artifacts` validates them using
+`fetchcore.application.index_artifacts`; it does not initialize runtime services,
+materialize repositories, scan sources or access adapters. Nothing is saved by
+this route. Import is atomic, bounded to two 2 MB artifacts, and rejects duplicate
+run identities, duplicate JSON keys, nonfinite/negative measurements, unsupported
+versions, contradictory execution and mismatched snapshot provenance.
+
+Capture **registered repository** CLI output first (legacy unregistered outputs
+have a different contract and are explicitly rejected):
+
+```bash
+fetchcore index plan owner/repository --json > plan.cli.json
+# Explicit indexing remains a separate operator action:
+fetchcore index rebuild owner/repository --json > rebuild.cli.json
+fetchcore index sync owner/repository --json > sync.cli.json
+fetchcore index status owner/repository --json > status.cli.json
+```
+
+Save failed command JSON too: its nonzero exit status must remain visible in CI.
+A failure is not proof of successful rollback or zero writes. Failed CLI output
+has no repository provenance; the envelope repository is an operator declaration.
+
+Wrap each captured output offline:
+
+```bash
+fetchcore index artifact --input sync.cli.json \
+  --configuration effective-index-config.json \
+  --repository owner/repository --backend solr --target local-catalog \
+  --run-id sync-20261015-01 --observed-at 2026-10-15T15:00:00-03:00 \
+  > sync.index-run.json
+```
+
+`effective-index-config.json` must be a nonempty JSON object recording the actual
+backend destination/settings, retrieval/embedding settings and indexing policy
+used for the captured command. The wrapper hashes its canonical sorted JSON with
+SHA-256; it never embeds the configuration itself. Keep this evidence alongside
+the original command in your controlled CLI/CI artifacts. The wrapper does not
+resolve runtime configuration or verify operator assertions. Use stable target
+labels and include all effective settings; incomplete input cannot establish
+configuration equivalence. Artifacts are observations, not authenticated proof.
+`observed_at` is the operator-recorded observation time, not an inferred start,
+completion time or duration. Keep run IDs unique per repository/backend/target.
+
+Select the files under **Indexing Timeline & Projection Diff** in selection order
+(before, then after). Export preserves the imported evidence. The Lab separates:
+
+- status/currentness observations and rebuild-required reasons;
+- canonical scan/discovery and measured file changes;
+- planned mutations, which do not establish persistence;
+- execution mode/counts and the persisted snapshot checksum/revision;
+- measured storage/embedding telemetry, when supplied by the actual CLI result.
+
+A full canonical scan does not imply full persistent projection replacement.
+The `execution.mode` `full_rebuild` is the persisted replacement evidence. Missing
+stage timings, throughput, cache hits, path lists, serializer identities and
+rollback details remain **desconhecido**, including telemetry absent from today's
+CLI output. Zero appears only when present in the evidence. No history, progress,
+individual document diff or per-stage duration is reconstructed from counts.
+
+Comparison blocks different repositories, backends, destinations, configuration
+hashes, indexing/projection fingerprints, embedding/serializer identities,
+rebuild-required observations and failed runs. Missing embedding identity blocks
+comparison too; current status/plan output does not contain persisted embedding
+identity. Compatible executed lexical runs explicitly carry null embedding fields.
+Source revision changes are reported separately from configuration changes. The
+UI keeps each original observation visible even when comparison is blocked; it
+never computes a misleading numerical delta between aggregate counts.
+
+Static browser fixtures in `fixtures/index-runs` are captured from the real
+registered CLI/application lifecycle using the deterministic `LifecycleTransport`
+test adapter. They are reviewed test observations, not production benchmark data.
+They include real serializer/indexing fingerprints and ephemeral fixture Git
+revisions. Refresh explicitly with `FETCHCORE_REFRESH_INDEX_FIXTURES=1` and the
+`test_index_artifacts_follow_real_cli_lifecycle` contract test. The ordinary test
+suite never rewrites them. Browser indexing tests run without a backend:
+
+```bash
+cd tools/explorer/web
+npm run test:e2e -- tests/indexing.spec.ts
+```

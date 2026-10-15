@@ -1,0 +1,69 @@
+{
+  "backend": "solr",
+  "command": {
+    "operation": "sync",
+    "result": {
+      "branch": "master",
+      "execution": {
+        "added": 1,
+        "deleted": 2,
+        "discovery": {
+          "base_revision": "74cee3b177b36e90365a78648c3fdbe3e20977e1",
+          "changed_paths": 1,
+          "current_revision": "1411fd682addce3e2a8af839c43dd107f87d07a3",
+          "mode": "git-delta",
+          "reason": "safe_git_delta",
+          "removed_paths": 1,
+          "targeted_paths": 2
+        },
+        "duration_ms": 1,
+        "mode": "incremental",
+        "noop": false,
+        "snapshot": {
+          "branch": "master",
+          "corpus_checksum": "562af705721277598f0829b19c98ec0f87957fc22fa29dd5f27d816545e2807d",
+          "document_count": 1,
+          "embedding_model": null,
+          "embedding_provider": null,
+          "indexed_at": "2026-10-15T23:11:53.580444+00:00",
+          "indexing_fingerprint": "sha256:dda7fefa29c88372d3146f9614f1f3714e77cbfb86b6cb74fb1f02fb5149d9b5",
+          "projection_fingerprint": "sha256:cfd4a63f85c8e4034bf17f0f82f08a47c717d52e75a9180ffb1eb6cad719e039",
+          "projection_version": "3",
+          "repository": "acme/widgets",
+          "revision": "1411fd682addce3e2a8af839c43dd107f87d07a3",
+          "serializer_fingerprint": null,
+          "serializer_mode": null,
+          "serializer_version": null,
+          "status": "ready",
+          "vector_dimensions": null
+        },
+        "unchanged": 0,
+        "updated": 0
+      },
+      "incremental_possible": true,
+      "indexing_fingerprint": "sha256:dda7fefa29c88372d3146f9614f1f3714e77cbfb86b6cb74fb1f02fb5149d9b5",
+      "mode": "incremental",
+      "previous_currentness": "stale",
+      "previous_indexed_revision": "74cee3b177b36e90365a78648c3fdbe3e20977e1",
+      "projection_compatible": true,
+      "projection_fingerprint": "sha256:cfd4a63f85c8e4034bf17f0f82f08a47c717d52e75a9180ffb1eb6cad719e039",
+      "provider": "local-workspace",
+      "reason": "safe_git_delta",
+      "registered_revision": "74cee3b177b36e90365a78648c3fdbe3e20977e1",
+      "repository": "acme/widgets",
+      "retrieval_mode": "lexical",
+      "schema_compatible": true,
+      "source": "/tmp/pytest-of-alangomes/pytest-14/test_index_artifacts_follow_re0/workspace",
+      "source_ref": "file:///tmp/pytest-of-alangomes/pytest-14/test_index_artifacts_follow_re0/workspace",
+      "target_revision": "1411fd682addce3e2a8af839c43dd107f87d07a3"
+    },
+    "status": "succeeded"
+  },
+  "configuration_fingerprint": "e9646cc33a98248b57cff12e8a7e09feb0cf5c14273011cb13762aa24962328f",
+  "kind": "fetchcore.index-run",
+  "observed_at": "2026-10-15T23:11:53.680363+00:00",
+  "repository": "acme/widgets",
+  "run_id": "run-6",
+  "schema_version": 1,
+  "target": "contract-fixture"
+}

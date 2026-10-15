@@ -1,0 +1,139 @@
+{
+  "backend": "solr",
+  "command": {
+    "operation": "plan",
+    "result": {
+      "branch": "master",
+      "currentness": "absent",
+      "discovery": {
+        "base_revision": null,
+        "current_revision": "74cee3b177b36e90365a78648c3fdbe3e20977e1",
+        "mode": "full-scan",
+        "reason": "snapshot_snapshot_missing"
+      },
+      "incremental_possible": false,
+      "indexed_revision": null,
+      "indexing_fingerprint": "sha256:dda7fefa29c88372d3146f9614f1f3714e77cbfb86b6cb74fb1f02fb5149d9b5",
+      "indexing_telemetry": {
+        "added": 2,
+        "chunks_changed": 2,
+        "chunks_total": 2,
+        "document_sources": {
+          "bytes_read": 0,
+          "complete": true,
+          "documents_by_format": {},
+          "documents_produced": 0,
+          "extraction_failures": {},
+          "files_discovered": 2,
+          "files_eligible": 0,
+          "files_evaluated": 2,
+          "files_extracted": 0,
+          "files_read": 0,
+          "files_with_documents": 0,
+          "skipped": {
+            "not_included": 2
+          },
+          "truncated": false,
+          "truncation_reasons": []
+        },
+        "documents_by_knowledge_type": {
+          "code": 2
+        },
+        "documents_by_technical_role": {
+          "unknown": 2
+        },
+        "documents_per_source": {
+          "repository://acme/widgets/a.py": 1,
+          "repository://acme/widgets/removed.py": 1
+        },
+        "documents_produced": 2,
+        "files_changed": 2,
+        "files_discovered": 2,
+        "files_eligible": 2,
+        "files_evaluated": 2,
+        "files_indexed": 2,
+        "files_read": 2,
+        "files_scanned": 2,
+        "files_skipped": 0,
+        "files_unvisited_due_to_truncation": 0,
+        "removal_detection_blockers": [],
+        "removal_detection_complete": true,
+        "removed": 0,
+        "repository": "acme/widgets",
+        "revision": "74cee3b177b36e90365a78648c3fdbe3e20977e1",
+        "scan_traversal_complete": true,
+        "scan_truncated": false,
+        "skip_reasons": {},
+        "source_coverage": {
+          "by_language": {
+            "python": {
+              "documents": 2,
+              "files_indexed": 2,
+              "files_read": 2,
+              "files_with_symbol_chunks": 2,
+              "implementation_files": 2,
+              "structural_capability_files": 2,
+              "textual_only_implementation_files": 0
+            }
+          },
+          "discovered_by_source_kind": {
+            ".py": 2
+          },
+          "eligible_by_source_kind": {
+            ".py": 2
+          },
+          "excluded_by_source_kind": {},
+          "files_indexed": 2,
+          "files_read": 2,
+          "files_without_documents": 0,
+          "files_without_documents_by_source_kind": {},
+          "implementation_files_indexed": 2,
+          "implementation_files_read": 2,
+          "implementation_files_structural_capability": 2,
+          "implementation_files_textual_only": 0,
+          "implementation_files_with_symbol_chunks": 2,
+          "knowledge_files_read": 0,
+          "not_included_by_source_kind": {},
+          "read_by_source_kind": {
+            ".py": 2
+          },
+          "unvisited_by_source_kind": {}
+        },
+        "truncated_files": 0,
+        "truncation_reasons": [],
+        "unchanged": 0,
+        "updated": 0
+      },
+      "mode": "initial",
+      "planned_mutations": {
+        "added": 2,
+        "deleted": null,
+        "previous_document_count": null,
+        "replace_repository": true,
+        "resulting_document_count": 2,
+        "unchanged": 0,
+        "updated": 0,
+        "upsert_documents": 2
+      },
+      "projection_compatible": null,
+      "projection_fingerprint": "sha256:cfd4a63f85c8e4034bf17f0f82f08a47c717d52e75a9180ffb1eb6cad719e039",
+      "provider": "local-workspace",
+      "reason": "snapshot_snapshot_missing",
+      "registered_revision": "74cee3b177b36e90365a78648c3fdbe3e20977e1",
+      "repository": "acme/widgets",
+      "retrieval_mode": "lexical",
+      "schema_compatible": true,
+      "source": "/tmp/pytest-of-alangomes/pytest-14/test_index_artifacts_follow_re0/workspace",
+      "source_ref": "file:///tmp/pytest-of-alangomes/pytest-14/test_index_artifacts_follow_re0/workspace",
+      "target_revision": "74cee3b177b36e90365a78648c3fdbe3e20977e1"
+    },
+    "status": "succeeded"
+  },
+  "configuration_fingerprint": "e9646cc33a98248b57cff12e8a7e09feb0cf5c14273011cb13762aa24962328f",
+  "kind": "fetchcore.index-run",
+  "observed_at": "2026-10-15T23:11:53.679578+00:00",
+  "repository": "acme/widgets",
+  "run_id": "run-1",
+  "schema_version": 1,
+  "target": "contract-fixture"
+}
