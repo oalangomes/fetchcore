@@ -196,9 +196,21 @@ configuration identity and therefore does not change `config_fingerprint`.
 This is important: two otherwise identical executions remain directly
 comparable even when they are `V0.1` and `V0.2`.
 
-A run that fails after reserving its directory may leave a partial `V0.N`
-directory without a complete `run.json`. That version remains evidence of the
-attempt and is not reused. The next execution advances monotonically.
+A run interrupted after reserving its directory may be resumed with
+`--resume V0.N`, using the same frozen checkout and compatible environment.
+The runner validates persisted arm artifacts before reuse and measures only
+missing arms. Run state is checkpointed locally and index preparation telemetry
+is written immediately after preparation, before retrieval starts. Completed
+runs cannot be resumed.
+
+Legacy interrupted runs may lack indexing telemetry from preparation. Resume
+with `--allow-missing-indexing-telemetry` only to recover retrieval artifacts;
+the resulting status is `retrieval_complete`, not a promotion-ready complete
+baseline. Runs known not to have prepared an index must declare this with
+`--assume-no-index-preparation`.
+
+`.run-state.json` is machine-local resume state and must not be committed as a
+benchmark artifact.
 
 The evidence-aware artifacts captured before automatic versioning are preserved
 as `V0.1`. Their JSON payloads were moved without modification, and the

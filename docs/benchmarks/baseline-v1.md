@@ -265,6 +265,9 @@ satisfaction and never grants authority.
 
 ## Running
 
+The manifest's Ollama endpoint is used for both index preparation and dense
+or hybrid query embeddings, independent of ambient Ollama environment variables.
+
 The exact private checkout must already exist locally:
 
 ```bash
@@ -281,6 +284,26 @@ python benchmarks/baseline-v1/run.py \
   --arm opensearch-hybrid \
   --prepare-index
 ```
+
+To resume a partially completed version after interruption:
+
+```bash
+python benchmarks/baseline-v1/run.py \
+  --workspace /path/to/the/same/NeuroTrack_MS/checkout \
+  --resume V0.N
+```
+
+The runner checks completed artifacts against the selected arm, corpus, workspace,
+environment, source revision, Ground Truth, metric and config fingerprints.
+Index preparation telemetry is checkpointed before retrieval. Legacy partial
+runs with lost indexing telemetry can be finished for retrieval analysis only
+using `--allow-missing-indexing-telemetry`; they remain explicitly
+`retrieval_complete`, not promotion-ready. Use
+`--assume-no-index-preparation` only for a legacy partial run known to have
+started without indexing.
+
+Do not commit the local `.run-state.json` resume file or publish machine-specific
+workspace paths. Preserve immutable measurement artifacts separately.
 
 The runner validates the revision, clean worktree and Ground Truth coordinates
 before probing services or starting measurement.
@@ -299,8 +322,8 @@ A successful execution writes `run.json` and a generated metrics `README.md` in
 that directory. The report summarizes retrieval quality, latency and volume,
 plus canonical and backend indexing metrics when `--prepare-index` is used. The
 run version is provenance only and is intentionally excluded from the retrieval
-configuration fingerprint so repeated measurements remain comparable. If a run
-fails after reserving a version, that partial directory is not reused.
+configuration fingerprint so repeated measurements remain comparable. An interrupted
+run can be resumed only in its existing version directory after validation.
 
 The evidence-aware artifacts captured before automatic versioning are preserved
 under `artifacts/V0.1/`. Their measurement payloads were moved without

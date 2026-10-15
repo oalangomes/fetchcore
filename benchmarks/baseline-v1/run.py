@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -15,10 +14,7 @@ from typing import Protocol
 from urllib.request import Request, urlopen
 
 from fetchcore.application import BackendRegistry
-from fetchcore.application.composition import (
-    opensearch_embedding_provider,
-    solr_embedding_provider,
-)
+from fetchcore.application.composition import EmbeddingProviderRegistry
 from fetchcore.adapters.embedding.ollama.provider import OllamaEmbeddingProvider, OllamaEmbeddingSettings
 from fetchcore.adapters.retrieval.opensearch.backend import (
     OpenSearchIndexStore,
@@ -36,10 +32,15 @@ from fetchcore.adapters.retrieval.solr.backend import (
     UrllibSolrTransport,
 )
 from fetchcore.baseline import (
+    BASELINE_ARTIFACT_SCHEMA_VERSION,
+    BASELINE_GROUND_TRUTH_SCHEMA_VERSION,
+    BASELINE_METRICS_SCHEMA_VERSION,
+    BASELINE_V1_METRICS_SPEC,
     BaselineArm,
     BaselineConfigurationError,
     BaselineRetrievalMode,
     BaselineRunner,
+    BaselineSuite,
     capture_baseline_environment,
     load_baseline_suite,
     mapping_fingerprint,
@@ -55,6 +56,7 @@ ROOT = Path(__file__).resolve().parent
 MANIFEST_PATH = ROOT / "manifest.json"
 GROUND_TRUTH_PATH = ROOT / "ground-truth.json"
 ARTIFACTS_DIR = ROOT / "artifacts"
+RUN_STATE_FILE = ".run-state.json"
 
 
 @dataclass(frozen=True)
@@ -155,7 +157,12 @@ class SolrBenchmarkAdapter:
             UrllibSolrTransport(settings),
             settings,
             embedding_provider=(
-                solr_embedding_provider(retrieval) if vectors else None
+                _embedding_providers(context).create(
+                    retrieval.dense.embedding,
+                    backend_id=self.backend_id,
+                    backend_name="Solr",
+                )
+                if vectors else None
             ),
         )
         # Solr intentionally owns schema validation, not schema creation.
@@ -203,7 +210,12 @@ class OpenSearchBenchmarkAdapter:
             settings,
             clock=_utc_now,
             embedding_provider=(
-                opensearch_embedding_provider(retrieval) if vectors else None
+                _embedding_providers(context).create(
+                    retrieval.dense.embedding,
+                    backend_id=self.backend_id,
+                    backend_name="OpenSearch",
+                )
+                if vectors else None
             ),
         )
         return store.full_rebuild(canonical).to_mapping()
@@ -267,8 +279,34 @@ def benchmark_backend_adapters() -> dict[str, BenchmarkBackendAdapter]:
     return {adapter.backend_id: adapter for adapter in adapters}
 
 
+def _embedding_providers(context: BenchmarkBackendContext) -> EmbeddingProviderRegistry:
+    provider = str(context.embedding_identity["provider"])
+    if provider != "ollama":
+        return EmbeddingProviderRegistry()
+    ollama_url = context.endpoints.get("ollama")
+    if ollama_url is None:
+        raise BaselineConfigurationError(
+            "ollama embedding provider requires an ollama service endpoint"
+        )
+    return EmbeddingProviderRegistry(settings={"ollama": {"url": str(ollama_url)}})
+
+
 def main() -> int:
     args = _parser().parse_args()
+    if args.allow_missing_indexing_telemetry and not args.resume:
+        raise BaselineConfigurationError(
+            "--allow-missing-indexing-telemetry requires --resume"
+        )
+    if args.assume_no_index_preparation and not args.resume:
+        raise BaselineConfigurationError(
+            "--assume-no-index-preparation requires --resume"
+        )
+    if args.assume_no_index_preparation and (
+        args.prepare_index or args.allow_missing_indexing_telemetry
+    ):
+        raise BaselineConfigurationError(
+            "--assume-no-index-preparation conflicts with index preparation options"
+        )
     manifest = _load_json(MANIFEST_PATH)
     suite = load_baseline_suite(GROUND_TRUTH_PATH)
     workspace = args.workspace.resolve(strict=True)
@@ -283,18 +321,30 @@ def main() -> int:
     endpoints = _object(environment_config, "service_endpoints")
     embedding_identity = _object(environment_config, "embedding")
     backend_settings = _object(manifest, "backend_settings")
-    if str(embedding_identity["provider"]) == "ollama":
-        ollama_url = endpoints.get("ollama")
-        if ollama_url is None:
-            raise BaselineConfigurationError(
-                "ollama embedding provider requires an ollama service endpoint"
-            )
-        os.environ["OLLAMA_URL"] = str(ollama_url)
-
     available_arms = _manifest_arms(manifest)
     adapters = benchmark_backend_adapters()
     _validate_backend_adapters(available_arms, adapters)
-    selected = _select_arms(args.arm, available_arms)
+    output_root = args.output.resolve()
+    resume_dir = _resume_directory(output_root, args.resume) if args.resume else None
+    if resume_dir is not None and (resume_dir / "run.json").exists():
+        raise BaselineConfigurationError("cannot resume a completed baseline run")
+    saved_state = (
+        _load_json(resume_dir / RUN_STATE_FILE)
+        if resume_dir is not None and (resume_dir / RUN_STATE_FILE).is_file()
+        else None
+    )
+    requested_arms = args.arm or (
+        [str(item) for item in saved_state["arms"]]
+        if saved_state is not None else []
+    )
+    selected = _select_arms(requested_arms, available_arms)
+    prepare_index = bool(
+        args.prepare_index
+        or (saved_state is not None and saved_state.get("prepare_index"))
+        or args.allow_missing_indexing_telemetry
+    )
+    if saved_state is not None and args.prepare_index and not saved_state.get("prepare_index"):
+        raise BaselineConfigurationError("resume cannot change the index preparation policy")
     backend_context = BenchmarkBackendContext(
         endpoints=endpoints,
         embedding_identity=embedding_identity,
@@ -303,6 +353,7 @@ def main() -> int:
             str(measurement["diagnostic_candidate_window"])
         ),
     )
+    backends = BackendRegistry(providers=_embedding_providers(backend_context))
     service_versions = _service_versions(
         selected,
         context=backend_context,
@@ -321,12 +372,104 @@ def main() -> int:
         "corpus_revision": expected_revision,
     }
 
-    output_root = args.output.resolve()
-    run_version, output_dir = _allocate_run_output_dir(output_root)
+    run_version, output_dir = (
+        (resume_dir.name, resume_dir)
+        if resume_dir is not None else _allocate_run_output_dir(output_root)
+    )
     print(f"[baseline] run_version={run_version} output={output_dir}")
 
+    indexing_telemetry_unavailable = bool(
+        args.allow_missing_indexing_telemetry
+        or (saved_state is not None and saved_state.get("indexing_telemetry_unavailable"))
+    )
+    legacy_index_preparation_assumed_absent = bool(
+        args.assume_no_index_preparation
+        or (saved_state is not None and saved_state.get("legacy_index_preparation_assumed_absent"))
+    )
+    run_state = {
+        "schema_version": 1,
+        "protocol": "fetchcore.baseline-v1",
+        "arms": [arm.id for arm in selected],
+        "prepare_index": prepare_index,
+        "workspace": str(workspace),
+        "corpus": suite.corpus,
+        "environment": environment,
+        "config_identity": config_identity,
+        "indexing_telemetry_unavailable": indexing_telemetry_unavailable,
+        "legacy_index_preparation_assumed_absent": legacy_index_preparation_assumed_absent,
+    }
+    if saved_state is not None and saved_state != run_state:
+        raise BaselineConfigurationError("resume state does not match this execution")
+    planned: list[tuple[BaselineArm, SearchScope, dict[str, object], dict[str, object]]] = []
+    existing_artifacts: dict[str, dict[str, object]] = {}
+    for arm in selected:
+        retrieval = _retrieval_for_mode(
+            arm.mode,
+            provider=str(embedding_identity["provider"]),
+            model=str(embedding_identity["model"]),
+        )
+        settings = _backend_settings(arm, context=backend_context, adapters=adapters)
+        scope = SearchScope(
+            workspace=workspace,
+            revision=expected_revision,
+            repository=expected_repository,
+            knowledge_types=("code", "tests", "documentation", "configuration"),
+            max_results=int(str(measurement["max_results"])),
+            settings=settings,
+            retrieval=retrieval,
+        )
+        identity = {**config_identity, "backend_settings": settings}
+        planned.append((arm, scope, settings, identity))
+        path = output_dir / f"{arm.id}.json"
+        if path.exists():
+            if resume_dir is None:
+                raise BaselineConfigurationError(f"new run already contains {path.name}")
+            artifact = _load_json(path)
+            _validate_resumed_artifact(
+                artifact,
+                arm=arm,
+                scope=scope,
+                identity=identity,
+                suite=suite,
+                environment=environment,
+                measurement=measurement,
+            )
+            existing_artifacts[arm.id] = artifact
+
+    indexing_path = output_dir / "indexing.json"
+    if (
+        resume_dir is not None
+        and saved_state is None
+        and existing_artifacts
+        and not indexing_path.exists()
+        and not args.allow_missing_indexing_telemetry
+        and not args.assume_no_index_preparation
+    ):
+        raise BaselineConfigurationError(
+            "legacy partial run has no index preparation record; specify "
+            "--allow-missing-indexing-telemetry or --assume-no-index-preparation"
+        )
     indexing_payload: dict[str, object] | None = None
-    if args.prepare_index:
+    if indexing_path.exists():
+        if not prepare_index:
+            raise BaselineConfigurationError("indexing artifact exists but preparation was not selected")
+        indexing_payload = _load_json(indexing_path)
+        if (
+            indexing_payload.get("corpus") != {
+                "repository": expected_repository,
+                "revision": expected_revision,
+            }
+            or indexing_payload.get("environment") != environment
+            or indexing_payload.get("fetchcore_revision") != fetchcore_revision
+        ):
+            raise BaselineConfigurationError("indexing artifact does not match this run")
+    elif prepare_index and existing_artifacts:
+        if not indexing_telemetry_unavailable:
+            raise BaselineConfigurationError(
+                "indexing telemetry was lost before this runner saved it; "
+                "use --allow-missing-indexing-telemetry to resume retrieval only"
+            )
+    elif prepare_index:
         indexing_payload = _prepare_indexes(
             selected,
             workspace=workspace,
@@ -337,34 +480,26 @@ def main() -> int:
             environment=environment,
             fetchcore_revision=fetchcore_revision,
         )
+        indexing_path.write_text(
+            json.dumps(indexing_payload, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(f"[baseline] indexing artifact={indexing_path}")
+
+    if saved_state is None:
+        (output_dir / RUN_STATE_FILE).write_text(
+            json.dumps(run_state, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     retrieval_artifacts: list[dict[str, object]] = []
-    for arm in selected:
-        backend = BackendRegistry().create(arm.backend)
-        retrieval = _retrieval_for_mode(
-            arm.mode,
-            provider=str(embedding_identity["provider"]),
-            model=str(embedding_identity["model"]),
-        )
-        settings = _backend_settings(
-            arm,
-            context=backend_context,
-            adapters=adapters,
-        )
-        scope = SearchScope(
-            workspace=workspace,
-            revision=expected_revision,
-            repository=expected_repository,
-            knowledge_types=(
-                "code",
-                "tests",
-                "documentation",
-                "configuration",
-            ),
-            max_results=int(str(measurement["max_results"])),
-            settings=settings,
-            retrieval=retrieval,
-        )
+    for arm, scope, settings, identity in planned:
+        existing = existing_artifacts.get(arm.id)
+        if existing is not None:
+            retrieval_artifacts.append(existing)
+            print(f"[baseline] arm={arm.id} reused={output_dir / f'{arm.id}.json'}")
+            continue
+        backend = backends.create(arm.backend)
         artifact = BaselineRunner(
             backend=backend,
             arm=arm,
@@ -376,10 +511,7 @@ def main() -> int:
             suite.cases,
             corpus=suite.corpus,
             ground_truth_fingerprint=suite.fingerprint,
-            config_identity={
-                **config_identity,
-                "backend_settings": settings,
-            },
+            config_identity=identity,
             environment=environment,
         )
         destination = write_baseline_artifact(
@@ -389,27 +521,29 @@ def main() -> int:
         retrieval_artifacts.append(artifact.to_mapping())
         print(f"[baseline] arm={arm.id} artifact={destination}")
 
-    if indexing_payload is not None:
-        destination = output_dir / "indexing.json"
-        destination.write_text(
-            json.dumps(indexing_payload, sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        print(f"[baseline] indexing artifact={destination}")
-
     run_manifest = {
         "schema_version": 1,
         "run_version": run_version,
         "protocol": "fetchcore.baseline-v1",
-        "status": "complete",
+        "status": (
+            "retrieval_complete" if prepare_index and indexing_payload is None
+            else "complete"
+        ),
         "completed_at": _utc_now(),
         "fetchcore_revision": fetchcore_revision,
         "corpus": suite.corpus,
         "arms": [arm.to_mapping() for arm in selected],
-        "prepare_index": bool(args.prepare_index),
+        "prepare_index": prepare_index,
         "artifacts": [f"{arm.id}.json" for arm in selected],
         "indexing_artifact": ("indexing.json" if indexing_payload is not None else None),
         "metrics_report": "README.md",
+        "resume": {
+            "reused_artifacts": [f"{arm_id}.json" for arm_id in existing_artifacts],
+            "indexing_telemetry_unavailable": prepare_index and indexing_payload is None,
+            "legacy_index_preparation_assumed_absent": (
+                legacy_index_preparation_assumed_absent
+            ),
+        },
     }
     report_path = _write_metrics_report(
         output_dir,
@@ -449,6 +583,24 @@ def _parser() -> argparse.ArgumentParser:
         help="Rebuild remote backend indexes before measuring retrieval.",
     )
     parser.add_argument(
+        "--resume",
+        metavar="V0.N",
+        help="Resume an incomplete version in --output after validating its artifacts.",
+    )
+    parser.add_argument(
+        "--allow-missing-indexing-telemetry",
+        action="store_true",
+        help=(
+            "Resume a legacy partial run whose index was prepared but whose "
+            "indexing telemetry was lost; final status is retrieval_complete."
+        ),
+    )
+    parser.add_argument(
+        "--assume-no-index-preparation",
+        action="store_true",
+        help="Resume a legacy partial run that was started without --prepare-index.",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=ARTIFACTS_DIR,
@@ -458,6 +610,60 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     return parser
+
+
+def _resume_directory(output_root: Path, version: str) -> Path:
+    if not version.startswith("V0.") or not version[3:].isdigit():
+        raise BaselineConfigurationError("--resume must name a V0.N run version")
+    directory = output_root / version
+    if not directory.is_dir():
+        raise BaselineConfigurationError(f"resume directory does not exist: {directory}")
+    return directory
+
+
+def _validate_resumed_artifact(
+    artifact: Mapping[str, object],
+    *,
+    arm: BaselineArm,
+    scope: SearchScope,
+    identity: Mapping[str, object],
+    suite: BaselineSuite,
+    environment: Mapping[str, object],
+    measurement: Mapping[str, object],
+) -> None:
+    expected_config = {
+        "scope": scope.to_mapping(),
+        "arm": arm.to_mapping(),
+        "repetitions": int(str(measurement["repetitions"])),
+        "warmups": int(str(measurement["warmups"])),
+        "k": int(str(measurement["k"])),
+        "identity": dict(identity),
+    }
+    expected = {
+        "schema_version": BASELINE_ARTIFACT_SCHEMA_VERSION,
+        "protocol": "fetchcore.baseline-v1",
+        "ground_truth_schema_version": BASELINE_GROUND_TRUTH_SCHEMA_VERSION,
+        "ground_truth_fingerprint": suite.fingerprint,
+        "metrics_schema_version": BASELINE_METRICS_SCHEMA_VERSION,
+        "metrics_fingerprint": mapping_fingerprint(BASELINE_V1_METRICS_SPEC),
+        "arm": arm.to_mapping(),
+        "corpus": suite.corpus,
+        "config": expected_config,
+        "config_fingerprint": mapping_fingerprint(expected_config),
+        "environment": environment,
+    }
+    mismatched = [key for key, value in expected.items() if artifact.get(key) != value]
+    observations = artifact.get("observations")
+    aggregate = artifact.get("aggregate")
+    expected_count = len(suite.cases) * int(str(measurement["repetitions"]))
+    if not isinstance(observations, list) or len(observations) != expected_count:
+        mismatched.append("observations")
+    if not isinstance(aggregate, Mapping) or aggregate.get("run_count") != expected_count:
+        mismatched.append("aggregate.run_count")
+    if mismatched:
+        raise BaselineConfigurationError(
+            f"cannot reuse {arm.id}.json: mismatched {', '.join(mismatched)}"
+        )
 
 
 def _write_metrics_report(
@@ -576,7 +782,13 @@ def _render_metrics_report(
     )
 
     if indexing_payload is None:
-        lines.append("Index preparation was not requested for this run.")
+        if run_manifest.get("prepare_index"):
+            lines.append(
+                "Index preparation was performed before interruption, but its "
+                "telemetry was not preserved. This run is not complete for baseline promotion."
+            )
+        else:
+            lines.append("Index preparation was not requested for this run.")
     else:
         canonical = _object(indexing_payload, "canonical")
         lines.extend(
