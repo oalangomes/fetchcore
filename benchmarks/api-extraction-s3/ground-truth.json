@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "corpus_id": "fetchcore-postman-s3-synthetic",
+  "source": "demo.postman_collection.json",
+  "requests": [
+    {
+      "id": "p01",
+      "pointer": "#/item/0/item/0",
+      "method": "POST",
+      "route": "/customers"
+    },
+    {
+      "id": "p02",
+      "pointer": "#/item/0/item/1",
+      "method": "GET",
+      "route": "/customers/42"
+    }
+  ],
+  "reason": "Ground truth at request granularity; Postman 2.1 S0 synthetic fixture. Ranking is separate from acquisition."
+}

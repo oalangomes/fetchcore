@@ -1,0 +1,52 @@
+name: Postman S3 extraction gate
+
+on:
+  pull_request:
+    paths:
+      - "src/fetchcore/repository/postman_*.py"
+      - "src/fetchcore/repository/safe_scan.py"
+      - "tests/unit/repository/test_postman_s3.py"
+      - "benchmarks/api-extraction-s3/**"
+      - ".github/workflows/postman-s3.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  s3-extraction:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install project and tests
+        run: python -m pip install -e ".[dev]"
+      - name: Postman safe extraction and canonical tests
+        run: python -m pytest -q tests/unit/repository/test_postman_s3.py
+      - name: Frozen S3 request ground truth
+        run: |
+          mkdir -p benchmark-output
+          python benchmarks/api-extraction-s3/run.py > benchmark-output/s3.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path("benchmark-output/s3.json").read_text())
+          assert result["protocol"] == "fetchcore.api-extraction-s3"
+          assert result["postman_requests_expected"] == 2
+          assert result["postman_requests_recovered"] == 2
+          assert result["postman_requests_extra"] == 0
+          assert result["postman_request_ground_truth_recovery"] == 1.0
+          assert result["openapi_operations_preserved"] == 3
+          assert result["environment_quarantined"]
+          assert not result["secret_sentinel_present"]
+          assert result["changed_indexing_fingerprint"]
+          print(json.dumps(result, indent=2, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: postman-s3-synthetic-evidence
+          path: benchmark-output/s3.json
+          if-no-files-found: error

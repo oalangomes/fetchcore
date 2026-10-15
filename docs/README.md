@@ -10,6 +10,7 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Understand canonical knowledge and projections | [Repository Knowledge](architecture/repository-knowledge.md) and [projection](architecture/projection.md) |
 | Review typed API-contract evidence and format preflight | [API evidence v1](architecture/api-contract-evidence-v1.md) |
 | Implement safe OpenAPI/Swagger acquisition | [OpenAPI extraction S2](architecture/openapi-extraction.md) |
+| Implement safe Postman Collection 2.1 acquisition | [Postman extraction S3](architecture/postman-collection-extraction.md) |
 | Understand retrieval and adapters | [Retrieval](architecture/retrieval.md) and [adapters/composition](architecture/adapters-and-composition.md) |
 | Understand serving | [Serving boundary](architecture/serving.md) |
 | Look up contracts and capabilities | [Contracts](reference/contracts.md) and [capabilities](reference/capabilities.md) |

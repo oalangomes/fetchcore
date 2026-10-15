@@ -131,11 +131,14 @@ def scan_repository_text(
     max_total_bytes: int,
     selected_paths: tuple[str, ...] | None = None,
     api_sanitizer: Callable[[str, str], SanitizedApiExtraction | None] | None = None,
+    api_sanitizer_kinds: frozenset[str] = frozenset({"openapi", "swagger"}),
 ) -> SafeScanResult:
     """Read bounded regular files without following links outside the workspace."""
 
     if max_files < 1 or max_file_bytes < 1 or max_total_bytes < 1:
         raise ValueError("safe repository scan limits must be positive")
+    if not api_sanitizer_kinds <= {"openapi", "swagger", "postman_collection"}:
+        raise ValueError("unknown API sanitizer capability")
     root = workspace.resolve(strict=True)
     includes = tuple(include_patterns)
     excludes = tuple(exclude_patterns)
@@ -188,7 +191,7 @@ def scan_repository_text(
         # Known API artifact paths must not be read or enter raw chunking.
         blocked_kind = blocked_api_artifact_kind(relative)
         if blocked_kind is not None and (
-            api_sanitizer is None or blocked_kind not in {"openapi", "swagger"}
+            api_sanitizer is None or blocked_kind not in api_sanitizer_kinds
         ):
             record_skip(f"api_artifact_blocked_{blocked_kind}", relative)
             api_artifact_status_counts["quarantined_by_filename"] += 1
@@ -236,7 +239,7 @@ def scan_repository_text(
             api_artifact_status_counts[decision.status] += 1
             if (
                 api_sanitizer is not None
-                and blocked_kind in {"openapi", "swagger"}
+                and blocked_kind in api_sanitizer_kinds
                 and decision.status == "supported"
             ):
                 try:
