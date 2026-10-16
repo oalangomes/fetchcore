@@ -4,6 +4,50 @@ This is a local functional validation, not a performance equivalence claim.
 The machine was running unrelated workloads and an existing benchmark process;
 no exclusive-host attestation was made. No remote production deployment changed.
 
+## Latest recheck — 2026-10-16 21:23 UTC
+
+**Current acceptance: BLOCKED.** The successful live runs below are historical
+observations from earlier in this session. The current Docker Desktop daemon
+returns `Docker Desktop is unable to start`; all six shared/operational backend
+HTTP endpoints refuse connections. Active containers and volume persistence
+cannot currently be inspected. No reset, deletion or recreation was attempted.
+
+| Backend | DEV | BENCH | OPERATIONAL | Readiness | Persistence | Retrieval |
+| --- | --- | --- | --- | --- | --- | --- |
+| Solr | BLOCKED | BLOCKED | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+| OpenSearch | BLOCKED | BLOCKED | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+| Qdrant | BLOCKED | BLOCKED | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
+
+Evidence for every blocked cell: daemon failure and refused endpoints in
+`/home/alangomes/.local/state/fetchcore/shared-infra-p0-20261016/recheck-212339Z/runtime.json`.
+Persistence is unverified in this recheck, not evidence of data loss. Restoring
+the Docker Desktop daemon and repeating live checks is required before closure.
+
+Ollama: **PASS** for WSL-host connectivity at
+`http://172.21.32.1:11434/api/tags` (HTTP 200); **BLOCKED** for a fresh container
+connectivity check while Docker is unavailable. This gateway is host-specific;
+use an explicit `--ollama-url` override for WSL commands. Earlier container
+embedding and retrieval evidence remains recorded below.
+
+Additional infrastructure corrections from this review:
+
+- Backend selection now routes indexing to the same selected backend. It no longer
+  silently exports a Solr writer when OpenSearch or Qdrant was selected.
+  Unsupported operational indexing fails explicitly with the existing CLI
+  `unsupported_backend` error, representing the unsupported capability tracked by
+  issue #123. This change does not implement that lifecycle.
+- Qdrant readiness uses `/readyz`, so liveness cannot stand in for readiness.
+- Qdrant preparation rejects incompatible distance/sparse modifier and malformed
+  collection inventories before creation. Existing resources are not rewritten.
+
+Validation after these fixes: **48 focused tests passed**;
+`.venv/bin/python -m pytest -q`: **861 passed, 7 skipped**. The seven opt-in live
+integration tests were not enabled and are not fresh live passes. Ruff passed;
+`MYPYPATH=src .venv/bin/mypy scripts/shared_infra.py` passed. Regression tests cover
+all nine environment/backend indexing routes, real CLI rejection before Solr
+writer construction, Qdrant 503 readiness and incompatible resource schemas.
+No retrieval algorithm or core contract changed.
+
 ## Git and scope
 
 Work branch: `codex/shared-infra-p0`, starting HEAD

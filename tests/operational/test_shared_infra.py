@@ -38,10 +38,10 @@ def test_routing_isolates_logical_and_physical_resources():
     ("opensearch", "opensearch"),
     ("qdrant", "qdrant-vector"),
 ])
-def test_backend_selection_targets_retrieval_without_changing_indexing(backend, expected):
+def test_backend_selection_targets_retrieval_and_indexing(backend, expected):
     config = infra.route("bench", "oalangomes/fetchcore", backend)
     assert config["FETCHCORE_BACKEND"] == expected
-    assert config["FETCHCORE_INDEX_BACKEND"] == "solr"
+    assert config["FETCHCORE_INDEX_BACKEND"] == expected
     assert config["FETCHCORE_OPENSEARCH_INDEX"] == config["FETCHCORE_QDRANT_COLLECTION"]
 
 
@@ -240,3 +240,82 @@ def test_readiness_checks_solr_without_provisioning(monkeypatch):
     assert result["status"] == "ready"
     assert result["endpoint"] == "http://127.0.0.1:38983/solr/admin/info/system?wt=json"
     open_url.assert_called_once()
+
+
+@pytest.mark.parametrize("environment", ["dev", "bench", "operational"])
+@pytest.mark.parametrize("backend", ["solr", "opensearch", "qdrant"])
+def test_indexing_never_routes_to_another_backend(tmp_path, environment, backend):
+    config = infra.route(environment, "a/b", backend)
+    path = tmp_path / "endpoints.json"
+    path.write_text(json.dumps({"solr": "http://localhost:8983/solr",
+                                "opensearch": "http://localhost:9200",
+                                "qdrant": "http://localhost:6333"}))
+    infra.shared_endpoints(config, path)
+    settings = json.loads(config["FETCHCORE_INDEX_BACKEND_SETTINGS"])
+    assert config["FETCHCORE_INDEX_BACKEND"] == config["FETCHCORE_BACKEND"]
+    assert settings["url"] == config[f"FETCHCORE_{backend.upper()}_URL"]
+    field = "index" if backend == "opensearch" else "collection"
+    assert settings[field] == config[f"FETCHCORE_{backend.upper()}_{field.upper()}"]
+
+
+@pytest.mark.parametrize("backend", ["opensearch", "qdrant"])
+def test_routed_unsupported_indexing_fails_before_backend_access(monkeypatch, backend):
+    from click.testing import CliRunner
+    from fetchcore.cli import main
+    from fetchcore.application import indexing
+
+    config = infra.route("operational", "a/b", backend)
+    build_solr = Mock(side_effect=AssertionError("must never compose a Solr writer"))
+    monkeypatch.setattr(indexing, "SolrIndexStore", build_solr)
+    result = CliRunner().invoke(
+        main, ["index", "--repository", "a/b", "sync"], env=config,
+    )
+    assert result.exit_code == 1, result.output
+    assert "unsupported_backend" in result.output
+    build_solr.assert_not_called()
+
+
+def test_qdrant_readiness_does_not_accept_liveness(monkeypatch):
+    from urllib.error import HTTPError
+
+    opened = Mock(side_effect=HTTPError("http://localhost/readyz", 503, "not ready", {}, None))
+    monkeypatch.setattr(infra, "urlopen", opened)
+    with pytest.raises(RuntimeError, match="readiness timed out"):
+        infra.wait_ready("qdrant", infra.route("operational", "a/b", "qdrant"), timeout=0.01)
+    assert opened.call_args.args[0].full_url.endswith("/readyz")
+
+
+@pytest.mark.parametrize("distance,modifier", [("Dot", "idf"), ("Cosine", "none")])
+def test_qdrant_prepare_rejects_incompatible_vector_schema(monkeypatch, distance, modifier):
+    from fetchcore.adapters.retrieval.qdrant import backend
+
+    config = infra.route("operational", "a/b", "qdrant")
+    alias = backend._repository_alias(backend.QdrantVectorSettings.from_mapping({
+        "collection": config["FETCHCORE_QDRANT_COLLECTION"],
+    }), "a/b")
+    request = Mock(side_effect=[
+        {"result": {"collections": []}},
+        {"result": {"aliases": [{"alias_name": alias, "collection_name": alias + "-existing"}]}},
+        {"result": {"config": {"params": {
+            "vectors": {"size": 768, "distance": distance},
+            "sparse_vectors": {"lexical": {"modifier": modifier}},
+        }}}},
+    ])
+    monkeypatch.setattr(backend.UrllibQdrantTransport, "request", request)
+    with pytest.raises(ValueError, match="incompatible"):
+        infra._qdrant_resource(config, "a/b", True, 768)
+    assert all(call.args[0] == "GET" for call in request.call_args_list)
+
+
+def test_qdrant_prepare_rejects_malformed_inventory_before_creation(monkeypatch):
+    from fetchcore.adapters.retrieval.qdrant import backend
+
+    request = Mock(side_effect=[
+        {"result": {"collections": []}},
+        {"result": {"aliases": []}},
+        {"result": {}},
+    ])
+    monkeypatch.setattr(backend.UrllibQdrantTransport, "request", request)
+    with pytest.raises(ValueError, match="invalid collection inventory"):
+        infra._qdrant_resource(infra.route("operational", "a/b", "qdrant"), "a/b", True, 768)
+    assert all(call.args[0] == "GET" for call in request.call_args_list)

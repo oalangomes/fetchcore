@@ -79,8 +79,10 @@ from WSL. The routing default is `http://host.docker.internal:11434`; pass
 `--ollama-url` when a host process has a different reachable endpoint. Do not replace
 it with container `localhost` or start another Ollama. `FETCHCORE_BACKEND` selects
 `solr`, `opensearch`, or `qdrant-vector` (`--backend qdrant` maps to the latter);
-the separate `FETCHCORE_INDEX_BACKEND` remains `solr` until operational indexing
-parity is implemented in #123.
+`FETCHCORE_INDEX_BACKEND` and its endpoint/resource settings select that same backend.
+The indexing CLI consequently rejects OpenSearch/Qdrant with its existing
+`unsupported_backend` error (operational capability unavailable, #123). Selection
+must never redirect an unsupported indexing operation to Solr.
 
 ## Explicit service and resource preparation
 
@@ -131,7 +133,8 @@ URL, resource and repository, `--provision-mode reuse_only`, and only when inten
 plan and sync using the routed environment. Bootstrap remains Projection v3.
 OpenSearch/Qdrant infrastructure preparation creates only empty schemas and aliases;
 it does not create an indexed snapshot. Their operational index lifecycle remains
-`unsupported_capability` pending #123. Do not switch operational consumers to those
+unavailable pending #123 (`unsupported_backend` in the current indexing CLI,
+reported as an unsupported operational capability). Do not switch operational consumers to those
 resources until the indexing lifecycle is explicitly implemented and validated.
 
 `run` exports host-process `FETCHCORE_*` settings, not container DNS or MCP-specific

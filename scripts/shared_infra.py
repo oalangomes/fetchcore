@@ -17,6 +17,18 @@ OWNER = "fetchcore-shared-infra-v1"
 BACKENDS = {"solr": "solr", "opensearch": "opensearch", "qdrant": "qdrant-vector"}
 
 
+def index_settings(config: dict[str, str]) -> str:
+    """Keep indexing pointed at the selected backend, including unsupported ones."""
+    backend = config["FETCHCORE_BACKEND"]
+    prefix = {"solr": "SOLR", "opensearch": "OPENSEARCH", "qdrant-vector": "QDRANT"}[backend]
+    field = "index" if backend == "opensearch" else "collection"
+    return json.dumps({
+        "url": config[f"FETCHCORE_{prefix}_URL"],
+        field: config[f"FETCHCORE_{prefix}_{field.upper()}"],
+        "projection_version": "3",
+    })
+
+
 def route(
     environment: str,
     repository: str,
@@ -45,7 +57,7 @@ def route(
     offset = {"shared": 10000, "bench-dedicated": 20000, "operational": 30000}[instance]
     digest = hashlib.sha256(repository.encode()).hexdigest()[:16]
     resource = f"fc-{environment}-{repository.split('/')[-1][:24]}-{digest}"
-    return {
+    config = {
         "FETCHCORE_INFRA_PROJECT": f"fetchcore-{instance}",
         "FETCHCORE_INFRA_OWNER": OWNER,
         "FETCHCORE_ENVIRONMENT": environment,
@@ -63,12 +75,10 @@ def route(
         "FETCHCORE_SOLR_COLLECTION": resource,
         "FETCHCORE_OPENSEARCH_INDEX": resource,
         "FETCHCORE_QDRANT_COLLECTION": resource,
-        "FETCHCORE_INDEX_BACKEND": "solr",
-        "FETCHCORE_INDEX_BACKEND_SETTINGS": json.dumps({
-            "url": f"http://127.0.0.1:{8983 + offset}/solr",
-            "collection": resource, "projection_version": "3",
-        }),
+        "FETCHCORE_INDEX_BACKEND": BACKENDS[backend],
     }
+    config["FETCHCORE_INDEX_BACKEND_SETTINGS"] = index_settings(config)
+    return config
 
 
 def owned_containers(config: dict[str, str]) -> list[str]:
@@ -117,9 +127,7 @@ def shared_endpoints(config: dict[str, str], path: Path | None) -> set[str]:
         return set()
     for backend, url in endpoints.items():
         config[f"FETCHCORE_{backend.upper()}_URL"] = url.rstrip("/")
-    settings = json.loads(config["FETCHCORE_INDEX_BACKEND_SETTINGS"])
-    settings["url"] = config["FETCHCORE_SOLR_URL"]
-    config["FETCHCORE_INDEX_BACKEND_SETTINGS"] = json.dumps(settings)
+    config["FETCHCORE_INDEX_BACKEND_SETTINGS"] = index_settings(config)
     return set(endpoints)
 
 
@@ -148,7 +156,7 @@ def wait_ready(backend: str, config: dict[str, str], timeout: float = 180.0) -> 
     endpoint = {
         "solr": f"{config['FETCHCORE_SOLR_URL']}/admin/info/system?wt=json",
         "opensearch": f"{config['FETCHCORE_OPENSEARCH_URL']}/_cluster/health",
-        "qdrant": f"{config['FETCHCORE_QDRANT_URL']}/healthz",
+        "qdrant": f"{config['FETCHCORE_QDRANT_URL']}/readyz",
     }[backend]
     deadline = time.monotonic() + timeout
     last_error = "no response"
@@ -173,10 +181,10 @@ def _opensearch_resource(config: dict[str, str], repository: str, create: bool) 
         OpenSearchSettings,
         UrllibOpenSearchTransport,
         OPENSEARCH_VECTOR_DIMENSIONS,
-        OPENSEARCH_VECTOR_FIELD,
         _index_mapping,
         _repository_alias,
     )
+    from fetchcore.adapters.retrieval.opensearch.query import OPENSEARCH_VECTOR_FIELD
     from fetchcore.retrieval.contracts import KnowledgeSearchError
 
     settings = OpenSearchSettings.from_mapping({
@@ -199,7 +207,7 @@ def _opensearch_resource(config: dict[str, str], repository: str, create: bool) 
             )
         return expected_value == actual_value
 
-    def validate_index(index: str) -> None:
+    def validate_index(index: str) -> list[str]:
         mappings = transport.request("GET", f"{quote(index, safe='')}/_mapping")
         index_data = mappings.get(index)
         raw_mappings = index_data.get("mappings") if isinstance(index_data, dict) else None
@@ -306,8 +314,13 @@ def _qdrant_resource(
                 f"Qdrant collection {collection} vector dimensions do not match "
                 f"{vector_dimensions}"
             )
+        if dense.get("distance") != "Cosine":
+            raise ValueError(f"Qdrant collection {collection} has incompatible vector distance")
         if not isinstance(sparse_vectors, dict) or SPARSE_VECTOR_NAME not in sparse_vectors:
             raise ValueError(f"Qdrant collection {collection} lacks FetchCore sparse-vector schema")
+        sparse = sparse_vectors[SPARSE_VECTOR_NAME]
+        if not isinstance(sparse, dict) or sparse.get("modifier") != SPARSE_MODIFIER:
+            raise ValueError(f"Qdrant collection {collection} has incompatible sparse modifier")
 
     bindings = aliases_for_resource()
     if bindings:
@@ -327,9 +340,14 @@ def _qdrant_resource(
 
     collections = transport.request("GET", "collections").get("result")
     collection_items = collections.get("collections") if isinstance(collections, dict) else None
+    if not isinstance(collection_items, list) or any(
+        not isinstance(item, dict) or not isinstance(item.get("name"), str)
+        for item in collection_items
+    ):
+        raise ValueError("Qdrant returned an invalid collection inventory")
     existing_names = {
         str(item.get("name")) for item in collection_items if isinstance(item, dict)
-    } if isinstance(collection_items, list) else set()
+    }
     if concrete in existing_names:
         raise ValueError(f"refusing to adopt unaliased Qdrant collection {concrete}")
     transport.request("PUT", f"collections/{quote(concrete, safe='')}", {
