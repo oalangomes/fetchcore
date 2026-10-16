@@ -232,9 +232,10 @@ contact Solr, OpenSearch, Qdrant or Ollama and writes only the requested output
 file. It refuses missing files, mismatched schemas, Ground Truth, metric,
 budget, configuration or stable retrieval fingerprints, and recomputes derived
 ContextYield. Full per-query deltas and repetition ranges remain available in
-its JSON output without committing private or bulky run artifacts. For a fresh
-checkout of this PR, obtain the V0.2 directory from the source commit identified
-above before running the command; V0.1 is already versioned in the main tree.
+its JSON output without committing private or bulky run artifacts. Both V0.1 and V0.2 measurement directories are now versioned in the main
+tree, so this offline comparison works directly from a clean checkout. The V0.2
+run remains classified as `RETRIEVAL_ONLY_OBSERVATION`; restoring its files does
+not certify historical snapshot provenance.
 
 **Formal verdict: `RETRIEVAL_ONLY_OBSERVATION`.** A new controlled index build
 or an independently verifiable historical snapshot attestation would be needed
