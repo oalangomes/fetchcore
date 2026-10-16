@@ -1,0 +1,21 @@
+# Overlay for an explicitly started shared infrastructure instance.
+# The infrastructure network already exists after `shared_infra.py up`.
+# Each app project keeps its own default network for API/web discovery so
+# Docker DNS cannot resolve another environment's `api` service.
+services:
+  api:
+    networks: [default, infra]
+  mcp:
+    networks: [default, infra]
+  web:
+    networks: [default]
+  indexer:
+    networks: [default, infra]
+  fetchcore:
+    networks: [default, infra]
+
+networks:
+  default: {}
+  infra:
+    external: true
+    name: ${FETCHCORE_INFRA_PROJECT:?use shared_infra.py}_default

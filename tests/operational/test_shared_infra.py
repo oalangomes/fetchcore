@@ -31,6 +31,12 @@ def test_routing_isolates_logical_and_physical_resources():
     assert infra.route("dev", "another/fetchcore")["FETCHCORE_SOLR_COLLECTION"] != dev[
         "FETCHCORE_SOLR_COLLECTION"
     ]
+    mixed_case = infra.route("bench", "oalangomes/NeuroTrack_MS")
+    assert mixed_case["FETCHCORE_REPOSITORY"] == "oalangomes/NeuroTrack_MS"
+    assert mixed_case["FETCHCORE_SOLR_COLLECTION"].startswith("fc-bench-neurotrack_ms-")
+    assert mixed_case["FETCHCORE_SOLR_COLLECTION"] != infra.route(
+        "bench", "oalangomes/neurotrack_ms"
+    )["FETCHCORE_SOLR_COLLECTION"]
 
 
 @pytest.mark.parametrize(("backend", "expected"), [
@@ -45,7 +51,7 @@ def test_backend_selection_targets_retrieval_and_indexing(backend, expected):
     assert config["FETCHCORE_OPENSEARCH_INDEX"] == config["FETCHCORE_QDRANT_COLLECTION"]
 
 
-@pytest.mark.parametrize("repository", ["../bad", "OWNER/repo", "a/b\nx", "a/b/c"])
+@pytest.mark.parametrize("repository", ["../bad", "a/b\nx", "a/b/c"])
 def test_invalid_repository(repository):
     with pytest.raises(ValueError):
         infra.route("dev", repository)
@@ -72,6 +78,46 @@ def test_run_only_executes_requested_command(monkeypatch):
     assert run.call_count == 1
     assert run.call_args.args[0] == ["fetchcore", "readiness"]
     assert run.call_args.kwargs["env"]["FETCHCORE_SOLR_COLLECTION"].startswith("fc-bench-")
+
+
+def test_app_uses_existing_network_and_same_resource_without_starting_backend(monkeypatch):
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, ""))
+    ready = Mock(return_value={"status": "ready"})
+    monkeypatch.setattr(infra.subprocess, "run", run)
+    monkeypatch.setattr(infra, "wait_ready", ready)
+    invoke(monkeypatch, "app", "--environment", "bench", "--repository", "a/b")
+    command = run.call_args.args[0]
+    assert command[-4:] == ["--no-deps", "api", "mcp", "web"]
+    assert "shared-app.yml" in " ".join(command)
+    app_env = run.call_args.kwargs["env"]
+    assert app_env["FETCHCORE_INFRA_PROJECT"] == "fetchcore-shared"
+    assert app_env["FETCHCORE_CONTAINER_SOLR_URL"] == "http://solr:8983/solr"
+    assert app_env["FETCHCORE_SOLR_COLLECTION"].startswith("fc-bench-")
+    assert json.loads(app_env["FETCHCORE_CONTAINER_INDEX_BACKEND_SETTINGS"])["collection"] == app_env[
+        "FETCHCORE_SOLR_COLLECTION"
+    ]
+    ready.assert_called_once()
+
+
+def test_external_app_requires_container_reachable_endpoint(monkeypatch, tmp_path):
+    path = tmp_path / "external.json"
+    path.write_text(json.dumps({"solr": "http://127.0.0.1:8983/solr"}))
+    run = Mock(side_effect=AssertionError("must not start app"))
+    monkeypatch.setattr(infra.subprocess, "run", run)
+    monkeypatch.setattr(infra, "wait_ready", Mock(return_value={"status": "ready"}))
+    with pytest.raises(ValueError, match="container-url"):
+        invoke(monkeypatch, "app", "--environment", "dev", "--repository", "a/b",
+               "--shared-endpoints", str(path))
+    run.assert_not_called()
+
+
+def test_external_shared_app_rejects_isolated_container_port():
+    config = infra.route("bench", "a/b")
+    with pytest.raises(ValueError, match="isolated-service port"):
+        infra.container_routing(
+            config, selected_backend="solr", external={"solr"},
+            container_url="http://operational-host:38983/solr",
+        )
 
 
 @pytest.mark.parametrize("environment", ["dev", "operational", "bench"])
@@ -111,6 +157,14 @@ def test_compose_has_no_implicit_resource_or_model_creation():
     ollama = yaml.safe_load((ROOT / "infra/compose/ollama.yml").read_text())
     assert "command" not in ollama["services"]["ollama"]
     assert "shared.yml" not in (ROOT / "compose.yml").read_text()
+
+
+def test_app_projects_keep_api_dns_private_and_reuse_external_infra_network():
+    overlay = yaml.safe_load((ROOT / "infra/compose/shared-app.yml").read_text())
+    assert overlay["services"]["web"]["networks"] == ["default"]
+    assert overlay["services"]["api"]["networks"] == ["default", "infra"]
+    assert overlay["services"]["mcp"]["networks"] == ["default", "infra"]
+    assert overlay["networks"]["infra"]["external"] is True
 
 
 def test_up_rejects_unowned_persistent_volume(monkeypatch):

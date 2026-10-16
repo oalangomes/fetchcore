@@ -51,6 +51,7 @@ docker-smoke: docker-build
 
 compose-config:
 	$(PYTHON) scripts/shared_infra.py run --environment dev --repository oalangomes/fetchcore -- $(DOCKER) compose --env-file /dev/null -f infra/compose/shared.yml config --quiet
+	$(PYTHON) scripts/shared_infra.py run --environment dev --repository oalangomes/fetchcore -- $(DOCKER) compose --env-file /dev/null -f infra/compose/app.yml -f infra/compose/shared-app.yml config --quiet
 	$(DOCKER) compose config --quiet
 	$(DOCKER) compose --profile runtime --profile indexing config --quiet
 	$(DOCKER) compose -f tools/explorer/compose.yaml config --quiet

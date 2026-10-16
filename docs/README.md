@@ -18,6 +18,8 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Look up contracts and capabilities | [Contracts](reference/contracts.md) and [capabilities](reference/capabilities.md) |
 | Install and index a repository | [Getting started](guides/getting-started.md) and [self-hosted indexing](guides/self-hosted-indexing.md) |
 | Share local services safely | [Shared development infrastructure](guides/shared-development-infrastructure.md) |
+| Review consumer migration starting state | [Shared infrastructure consumer audit](operations/shared-infra-consumer-audit.md) |
+| Review consumer migration validation | [Shared infrastructure consumer validation](operations/shared-infra-consumer-validation.md) |
 | Understand CI triggers, runners and container reliability | [CI workflows](guides/ci-workflows.md) |
 | Register or inspect a repository source | [Repository registry](guides/repository-registry.md) |
 | Plan, sync or rebuild a registered repository | [Repository indexing lifecycle](guides/repository-indexing.md) |

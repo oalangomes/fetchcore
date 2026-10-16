@@ -84,100 +84,58 @@ docker run --rm -i \
 
 The image runs as a non-root user and treats the mounted repository as read-only.
 
-## Docker Compose: default Explorer stack
+## Shared developer infrastructure and Search Lab
 
-The **default** root `compose.yml` is now the local, backend-neutral Search Lab
-application with the **Solr lexical/BM25** adapter. Backend containers are
-rebuildable projections and do not change repository knowledge authority.
-
-From the repository root:
+Start or reuse the DEV backend explicitly, then start the Search Lab on its
+existing network. No resource is prepared or indexed by either command.
 
 ```bash
-docker compose config --quiet
-docker compose up -d --build --wait
-docker compose ps
+python scripts/shared_infra.py up --environment dev --repository oalangomes/fetchcore --backend solr
+python scripts/shared_infra.py app --environment dev --repository oalangomes/fetchcore --backend solr
 ```
 
-The default starts the **web** (http://127.0.0.1:5173), **API** (proxied at
-`/api`), **MCP Streamable HTTP** (http://127.0.0.1:8766/mcp) and **Solr**
-(http://127.0.0.1:8983/solr). Host ports are loopback-only, suitable for local
-development, **not** authenticated network serving.
+Open `http://127.0.0.1:5173`. The API is proxied at `/api`, and MCP Streamable
+HTTP is at `http://127.0.0.1:8766/mcp`. The selected Solr backend is published at
+`http://127.0.0.1:18983/solr`; app containers use `solr:8983/solr` on the existing
+`fetchcore-shared_default` network. DEV and BENCH share the service but use
+different logical resources. Search Lab shows the authorized environment,
+backend, repository, resource and on-demand retrieval readiness. API health alone
+does not mean that an index snapshot exists.
 
-**Service health does not mean the repository is indexed.** Indexing is always
-an explicit operator operation:
+Inspect routing and readiness before writing:
 
 ```bash
-docker compose --profile indexing run --rm indexer fetchcore index bootstrap
-docker compose --profile indexing run --rm indexer fetchcore index status
-docker compose --profile indexing run --rm indexer fetchcore index sync
-docker compose exec -T api python -m tools.explorer.docker.smoke
+python scripts/shared_infra.py env --environment dev --repository oalangomes/fetchcore
+python scripts/shared_infra.py ready --environment dev --repository oalangomes/fetchcore --backend solr
+python scripts/shared_infra.py run --environment dev --repository oalangomes/fetchcore -- fetchcore readiness --json
 ```
 
-The legacy `index sync` may initialize a missing Solr snapshot when explicitly
-invoked; registered `index sync <repo>` has its own no-implicit-rebuild policy.
-No model is pulled and no collection is indexed automatically when Compose starts.
-To index a different local repository, set `FETCHCORE_SOURCE_PATH` to an
-**absolute host path** and `FETCHCORE_REPOSITORY` to its canonical identity
-before starting. See [Explorer setup](../../tools/explorer/README.md).
+Prepare a Solr resource with `python -m fetchcore.operational.solr_runtime prepare`
+using the emitted URL, resource and repository. Explicit first creation uses
+`--provision-mode provision_if_missing --create-if-missing`; later checks use
+`--provision-mode reuse_only`.
+Indexing then requires an explicit `fetchcore index bootstrap`, registration,
+plan and sync. See [shared infrastructure](shared-development-infrastructure.md)
+and [repository indexing](repository-indexing.md) for the complete commands and
+fingerprint checks. The backend-neutral CLI, API, MCP and SDK use the same
+`FETCHCORE_*` binding when supplied explicitly.
 
-### Optional standalone backends
-
-Each backend has **one** reusable Compose definition; running it alone
-does **not** start the frontend or index anything:
+For functional BENCH, use `--environment bench` with the same service and its
+separate resource. A performance claim requires `--dedicated --performance
+--exclusive-host` and the dedicated BENCH project. OPERATIONAL uses its own
+persistent project, volumes and `reuse_only` policy. Stop an app project without
+removing its backend data:
 
 ```bash
-docker compose -p fetchcore-solr -f infra/compose/solr.yml up -d --wait
-docker compose -p fetchcore-opensearch -f infra/compose/opensearch.yml up -d --wait
-docker compose -p fetchcore-qdrant -f infra/compose/qdrant.yml up -d --wait
+docker compose -p fetchcore-lab-dev -f infra/compose/app.yml -f infra/compose/shared-app.yml stop
 ```
 
-Run **one at a time** unless you explicitly adjust published host ports.
-The pinned versions are Solr 9.10.1, OpenSearch 3.8.0 and Qdrant 1.19.0.
-OpenSearch and Qdrant support retrieval according to their declared capabilities,
-but full operational indexing/CLI parity remains tracked under
-[issue #123](https://github.com/oalangomes/fetchcore/issues/123).
-
-For an **alternative application stack**, combine the shared application with
-the desired backend and explicitly select it:
-
-```bash
-FETCHCORE_BACKEND=opensearch docker compose -p fetchcore-opensearch \
-  -f infra/compose/app.yml -f infra/compose/opensearch.yml up -d --build --wait
-```
-
-This **does not** make the current Solr-only operational `indexer` work with
-OpenSearch. An alternative backend requires an independently provisioned,
-compatible index. For Qdrant use `FETCHCORE_BACKEND=qdrant-vector`, the
-`qdrant.yml` file and explicitly configured embeddings/vector snapshot.
-No silent fallback to Solr/local-semantic occurs.
-
-### Compatibility and teardown
-
-The original `docker compose -f tools/explorer/compose.yaml ...` entrypoint
-remains as a compatibility alias, but it now uses the same `fetchcore`
-Compose project and persistent Solr volume as the root stack. Search Lab does
-not create a second `fetchcore-lab` runtime namespace.
-
-Never run `down -v` unless you intentionally want to delete the canonical
-local FetchCore volume.
-
-The old standalone `fetchcore` MCP **stdio image** remains available:
-
-```bash
-docker compose --profile runtime run --rm fetchcore
-```
-
-If an existing root `.env` contains `COMPOSE_FILE=tools/explorer/compose.yaml`,
-remove that line to opt into the new root default. `make compose-config`
-checks the root and optional backend compositions.
-
-```bash
-docker compose down
-```
-
-Ollama stays an externally configured optional embedding provider. Dense/hybrid
-require matching vector index, model, serializer and dimensions (#123); Compose
-startup alone does not make them operational.
+The root `compose.yml` and `tools/explorer/compose.yaml` remain legacy
+compatibility entry points for existing CI and deployments. They create a
+separate `fetchcore` Solr instance on port 8983; use them only when that
+isolated legacy stack is intended. `docker compose down` without `-v` preserves
+its named volumes. The shared infrastructure tool never deletes DEV or
+OPERATIONAL volumes.
 
 ## Contributor loop
 

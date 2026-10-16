@@ -354,9 +354,10 @@ the persistent `fetchcore` resource on the repository-affine self-hosted runner.
 The normal operational contract is deliberately fail-closed:
 
 ```yaml
-collection: fetchcore
+collection: fc-operational-fetchcore-635ab7352c2850f2
 create_if_missing: false
 solr_provision_mode: reuse_only
+require_existing_snapshot: true
 index_lifecycle: sync
 evaluate: false
 ```
@@ -365,6 +366,12 @@ An absent resource, absent snapshot, or incompatible fingerprint is not repaired
 or rebuilt automatically. Initial persistent bootstrap/rebuild is an explicit
 operator action through the reusable indexing workflow. Subsequent master runs
 must resolve to measured incremental work or no-op when compatible.
+
+The operational caller checks persisted snapshot presence, indexing fingerprint
+and status (`ready` or `changes_pending`) after resource preflight and before
+sync. A new revision can be incrementally synchronized; an absent or
+incompatible snapshot fails before writing. Hosted self-dogfood leaves this
+gate off because its per-run Solr container is intentionally empty.
 
 ## What this dogfood proves
 

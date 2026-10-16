@@ -7,3 +7,7 @@
 graphify-out/
 .venv*
 .vscode/settings.json
+tools/explorer/web/node_modules/
+tools/explorer/web/dist/
+tools/explorer/web/test-results/
+dist/

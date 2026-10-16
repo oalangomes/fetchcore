@@ -29,6 +29,40 @@ def index_settings(config: dict[str, str]) -> str:
     })
 
 
+def container_routing(config: dict[str, str], *, selected_backend: str,
+                      external: set[str], container_url: str | None) -> dict[str, str]:
+    """Resolve app-container DNS separately from host/WSL published URLs."""
+    urls = {
+        "solr": "http://solr:8983/solr",
+        "opensearch": "http://opensearch:9200",
+        "qdrant": "http://qdrant:6333",
+    }
+    if selected_backend in external and not container_url:
+        raise ValueError("external backend requires explicit --container-url for app containers")
+    if container_url:
+        parsed = urlsplit(container_url)
+        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                or parsed.username or parsed.password or parsed.query or parsed.fragment):
+            raise ValueError("container URL must be HTTP(S) without credentials/query/fragment")
+        if selected_backend == "solr" and parsed.path.rstrip("/") != "/solr":
+            raise ValueError("container Solr URL must include /solr")
+        if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
+            raise ValueError("container URL must not use container loopback")
+        if config["FETCHCORE_INFRA_PROJECT"] == "fetchcore-shared" and parsed.port in {
+            28983, 29200, 29600, 26333, 26334,
+            38983, 39200, 39600, 36333, 36334,
+        }:
+            raise ValueError("shared app container URL uses an isolated-service port")
+        urls[selected_backend] = container_url.rstrip("/")
+    container_config = dict(config)
+    for backend, prefix in (("solr", "SOLR"), ("opensearch", "OPENSEARCH"),
+                            ("qdrant", "QDRANT")):
+        container_config[f"FETCHCORE_CONTAINER_{prefix}_URL"] = urls[backend]
+        container_config[f"FETCHCORE_{prefix}_URL"] = urls[backend]
+    container_config["FETCHCORE_CONTAINER_INDEX_BACKEND_SETTINGS"] = index_settings(container_config)
+    return container_config
+
+
 def route(
     environment: str,
     repository: str,
@@ -38,8 +72,8 @@ def route(
 ) -> dict[str, str]:
     if environment not in {"dev", "bench", "operational"}:
         raise ValueError("unknown environment")
-    if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*/[a-z0-9][a-z0-9_.-]*", repository):
-        raise ValueError("repository must be canonical lowercase owner/name")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", repository):
+        raise ValueError("repository must be canonical owner/name")
     if backend not in BACKENDS:
         raise ValueError("unknown retrieval backend")
     if dedicated and environment != "bench":
@@ -55,8 +89,10 @@ def route(
         "operational" if environment == "operational" else "shared"
     )
     offset = {"shared": 10000, "bench-dedicated": 20000, "operational": 30000}[instance]
+    # The backend resource is lowercase, but the digest uses the exact
+    # repository identity so case-distinct sources cannot share a resource.
     digest = hashlib.sha256(repository.encode()).hexdigest()[:16]
-    resource = f"fc-{environment}-{repository.split('/')[-1][:24]}-{digest}"
+    resource = f"fc-{environment}-{repository.split('/')[-1].lower()[:24]}-{digest}"
     config = {
         "FETCHCORE_INFRA_PROJECT": f"fetchcore-{instance}",
         "FETCHCORE_INFRA_OWNER": OWNER,
@@ -369,7 +405,7 @@ def _qdrant_resource(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["env", "ready", "up", "prepare", "run", "cleanup"])
+    parser.add_argument("action", choices=["env", "ready", "up", "app", "prepare", "run", "cleanup"])
     parser.add_argument("--environment", choices=["dev", "bench", "operational"], required=True)
     parser.add_argument("--repository", required=True)
     parser.add_argument("--dedicated", action="store_true")
@@ -380,6 +416,9 @@ def main() -> None:
     parser.add_argument("--confirm-project")
     parser.add_argument("--shared-endpoints", type=Path,
                         help="Explicit JSON of existing shared backend URLs; never adopted by up")
+    parser.add_argument("--container-url", help="Container-reachable URL of the selected external backend")
+    parser.add_argument("--web-port", type=int, help="App host port override when the default is occupied")
+    parser.add_argument("--mcp-port", type=int, help="MCP host port override when the default is occupied")
     parser.add_argument("--ollama-url", default="http://host.docker.internal:11434",
                         help="Existing Ollama endpoint; this tool never starts Ollama")
     parser.add_argument("--create-if-missing", action="store_true",
@@ -395,6 +434,13 @@ def main() -> None:
         parser.error("Solr resources use the existing Solr runtime; --backend must be opensearch or qdrant")
     if args.create_if_missing and args.action != "prepare":
         parser.error("--create-if-missing is only valid for prepare")
+    if args.container_url and args.action != "app":
+        parser.error("--container-url is only valid for app")
+    if (args.web_port or args.mcp_port) and args.action != "app":
+        parser.error("app port overrides are only valid for app")
+    for port in (args.web_port, args.mcp_port):
+        if port is not None and not 1 <= port <= 65535:
+            parser.error("app ports must be between 1 and 65535")
     if args.action == "prepare" and args.backend == "qdrant" and args.vector_dimensions is None:
         parser.error("Qdrant prepare requires explicit --vector-dimensions")
     if args.vector_dimensions is not None and (
@@ -409,6 +455,8 @@ def main() -> None:
         args.environment == "bench" and args.dedicated and args.exclusive_host
     ):
         parser.error("performance requires bench --dedicated --exclusive-host")
+    if args.performance:
+        config["FETCHCORE_BENCH_PERFORMANCE"] = "true"
     env = {**os.environ, **config}
     if args.action == "env":
         print(json.dumps(config, indent=2, sort_keys=True))
@@ -419,6 +467,27 @@ def main() -> None:
             parser.error("run requires -- command [arguments]")
         # Pass only routing. Never start Docker, create resources, pull models or bootstrap.
         subprocess.run(command, env=env, check=True)
+    elif args.action == "app":
+        # The selected service and network must already exist. This action
+        # starts only app containers and never provisions a backend resource.
+        wait_ready(args.backend, config)
+        container_config = container_routing(
+            config, selected_backend=args.backend, external=external,
+            container_url=args.container_url,
+        )
+        container_config["FETCHCORE_WEB_PORT"] = str(args.web_port or {
+            "dev": 5173, "bench": 15173, "operational": 25173,
+        }[args.environment])
+        container_config["FETCHCORE_MCP_PORT"] = str(args.mcp_port or {
+            "dev": 8766, "bench": 18766, "operational": 28766,
+        }[args.environment])
+        subprocess.run([
+            "docker", "compose", "--env-file", "/dev/null", "-p",
+            f"fetchcore-lab-{args.environment}",
+            "-f", str(ROOT / "infra/compose/app.yml"),
+            "-f", str(ROOT / "infra/compose/shared-app.yml"),
+            "up", "-d", "--build", "--wait", "--no-deps", "api", "mcp", "web",
+        ], env={**os.environ, **container_config}, check=True)
     elif args.action == "up":
         if args.backend in external:
             parser.error("selected backend is externally managed; use run for read-only readiness")

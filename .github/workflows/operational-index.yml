@@ -30,6 +30,7 @@ jobs:
       collection: ${{ vars.FETCHCORE_OPERATIONAL_SOLR_COLLECTION || 'fc-operational-fetchcore-635ab7352c2850f2' }}
       create_if_missing: false
       solr_provision_mode: reuse_only
+      require_existing_snapshot: true
       index_lifecycle: sync
       evaluate: false
       evaluation_modes_json: '["lexical"]'

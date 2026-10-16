@@ -94,7 +94,7 @@ fetchcore search "RepositoryIndexer" --repo fetchcore --limit 5 --json
 
 The repository leaf `fetchcore` is an example; substitute the canonical identity returned by `repo list` if different. **The commands above require a compatible provisioned index and runtime configuration**; a fresh registration alone is insufficient. CLI `search` exists and requires `--repo`, rather than a global unscoped search. Use `fetchcore source --help` with an actual returned `source_ref` to retrieve bounded lines. Neither retrieval command mutates the index.
 
-For an optional local UI, the [Compose Explorer stack](docs/guides/getting-started.md#docker-compose-default-explorer-stack) starts the web/API/MCP/Solr services, but an operator must still invoke indexing explicitly. **Healthy service ≠ indexed repository ≠ usable retrieval.** The [readiness check](docs/guides/runtime-configuration.md#operational-readiness-issue-134) observes repository binding, compatible snapshot and selected retrieval mode separately.
+For an optional local UI, [start the shared DEV service and Search Lab](docs/guides/getting-started.md#shared-developer-infrastructure-and-search-lab), then invoke indexing explicitly. **Healthy service ≠ indexed repository ≠ usable retrieval.** The [readiness check](docs/guides/runtime-configuration.md#operational-readiness-issue-134) observes repository binding, compatible snapshot and selected retrieval mode separately.
 
 ### Serve retrieval over MCP (optional)
 

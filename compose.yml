@@ -1,5 +1,5 @@
-# FetchCore developer default. Backend adapters are independently runnable.
-# docker compose up -d --build --wait
+# Legacy FetchCore Compose entry point retained for CI and existing deployments.
+# Standard DEV: scripts/shared_infra.py up, then scripts/shared_infra.py app.
 name: fetchcore
 include:
   - ./infra/compose/app.yml

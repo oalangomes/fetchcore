@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+import pytest
 
 from fetchcore.application import RepositoryBinding, RetrievalApplicationService
 from tools.explorer.api.app import (
@@ -241,6 +242,7 @@ def test_target_registry_is_operator_owned_and_fails_closed(monkeypatch, tmp_pat
     base = FetchCoreRuntimeConfig(
         backend="local-semantic", workspace=tmp_path, repository="demo/default",
     )
+    monkeypatch.setenv("FETCHCORE_ENVIRONMENT", "dev")
     monkeypatch.setenv("FETCHCORE_EXPLORER_TARGETS", '{"id":"wrong-shape"}')
     try:
         _operator_targets(base)
@@ -257,6 +259,8 @@ def test_target_registry_is_operator_owned_and_fails_closed(monkeypatch, tmp_pat
     assert set(targets) == {"default", "allowed"}
     assert targets["allowed"].repository == "demo/allowed"
     assert targets["allowed"].public()["collection"] is None
+    assert targets["allowed"].public()["environment"] == "dev"
+    assert targets["allowed"].public()["indexing"]["supported"] is False
     monkeypatch.setenv("FETCHCORE_EXPLORER_TARGETS", (
         '[{"id":"default","backend":"local-semantic",'
         '"backend_settings":{},"repository":"demo/allowed","workspace":"' + str(allowed) + '"}]'
@@ -266,6 +270,13 @@ def test_target_registry_is_operator_owned_and_fails_closed(monkeypatch, tmp_pat
         assert False, "duplicate default target id must fail"
     except ValueError as exc:
         assert "duplicated" in str(exc)
+    monkeypatch.setenv("FETCHCORE_EXPLORER_TARGETS", (
+        '[{"id":"allowed","backend":"local-semantic",'
+        '"backend_settings":{},"repository":"demo/allowed","workspace":"' + str(allowed)
+        + '","environment":"production"}]'
+    ))
+    with pytest.raises(ValueError, match="environment"):
+        _operator_targets(base)
 
 
 def test_readiness_is_on_demand_and_uses_authorized_target(tmp_path: Path) -> None:

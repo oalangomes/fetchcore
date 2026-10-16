@@ -459,9 +459,11 @@ export function App() {
       <div className="nav-caption mt-10">AMBIENTE</div>
       <div className="space-y-3 rounded-xl border border-line bg-surface/40 p-4">
         <div className="flex items-center gap-2 text-xs"><span className={'status-dot ' + (config.isSuccess ? 'bg-accent' : 'bg-amber-400')}/>{config.isSuccess ? 'API conectada' : config.isLoading ? 'Conectando...' : 'Indisponível'}</div>
+        <p className="text-xs text-muted">Ambiente: {activeTarget?.environment?.toUpperCase() ?? 'não declarado'}</p>
         <p className="break-all font-mono text-xs text-white">{activeTarget?.repository ?? 'repository indisponível'}</p>
         <div className="flex items-center gap-2 text-xs text-muted"><Database size={13}/>{activeTarget?.backend ?? '—'} · {activeTarget?.collection ?? 'sem coleção declarada'}</div>
         <div className="flex items-center gap-2 text-xs text-muted"><GitBranch size={13}/>{shorten(activeTarget?.revision ?? 'working tree', 20)}</div>
+        <p className="text-xs text-muted">Busca: {readinessTargetId === activeTarget?.id && readiness.data ? (readiness.data.ready ? 'pronta' : 'bloqueada') : 'não verificada'}</p>
       </div>
       <div className="mt-auto rounded-xl border border-line p-4">
         <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-white"><ShieldCheck size={15} className="text-accent"/> Retrieval ≠ Authority</div>
@@ -618,8 +620,11 @@ export function App() {
                         <span className="font-mono" title={fact.category ?? ''}>{fact.state}{fact.category ? ' · ' + fact.category : ''}</span>
                       </div>)}
                     <p>Revisão indexada: {readiness.data.indexed_revision ?? 'não informada'} · solicitada: {readiness.data.requested_revision ?? 'não informada'}</p>
+                    <p>Fingerprints observados: {Object.keys(readiness.data.fingerprints).length ? text(readiness.data.fingerprints) : 'não informados'}</p>
                     <p>Readiness significa condições operacionais verificadas, não qualidade ou satisfação da busca.</p>
                   </div>}
+                <p className="mt-2">Indexação: {activeTarget?.indexing?.reason ?? 'capacidade não informada'}</p>
+                <p>Capabilities: {activeTarget ? Object.entries(activeTarget.capabilities).filter(([, enabled]) => enabled).map(([name]) => name).join(', ') || 'nenhuma' : 'não informadas'}</p>
               </div>
               <div className="rounded-lg border border-line bg-surface/50 px-3 py-2.5 text-xs text-muted">
                 <div className="mb-1 flex items-center gap-2 font-semibold text-white"><Workflow size={14}/> Retrieval policy</div>

@@ -572,12 +572,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model", required=True)
     parser.add_argument("--repository", default="oalangomes/fetchcore")
     parser.add_argument("--revision", required=True)
-    parser.add_argument("--solr-url", default="http://127.0.0.1:8983/solr")
-    parser.add_argument("--solr-collection", default="fetchcore-knowledge")
+    parser.add_argument("--solr-url", default=os.environ.get("FETCHCORE_SOLR_URL", "http://127.0.0.1:8983/solr"))
+    parser.add_argument("--solr-collection", default=os.environ.get("FETCHCORE_SOLR_COLLECTION", "fetchcore-knowledge"))
     parser.add_argument("--max-tool-calls", type=int, default=24)
     parser.add_argument("--max-returned-chars", type=int, default=20000)
     parser.add_argument("--timeout-seconds", type=int, default=900)
     args = parser.parse_args(argv)
+    if os.environ.get("FETCHCORE_BACKEND", "solr") != "solr" and args.mode.startswith("fetchcore"):
+        parser.error("repository-learning FetchCore arm currently requires Solr; no backend fallback")
     if args.max_tool_calls < 0 or args.max_returned_chars < 0:
         parser.error("budgets must be non-negative")
     return args

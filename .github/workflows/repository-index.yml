@@ -83,6 +83,11 @@ on:
         required: false
         type: string
         default: sync
+      require_existing_snapshot:
+        description: Fail before writing unless a compatible snapshot already exists.
+        required: false
+        type: boolean
+        default: false
       evaluate:
         description: Run configured MCP dogfood scenarios after indexing.
         required: false
@@ -481,6 +486,23 @@ jobs:
             --allowed-root "$GITHUB_WORKSPACE" \
             status "$REPOSITORY" --json \
             | tee "$FETCHCORE_DOGFOOD_OUTPUT/status-before.json"
+
+      - name: Require compatible existing operational snapshot
+        if: ${{ inputs.require_existing_snapshot }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          envelope = json.loads((Path(os.environ["FETCHCORE_DOGFOOD_OUTPUT"]) / "status-before.json").read_text())
+          status = envelope.get("result")
+          if (envelope.get("status") != "succeeded" or not isinstance(status, dict)
+                  or status.get("state") not in {"ready", "changes_pending"}
+                  or not isinstance(status.get("snapshot"), dict)
+                  or status.get("snapshot_fingerprint_matches") is not True):
+              raise SystemExit("Operational snapshot is absent or incompatible; explicit migration required")
+          PY
 
       - name: Plan index lifecycle
         env:

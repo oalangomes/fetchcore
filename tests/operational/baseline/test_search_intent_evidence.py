@@ -4,6 +4,8 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -27,6 +29,31 @@ SPEC = importlib.util.spec_from_file_location(
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+
+@pytest.mark.parametrize(("environment", "owner", "backend", "performance", "reason"), [
+    ("dev", "operator", "solr", False, "BENCH routing"),
+    ("bench", "", "solr", False, "--owner"),
+    ("bench", "operator", "opensearch", False, "requires Solr"),
+    ("bench", "operator", "solr", True, "dedicated BENCH"),
+])
+def test_new_search_intent_runs_fail_closed_before_retrieval(
+    environment: str, owner: str, backend: str, performance: bool, reason: str,
+) -> None:
+    command = [sys.executable, str(ROOT / "benchmarks/search-intent-v2/run.py"),
+               "--workspace", str(ROOT), "--revision", "0" * 40,
+               "--solr-url", "http://127.0.0.1:18983/solr", "--collection", "fc-bench-test",
+               "--scenarios", str(ROOT / "benchmarks/search-intent-v2/scenarios.yaml"),
+               "--output", "/tmp/unused-search-intent.json", "--label", "guard-test"]
+    if performance:
+        command.append("--performance-comparable")
+    result = subprocess.run(command, capture_output=True, text=True, check=False,
+                            env={**os.environ, "FETCHCORE_ENVIRONMENT": environment,
+                                 "FETCHCORE_BENCH_OWNER": owner, "FETCHCORE_BACKEND": backend,
+                                 "FETCHCORE_INFRA_PROJECT": "fetchcore-shared",
+                                 "FETCHCORE_BENCH_PERFORMANCE": "false"})
+    assert result.returncode != 0
+    assert reason in result.stderr
 
 
 def test_frozen_baseline_bytes_protocol_and_measurement_remain_unchanged():

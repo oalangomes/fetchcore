@@ -1,6 +1,6 @@
 # Shared development infrastructure and resource lifecycle
 
-Status: P0 opt-in local infrastructure. Retrieval contracts, Projection v3,
+Status: shared DEV/BENCH/OPERATIONAL local infrastructure. Retrieval contracts, Projection v3,
 serializer/embedding fingerprints and frozen benchmark artifacts are unchanged.
 
 ## Audit and scope
@@ -20,10 +20,11 @@ operational indexing parity is tracked separately in issue #123.
 
 Benchmark `search-intent-v2/run.py` accepts routed environment defaults while
 retaining explicit CLI arguments. Frozen baseline-v1 and paired `evidence.py`
-read manifest endpoints/settings; they intentionally remain unchanged. Do not
-assume environment variables override their frozen manifests. For a new dedicated
-experiment, create a separately reviewed manifest/harness and record its identity;
-never overwrite frozen artifacts or publish shared-host timings as dedicated.
+read manifest endpoints/settings; they intentionally remain unchanged. New
+baseline-v1 runs use `run_bench.py --run-config` for explicit BENCH endpoints/resources,
+owner, policy and embedding identity. That file and output must live outside the
+frozen artifact directory. Shared-host timings are functional observations;
+comparable performance requires dedicated BENCH and exclusive-host attestation.
 
 ## Instances and endpoints
 
@@ -42,8 +43,8 @@ no per-environment port or volume. Operational persistence is
 physically separate from development containers/volumes, on the same Docker host;
 it is not host fault-domain isolation or a production deployment.
 
-Logical names are `fc-<environment>-<repo-name-first-24>-<sha256(owner/name)-first-16>`.
-Repository identity must be canonical lowercase `owner/name`. Full repository
+Logical names are `fc-<environment>-<lowercase-repo-name-first-24>-<sha256(exact-owner/name)-first-16>`.
+Repository identity must be canonical `owner/name` and retains its original case. Full repository
 identity remains in indexed provenance and existing repository binding validation;
 the hash is a naming aid, not authorization. No revision, schema or fingerprint is
 encoded into a new identity or silently rewritten. DEV and BENCH use different
@@ -74,6 +75,12 @@ Omitted backends retain their managed defaults; an unavailable endpoint fails ex
 
 Host-process and Docker URLs are different configurations. A host process can use
 published loopback ports; containers use service DNS on the correct network.
+`shared_infra.py app` starts only API, MCP and web after backend service readiness,
+using `infra/compose/shared-app.yml` and the already created network. It never
+prepares a logical resource. DEV uses web/MCP ports 5173/8766, BENCH uses
+15173/18766, and OPERATIONAL uses 25173/28766. For an operator-managed external
+shared backend, pass `--shared-endpoints` and an explicit container-reachable
+`--container-url` to `app`; host loopback addresses are not valid container DNS.
 `host.docker.internal` may reach host Ollama from Docker even when it is unreachable
 from WSL. The routing default is `http://host.docker.internal:11434`; pass
 `--ollama-url` when a host process has a different reachable endpoint. Do not replace
@@ -128,8 +135,9 @@ named copy when necessary, then pass its name to `prepare --configset`.
 
 Prepare a new Solr logical resource explicitly with the existing
 `python -m fetchcore.operational.solr_runtime prepare` command: use the emitted
-URL, resource and repository, `--provision-mode reuse_only`, and only when intended
-`--create-if-missing`. Then explicitly run `fetchcore index bootstrap`, registration,
+URL, resource and repository. Use `--provision-mode provision_if_missing`
+with `--create-if-missing` only for an intentional new resource; subsequent
+checks use `--provision-mode reuse_only`. Then explicitly run `fetchcore index bootstrap`, registration,
 plan and sync using the routed environment. Bootstrap remains Projection v3.
 OpenSearch/Qdrant infrastructure preparation creates only empty schemas and aliases;
 it does not create an indexed snapshot. Their operational index lifecycle remains
@@ -194,7 +202,7 @@ Run live service/resource preparation and readiness on an explicitly allocated h
 before operational migration; use existing shared indexes read-only for retrieval
 validation and never overwrite them as a smoke-test target.
 
-Local validation on 2026-10-16: Python 3.11 suite **828 passed, 7 skipped**;
+Initial P0 validation on 2026-10-16: Python 3.11 suite **828 passed, 7 skipped**;
 Ruff, mypy (171 source files), wheel/sdist build, Markdown links and legacy/new
 Compose rendering passed. Frozen ContextYield was regenerated offline with metrics
 fingerprint `sha256:f021672682b6cee1ae420636b567924321ab65ab894580be738ab0241d17b693`.
@@ -209,3 +217,6 @@ The original branch validation above did not start services. The subsequent
 [local execution report](../operations/shared-infra-p0-local-validation.md) records
 actual provisioning, live checks, persisted artifacts and daily commands. Its
 shared-host timings are functional observations, not a performance baseline.
+The [consumer migration validation](../operations/shared-infra-consumer-validation.md)
+records the later full suite, live BENCH benchmark, cross-surface search and
+restart checks for PR #183.

@@ -63,6 +63,24 @@ def minimal_scenario() -> dict[str, object]:
     }
 
 
+def test_fetchcore_wrapper_prefers_explicit_bench_resource_and_rejects_backend_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FETCHCORE_SOLR_URL", "http://127.0.0.1:18983/solr")
+    monkeypatch.setenv("FETCHCORE_SOLR_COLLECTION", "fc-bench-repo-123")
+    monkeypatch.setenv("FETCHCORE_BACKEND", "solr")
+    args = wrapper_module.parse_args([
+        "fetchcore", "--model", "test-model", "--revision", "abc",
+    ])
+    assert args.solr_url == "http://127.0.0.1:18983/solr"
+    assert args.solr_collection == "fc-bench-repo-123"
+    monkeypatch.setenv("FETCHCORE_BACKEND", "opensearch")
+    with pytest.raises(SystemExit):
+        wrapper_module.parse_args([
+            "fetchcore", "--model", "test-model", "--revision", "abc",
+        ])
+
+
 def test_memory_scope_is_unique_per_arm() -> None:
     scopes = module.validate_unique_scopes(
         "run-1", "demo", ["direct", "fetchcore", "fetchcore_bounded"]

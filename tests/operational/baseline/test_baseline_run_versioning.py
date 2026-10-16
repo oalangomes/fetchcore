@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,6 +24,63 @@ assert SPEC.loader is not None
 RUN_MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = RUN_MODULE
 SPEC.loader.exec_module(RUN_MODULE)
+BENCH_SPEC = importlib.util.spec_from_file_location("fetchcore_baseline_v1_bench", RUN_PATH.with_name("run_bench.py"))
+assert BENCH_SPEC is not None and BENCH_SPEC.loader is not None
+BENCH_MODULE = importlib.util.module_from_spec(BENCH_SPEC)
+sys.modules[BENCH_SPEC.name] = BENCH_MODULE
+BENCH_SPEC.loader.exec_module(BENCH_MODULE)
+
+
+def test_new_bench_run_config_changes_only_in_memory_manifest(tmp_path: Path) -> None:
+    frozen = RUN_MODULE._load_json(RUN_MODULE.MANIFEST_PATH)
+    before = RUN_MODULE.MANIFEST_PATH.read_bytes()
+    corpus = {"repository": "oalangomes/NeuroTrack_MS", "revision": "a" * 40}
+    resource = "fc-bench-neurotrack_ms-" + hashlib.sha256(
+        corpus["repository"].encode()
+    ).hexdigest()[:16]
+    config = {
+        "schema_version": 1, "environment": "bench", **corpus,
+        "owner": "test-run", "baseline_id": "bench-smoke", "provisioning": "reuse_only",
+        "cleanup": "retain", "performance_comparable": False,
+        "dedicated": False, "exclusive_host": False,
+        "infrastructure_project": "fetchcore-shared",
+        "endpoints": {"solr": "http://127.0.0.1:18983/solr",
+                      "opensearch": "http://127.0.0.1:19200",
+                      "qdrant": "http://127.0.0.1:16333",
+                      "ollama": "http://127.0.0.1:11434"},
+        "resources": {"solr": resource, "opensearch": resource,
+                      "qdrant-vector": resource},
+        "embedding": {"provider": "ollama", "model": "embeddinggemma", "dimensions": 768},
+    }
+    path = tmp_path / "run.json"
+    path.write_text(json.dumps(config), encoding="utf-8")
+    parsed = BENCH_MODULE.load_run_config(path, corpus)
+    effective = BENCH_MODULE.configured_manifest(frozen, parsed)
+    assert effective["backend_settings"]["solr"]["collection"] == resource
+    assert effective["environment"]["service_endpoints"]["solr"].endswith(":18983/solr")
+    assert frozen["backend_settings"]["solr"]["collection"] == "fetchcore-knowledge"
+    assert RUN_MODULE.MANIFEST_PATH.read_bytes() == before
+    config["resources"]["solr"] = "fc-dev-neurotrack"
+    path.write_text(json.dumps(config), encoding="utf-8")
+    with pytest.raises(RUN_MODULE.BaselineConfigurationError, match="repository routing"):
+        BENCH_MODULE.load_run_config(path, corpus)
+
+
+def test_new_bench_identity_records_observed_projection_without_mutating_artifacts(tmp_path: Path) -> None:
+    run = {"arms": [{"id": "solr-lexical", "backend": "solr"}]}
+    indexing = {"indexing_fingerprint": "sha256:indexing"}
+    retrieval = {"observations": [{"telemetry": {"fingerprints": {
+        "projection": "sha256:projection",
+    }}}]}
+    for name, payload in (("run.json", run), ("indexing.json", indexing),
+                          ("solr-lexical.json", retrieval)):
+        (tmp_path / name).write_text(json.dumps(payload), encoding="utf-8")
+    original = (tmp_path / "solr-lexical.json").read_bytes()
+    assert BENCH_MODULE.observed_fingerprints(tmp_path) == {
+        "indexing": "sha256:indexing",
+        "retrieval": {"solr-lexical": {"projection": ["sha256:projection"]}},
+    }
+    assert (tmp_path / "solr-lexical.json").read_bytes() == original
 
 
 class _FixtureBenchmarkAdapter:

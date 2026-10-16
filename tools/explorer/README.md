@@ -208,7 +208,7 @@ operator-authorized targets, inject `FETCHCORE_EXPLORER_TARGETS` as a JSON array
 via the API process environment (or your root `.env` file):
 
 ```dotenv
-FETCHCORE_EXPLORER_TARGETS=[{"id":"second-index","repository":"oalangomes/fetchcore","workspace":"/workspace","backend":"solr","backend_settings":{"url":"http://solr:8983/solr","collection":"fetchcore-other"}}]
+FETCHCORE_EXPLORER_TARGETS=[{"id":"second-index","repository":"oalangomes/fetchcore","workspace":"/workspace","backend":"solr","backend_settings":{"url":"http://solr:8983/solr","collection":"fc-dev-other"},"environment":"dev"}]
 ```
 
 The entry's `id` must be unique, and `workspace` must be an **absolute
@@ -242,106 +242,50 @@ multi-repository federation (#42) nor dynamic Solr collection enumeration.
 The UI cannot change indexing policy or activate dense/hybrid on an
 unprepared index (#123).
 
-## Docker Compose: repository-root default
+## Docker Compose: shared DEV Search Lab
 
-The root `compose.yml` is the canonical developer entrypoint. It reuses
-`infra/compose/app.yml` and `infra/compose/solr.yml` without duplicating
-service definitions. Solr lexical/BM25 is selected for **this optional Explorer
-only**; FetchCore's headless SDK/CLI/stdio MCP defaults are unchanged.
-
-Run from the **repository root**:
+Start the selected DEV backend and then attach the app to its existing network:
 
 ```bash
-docker compose config --quiet
-docker compose up -d --build --wait
-docker compose ps
+python scripts/shared_infra.py up --environment dev --repository oalangomes/fetchcore --backend solr
+python scripts/shared_infra.py app --environment dev --repository oalangomes/fetchcore --backend solr
 ```
 
-| Service | Internal endpoint | Loopback-only host endpoint |
-| --- | --- | --- |
-| Frontend (Nginx/React) | `web:8080` | `http://127.0.0.1:5173` |
-| API (FastAPI) | `api:8765` | proxied at `http://127.0.0.1:5173/api/` |
-| MCP Streamable HTTP | `mcp:8766/mcp` | `http://127.0.0.1:8766/mcp` |
-| Solr 9.10.1 | `solr:8983/solr` | `http://127.0.0.1:8983/solr` |
+The app action does not start a backend or create a core, collection, alias or
+snapshot. It requires service readiness and joins the existing
+`fetchcore-shared_default` network. It passes `solr:8983/solr` to containers
+while host CLI commands use `127.0.0.1:18983/solr`. The app project is
+`fetchcore-lab-dev`; repeat the command to apply app changes without adding a
+second backend container. Open `http://127.0.0.1:5173` for web/API and
+`http://127.0.0.1:8766/mcp` for Streamable HTTP MCP. Set
+`FETCHCORE_SOURCE_PATH` to an absolute path before `app` when mounting a
+different repository.
 
-These services start together, but **an empty Solr collection is not indexed**.
-After choosing your authorized repository, run an explicit initial index/sync:
+An existing operator-managed backend may be selected with `--shared-endpoints`.
+For app containers, also provide `--container-url` with a URL reachable from
+the app network; container `localhost` does not refer to the host. The selected
+resource still has to be created and indexed explicitly. The server-owned
+`FETCHCORE_EXPLORER_TARGETS` allowlist controls extra targets; the browser
+cannot supply endpoint URLs or add repository access.
+
+The interface labels API service health separately from on-demand retrieval
+readiness and indexing capability. An empty OPERATIONAL backend is reported as
+blocked for retrieval even if its service is healthy. OpenSearch/Qdrant
+operational indexing remains unavailable and fails explicitly (#123).
+
+For a functional BENCH Lab, select `--environment bench`; its web/MCP ports are
+15173/18766 and its logical resource differs from DEV. OPERATIONAL uses
+25173/28766 and an isolated persistent backend project. Stop only the app:
 
 ```bash
-docker compose --profile indexing run --rm indexer fetchcore index bootstrap
-docker compose --profile indexing run --rm indexer fetchcore index status
-docker compose --profile indexing run --rm indexer fetchcore index sync
-docker compose exec -T api python -m tools.explorer.docker.smoke
+docker compose -p fetchcore-lab-dev -f infra/compose/app.yml -f infra/compose/shared-app.yml stop
 ```
 
-The last step is a fixture-specific smoke, meant for the CI demo corpus.
-The legacy `index sync` has an explicit operator-invoked initial/recovery
-policy; the registered `index sync <repo>` never falls back to rebuild. Neither
-runs during `up`, frontend refresh or search. No automatic embedding downloads.
-
-To index a different repository, set the two values before creating containers
-(or copy `.env.example` to repository-root `.env` and edit them):
-
-```bash
-FETCHCORE_SOURCE_PATH=/absolute/path/to/repo \
-FETCHCORE_REPOSITORY=owner/other-repo docker compose up -d --build --wait
-```
-
-Mount only the permitted repository, **read-only**; use an absolute custom path.
-The default `FETCHCORE_SOURCE_PATH=../..` means repository root **relative
-to `infra/compose/app.yml`**, not your shell working directory. API, MCP
-and indexer use the same mounted source and repository identity.
-
-### Standalone backend Compose files
-
-```bash
-docker compose -p fetchcore-solr -f infra/compose/solr.yml up -d --wait
-docker compose -p fetchcore-opensearch -f infra/compose/opensearch.yml up -d --wait
-docker compose -p fetchcore-qdrant -f infra/compose/qdrant.yml up -d --wait
-```
-
-These are independently runnable, without starting the frontend/MCP.
-Run one at a time unless you change host ports. For an alternate **full**
-developer stack (with a previously indexed, compatible backend):
-
-```bash
-FETCHCORE_BACKEND=opensearch docker compose -p fetchcore-opensearch \
-  -f infra/compose/app.yml -f infra/compose/opensearch.yml up -d --build --wait
-```
-
-For Qdrant use `FETCHCORE_BACKEND=qdrant-vector`, the `qdrant.yml` file,
-and a compatible configured embedding provider/model. Non-Solr operational
-indexing is **not implemented yet** (#123). The `indexer` profile in
-`app.yml` remains explicitly Solr-only. A backend container being healthy
-does not imply its index is present or compatible.
-
-### Legacy Compose and runtime compatibility
-
-`tools/explorer/compose.yaml` remains only as a **thin compatibility alias**
-for existing commands. It now uses the same `fetchcore` Compose project as the
-root entrypoint, so Search Lab no longer creates a separate
-`fetchcore-lab` project, Solr resource, or volume namespace.
-
-Existing root `.env` files with `COMPOSE_FILE=tools/explorer/compose.yaml`
-continue selecting the compatibility entrypoint until you **remove that line**.
-The new `.env.example` contains no `COMPOSE_FILE`. For Solr use
-`FETCHCORE_SOLR_COLLECTION` / `FETCHCORE_SOLR_PORT`; historical root
-`SOLR_COLLECTION` / `SOLR_PORT` no longer configure the Explorer stack.
-
-The original opt-in `docker compose --profile runtime run --rm fetchcore`
-still starts the headless stdio MCP image, using the existing legacy
-`FETCHCORE_MCP_*` environment contract.
-
-Operator-owned `FETCHCORE_RETRIEVAL` can be placed in root `.env`
-for an explicit retrieval policy. Do not enable dense/hybrid until
-the indexed vector snapshot and provider match; end-to-end operational
-embedding readiness is tracked in #123. Ollama is **not** started or pulled
-by this stack. No backend is silently substituted.
-
-```bash
-docker compose logs -f --tail=100
-docker compose down   # named volumes preserved
-```
+The root `compose.yml` and `tools/explorer/compose.yaml` are legacy
+compatibility entry points. They still create the old `fetchcore` Solr instance
+on port 8983 and keep its volume. Hosted CI deliberately uses an ephemeral
+fixture Solr instead of a developer-host endpoint. Do not use `down -v` when
+preserving existing data.
 
 ### MCP client setup
 
