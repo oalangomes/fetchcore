@@ -407,6 +407,18 @@ read-only. The newly isolated OPERATIONAL OpenSearch and Qdrant containers were
 restarted individually; the same container IDs, volumes and prepared resources
 remained, and `prepare` returned `state=reused` afterward.
 
+Two pre-existing shared-service conditions were preserved and not treated as
+infrastructure successes beyond the named resources tested:
+
+- Shared Solr `/admin/cores?action=STATUS` reported `initFailures` for the legacy
+  cores `fetchcore`, `fetchcore-self-dogfood`, `fetchcore-issue128-31a57474`, and
+  `fetchcore-issue128-check` because their existing `fetchcore` configset could not
+  load. The routed DEV/BENCH cores were independently queryable and returned 4,428
+  records each. No legacy core/configset was repaired or overwritten.
+- Shared OpenSearch health was `yellow` with 19 active primary shards and 3
+  unassigned shards. The service and target aliases were queryable. No shard
+  allocation setting or existing index was changed.
+
 ### Ollama integration
 
 The existing Ollama service was reached from the running Docker application
