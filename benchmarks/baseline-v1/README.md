@@ -212,6 +212,21 @@ baseline. Runs known not to have prepared an index must declare this with
 `.run-state.json` is machine-local resume state and must not be committed as a
 benchmark artifact.
 
+For a backend-free comparison of two complete frozen runs, use:
+
+```bash
+python benchmarks/baseline-v1/compare_runs.py \
+  --baseline benchmarks/baseline-v1/artifacts/V0.1 \
+  --candidate benchmarks/baseline-v1/artifacts/V0.2 \
+  --output /tmp/baseline-v1-comparison.json
+```
+
+The comparator checks artifact identity and completeness, recomputes derived
+ContextYield from frozen spans, and reports aggregate and per-query differences
+across all measured repetitions. The [S0 verification
+report](../../docs/benchmarks/baseline-v1-s0-verification.md) explains the V0.2
+decision and its snapshot-provenance limit.
+
 The evidence-aware artifacts captured before automatic versioning are preserved
 as `V0.1`. Their JSON payloads were moved without modification, and the
 reconstructed `run.json` records the migration provenance. Because `V0.1` is now
