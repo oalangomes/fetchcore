@@ -11,7 +11,9 @@ services:
       file: solr.yml
       service: solr
     # Empty service: logical resources are created only by explicit preparation.
-    command: ["solr-foreground"]
+    command: ["sh", "/fetchcore-start-shared.sh"]
+    volumes:
+      - ../solr/start-shared.sh:/fetchcore-start-shared.sh:ro
   opensearch:
     <<: *owned
     extends:

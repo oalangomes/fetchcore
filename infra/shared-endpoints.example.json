@@ -1,0 +1,6 @@
+{
+  "solr": "http://127.0.0.1:8983/solr",
+  "opensearch": "http://127.0.0.1:9200",
+  "qdrant": "http://127.0.0.1:6333",
+  "ollama": "http://host.docker.internal:11434"
+}
