@@ -360,9 +360,9 @@ revision remain present in retrieved provenance.
 
 | Environment | Solr core | OpenSearch alias → index | OpenSearch docs / capability | Qdrant alias → collection | Qdrant points / vector schema |
 | --- | --- | --- | --- | --- | --- |
-| DEV | `fc-dev-fetchcore-635ab7352c2850f2` | `fc-dev-fetchcore-635ab7352c2850f2-635ab7352c28` → `...-e3d7ea58` | 143 / lexical (no vector mapping) | `fc-dev-fetchcore-635ab7352c2850f2-635ab7352c28` → `...-8911ee81` | 143 / 768 dimensions |
-| BENCH | `fc-bench-fetchcore-635ab7352c2850f2` | `fc-bench-fetchcore-635ab7352c2850f2-635ab7352c28` → `...-f2c30470` | 143 / lexical (no vector mapping) | `fc-bench-fetchcore-635ab7352c2850f2-635ab7352c28` → `...-7afba6b9` | 143 / 768 dimensions |
-| OPERATIONAL | `fc-operational-fetchcore-635ab7352c2850f2` | `fc-operational-fetchcore-635ab7352c2850f2-635ab7352c28` → `...-infra-v3` | 0 / empty Projection v3 lexical schema | `fc-operational-fetchcore-635ab7352c2850f2-635ab7352c28` → `...-infra-v3` | 0 / 768 dimensions, sparse-vector schema |
+| DEV | `fc-dev-fetchcore-635ab7352c2850f2` | `fc-dev-fetchcore-635ab7352c2850f2-635ab7352c28` → `fc-dev-fetchcore-635ab7352c2850f2-635ab7352c28-1b6579bf08df-66134bcb47fc-e3d7ea58` | 143 / lexical (no vector mapping) | `fc-dev-fetchcore-635ab7352c2850f2-635ab7352c28` → `fc-dev-fetchcore-635ab7352c2850f2-635ab7352c28-1b6579bf08-66134bcb47-8911ee81` | 143 / 768 dimensions |
+| BENCH | `fc-bench-fetchcore-635ab7352c2850f2` | `fc-bench-fetchcore-635ab7352c2850f2-635ab7352c28` → `fc-bench-fetchcore-635ab7352c2850f2-635ab7352c28-1b6579bf08df-66134bcb47fc-f2c30470` | 143 / lexical (no vector mapping) | `fc-bench-fetchcore-635ab7352c2850f2-635ab7352c28` → `fc-bench-fetchcore-635ab7352c2850f2-635ab7352c28-1b6579bf08-66134bcb47-7afba6b9` | 143 / 768 dimensions |
+| OPERATIONAL | `fc-operational-fetchcore-635ab7352c2850f2` | `fc-operational-fetchcore-635ab7352c2850f2-635ab7352c28` → `fc-operational-fetchcore-635ab7352c2850f2-635ab7352c28-infra-v3` | 0 / empty Projection v3 lexical schema | `fc-operational-fetchcore-635ab7352c2850f2-635ab7352c28` → `fc-operational-fetchcore-635ab7352c2850f2-635ab7352c28-infra-v3` | 0 / 768 dimensions, sparse-vector schema |
 
 The Solr cores each contained 4,428 knowledge records. The OpenSearch DEV/BENCH
 aliases and Qdrant DEV/BENCH aliases were validated read-only and reused; each
