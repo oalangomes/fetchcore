@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Validate and compare two frozen baseline-v1 runs without contacting services."""
 
 from __future__ import annotations
