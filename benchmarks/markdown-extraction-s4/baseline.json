@@ -1,0 +1,88 @@
+{
+  "protocol": "fetchcore.markdown-extraction-s4",
+  "source_revision": "345d3e2b306aba579d73c062dacd59025c6ab461",
+  "source_branch": "feat/issue-158-postman-collection-21",
+  "environment": {
+    "platform": "Linux",
+    "python": "3.12.3",
+    "warmup_runs": 1,
+    "measured_runs": 5
+  },
+  "configuration": {
+    "max_lines": 160,
+    "overlap_lines": 20,
+    "markdown_max_chars": null
+  },
+  "metrics": {
+    "canonical_documents": 17,
+    "content_characters": 1789,
+    "maximum_chunk_characters": 312,
+    "ground_truth_cases": 6,
+    "ground_truth_recovered": 6,
+    "exact_source_locators": 4,
+    "exact_source_locator_rate": 0.6666666667,
+    "fixture_lexical_recall_at_5": 1.0,
+    "fixture_lexical_mrr": 1.0,
+    "fixture_lexical_ndcg_at_5": 1.0,
+    "fixture_useful_evidence_density_at_3": 0.4039972088,
+    "observed_section_references": 0,
+    "indexing_ms_p50": 7.216,
+    "indexing_ms_p95": 8.079,
+    "time_to_first_candidate_ms": null
+  },
+  "incremental": {
+    "unchanged_added": 0,
+    "unchanged_updated": 0,
+    "unchanged_removed": 0,
+    "unchanged_documents": 17,
+    "one_file_edit_added": 0,
+    "one_file_edit_updated": 2,
+    "one_file_edit_removed": 0,
+    "one_file_edit_indexing_ms": 7.218,
+    "note": "Document diff only; current semantic indexing paths may require a full scan."
+  },
+  "cases": [
+    {
+      "id": "adr-decision",
+      "ground_truth_recovered": true,
+      "exact_locator": true,
+      "fixture_rank": 1
+    },
+    {
+      "id": "cli-example",
+      "ground_truth_recovered": true,
+      "exact_locator": true,
+      "fixture_rank": 1
+    },
+    {
+      "id": "architecture-section",
+      "ground_truth_recovered": true,
+      "exact_locator": false,
+      "fixture_rank": 1
+    },
+    {
+      "id": "endpoint-documentation",
+      "ground_truth_recovered": true,
+      "exact_locator": true,
+      "fixture_rank": 1
+    },
+    {
+      "id": "cross-file-reference",
+      "ground_truth_recovered": true,
+      "exact_locator": true,
+      "fixture_rank": 1
+    },
+    {
+      "id": "duplicate-heading-code",
+      "ground_truth_recovered": true,
+      "exact_locator": false,
+      "fixture_rank": 1
+    }
+  ],
+  "notes": [
+    "The fixture lexical ranker scores term overlap over canonical documents; it is not a production backend.",
+    "The baseline treats Setext headings as preamble text and recognizes a heading-looking line inside a code fence as a real heading.",
+    "The current baseline reports raw source spans but does not expose Markdown heading ancestry or typed link observations.",
+    "Retrieval-stage latency is not measured by this extraction-only benchmark."
+  ]
+}

@@ -8,11 +8,35 @@ import os
 import stat
 import subprocess
 from collections import Counter
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
+
+from fetchcore.repository.api_detection import detect_api_artifact
 from pathlib import Path
 
 from fetchcore.repository.api_artifact_policy import blocked_api_artifact_kind
+
+
+@dataclass(frozen=True)
+class SanitizedApiUnit:
+    """Bounded safe API fact; raw specification data never leaves the sanitizer."""
+
+    kind: str
+    format: str
+    format_version: str
+    pointer: str
+    content: str
+    method: str | None = None
+    route: str | None = None
+    name: str | None = None
+    target: str | None = None
+
+
+@dataclass(frozen=True)
+class SanitizedApiExtraction:
+    """Safe, fully materialized units; no raw content or arbitrary metadata."""
+
+    units: tuple[SanitizedApiUnit, ...]
 
 
 @dataclass(frozen=True)
@@ -24,6 +48,8 @@ class SafeSource:
     content: str
     size_bytes: int
     checksum: str
+    api_units: tuple[SanitizedApiUnit, ...] = ()
+    original_line_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -35,10 +61,11 @@ class SafeScanCoverage:
     read_by_source_kind: dict[str, int]
     unvisited_by_source_kind: dict[str, int]
     skipped_by_reason_and_source_kind: dict[str, dict[str, int]]
+    api_artifact_status_counts: dict[str, int] = field(default_factory=dict)
 
     def to_mapping(self) -> dict[str, object]:
-        return {
-            "discovered_by_source_kind": dict(sorted(self.discovered_by_source_kind.items())),
+        payload: dict[str, object] = {
+            "discovered_by_source_kind": dict(sorted(self.discovered_by_source_kind.items())), 
             "eligible_by_source_kind": dict(sorted(self.eligible_by_source_kind.items())),
             "read_by_source_kind": dict(sorted(self.read_by_source_kind.items())),
             "unvisited_by_source_kind": dict(sorted(self.unvisited_by_source_kind.items())),
@@ -47,6 +74,11 @@ class SafeScanCoverage:
                 for reason, values in sorted(self.skipped_by_reason_and_source_kind.items())
             },
         }
+        if self.api_artifact_status_counts:
+            payload["api_artifact_status_counts"] = dict(
+                sorted(self.api_artifact_status_counts.items())
+            )
+        return payload
 
 
 @dataclass(frozen=True)
@@ -98,17 +130,22 @@ def scan_repository_text(
     max_file_bytes: int,
     max_total_bytes: int,
     selected_paths: tuple[str, ...] | None = None,
+    api_sanitizer: Callable[[str, str], SanitizedApiExtraction | None] | None = None,
+    api_sanitizer_kinds: frozenset[str] = frozenset({"openapi", "swagger"}),
 ) -> SafeScanResult:
     """Read bounded regular files without following links outside the workspace."""
 
     if max_files < 1 or max_file_bytes < 1 or max_total_bytes < 1:
         raise ValueError("safe repository scan limits must be positive")
+    if not api_sanitizer_kinds <= {"openapi", "swagger", "postman_collection"}:
+        raise ValueError("unknown API sanitizer capability")
     root = workspace.resolve(strict=True)
     includes = tuple(include_patterns)
     excludes = tuple(exclude_patterns)
     sources: list[SafeSource] = []
     skipped: Counter[str] = Counter()
     skipped_by_reason_and_source_kind: dict[str, Counter[str]] = {}
+    api_artifact_status_counts: Counter[str] = Counter()
     truncation_reasons: list[str] = []
     eligible_by_source_kind: Counter[str] = Counter()
     read_by_source_kind: Counter[str] = Counter()
@@ -153,8 +190,11 @@ def scan_repository_text(
         eligible_by_source_kind[source_kind(relative)] += 1
         # Known API artifact paths must not be read or enter raw chunking.
         blocked_kind = blocked_api_artifact_kind(relative)
-        if blocked_kind is not None:
+        if blocked_kind is not None and (
+            api_sanitizer is None or blocked_kind not in api_sanitizer_kinds
+        ):
             record_skip(f"api_artifact_blocked_{blocked_kind}", relative)
+            api_artifact_status_counts["quarantined_by_filename"] += 1
             continue
         if len(sources) >= max_files:
             record_skip("max_files", relative)
@@ -193,9 +233,28 @@ def scan_repository_text(
         bytes_read += len(payload)
         decoded = payload.decode("utf-8", errors="replace")
         blocked_kind = blocked_api_artifact_kind(relative, decoded)
+        extraction: SanitizedApiExtraction | None = None
         if blocked_kind is not None:
-            record_skip(f"api_artifact_blocked_{blocked_kind}", relative)
-            continue
+            decision = detect_api_artifact(relative, decoded)
+            api_artifact_status_counts[decision.status] += 1
+            if (
+                api_sanitizer is not None
+                and blocked_kind in api_sanitizer_kinds
+                and decision.status == "supported"
+            ):
+                try:
+                    extraction = api_sanitizer(relative, decoded)
+                except (ValueError, TypeError, RecursionError):
+                    extraction = None
+            if extraction is None or not extraction.units:
+                record_skip(f"api_artifact_blocked_{blocked_kind}", relative)
+                continue
+            if not isinstance(extraction, SanitizedApiExtraction) or any(
+                not isinstance(unit, SanitizedApiUnit) for unit in extraction.units
+            ):
+                raise TypeError("API sanitizer returned an invalid sanitized extraction")
+            # Safe scanner returns only allowlisted rendered facts, never raw API bytes.
+            decoded = "\n".join(unit.content for unit in extraction.units) + "\n"
         read_by_source_kind[source_kind(relative)] += 1
         sources.append(
             SafeSource(
@@ -204,6 +263,11 @@ def scan_repository_text(
                 content=decoded,
                 size_bytes=len(payload),
                 checksum="sha256:" + hashlib.sha256(payload).hexdigest(),
+                api_units=extraction.units if extraction is not None else (),
+                original_line_count=(
+                    max(1, len(payload.decode("utf-8", errors="replace").splitlines()))
+                    if extraction is not None else 0
+                ),
             )
         )
 
@@ -221,6 +285,7 @@ def scan_repository_text(
             reason: dict(values)
             for reason, values in skipped_by_reason_and_source_kind.items()
         },
+        api_artifact_status_counts=dict(api_artifact_status_counts),
     )
 
     return SafeScanResult(

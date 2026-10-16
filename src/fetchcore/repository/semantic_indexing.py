@@ -297,7 +297,9 @@ class SemanticDocumentRepositoryIndexer(DocumentRepositoryIndexer):
         if not units:
             return ()
 
-        max_line = max(1, len(source.content.splitlines()))
+        max_line = max(
+            1, source.original_line_count, len(source.content.splitlines()),
+        )
         source_ref = _source_ref(repository, source.relative)
         documents: list[KnowledgeDocument] = []
         for unit in units:

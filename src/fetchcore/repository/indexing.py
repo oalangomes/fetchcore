@@ -26,11 +26,15 @@ from fetchcore.repository.corpus_policy import (
 )
 from fetchcore.knowledge.evidence import (
     KnowledgeEvidence,
+    SectionEvidence,
     _StructureObservation,
     build_knowledge_evidence,
     extract_source_structure,
 )
-from fetchcore.knowledge.chunking import chunks_for_knowledge
+from fetchcore.knowledge.chunking import (
+    DEFAULT_MARKDOWN_MAX_CHARS,
+    chunks_for_knowledge,
+)
 from fetchcore.repository.lexical import (
     LexicalChunkProjection,
     analyze_lexical_source,
@@ -413,9 +417,16 @@ class RepositoryIndexConfig:
     repository: str | None = None
     branch: str | None = None
     revision: str | None = None
+    max_markdown_chunk_chars: int = DEFAULT_MARKDOWN_MAX_CHARS
 
     def __post_init__(self) -> None:
-        limits = (self.max_files, self.max_file_bytes, self.max_total_bytes, self.max_chunk_lines)
+        limits = (
+            self.max_files,
+            self.max_file_bytes,
+            self.max_total_bytes,
+            self.max_chunk_lines,
+            self.max_markdown_chunk_chars,
+        )
         if any(value < 1 for value in limits):
             raise ValueError("repository indexing limits must be positive")
         if self.chunk_overlap_lines < 0 or self.chunk_overlap_lines >= self.max_chunk_lines:
@@ -578,6 +589,8 @@ class _Chunk:
     line_end: int
     symbols: tuple[SymbolSpan, ...]
     strategy: str = "source-lines"
+    section: SectionEvidence | None = None
+    diagnostics: tuple[str, ...] = ()
 
 
 class RepositoryIndexer:
@@ -628,6 +641,10 @@ class RepositoryIndexer:
             max_files=self.config.max_files,
             max_file_bytes=self.config.max_file_bytes,
             max_total_bytes=self.config.max_total_bytes,
+            api_sanitizer=getattr(self, "_api_sanitizer", None),
+            api_sanitizer_kinds=getattr(
+                self, "_api_sanitizer_kinds", frozenset({"openapi", "swagger"}),
+            ),
         )
         repository = self.resolve_repository_identity(root)
         branch = self.config.branch if self.config.branch is not None else _git_value(
@@ -719,6 +736,8 @@ class RepositoryIndexer:
                     line_end=item.line_end,
                     symbols=(),
                     strategy=item.strategy,
+                    section=item.section,
+                    diagnostics=item.diagnostics,
                 )
                 for item in chunks_for_knowledge(
                     source.content,
@@ -726,6 +745,7 @@ class RepositoryIndexer:
                     knowledge_type=knowledge_type,
                     max_lines=self.config.max_chunk_lines,
                     overlap=self.config.chunk_overlap_lines,
+                    max_chars=self.config.max_markdown_chunk_chars,
                 )
             )
         lexical_source = analyze_lexical_source(language, source.content)
@@ -811,6 +831,7 @@ class RepositoryIndexer:
             strategy=chunk.strategy,
             chunk_content=chunk.content,
             chunk_line_start=chunk.line_start,
+            section_evidence=chunk.section,
             lexical_content=(lexical.masked_content if lexical is not None else None),
             lexical_identifiers=(lexical.identifiers if lexical is not None else ()),
             knowledge_type=knowledge_type,
@@ -822,6 +843,8 @@ class RepositoryIndexer:
             "source_size_bytes": source.size_bytes,
             "symbol_extractor": type(extractor).__name__ if extractor is not None else None,
         }
+        if chunk.diagnostics:
+            metadata["chunk_diagnostics"] = list(chunk.diagnostics)
         return KnowledgeDocument(
             id=_stable_id("kdoc", chunk_ref),
             source_type="repository",

@@ -1,0 +1,87 @@
+{
+  "arms": [
+    {
+      "backend": "local-semantic",
+      "id": "local-lexical",
+      "mode": "lexical"
+    },
+    {
+      "backend": "solr",
+      "id": "solr-lexical",
+      "mode": "lexical"
+    },
+    {
+      "backend": "solr",
+      "id": "solr-dense",
+      "mode": "dense"
+    },
+    {
+      "backend": "solr",
+      "id": "solr-hybrid",
+      "mode": "hybrid"
+    },
+    {
+      "backend": "opensearch",
+      "id": "opensearch-lexical",
+      "mode": "lexical"
+    },
+    {
+      "backend": "opensearch",
+      "id": "opensearch-dense",
+      "mode": "dense"
+    },
+    {
+      "backend": "opensearch",
+      "id": "opensearch-hybrid",
+      "mode": "hybrid"
+    },
+    {
+      "backend": "qdrant-vector",
+      "id": "qdrant-dense",
+      "mode": "dense"
+    },
+    {
+      "backend": "qdrant-vector",
+      "id": "qdrant-hybrid",
+      "mode": "hybrid"
+    }
+  ],
+  "artifacts": [
+    "local-lexical.json",
+    "solr-lexical.json",
+    "solr-dense.json",
+    "solr-hybrid.json",
+    "opensearch-lexical.json",
+    "opensearch-dense.json",
+    "opensearch-hybrid.json",
+    "qdrant-dense.json",
+    "qdrant-hybrid.json"
+  ],
+  "completed_at": "2026-10-16T14:28:24.601042+00:00",
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+  },
+  "fetchcore_revision": "36fcec3f13091a7a583d820adce813f9bb77db3f",
+  "indexing_artifact": null,
+  "metrics_report": "README.md",
+  "prepare_index": false,
+  "protocol": "fetchcore.baseline-v1",
+  "resume": {
+    "indexing_telemetry_unavailable": false,
+    "legacy_index_preparation_assumed_absent": false,
+    "reused_artifacts": [
+      "local-lexical.json",
+      "solr-lexical.json",
+      "solr-dense.json",
+      "solr-hybrid.json",
+      "opensearch-lexical.json",
+      "opensearch-dense.json",
+      "opensearch-hybrid.json"
+    ]
+  },
+  "run_version": "V0.3",
+  "schema_version": 1,
+  "status": "complete"
+}

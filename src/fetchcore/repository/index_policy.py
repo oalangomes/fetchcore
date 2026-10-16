@@ -46,7 +46,9 @@ _ALLOWED_SELECTION_KEYS = frozenset(
     {"include", "exclude", "replace_default_includes"}
 )
 _ALLOWED_LIMIT_KEYS = frozenset({"max_files", "max_file_bytes", "max_total_bytes"})
-_ALLOWED_CHUNKING_KEYS = frozenset({"max_lines", "overlap_lines"})
+_ALLOWED_CHUNKING_KEYS = frozenset(
+    {"max_lines", "overlap_lines", "markdown_max_chars"}
+)
 _ALLOWED_RULE_SET_KEYS = frozenset({"replace_defaults", "rules"})
 _ALLOWED_EXTRACTOR_KEYS = frozenset({"enabled"})
 _ALLOWED_CORPUS_KEYS = frozenset(
@@ -125,6 +127,7 @@ class RepositoryIndexPolicy:
             "chunking": {
                 "max_lines": self.config.max_chunk_lines,
                 "overlap_lines": self.config.chunk_overlap_lines,
+                "markdown_max_chars": self.config.max_markdown_chunk_chars,
             },
             "enabled_extractors": (
                 None if self.enabled_extractors is None else list(self.enabled_extractors)
@@ -315,6 +318,11 @@ def load_repository_index_policy(
                 chunking.get("overlap_lines"),
                 "chunking.overlap_lines",
                 config.chunk_overlap_lines,
+            ),
+            max_markdown_chunk_chars=_positive_integer(
+                chunking.get("markdown_max_chars"),
+                "chunking.markdown_max_chars",
+                config.max_markdown_chunk_chars,
             ),
         )
     except ValueError as exc:

@@ -1,0 +1,53 @@
+name: OpenAPI S2 extraction gate
+
+on:
+  pull_request:
+    paths:
+      - "src/fetchcore/repository/openapi_*.py"
+      - "src/fetchcore/repository/safe_scan.py"
+      - "src/fetchcore/repository/semantic_indexing.py"
+      - "src/fetchcore/repository/indexing.py"
+      - "tests/unit/repository/test_openapi_s2.py"
+      - "benchmarks/api-extraction-s2/**"
+      - ".github/workflows/openapi-s2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  s2-extraction:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: S2 contract and security tests
+        run: python -m pytest -q tests/unit/repository/test_openapi_s2.py
+      - name: Operation acquisition benchmark
+        run: |
+          mkdir -p benchmark-output
+          python benchmarks/api-extraction-s2/run.py > benchmark-output/s2.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          metrics = json.loads(Path("benchmark-output/s2.json").read_text())
+          assert metrics["protocol"] == "fetchcore.api-extraction-s2"
+          assert metrics["expected_operations"] == 3
+          assert metrics["recovered_operations"] == 3
+          assert metrics["operation_ground_truth_recovery"] == 1.0
+          assert metrics["additional_operations"] == 0
+          assert metrics["postman_quarantined"]
+          assert not metrics["secret_sentinel_present"]
+          assert metrics["distinct_indexing_fingerprint"]
+          print(json.dumps(metrics, indent=2, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi-s2-synthetic-metrics
+          path: benchmark-output/s2.json
+          if-no-files-found: error

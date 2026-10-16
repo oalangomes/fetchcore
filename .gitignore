@@ -6,3 +6,4 @@
 .env
 graphify-out/
 .venv*
+.vscode/settings.json

@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Protocol, cast
+from urllib.parse import urlsplit
 
 from fetchcore.repository.calls import (
     CallEvidence,
@@ -31,6 +32,7 @@ from fetchcore.repository.framework import (
     FrameworkEvidence,
     RouteEvidence,
     extract_framework_evidence,
+    proven_fastapi_receivers,
 )
 from fetchcore.repository.imports import ImportEvidence, extract_import_evidence
 from fetchcore.repository.manifest import ManifestEvidence, extract_manifest_evidence
@@ -142,26 +144,206 @@ class StructureEvidence:
 
 
 @dataclass(frozen=True)
+class MarkdownReferenceEvidence:
+    """A safe Markdown destination observed in source, not a resolved target."""
+
+    target: str
+    kind: str
+    resolution: str = "observed"
+    line: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.target.strip() or len(self.target) > 512:
+            raise ValueError("Markdown reference target must contain 1-512 characters")
+        if (
+            any(character.isspace() or ord(character) < 32 for character in self.target)
+            or "\\" in self.target
+        ):
+            raise ValueError("Markdown reference target is not URL-safe")
+        if self.kind not in {"relative", "fragment", "external"}:
+            raise ValueError("Markdown reference kind is invalid")
+        if self.resolution not in {"observed", "resolved"}:
+            raise ValueError("Markdown reference resolution is invalid")
+        if self.line is not None and (
+            isinstance(self.line, bool) or self.line < 1
+        ):
+            raise ValueError("Markdown reference line must be positive")
+        try:
+            parsed = urlsplit(self.target)
+        except ValueError as exc:
+            raise ValueError("Markdown reference target is malformed") from exc
+        if parsed.query or "?" in self.target:
+            raise ValueError("Markdown reference target must not contain a query")
+        if parsed.fragment and (
+            len(parsed.fragment) > 128
+            or any(
+                not (character.isalnum() or character in "-_.~%/")
+                for character in parsed.fragment
+            )
+        ):
+            raise ValueError("Markdown reference fragment is unsafe")
+        if self.kind == "external":
+            if (
+                parsed.scheme.casefold() not in {"", "http", "https"}
+                or not parsed.netloc
+                or parsed.username is not None
+                or parsed.password is not None
+            ):
+                raise ValueError("Markdown external reference is unsafe")
+        elif self.kind == "fragment":
+            if parsed.path or parsed.netloc or not parsed.fragment:
+                raise ValueError("Markdown fragment reference is invalid")
+        elif parsed.scheme or parsed.netloc or not parsed.path:
+            raise ValueError("Markdown relative reference is invalid")
+
+    def to_mapping(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "target": self.target,
+            "kind": self.kind,
+            "resolution": self.resolution,
+        }
+        if self.line is not None:
+            payload["line"] = self.line
+        return payload
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, object]) -> MarkdownReferenceEvidence:
+        raw_target = value.get("target")
+        raw_kind = value.get("kind")
+        raw_resolution = value.get("resolution", "observed")
+        if not isinstance(raw_target, str):
+            raise ValueError("Markdown reference target must be a string")
+        if not isinstance(raw_kind, str):
+            raise ValueError("Markdown reference kind must be a string")
+        if not isinstance(raw_resolution, str):
+            raise ValueError("Markdown reference resolution must be a string")
+        raw_line = value.get("line")
+        line = raw_line if isinstance(raw_line, int) and not isinstance(raw_line, bool) else None
+        if raw_line is not None and line is None:
+            raise ValueError("Markdown reference line must be an integer")
+        return cls(
+            target=raw_target,
+            kind=raw_kind,
+            resolution=raw_resolution,
+            line=line,
+        )
+
+
+@dataclass(frozen=True)
 class SectionEvidence:
     """Observed non-code structural unit selected by the chunker."""
 
     strategy: str
     kind: str
     name: str | None = None
+    heading_level: int | None = None
+    heading_path: tuple[str, ...] = ()
+    heading_levels: tuple[int, ...] = ()
+    section_id: str | None = None
+    fragment_id: str | None = None
+    code_languages: tuple[str, ...] = ()
+    references: tuple[MarkdownReferenceEvidence, ...] = ()
+    diagnostics: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.heading_level is not None and (
+            isinstance(self.heading_level, bool) or self.heading_level not in range(1, 7)
+        ):
+            raise ValueError("Markdown heading level must be between 1 and 6")
+        if any(
+            isinstance(level, bool) or level not in range(1, 7)
+            for level in self.heading_levels
+        ):
+            raise ValueError("Markdown heading ancestry levels must be between 1 and 6")
+        if self.heading_path and self.heading_levels and (
+            len(self.heading_path) != len(self.heading_levels)
+        ):
+            raise ValueError("Markdown heading path and ancestry levels must align")
+        if self.heading_level is not None and self.heading_levels and (
+            self.heading_level != self.heading_levels[-1]
+        ):
+            raise ValueError("Markdown heading level must match the final ancestry level")
 
     def to_mapping(self) -> dict[str, object]:
         """Serialize non-code section evidence."""
 
-        return {"strategy": self.strategy, "kind": self.kind, "name": self.name}
+        payload: dict[str, object] = {
+            "strategy": self.strategy,
+            "kind": self.kind,
+            "name": self.name,
+        }
+        if self.heading_level is not None:
+            payload["heading_level"] = self.heading_level
+        if self.heading_path:
+            payload["heading_path"] = list(self.heading_path)
+        if self.heading_levels:
+            payload["heading_levels"] = list(self.heading_levels)
+        if self.section_id is not None:
+            payload["section_id"] = self.section_id
+        if self.fragment_id is not None:
+            payload["fragment_id"] = self.fragment_id
+        if self.code_languages:
+            payload["code_languages"] = list(self.code_languages)
+        if self.references:
+            payload["references"] = [item.to_mapping() for item in self.references]
+        if self.diagnostics:
+            payload["diagnostics"] = list(self.diagnostics)
+        return payload
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> SectionEvidence:
         """Hydrate section evidence from its canonical mapping."""
 
+        raw_level = value.get("heading_level")
+        heading_level = (
+            raw_level
+            if isinstance(raw_level, int) and not isinstance(raw_level, bool)
+            else None
+        )
+        if raw_level is not None and heading_level is None:
+            raise ValueError("Markdown heading level must be an integer")
+        raw_path = value.get("heading_path")
+        if raw_path is not None and (
+            not isinstance(raw_path, (list, tuple))
+            or any(not isinstance(item, str) for item in raw_path)
+        ):
+            raise ValueError("Markdown heading path must be a list of strings")
+        heading_path = tuple(raw_path) if isinstance(raw_path, (list, tuple)) else ()
+        raw_levels = value.get("heading_levels")
+        if raw_levels is not None and (
+            not isinstance(raw_levels, (list, tuple))
+            or any(
+                not isinstance(item, int)
+                or isinstance(item, bool)
+                or item not in range(1, 7)
+                for item in raw_levels
+            )
+        ):
+            raise ValueError("Markdown heading levels must be a list of integers 1-6")
+        heading_levels = tuple(raw_levels) if isinstance(raw_levels, (list, tuple)) else ()
+        raw_references = value.get("references")
+        if raw_references is not None and (
+            not isinstance(raw_references, (list, tuple))
+            or any(not isinstance(item, Mapping) for item in raw_references)
+        ):
+            raise ValueError("Markdown references must be a list of objects")
+        raw_name = value.get("name")
+        references = tuple(
+            MarkdownReferenceEvidence.from_mapping(item)
+            for item in raw_references
+        ) if isinstance(raw_references, (list, tuple)) else ()
         return cls(
             strategy=str(value.get("strategy", "unknown")),
             kind=str(value.get("kind", "unknown")),
-            name=_optional_string(value.get("name")),
+            name=raw_name if isinstance(raw_name, str) else None,
+            heading_level=heading_level,
+            heading_path=heading_path,
+            heading_levels=heading_levels,
+            section_id=_optional_string(value.get("section_id")),
+            fragment_id=_optional_string(value.get("fragment_id")),
+            code_languages=_strings(value.get("code_languages")),
+            references=references,
+            diagnostics=_strings(value.get("diagnostics")),
         )
 
 
@@ -444,6 +626,9 @@ class _StructureObservation(Protocol):
     def dynamic_binding_invalidations(self) -> tuple[tuple[str, int], ...]: ...
 
     @property
+    def proven_fastapi_receivers(self) -> tuple[str, ...]: ...
+
+    @property
     def exports(self) -> tuple[str, ...]: ...
 
     @property
@@ -469,6 +654,7 @@ class _EnrichedStructureObservation:
     imports: tuple[str, ...]
     typed_imports: tuple[ImportEvidence, ...]
     dynamic_binding_invalidations: tuple[tuple[str, int], ...]
+    proven_fastapi_receivers: tuple[str, ...]
     exports: tuple[str, ...]
     symbols: tuple[_SymbolObservation, ...]
     chunk_symbols: tuple[_SymbolObservation, ...]
@@ -506,6 +692,7 @@ def extract_source_structure(
             imports=(),
             typed_imports=(),
             dynamic_binding_invalidations=(),
+            proven_fastapi_receivers=(),
             exports=(),
             symbols=(),
             chunk_symbols=(),
@@ -545,6 +732,9 @@ def extract_source_structure(
         imports=structure.imports,
         typed_imports=typed_imports,
         dynamic_binding_invalidations=dynamic_binding_invalidations,
+        proven_fastapi_receivers=(
+            proven_fastapi_receivers(content) if structure.language.casefold() == "python" else ()
+        ),
         exports=structure.exports,
         symbols=structure.symbols,
         chunk_symbols=_safe_rich_chunk_symbols(structure.chunk_symbols),
@@ -591,6 +781,7 @@ def build_knowledge_evidence(
     strategy: str,
     chunk_content: str = "",
     chunk_line_start: int = 1,
+    section_evidence: SectionEvidence | None = None,
     lexical_content: str | None = None,
     lexical_identifiers: tuple[str, ...] = (),
     knowledge_type: str = "code",
@@ -685,6 +876,7 @@ def build_knowledge_evidence(
                 line_start=chunk_line_start,
                 scopes=behavior_scopes,
                 lexical_content=lexical_content,
+                proven_fastapi_receivers=structure.proven_fastapi_receivers,
             )
 
             relation_symbol = (
@@ -751,7 +943,11 @@ def build_knowledge_evidence(
                         structure.typed_imports,
                     )
 
-    section = _section_evidence(strategy, discriminator)
+    section = (
+        section_evidence
+        if section_evidence is not None
+        else _section_evidence(strategy, discriminator)
+    )
     config_keys = (
         (section.name,)
         if section is not None and section.kind == "config-key" and section.name

@@ -1,0 +1,13 @@
+{
+  "positive": [
+    ["api_reference", "api.json", "api.json"],
+    ["route_correspondence", "api.json", "app.py"],
+    ["markdown_reference", "README.md", "architecture.md"]
+  ],
+  "negative": [
+    ["route_correspondence", "POST /orders", "app.py"],
+    ["markdown_reference", "./missing.md", "missing.md"],
+    ["markdown_reference", "https://example.org/remote", "https://example.org/remote"],
+    ["route_correspondence", "GET /shadow/{id}", "unrelated.py"]
+  ]
+}
