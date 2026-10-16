@@ -151,7 +151,9 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     assert operational_index.count("github.event.workflow_run.head_sha || github.sha") == 2
     assert '["self-hosted","Linux","X64","fetchcore"]' in operational_index
     operational_inputs = yaml.safe_load(operational_index)["jobs"]["operational-index"]["with"]
-    assert operational_inputs["collection"] == "fetchcore"
+    assert "FETCHCORE_OPERATIONAL_SOLR_COLLECTION" in operational_inputs["collection"]
+    assert "fc-operational-fetchcore-635ab7352c2850f2" in operational_inputs["collection"]
+    assert "http://127.0.0.1:38983/solr" in operational_inputs["solr_url"]
     assert operational_inputs["create_if_missing"] is False
     assert operational_inputs["solr_provision_mode"] == "reuse_only"
     assert operational_inputs["index_lifecycle"] == "sync"

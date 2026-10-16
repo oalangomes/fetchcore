@@ -50,6 +50,7 @@ docker-smoke: docker-build
 	$(DOCKER) run --rm --entrypoint sh $(IMAGE) -c 'test "$$(id -u)" -ne 0 && command -v fetchcore-mcp >/dev/null && python -c "import fetchcore; import importlib.metadata; assert importlib.metadata.version(\"fetchcore\")"'
 
 compose-config:
+	$(PYTHON) scripts/shared_infra.py run --environment dev --repository oalangomes/fetchcore -- $(DOCKER) compose --env-file /dev/null -f infra/compose/shared.yml config --quiet
 	$(DOCKER) compose config --quiet
 	$(DOCKER) compose --profile runtime --profile indexing config --quiet
 	$(DOCKER) compose -f tools/explorer/compose.yaml config --quiet

@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import platform
 import statistics
 import subprocess
@@ -36,8 +37,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--revision", required=True)
-    parser.add_argument("--solr-url", required=True)
-    parser.add_argument("--collection", required=True)
+    parser.add_argument("--solr-url", default=os.environ.get("FETCHCORE_SOLR_URL"),
+                        required=not os.environ.get("FETCHCORE_SOLR_URL"))
+    parser.add_argument("--collection", default=os.environ.get("FETCHCORE_SOLR_COLLECTION"),
+                        required=not os.environ.get("FETCHCORE_SOLR_COLLECTION"))
     parser.add_argument("--scenarios", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--label", required=True)
