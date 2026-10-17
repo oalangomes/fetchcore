@@ -85,18 +85,51 @@ def test_app_uses_existing_network_and_same_resource_without_starting_backend(mo
     ready = Mock(return_value={"status": "ready"})
     monkeypatch.setattr(infra.subprocess, "run", run)
     monkeypatch.setattr(infra, "wait_ready", ready)
-    invoke(monkeypatch, "app", "--environment", "bench", "--repository", "a/b")
+    invoke(monkeypatch, "app", "--environment", "dev", "--repository", "a/b")
     command = run.call_args.args[0]
     assert command[-4:] == ["--no-deps", "api", "mcp", "web"]
+    assert command[command.index("-p") + 1] == "fetchcore-lab"
     assert "shared-app.yml" in " ".join(command)
     app_env = run.call_args.kwargs["env"]
     assert app_env["FETCHCORE_INFRA_PROJECT"] == "fetchcore-shared"
     assert app_env["FETCHCORE_CONTAINER_SOLR_URL"] == "http://solr:8983/solr"
-    assert app_env["FETCHCORE_SOLR_COLLECTION"].startswith("fc-bench-")
+    assert app_env["FETCHCORE_SOLR_COLLECTION"].startswith("fc-dev-")
     assert json.loads(app_env["FETCHCORE_CONTAINER_INDEX_BACKEND_SETTINGS"])["collection"] == app_env[
         "FETCHCORE_SOLR_COLLECTION"
     ]
+    bench = json.loads(app_env["FETCHCORE_EXPLORER_TARGETS"])[0]
+    assert bench["id"] == "bench"
+    assert bench["environment"] == "bench"
+    assert bench["repository"] == app_env["FETCHCORE_REPOSITORY"]
+    assert bench["backend_settings"]["collection"] != app_env["FETCHCORE_SOLR_COLLECTION"]
+    assert bench["backend_settings"]["url"] == app_env["FETCHCORE_CONTAINER_SOLR_URL"]
     ready.assert_called_once()
+
+
+def test_one_lab_can_bind_another_bench_repository_and_backend(monkeypatch, tmp_path):
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, ""))
+    ready = Mock(return_value={"status": "ready"})
+    monkeypatch.setattr(infra.subprocess, "run", run)
+    monkeypatch.setattr(infra, "wait_ready", ready)
+    invoke(monkeypatch, "app", "--environment", "dev", "--repository", "a/dev",
+           "--bench-repository", "b/Bench", "--bench-backend", "opensearch",
+           "--bench-source-path", str(tmp_path))
+    app_env = run.call_args.kwargs["env"]
+    bench = json.loads(app_env["FETCHCORE_EXPLORER_TARGETS"])[0]
+    assert bench["repository"] == "b/Bench"
+    assert bench["backend"] == "opensearch"
+    assert bench["backend_settings"]["index"].startswith("fc-bench-bench-")
+    assert app_env["FETCHCORE_BENCH_SOURCE_PATH"] == str(tmp_path)
+    assert ready.call_count == 2
+
+
+@pytest.mark.parametrize("environment", ["bench", "operational"])
+def test_app_refuses_per_environment_duplicate_projects(monkeypatch, environment):
+    run = Mock(side_effect=AssertionError("must not start duplicate Lab"))
+    monkeypatch.setattr(infra.subprocess, "run", run)
+    with pytest.raises(SystemExit):
+        invoke(monkeypatch, "app", "--environment", environment, "--repository", "a/b")
+    run.assert_not_called()
 
 
 def test_external_app_requires_container_reachable_endpoint(monkeypatch, tmp_path):

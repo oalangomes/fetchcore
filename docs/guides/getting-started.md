@@ -120,14 +120,15 @@ and [repository indexing](repository-indexing.md) for the complete commands and
 fingerprint checks. The backend-neutral CLI, API, MCP and SDK use the same
 `FETCHCORE_*` binding when supplied explicitly.
 
-For functional BENCH, use `--environment bench` with the same service and its
-separate resource. A performance claim requires `--dedicated --performance
+The same Lab exposes an authorized BENCH target on a separate logical resource.
+Use `--bench-repository` and `--bench-source-path` when BENCH uses a different
+repository. A performance claim requires `--dedicated --performance
 --exclusive-host` and the dedicated BENCH project. OPERATIONAL uses its own
 persistent project, volumes and `reuse_only` policy. Stop an app project without
 removing its backend data:
 
 ```bash
-docker compose -p fetchcore-lab-dev -f infra/compose/app.yml -f infra/compose/shared-app.yml stop
+docker compose -p fetchcore-lab -f infra/compose/app.yml -f infra/compose/shared-app.yml stop
 ```
 
 The root `compose.yml` and `tools/explorer/compose.yaml` remain legacy

@@ -232,17 +232,16 @@ services:
 Then add an allowlist entry with `workspace: "/repos/other"`,
 `repository: "owner/other"` and the corresponding existing indexed backend
 collection. Do not mount your entire filesystem root or use client-supplied
-paths. API targets are **not** automatically exposed to the default MCP
-process or the on-demand indexer; those retain their own explicit binding.
-To configure those consumers, use their existing operator-owned runtime
-settings.
+paths. The shared Lab HTTP MCP process uses the same authorized target list as
+the API; clients select one with `target_id`. The standalone stdio MCP process
+and the on-demand indexer retain their own explicit binding.
 
 **Limit:** each choice executes a **single-target** search. This is neither
 multi-repository federation (#42) nor dynamic Solr collection enumeration.
 The UI cannot change indexing policy or activate dense/hybrid on an
 unprepared index (#123).
 
-## Docker Compose: shared DEV Search Lab
+## Docker Compose: shared Search Lab
 
 Start the selected DEV backend and then attach the app to its existing network:
 
@@ -255,11 +254,12 @@ The app action does not start a backend or create a core, collection, alias or
 snapshot. It requires service readiness and joins the existing
 `fetchcore-shared_default` network. It passes `solr:8983/solr` to containers
 while host CLI commands use `127.0.0.1:18983/solr`. The app project is
-`fetchcore-lab-dev`; repeat the command to apply app changes without adding a
+`fetchcore-lab`; repeat the command to apply app changes without adding a
 second backend container. Open `http://127.0.0.1:5173` for web/API and
 `http://127.0.0.1:8766/mcp` for Streamable HTTP MCP. Set
 `FETCHCORE_SOURCE_PATH` to an absolute path before `app` when mounting a
-different repository.
+different DEV repository. Set `--bench-repository` and `--bench-source-path`
+to authorize a different BENCH repository; the second path is mounted read-only.
 
 An existing operator-managed backend may be selected with `--shared-endpoints`.
 For app containers, also provide `--container-url` with a URL reachable from
@@ -273,12 +273,12 @@ readiness and indexing capability. An empty OPERATIONAL backend is reported as
 blocked for retrieval even if its service is healthy. OpenSearch/Qdrant
 operational indexing remains unavailable and fails explicitly (#123).
 
-For a functional BENCH Lab, select `--environment bench`; its web/MCP ports are
-15173/18766 and its logical resource differs from DEV. OPERATIONAL uses
-25173/28766 and an isolated persistent backend project. Stop only the app:
+DEV and BENCH select separate logical resources in the same web, API and MCP
+processes. OPERATIONAL uses an isolated persistent backend project. Stop only
+the app:
 
 ```bash
-docker compose -p fetchcore-lab-dev -f infra/compose/app.yml -f infra/compose/shared-app.yml stop
+docker compose -p fetchcore-lab -f infra/compose/app.yml -f infra/compose/shared-app.yml stop
 ```
 
 The root `compose.yml` and `tools/explorer/compose.yaml` are legacy

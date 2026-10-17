@@ -507,7 +507,7 @@ export function App() {
                   <select id="collection-select" className="field-input" value={activeTarget?.id ?? ''}
                     onChange={event => changeTarget(event.target.value)} disabled={!repositoryTargets.length}>
                     {repositoryTargets.map(target => <option key={target.id} value={target.id}>
-                      {target.backend} · {target.collection ?? 'default'} ({target.id})
+                      {target.environment?.toUpperCase() ?? target.id} · {target.backend} · {target.collection ?? 'default'}
                     </option>)}
                   </select>
                 </div>

@@ -63,6 +63,25 @@ def container_routing(config: dict[str, str], *, selected_backend: str,
     return container_config
 
 
+def lab_bench_target(config: dict[str, str], *, workspace: str = "/bench-workspace") -> str:
+    """Expose one explicitly routed BENCH target to the shared Lab."""
+    backend = config["FETCHCORE_BACKEND"]
+    prefix = {"solr": "SOLR", "opensearch": "OPENSEARCH", "qdrant-vector": "QDRANT"}[backend]
+    field = "index" if backend == "opensearch" else "collection"
+    return json.dumps([{
+        "id": "bench",
+        "environment": "bench",
+        "repository": config["FETCHCORE_REPOSITORY"],
+        "workspace": workspace,
+        "backend": backend,
+        "backend_settings": {
+            "url": config[f"FETCHCORE_{prefix}_URL"],
+            field: config[f"FETCHCORE_{prefix}_{field.upper()}"],
+            "projection_version": "3",
+        },
+    }], sort_keys=True, separators=(",", ":"))
+
+
 def route(
     environment: str,
     repository: str,
@@ -417,6 +436,13 @@ def main() -> None:
     parser.add_argument("--shared-endpoints", type=Path,
                         help="Explicit JSON of existing shared backend URLs; never adopted by up")
     parser.add_argument("--container-url", help="Container-reachable URL of the selected external backend")
+    parser.add_argument("--bench-repository", help="Authorized BENCH repository for the single Lab")
+    parser.add_argument("--bench-backend", choices=sorted(BACKENDS),
+                        help="BENCH target backend; defaults to the DEV backend")
+    parser.add_argument("--bench-source-path", type=Path,
+                        help="Read-only host workspace for the BENCH target")
+    parser.add_argument("--bench-container-url",
+                        help="Container-reachable URL when the BENCH backend is external")
     parser.add_argument("--web-port", type=int, help="App host port override when the default is occupied")
     parser.add_argument("--mcp-port", type=int, help="MCP host port override when the default is occupied")
     parser.add_argument("--ollama-url", default="http://host.docker.internal:11434",
@@ -436,6 +462,9 @@ def main() -> None:
         parser.error("--create-if-missing is only valid for prepare")
     if args.container_url and args.action != "app":
         parser.error("--container-url is only valid for app")
+    if any((args.bench_repository, args.bench_backend, args.bench_source_path,
+            args.bench_container_url)) and args.action != "app":
+        parser.error("BENCH Lab options are only valid for app")
     if (args.web_port or args.mcp_port) and args.action != "app":
         parser.error("app port overrides are only valid for app")
     for port in (args.web_port, args.mcp_port):
@@ -468,22 +497,39 @@ def main() -> None:
         # Pass only routing. Never start Docker, create resources, pull models or bootstrap.
         subprocess.run(command, env=env, check=True)
     elif args.action == "app":
-        # The selected service and network must already exist. This action
-        # starts only app containers and never provisions a backend resource.
+        if args.environment != "dev" or args.dedicated:
+            parser.error("the single Lab starts from DEV; select BENCH through --bench-repository")
+        # Both services and the shared network must already exist. This action
+        # starts only one app project and never provisions backend resources.
+        bench_backend = args.bench_backend or args.backend
+        bench_config = route("bench", args.bench_repository or args.repository,
+                             bench_backend, False, args.ollama_url)
+        bench_external = shared_endpoints(bench_config, args.shared_endpoints)
         wait_ready(args.backend, config)
+        if bench_backend != args.backend or bench_config["FETCHCORE_SOLR_URL"] != config["FETCHCORE_SOLR_URL"]:
+            wait_ready(bench_backend, bench_config)
         container_config = container_routing(
             config, selected_backend=args.backend, external=external,
             container_url=args.container_url,
         )
-        container_config["FETCHCORE_WEB_PORT"] = str(args.web_port or {
-            "dev": 5173, "bench": 15173, "operational": 25173,
-        }[args.environment])
-        container_config["FETCHCORE_MCP_PORT"] = str(args.mcp_port or {
-            "dev": 8766, "bench": 18766, "operational": 28766,
-        }[args.environment])
+        bench_container = container_routing(
+            bench_config, selected_backend=bench_backend, external=bench_external,
+            container_url=args.bench_container_url or (
+                args.container_url if bench_backend == args.backend else None
+            ),
+        )
+        dev_source = Path(os.environ.get("FETCHCORE_SOURCE_PATH", ROOT)).expanduser().resolve(strict=True)
+        bench_source = (args.bench_source_path or dev_source).expanduser().resolve(strict=True)
+        if not dev_source.is_dir() or not bench_source.is_dir():
+            parser.error("Lab source paths must be existing directories")
+        container_config["FETCHCORE_SOURCE_PATH"] = str(dev_source)
+        container_config["FETCHCORE_BENCH_SOURCE_PATH"] = str(bench_source)
+        container_config["FETCHCORE_EXPLORER_TARGETS"] = lab_bench_target(bench_container)
+        container_config["FETCHCORE_WEB_PORT"] = str(args.web_port or 5173)
+        container_config["FETCHCORE_MCP_PORT"] = str(args.mcp_port or 8766)
         subprocess.run([
             "docker", "compose", "--env-file", "/dev/null", "-p",
-            f"fetchcore-lab-{args.environment}",
+            "fetchcore-lab",
             "-f", str(ROOT / "infra/compose/app.yml"),
             "-f", str(ROOT / "infra/compose/shared-app.yml"),
             "up", "-d", "--build", "--wait", "--no-deps", "api", "mcp", "web",

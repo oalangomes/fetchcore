@@ -77,8 +77,9 @@ Host-process and Docker URLs are different configurations. A host process can us
 published loopback ports; containers use service DNS on the correct network.
 `shared_infra.py app` starts only API, MCP and web after backend service readiness,
 using `infra/compose/shared-app.yml` and the already created network. It never
-prepares a logical resource. DEV uses web/MCP ports 5173/8766, BENCH uses
-15173/18766, and OPERATIONAL uses 25173/28766. For an operator-managed external
+prepares a logical resource. One `fetchcore-lab` serves authorized DEV and BENCH
+targets on web/MCP ports 5173/8766; OPERATIONAL remains on its isolated backend
+project and is not a Lab target. For an operator-managed external
 shared backend, pass `--shared-endpoints` and an explicit container-reachable
 `--container-url` to `app`; host loopback addresses are not valid container DNS.
 `host.docker.internal` may reach host Ollama from Docker even when it is unreachable

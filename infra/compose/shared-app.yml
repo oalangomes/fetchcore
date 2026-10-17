@@ -1,14 +1,22 @@
-# Overlay for an explicitly started shared infrastructure instance.
-# The infrastructure network already exists after `shared_infra.py up`.
-# Each app project keeps its own default network for API/web discovery so
-# Docker DNS cannot resolve another environment's `api` service.
+# One Lab with authorized DEV/BENCH targets on an existing shared network.
+# Its private default network keeps web-to-API DNS scoped to this app project.
 services:
   api:
     networks: [default, infra]
+    volumes:
+      - ${FETCHCORE_BENCH_SOURCE_PATH:-../..}:/bench-workspace:ro
+    labels:
+      io.fetchcore.owner: fetchcore-shared-infra-v1
   mcp:
     networks: [default, infra]
+    volumes:
+      - ${FETCHCORE_BENCH_SOURCE_PATH:-../..}:/bench-workspace:ro
+    labels:
+      io.fetchcore.owner: fetchcore-shared-infra-v1
   web:
     networks: [default]
+    labels:
+      io.fetchcore.owner: fetchcore-shared-infra-v1
   indexer:
     networks: [default, infra]
   fetchcore:
