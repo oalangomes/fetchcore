@@ -28,7 +28,8 @@ def test_operational_reuses_existing_snapshot_before_sync() -> None:
     ) < names.index("Synchronize repository index")
     gate = reusable[names.index("Require compatible existing operational snapshot")]
     assert "require_existing_snapshot" in gate["if"]
-    assert "snapshot_fingerprint_matches" in gate["run"]
+    assert "incremental_possible" in gate["run"]
+    assert "projection_compatible" in gate["run"]
 
 
 def test_hosted_consumers_keep_run_owned_fixture_services() -> None:
@@ -48,14 +49,29 @@ def test_existing_snapshot_gate_reads_cli_envelope_and_fails_closed(tmp_path: Pa
     script = next(step["run"] for step in steps
                   if step.get("name") == "Require compatible existing operational snapshot")
     path = tmp_path / "status-before.json"
-    environment = {**os.environ, "FETCHCORE_DOGFOOD_OUTPUT": str(tmp_path)}
-    for state, fingerprint, expected in (("changes_pending", True, 0),
-                                          ("not_indexed", True, 1),
-                                          ("ready", False, 1)):
-        path.write_text(json.dumps({"status": "succeeded", "result": {
-            "state": state, "snapshot": {"revision": "old"},
-            "snapshot_fingerprint_matches": fingerprint,
-        }}))
+    environment = {**os.environ, "FETCHCORE_DOGFOOD_OUTPUT": str(tmp_path),
+                   "EXPECTED_REPOSITORY": "oalangomes/fetchcore", "EXPECTED_BRANCH": "master"}
+    compatible = {
+        "repository": "oalangomes/fetchcore", "branch": "master",
+        "mode": "noop", "currentness": "current", "incremental_possible": True,
+        "schema_compatible": True, "projection_compatible": True,
+        "indexed_revision": "old", "indexing_fingerprint": "sha256:index",
+        "projection_fingerprint": "sha256:projection",
+    }
+    cases = [
+        (compatible, True),
+        ({**compatible, "mode": "incremental", "currentness": "stale"}, True),
+        ({**compatible, "mode": "initial", "currentness": "absent",
+          "indexed_revision": None, "incremental_possible": False}, False),
+        ({**compatible, "mode": "rebuild_required", "currentness": "incompatible"}, False),
+        ({**compatible, "repository": "other/repository"}, False),
+        ({**compatible, "branch": "other"}, False),
+        ({**compatible, "schema_compatible": False}, False),
+        ({**compatible, "projection_compatible": False}, False),
+        ({**compatible, "indexing_fingerprint": None}, False),
+    ]
+    for payload, allowed in cases:
+        path.write_text(json.dumps({"status": "succeeded", "result": payload}))
         result = subprocess.run(["bash", "-c", script], env=environment,
                                 capture_output=True, text=True, check=False)
-        assert (result.returncode == 0) is (expected == 0), result.stderr
+        assert (result.returncode == 0) is allowed, result.stderr
