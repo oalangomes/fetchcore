@@ -6,6 +6,7 @@ from pathlib import Path
 from fetchcore.repository.incremental import (
     GitAwareSolrSynchronizer,
     GitRepositoryChangeDetector,
+    GitDeltaPlan,
 )
 from fetchcore.repository.index_contract import (
     IndexContractSolrSnapshot,
@@ -102,9 +103,9 @@ def test_git_detector_falls_back_when_previous_revision_is_unavailable(tmp_path:
 
 def test_git_detector_reports_bounded_stage_times_for_committed_delta(tmp_path: Path) -> None:
     _repository(tmp_path)
-    (tmp_path / "a.py").write_text("a = 1\\n", encoding="utf-8")
+    (tmp_path / "a.py").write_text("a = 1\n", encoding="utf-8")
     base = _commit(tmp_path, "base")
-    (tmp_path / "a.py").write_text("a = 2\\n", encoding="utf-8")
+    (tmp_path / "a.py").write_text("a = 2\n", encoding="utf-8")
     head = _commit(tmp_path, "change a")
 
     # Deterministic fake clock: discovery covers all Git checks and both diffs;
@@ -126,7 +127,7 @@ def test_git_detector_noop_still_measures_diff_and_early_fallback_omits_it(
     tmp_path: Path,
 ) -> None:
     _repository(tmp_path)
-    (tmp_path / "a.py").write_text("a = 1\\n", encoding="utf-8")
+    (tmp_path / "a.py").write_text("a = 1\n", encoding="utf-8")
     head = _commit(tmp_path, "base")
     ticks = iter((0.0, 0.1, 0.2, 0.3))
     noop = GitRepositoryChangeDetector(timer=lambda: next(ticks)).plan(
@@ -145,8 +146,6 @@ def test_git_detector_noop_still_measures_diff_and_early_fallback_omits_it(
     assert "git_diff_duration_ms" not in fallback.to_mapping()
 
     # Historical/manually authored plans are unmeasured, not zero-cost.
-    from fetchcore.repository.incremental import GitDeltaPlan
-
     legacy = GitDeltaPlan(mode="git-delta", base_revision=head, current_revision=head)
     assert "discovery_duration_ms" not in legacy.to_mapping()
     assert "git_diff_duration_ms" not in legacy.to_mapping()
