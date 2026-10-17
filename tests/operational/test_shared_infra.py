@@ -80,6 +80,29 @@ def test_run_only_executes_requested_command(monkeypatch):
     assert run.call_args.kwargs["env"]["FETCHCORE_SOLR_COLLECTION"].startswith("fc-bench-")
 
 
+def test_run_passes_explicit_host_ollama_url_to_requested_command(monkeypatch):
+    run = Mock()
+    monkeypatch.setattr(infra.subprocess, "run", run)
+    endpoint = "http://wsl-gateway:11434"
+    invoke(
+        monkeypatch,
+        "run",
+        "--environment",
+        "operational",
+        "--repository",
+        "oalangomes/fetchcore",
+        "--backend",
+        "qdrant",
+        "--ollama-url",
+        endpoint,
+        "--",
+        "fetchcore",
+        "index",
+    )
+    assert run.call_args.args[0] == ["fetchcore", "index"]
+    assert run.call_args.kwargs["env"]["FETCHCORE_OLLAMA_URL"] == endpoint
+
+
 def test_app_uses_existing_network_and_same_resource_without_starting_backend(monkeypatch):
     run = Mock(return_value=subprocess.CompletedProcess([], 0, ""))
     ready = Mock(return_value={"status": "ready"})
