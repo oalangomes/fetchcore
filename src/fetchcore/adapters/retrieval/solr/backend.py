@@ -336,6 +336,7 @@ class SolrSettings:
     )
     batch_size: int = 200
     diagnostic_candidate_window: int | None = None
+    ann_search_breadth: int | None = None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object] | None) -> SolrSettings:
@@ -375,6 +376,16 @@ class SolrSettings:
                 category="schema_mismatch",
             )
         controls = validate_projection_v3_controls(data, backend_name="Solr")
+        ann_search_breadth = data.get("ann_search_breadth")
+        if ann_search_breadth is not None and (
+            isinstance(ann_search_breadth, bool)
+            or not isinstance(ann_search_breadth, int)
+            or not 1 <= ann_search_breadth <= 5_000
+        ):
+            raise KnowledgeSearchError(
+                "Solr ann_search_breadth must be an integer between 1 and 5000",
+                category="schema_mismatch",
+            )
         return cls(
             url=url,
             collection=collection,
@@ -384,6 +395,7 @@ class SolrSettings:
             signal_type_boosts=controls.signal_type_boosts,
             batch_size=batch_size,
             diagnostic_candidate_window=controls.diagnostic_candidate_window,
+            ann_search_breadth=ann_search_breadth,
         )
 
 
@@ -2087,9 +2099,12 @@ def _dense_or_hybrid_search(
         snapshot=snapshot,
         retrieval=retrieval,
     )
+    query_vector_sha256 = hashlib.sha256(
+        json.dumps(vector, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
     embedding_ms = elapsed_ms(embedding_started, backend.timer())
     dense_started = backend.timer()
-    dense_candidates, dense_num_found, dense_params = _solr_dense_candidates(
+    dense_candidates, dense_num_found, dense_params, ann_search_breadth = _solr_dense_candidates(
         transport=transport,
         scope=scope,
         snapshot=snapshot,
@@ -2138,6 +2153,9 @@ def _dense_or_hybrid_search(
                 "embedding_provider": embedder.provider_id,
                 "embedding_model": embedder.model_id,
                 "vector_dimensions": len(vector),
+                "ann_top_k_requested": ann_search_breadth,
+                "dense_candidates_acquired": len(dense_candidates),
+                "query_vector_sha256": query_vector_sha256,
             },
         )
         return KnowledgeSearchResponse(
@@ -2166,6 +2184,10 @@ def _dense_or_hybrid_search(
                 "hybrid_fusion": False,
                 "reranker": False,
                 "solr_dense_query": _safe_query_telemetry(dense_params),
+                "ann_top_k_requested": ann_search_breadth,
+                "dense_candidate_window": dense_params["limit"],
+                "dense_candidates_acquired": len(dense_candidates),
+                "query_vector_sha256": query_vector_sha256,
                 "query_embedding_text_sha256": hashlib.sha256(
                     query_text.encode("utf-8")
                 ).hexdigest(),
@@ -2219,6 +2241,8 @@ def _dense_or_hybrid_search(
         dense_num_found=dense_num_found,
         lexical_params=lexical_params,
         dense_params=dense_params,
+        ann_search_breadth=ann_search_breadth,
+        query_vector_sha256=query_vector_sha256,
         embedding_ms=embedding_ms,
         dense_ms=dense_ms,
         lexical_ms=lexical_ms,
@@ -2342,11 +2366,22 @@ def _solr_dense_candidates(
     snapshot: SolrIndexSnapshot,
     settings: SolrSettings,
     vector: tuple[float, ...],
-) -> tuple[tuple[_SolrDenseCandidate, ...], int, dict[str, object]]:
-    query_limit = max(
+) -> tuple[tuple[_SolrDenseCandidate, ...], int, dict[str, object], int]:
+    candidate_window = max(
         scope.max_results,
         settings.diagnostic_candidate_window or scope.max_results,
     )
+    ann_search_breadth = settings.ann_search_breadth or candidate_window
+    if not candidate_window <= ann_search_breadth <= min(5_000, 4 * candidate_window):
+        raise KnowledgeSearchError(
+            "Solr ann_search_breadth must be between the candidate window and its bounded 4x maximum",
+            category="schema_mismatch",
+            metadata={
+                "candidate_window": candidate_window,
+                "max_results": scope.max_results,
+                "ann_search_breadth": ann_search_breadth,
+            },
+        )
     filters = [
         "record_kind:knowledge",
         _term_filter("repository", snapshot.repository),
@@ -2373,11 +2408,11 @@ def _solr_dense_candidates(
             )
     params: dict[str, object] = {
         "query": (
-            f"{{!knn f={SOLR_VECTOR_FIELD} topK={query_limit}}}"
+            f"{{!knn f={SOLR_VECTOR_FIELD} topK={ann_search_breadth}}}"
             + json.dumps(list(vector), separators=(",", ":"))
         ),
         "filter": filters,
-        "limit": query_limit,
+        "limit": candidate_window,
         "fields": _solr_result_fields(),
         "sort": "score desc,id asc",
     }
@@ -2394,7 +2429,7 @@ def _solr_dense_candidates(
         )
         for rank, item in enumerate(docs, start=1)
     )
-    return candidates, num_found, params
+    return candidates, num_found, params, ann_search_breadth
 
 
 def _solr_lexical_candidates(
@@ -2519,6 +2554,8 @@ def _hybrid_response(
     dense_num_found: int,
     lexical_params: Mapping[str, object],
     dense_params: Mapping[str, object],
+    ann_search_breadth: int,
+    query_vector_sha256: str,
     embedding_ms: int,
     dense_ms: int,
     lexical_ms: int,
@@ -2757,6 +2794,9 @@ def _hybrid_response(
             "embedding_model": embedder.model_id,
             "vector_dimensions": snapshot.vector_dimensions,
             "fusion_strategy": "rrf",
+            "ann_top_k_requested": ann_search_breadth,
+            "dense_candidates_acquired": len(dense_candidates),
+            "query_vector_sha256": query_vector_sha256,
         },
     )
     return KnowledgeSearchResponse(
@@ -2793,6 +2833,10 @@ def _hybrid_response(
             "reranker": False,
             "solr_lexical_query": _safe_query_telemetry(lexical_params),
             "solr_dense_query": _safe_query_telemetry(dense_params),
+            "ann_top_k_requested": ann_search_breadth,
+            "dense_candidate_window": dense_params["limit"],
+            "dense_candidates_acquired": len(dense_candidates),
+            "query_vector_sha256": query_vector_sha256,
             "query_embedding_text_sha256": hashlib.sha256(
                 query_text.encode("utf-8")
             ).hexdigest(),

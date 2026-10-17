@@ -115,6 +115,23 @@ def configured_manifest(manifest: dict[str, object], config: dict[str, object]) 
     return effective
 
 
+def configured_solr_ann_breadth(effective: dict[str, object], breadth: int) -> None:
+    """Set the one experimental variable on a copied manifest in memory."""
+    measurement = frozen._object(effective, "measurement")
+    window = max(int(str(measurement["max_results"])),
+                 int(str(measurement["diagnostic_candidate_window"])))
+    if not window <= breadth <= min(5_000, 4 * window):
+        raise frozen.BaselineConfigurationError(
+            "Solr ANN breadth must be between the frozen candidate window "
+            "and its bounded 4x maximum"
+        )
+    backend_settings = frozen._object(effective, "backend_settings")
+    solr_settings = frozen._object(backend_settings, "solr")
+    solr_settings["ann_search_breadth"] = breadth
+    backend_settings["solr"] = solr_settings
+    effective["backend_settings"] = backend_settings
+
+
 def observed_fingerprints(run_dir: Path) -> dict[str, object]:
     """Summarize observed identities; keep the original artifacts unchanged."""
     observed: dict[str, object] = {"indexing": None, "retrieval": {}}
@@ -154,6 +171,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--arm", action="append", default=[])
     parser.add_argument("--prepare-index", action="store_true")
+    parser.add_argument("--solr-ann-search-breadth", type=int,
+                        help="Bounded Solr KNN topK; leaves the frozen candidate window unchanged")
     parser.add_argument("--resume", help="Resume an incomplete V0.N run with the same BENCH configuration")
     args = parser.parse_args(argv)
     output = args.output.resolve()
@@ -165,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.prepare_index and config["provisioning"] != "explicit_rebuild":
         parser.error("--prepare-index requires explicit_rebuild in BENCH run config")
     effective = configured_manifest(frozen._load_json(frozen.MANIFEST_PATH), config)
+    if args.solr_ann_search_breadth is not None:
+        configured_solr_ann_breadth(effective, args.solr_ann_search_breadth)
     before = set(output.glob("V0.*")) if output.exists() else set()
     with TemporaryDirectory(prefix="fetchcore-bench-manifest-") as temporary:
         manifest_path = Path(temporary) / "manifest.json"
