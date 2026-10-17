@@ -604,8 +604,15 @@ class OpenSearchIndexStore:
                 raise KnowledgeSearchError("OpenSearch identifier normalizer is incompatible", category="schema_mismatch", metadata={"field": name, "rebuild_required": True})
             if name == OPENSEARCH_VECTOR_FIELD and actual.get("dimension") != OPENSEARCH_VECTOR_DIMENSIONS:
                 raise KnowledgeSearchError("OpenSearch vector dimensions are incompatible", category="schema_mismatch", metadata={"rebuild_required": True})
-            if name == OPENSEARCH_VECTOR_FIELD and actual.get("method") != field_spec.get("method"):
-                raise KnowledgeSearchError("OpenSearch vector method is incompatible", category="schema_mismatch", metadata={"rebuild_required": True})
+            if name == OPENSEARCH_VECTOR_FIELD:
+                expected_method = field_spec.get("method")
+                actual_method = actual.get("method")
+                # OpenSearch includes an empty parameters object in the returned
+                # mapping even when the requested method omits it.
+                if not isinstance(expected_method, dict) or actual_method not in (
+                    expected_method, {**expected_method, "parameters": {}},
+                ):
+                    raise KnowledgeSearchError("OpenSearch vector method is incompatible", category="schema_mismatch", metadata={"rebuild_required": True})
         settings_payload = self.transport.request("GET", f"{quote(indexes[0], safe='')}/_settings")
         settings_root = settings_payload.get(indexes[0])
         settings_outer = settings_root.get("settings") if isinstance(settings_root, dict) else None

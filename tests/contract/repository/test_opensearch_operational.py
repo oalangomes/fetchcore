@@ -366,6 +366,14 @@ def test_dense_mapping_and_embedding_identity(tmp_path: Path) -> None:
     )
     assert provider.calls == calls
     active = next(iter(transport.aliases.values()))
+    method = transport.mappings[active]["properties"]["embedding_vector"]["method"]
+    method["parameters"] = {}  # OpenSearch 3.8 normalizes this on GET _mapping.
+    persistence.validate_schema(require_vectors=True)
+    method["parameters"] = {"ef_construction": 128}
+    with pytest.raises(KnowledgeSearchError) as error:
+        persistence.validate_schema(require_vectors=True)
+    assert error.value.category == "schema_mismatch"
+    method["parameters"] = {}
     transport.settings[active]["knn"] = False
     with pytest.raises(KnowledgeSearchError) as error:
         persistence.validate_schema(require_vectors=True)
