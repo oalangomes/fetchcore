@@ -127,6 +127,13 @@ class MemoryOpenSearch:
             index = path.split("/", 1)[0]
             if "match_all" in payload["query"]:
                 return {"count": len(self.indices[index])}
+            if "repository" in payload["query"].get("term", {}):
+                repository = payload["query"]["term"]["repository"]
+                return {
+                    "count": sum(
+                        item["repository"] == repository for item in self.indices[index].values()
+                    )
+                }
             return {
                 "count": sum(
                     item["record_kind"] == "knowledge" for item in self.indices[index].values()
@@ -294,6 +301,32 @@ def test_mapping_and_indexing_identity_fail_closed(tmp_path: Path) -> None:
         persistence.incremental_sync(changed)
     assert error.value.category == "rebuild_required"
     assert persistence.load_snapshot("acme/widgets").revision == "rev-1"
+
+
+def test_explicit_rebuild_accepts_owned_legacy_generation(tmp_path: Path) -> None:
+    transport = MemoryOpenSearch()
+    persistence = store(transport)
+    (tmp_path / "file.py").write_text("value = 1\n")
+    persistence.full_rebuild(indexer("rev-1").index(tmp_path))
+    old_index = next(iter(transport.aliases.values()))
+    del transport.mappings[old_index]["_meta"]
+    (tmp_path / "file.py").write_text("value = 2\n")
+    persistence.full_rebuild(indexer("rev-2").index(tmp_path))
+    assert persistence.load_snapshot("acme/widgets").revision == "rev-2"
+    assert old_index in transport.indices
+
+
+def test_rebuild_refuses_foreign_alias_owner(tmp_path: Path) -> None:
+    transport = MemoryOpenSearch()
+    persistence = store(transport)
+    (tmp_path / "file.py").write_text("value = 1\n")
+    persistence.full_rebuild(indexer("rev-1").index(tmp_path))
+    old_index = next(iter(transport.aliases.values()))
+    transport.mappings[old_index]["_meta"]["repository"] = "other/repository"
+    with pytest.raises(KnowledgeSearchError) as error:
+        persistence.full_rebuild(indexer("rev-2").index(tmp_path))
+    assert error.value.category == "ownership_unverified"
+    assert transport.aliases[next(iter(transport.aliases))] == old_index
 
 
 def test_dense_mapping_and_embedding_identity(tmp_path: Path) -> None:

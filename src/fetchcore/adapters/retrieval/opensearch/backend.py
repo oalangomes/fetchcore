@@ -878,11 +878,26 @@ class OpenSearchIndexStore:
         root = payload.get(index)
         mappings = root.get("mappings") if isinstance(root, dict) else None
         meta = mappings.get("_meta") if isinstance(mappings, dict) else None
-        if isinstance(meta, dict) and meta.get("repository") == repository:
-            return
+        if isinstance(meta, dict) and "repository" in meta:
+            if meta["repository"] == repository:
+                return
+            raise KnowledgeSearchError("OpenSearch index belongs to another repository",
+                                       category="ownership_unverified")
         count = self.transport.request("POST", f"{quote(index, safe='')}/_count",
                                        {"query": {"match_all": {}}}).get("count")
-        if count != 0:
+        if count == 0:
+            return
+        owned = self.transport.request("POST", f"{quote(index, safe='')}/_count",
+                                       {"query": {"term": {"repository": repository}}}).get("count")
+        snapshots = self.transport.request("POST", f"{quote(index, safe='')}/_search", {
+            "size": 2,
+            "query": {"bool": {"filter": [
+                {"term": {"record_kind": "snapshot"}},
+                {"term": {"repository": repository}},
+            ]}},
+        })
+        records, _ = _search_documents(snapshots)
+        if not isinstance(count, int) or owned != count or len(records) != 1:
             raise KnowledgeSearchError("OpenSearch index ownership is unverified",
                                        category="ownership_unverified")
 
