@@ -13,10 +13,11 @@ fetchcore index sync fetchcore --json
 `plan` reports `initial` when no snapshot exists. Choose `rebuild` to create the
 first index. `sync` requires an existing compatible index; absence returns
 `snapshot_missing`. An incompatible index returns `rebuild_required`. Neither
-case silently invokes rebuild. `rebuild` uses the existing canonical full indexing
-and transactional projection replacement/validation path. It does not create a
-collection or repair an incompatible live schema. Provision the backend with the
-existing [runtime setup](self-hosted-indexing.md) first.
+case silently invokes rebuild. `rebuild` uses canonical full indexing and the
+adapter's validated projection replacement path. Solr does not create a collection
+or repair an incompatible live schema. OpenSearch creates a new index generation
+only for an explicit rebuild, then promotes its repository alias after validation.
+Provision the backend service with the [runtime setup](self-hosted-indexing.md).
 
 ## Configuration and compatibility
 
@@ -32,16 +33,41 @@ fetchcore index --cache-root /srv/fetchcore-cache --allowed-root /srv/repos \
 
 Cache precedence and local source authorization are identical to
 [repo inspect](repository-registry.md). Backend settings retain
-`FETCHCORE_INDEX_BACKEND` and `FETCHCORE_INDEX_BACKEND_SETTINGS` support. Solr is
-currently the only operational backend with both incremental and rebuild
-capabilities in this surface. Other backend IDs fail with `unsupported_backend`;
+`FETCHCORE_INDEX_BACKEND` and `FETCHCORE_INDEX_BACKEND_SETTINGS` support. Solr and
+OpenSearch support the registered operational lifecycle. Qdrant operational
+indexing remains a separate integration and returns `unsupported_backend`;
 retrieval support alone does not imply operational persistence support.
+
+For OpenSearch, pass the endpoint and index namespace explicitly:
+
+```bash
+fetchcore index --backend opensearch \
+  --backend-settings '{"url":"http://127.0.0.1:9200","index":"fetchcore-knowledge"}' \
+  plan owner/project --json
+```
+
+`bootstrap` is a read-only check of the bound alias and Projection v3 mapping.
+A missing alias returns `index_missing`; `plan` reports `initial`. Explicit
+`rebuild` creates a fresh generation and atomically moves the alias. The prior
+generation remains available for operator rollback. A failed write before
+promotion leaves the prior generation active; an ambiguous promotion keeps
+staging for inspection.
+
+OpenSearch `sync` applies a canonical document delta to a staged generation and
+promotes the alias after checking its snapshot, document count, and corpus
+checksum. Unchanged documents are not re-embedded or sent by FetchCore. OpenSearch
+copies the active generation inside the server, so storage writes and temporary
+disk use scale with the existing corpus on each sync. `backend_writes` includes
+that copy, changed documents, and the snapshot. A per-repository writer lock is
+an index named `<repository-alias>-write-lock`. A failed process may leave it
+behind. Inspect its mapping `_meta.fetchcore_lock_token` and the active alias
+before any manual recovery. `plan` and `status` never acquire the lock or write.
 
 Lexical indexing is the default and never resolves or calls an embedding
 provider. Dense and hybrid indexing are explicit opt-ins through the shared
 operator runtime contract. The same `provider`, `model`, `dimensions`, and
 serializer/projection identity are used later for query embedding. For the
-current Solr schema, `dimensions` must be `768`; a different configured or
+current Solr and OpenSearch vector schemas, `dimensions` must be `768`; a different configured or
 observed dimension fails with `schema_mismatch`.
 
 Enabling dense/hybrid over an existing lexical snapshot yields
@@ -74,12 +100,13 @@ fetchcore index --workspace . --repository owner/project --revision COMMIT sync
 fetchcore index --workspace . --repository owner/project bootstrap
 ```
 
-Those commands retain their original JSON envelope and legacy initial/recovery
-rebuild behavior. Their environment variables still work. Explicit legacy
+Solr commands retain their original JSON envelope and legacy initial/recovery
+rebuild behavior. OpenSearch legacy `bootstrap` validates its existing alias;
+its `sync` requires a compatible snapshot. Their environment variables still work. Explicit legacy
 `--workspace`, `--repository`, `--branch`, or `--revision` cannot be combined with
 a registered positional target. Legacy identity environment variables are ignored
 when a positional target is supplied; the registry/provider binding supplies all
-identity information. No aliases or second catalog are introduced.
+identity information. No second repository catalog is introduced.
 
 ## Observation, plan, and execution
 

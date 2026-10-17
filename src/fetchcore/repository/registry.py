@@ -50,6 +50,10 @@ def local_source_path(value: str, allowed_roots: tuple[Path, ...]) -> Path:
     _safe_text(value)
     try:
         path = Path(value).expanduser().absolute()
+        # Python 3.13 may leave a self-referential symlink unresolved with the
+        # non-strict default; force resolution only for symlink sources.
+        if path.is_symlink():
+            path.resolve(strict=True)
         resolved = path.resolve()
         allowed = any(resolved.is_relative_to(root.resolve()) for root in allowed_roots)
     except (OSError, RuntimeError) as exc:
