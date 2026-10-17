@@ -62,6 +62,8 @@ that copy, changed documents, and the snapshot. A per-repository writer lock is
 an index named `<repository-alias>-write-lock`. A failed process may leave it
 behind. Inspect its mapping `_meta.fetchcore_lock_token` and the active alias
 before any manual recovery. `plan` and `status` never acquire the lock or write.
+The [2026-10-17 operational preflight](../benchmarks/results/opensearch-operational-preflight-2026-10-17.md)
+records the read-only rollout gate and its unresolved provider dependency.
 
 Lexical indexing is the default and never resolves or calls an embedding
 provider. Dense and hybrid indexing are explicit opt-ins through the shared
