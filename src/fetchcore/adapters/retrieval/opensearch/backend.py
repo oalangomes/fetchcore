@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections.abc import Callable, Iterable, Mapping
+from contextlib import contextmanager
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import replace, dataclass, field
+from uuid import uuid4
 from pathlib import Path
 from typing import Protocol, cast
 from urllib.error import HTTPError, URLError
@@ -276,6 +278,7 @@ class OpenSearchIndexSnapshot:
     projection_fingerprint: str | None = field(
         default_factory=projection_contract_fingerprint
     )
+    indexing_fingerprint: str | None = None
 
     @property
     def id(self) -> str:
@@ -324,6 +327,7 @@ class OpenSearchIndexSnapshot:
                 else {}
             ),
             "projection_fingerprint": self.projection_fingerprint,
+            "indexing_fingerprint": self.indexing_fingerprint,
             "projection_version": self.projection_version,
             "snapshot_indexed_at": self.indexed_at,
             "snapshot_status": self.status,
@@ -376,6 +380,10 @@ class OpenSearchIndexSnapshot:
                     None
                     if value.get("projection_fingerprint") is None
                     else str(value["projection_fingerprint"])
+                ),
+                indexing_fingerprint=(
+                    None if value.get("indexing_fingerprint") is None
+                    else str(value["indexing_fingerprint"])
                 ),
             )
         except (KeyError, TypeError, ValueError) as exc:
@@ -459,6 +467,7 @@ def _index_mapping(*, include_vectors: bool = False) -> dict[str, object]:
         "embedding_serializer_mode",
         "embedding_serializer_version",
         "embedding_serializer_fingerprint",
+        "indexing_fingerprint",
     }
     properties: dict[str, object] = {
         name: {"type": "keyword"} for name in sorted(keyword_fields)
@@ -549,10 +558,117 @@ class OpenSearchIndexStore:
         )
         self.clock = clock
         self.timer = timer
+        self.indexing_fingerprint: str | None = None
+        self.repository: str | None = None
 
     def health(self) -> dict[str, object]:
         """Return backend health information required by the lifecycle."""
         return self.transport.request("GET", "_cluster/health")
+
+    def validate_schema(self, *, require_vectors: bool = False) -> None:
+        """Validate the active alias and every Projection v3 field used by this store."""
+        # A missing alias is an initial, explicitly rebuildable state. Existing
+        # indices must never be silently repaired by bootstrap or planning.
+        prefix = f"{self.settings.index}-"
+        self.health()
+        repository = getattr(self, "repository", None)
+        if not isinstance(repository, str) or not repository:
+            raise KnowledgeSearchError("OpenSearch repository binding is missing", category="schema_mismatch")
+        alias = _repository_alias(self.settings, repository)
+        if not alias.startswith(prefix):
+            raise KnowledgeSearchError("OpenSearch alias prefix is invalid", category="schema_mismatch")
+        indexes = self._alias_indexes(alias)
+        if not indexes:
+            raise KnowledgeSearchError("OpenSearch repository alias is absent", category="index_missing")
+        if len(indexes) != 1:
+            raise KnowledgeSearchError("OpenSearch alias must select one index", category="schema_mismatch")
+        payload = self.transport.request("GET", f"{quote(indexes[0], safe='')}/_mapping")
+        root = payload.get(indexes[0])
+        mappings = root.get("mappings") if isinstance(root, dict) else None
+        meta = mappings.get("_meta") if isinstance(mappings, dict) else None
+        if isinstance(meta, dict) and meta.get("repository") not in (None, repository):
+            raise KnowledgeSearchError("OpenSearch index belongs to another repository",
+                                       category="schema_mismatch")
+        properties = mappings.get("properties") if isinstance(mappings, dict) else None
+        expected = _index_mapping(include_vectors=require_vectors)["mappings"]
+        expected_properties = expected["properties"] if isinstance(expected, dict) else {}
+        if not isinstance(mappings, dict) or not isinstance(properties, dict) or not isinstance(expected_properties, dict):
+            raise KnowledgeSearchError("OpenSearch mapping is invalid", category="schema_mismatch")
+        if mappings.get("dynamic") != "strict":
+            raise KnowledgeSearchError("OpenSearch mapping must be strict", category="schema_mismatch")
+        for name, field_spec in expected_properties.items():
+            actual = properties.get(name)
+            if not isinstance(actual, dict) or not isinstance(field_spec, dict) or actual.get("type") != field_spec.get("type"):
+                raise KnowledgeSearchError("OpenSearch Projection v3 mapping is incompatible", category="schema_mismatch", metadata={"field": name, "rebuild_required": True})
+            if "normalizer" in field_spec and actual.get("normalizer") != field_spec["normalizer"]:
+                raise KnowledgeSearchError("OpenSearch identifier normalizer is incompatible", category="schema_mismatch", metadata={"field": name, "rebuild_required": True})
+            if name == OPENSEARCH_VECTOR_FIELD and actual.get("dimension") != OPENSEARCH_VECTOR_DIMENSIONS:
+                raise KnowledgeSearchError("OpenSearch vector dimensions are incompatible", category="schema_mismatch", metadata={"rebuild_required": True})
+            if name == OPENSEARCH_VECTOR_FIELD:
+                expected_method = field_spec.get("method")
+                actual_method = actual.get("method")
+                # OpenSearch includes an empty parameters object in the returned
+                # mapping even when the requested method omits it.
+                if not isinstance(expected_method, dict) or actual_method not in (
+                    expected_method, {**expected_method, "parameters": {}},
+                ):
+                    raise KnowledgeSearchError("OpenSearch vector method is incompatible", category="schema_mismatch", metadata={"rebuild_required": True})
+        settings_payload = self.transport.request("GET", f"{quote(indexes[0], safe='')}/_settings")
+        settings_root = settings_payload.get(indexes[0])
+        settings_outer = settings_root.get("settings") if isinstance(settings_root, dict) else None
+        settings_index = settings_outer.get("index") if isinstance(settings_outer, dict) else None
+        analysis = settings_index.get("analysis") if isinstance(settings_index, dict) else None
+        normalizers = analysis.get("normalizer") if isinstance(analysis, dict) else None
+        identifier = normalizers.get("fetchcore_identifier_ci") if isinstance(normalizers, dict) else None
+        if not isinstance(identifier, dict) or identifier.get("filter") != ["lowercase"]:
+            raise KnowledgeSearchError("OpenSearch identifier normalization is incompatible", category="schema_mismatch")
+        if require_vectors and (not isinstance(settings_index, dict) or settings_index.get("knn") not in (True, "true")):
+            raise KnowledgeSearchError("OpenSearch k-NN index setting is disabled", category="schema_mismatch")
+
+    def embedding_snapshot_matches(self, snapshot: OpenSearchIndexSnapshot) -> bool:
+        provider, serializer = self.embedding_provider, self.embedding_serializer
+        if provider is None:
+            return snapshot.embedding_provider is None
+        return bool(serializer is not None and snapshot.embedding_provider == provider.provider_id
+                    and snapshot.embedding_model == provider.model_id
+                    and snapshot.vector_dimensions == OPENSEARCH_VECTOR_DIMENSIONS
+                    and snapshot.embedding_serializer_mode == serializer.mode.value
+                    and snapshot.embedding_serializer_version == VECTOR_EMBEDDING_SERIALIZATION_VERSION
+                    and snapshot.embedding_serializer_fingerprint == serializer.serializer_fingerprint)
+
+    def load_documents(self, repository: str, *, index: str | None = None) -> tuple[KnowledgeDocument, ...]:
+        """Read the complete active canonical corpus with deterministic pagination."""
+        alias = index or _repository_alias(self.settings, repository)
+        documents: list[KnowledgeDocument] = []
+        after: list[object] | None = None
+        while True:
+            body: dict[str, object] = {
+                "size": self.settings.batch_size,
+                "query": {"bool": {"filter": [
+                    {"term": {"record_kind": "knowledge"}},
+                    {"term": {"repository": repository}},
+                ]}},
+                "sort": [{"id": "asc"}],
+                "_source": {"excludes": [OPENSEARCH_VECTOR_FIELD]},
+            }
+            if after is not None:
+                body["search_after"] = after
+            payload = self.transport.request("POST", f"{alias}/_search", body)
+            hits = payload.get("hits")
+            rows = hits.get("hits") if isinstance(hits, dict) else None
+            if not isinstance(rows, list):
+                raise KnowledgeSearchError("OpenSearch document page is invalid", category="response_parsing_failure")
+            for row in rows:
+                if not isinstance(row, dict) or not isinstance(row.get("_source"), dict):
+                    raise KnowledgeSearchError("OpenSearch document is invalid", category="response_parsing_failure")
+                documents.append(self.reader.read(row["_source"]))
+            if len(rows) < self.settings.batch_size:
+                break
+            last = rows[-1]
+            after = last.get("sort") if isinstance(last, dict) else None
+            if not isinstance(after, list):
+                raise KnowledgeSearchError("OpenSearch pagination cursor is invalid", category="response_parsing_failure")
+        return tuple(documents)
 
     def load_snapshot(self, repository: str) -> OpenSearchIndexSnapshot:
         """Load and validate the active repository snapshot."""
@@ -601,44 +717,25 @@ class OpenSearchIndexStore:
         started = self.timer()
         indexed_at = self.clock()
         snapshot = self._snapshot(result, indexed_at=indexed_at)
-        concrete = _concrete_index(self.settings, result, indexed_at)
+        concrete = _concrete_index(self.settings, result, uuid4().hex)
         alias = _repository_alias(self.settings, result.repository)
-
-        self._delete_index_if_present(concrete)
-        self.transport.request(
-            "PUT",
-            concrete,
-            _index_mapping(include_vectors=self.embedding_provider is not None),
-        )
-        (
-            projected,
-            embedding_requests,
-            embedding_vectors,
-            embedding_duration_ms,
-        ) = self._project_documents_with_telemetry(result.documents)
-        self._bulk_upsert(concrete, (*projected, snapshot.to_mapping()))
-        self.transport.request("POST", f"{concrete}/_refresh", {})
-        self._validate_staged(concrete, snapshot)
-        old_indexes = self._alias_indexes(alias)
-        actions = [
-            *(
-                {"remove": {"index": old_index, "alias": alias}}
-                for old_index in old_indexes
-                if old_index != concrete
-            ),
-            {"add": {"index": concrete, "alias": alias}},
-        ]
-        self.transport.request("POST", "_aliases", {"actions": actions})
-        loaded = self.load_snapshot(result.repository)
-        if loaded != snapshot:
-            raise KnowledgeSearchError(
-                "OpenSearch alias activation did not expose the staged snapshot",
-                category="index_update_failure",
-            )
-
-        for old_index in old_indexes:
-            if old_index != concrete:
-                self._delete_index_if_present(old_index)
+        with self._write_lock(result.repository):
+            old_indexes = self._alias_indexes(alias)
+            self._validate_alias_ownership(old_indexes, result.repository)
+            self.transport.request("PUT", concrete, self._generation_mapping(result.repository))
+            try:
+                (projected, embedding_requests, embedding_vectors,
+                 embedding_duration_ms) = self._project_documents_with_telemetry(result.documents)
+                self._bulk_upsert(concrete, (*projected, snapshot.to_mapping()))
+                self.transport.request("POST", f"{concrete}/_refresh", {})
+                self._validate_staged(concrete, snapshot)
+                self._promote(alias, concrete, old_indexes, snapshot)
+            except Exception:
+                # The alias still points at the old generation before promotion.
+                # After an ambiguous promotion response, keep staging for recovery.
+                if concrete not in self._alias_indexes(alias):
+                    self._delete_index_if_present(concrete)
+                raise
 
         duration_ms = elapsed_ms(started, self.timer())
         telemetry = IndexSyncTelemetry(
@@ -659,6 +756,192 @@ class OpenSearchIndexStore:
             duration_ms=duration_ms,
             telemetry=telemetry,
         )
+
+    def incremental_sync(
+        self, result: RepositoryIndexResult, *,
+        expected_snapshot: OpenSearchIndexSnapshot | None = None,
+    ) -> OpenSearchIndexSyncResult:
+        """Stage a document delta over the active generation and atomically publish it.
+
+        OpenSearch copies unchanged records internally. FetchCore embeds and sends
+        only changed canonical documents. The copy cost is reported as writes.
+        """
+        self._ensure_complete(result)
+        started = self.timer()
+        alias = _repository_alias(self.settings, result.repository)
+        with self._write_lock(result.repository):
+            previous = self.load_snapshot(result.repository)
+            if expected_snapshot is not None and previous != expected_snapshot:
+                raise KnowledgeSearchError("OpenSearch snapshot changed during indexing",
+                                           category="concurrent_write")
+            if previous.indexing_fingerprint != self.indexing_fingerprint or not self.embedding_snapshot_matches(previous):
+                raise KnowledgeSearchError("OpenSearch snapshot identity changed", category="rebuild_required")
+            old_indexes = self._alias_indexes(alias)
+            if len(old_indexes) != 1:
+                raise KnowledgeSearchError("OpenSearch alias is ambiguous", category="schema_mismatch")
+            snapshot = self._snapshot(result, indexed_at=self.clock())
+            changes = result.changes
+            upserts = (*changes.added, *(item.document for item in changes.updated))
+            removed_ids = {item.id for item in changes.removed}
+            removed_ids.update(item.previous_document_id for item in changes.updated
+                               if item.previous_document_id != item.document.id)
+            concrete = _concrete_index(self.settings, result, uuid4().hex)
+            self.transport.request("PUT", concrete, self._generation_mapping(result.repository))
+            staging_copy_active = False
+            try:
+                staging_copy_active = True
+                copied = self._copy_to_stage({
+                    "source": {"index": old_indexes[0]}, "dest": {"index": concrete},
+                })
+                staging_copy_active = False
+                if copied.get("failures") or copied.get("timed_out") is True:
+                    raise KnowledgeSearchError("OpenSearch staging copy failed", category="index_update_failure")
+                copied_count = copied.get("created", 0)
+                if not isinstance(copied_count, int) or copied_count != previous.document_count + 1:
+                    raise KnowledgeSearchError("OpenSearch staging copy count is incomplete", category="index_update_failure")
+                (projected, embedding_requests, embedding_vectors,
+                 embedding_duration_ms) = self._project_documents_with_telemetry(upserts)
+                self._bulk_upsert(concrete, projected)
+                self._bulk_delete(concrete, removed_ids)
+                self._bulk_upsert(concrete, (snapshot.to_mapping(),))
+                self.transport.request("POST", f"{concrete}/_refresh", {})
+                self._validate_staged(concrete, snapshot)
+                self._promote(alias, concrete, old_indexes, snapshot)
+            except Exception:
+                # A task may outlive a transport timeout. Keep its private stage
+                # until an operator confirms task completion before cleanup.
+                if not staging_copy_active and concrete not in self._alias_indexes(alias):
+                    self._delete_index_if_present(concrete)
+                raise
+        duration_ms = elapsed_ms(started, self.timer())
+        return OpenSearchIndexSyncResult(
+            mode="incremental", snapshot=snapshot,
+            added=len(changes.added), updated=len(changes.updated),
+            deleted=len(changes.removed), unchanged=len(changes.unchanged),
+            duration_ms=duration_ms,
+            telemetry=IndexSyncTelemetry(
+                duration_ms=duration_ms,
+                backend_writes=copied_count + len(upserts) + 1,
+                backend_deletes=len(removed_ids),
+                embedding_requests=embedding_requests,
+                embedding_vectors=embedding_vectors,
+                embedding_duration_ms=embedding_duration_ms,
+            ),
+        )
+
+    @contextmanager
+    def _write_lock(self, repository: str) -> Iterator[None]:
+        """Serialize cooperating writers across processes using index creation."""
+        name = f"{_repository_alias(self.settings, repository)}-write-lock"
+        token = uuid4().hex
+        try:
+            self.transport.request("PUT", name, {"mappings": {"_meta": {
+                "fetchcore_lock_token": token, "repository": repository,
+            }}})
+        except KnowledgeSearchError as exc:
+            if exc.category == "schema_mismatch":
+                raise KnowledgeSearchError("OpenSearch writer lock is held", category="concurrent_write") from exc
+            raise
+        try:
+            yield
+        finally:
+            payload = self.transport.request("GET", f"{name}/_mapping")
+            root = payload.get(name)
+            mappings = root.get("mappings") if isinstance(root, dict) else None
+            meta = mappings.get("_meta") if isinstance(mappings, dict) else None
+            if not isinstance(meta, dict) or meta.get("fetchcore_lock_token") != token:
+                raise KnowledgeSearchError("OpenSearch writer lock ownership changed", category="concurrent_write")
+            self.transport.request("DELETE", name)
+
+    def _promote(self, alias: str, concrete: str, old_indexes: tuple[str, ...],
+                 snapshot: OpenSearchIndexSnapshot) -> None:
+        if self._alias_indexes(alias) != old_indexes:
+            raise KnowledgeSearchError("OpenSearch alias changed during staging", category="concurrent_write")
+        actions = [
+            *({"remove": {"index": old, "alias": alias}} for old in old_indexes),
+            {"add": {"index": concrete, "alias": alias}},
+        ]
+        self.transport.request("POST", "_aliases", {"actions": actions})
+        if self._alias_indexes(alias) != (concrete,) or self.load_snapshot(snapshot.repository) != snapshot:
+            raise KnowledgeSearchError("OpenSearch alias promotion is incomplete", category="index_update_failure")
+        # Keep old generations for manual rollback and recovery.
+
+    def _generation_mapping(self, repository: str) -> dict[str, object]:
+        mapping = _index_mapping(include_vectors=self.embedding_provider is not None)
+        mappings = mapping["mappings"]
+        assert isinstance(mappings, dict)
+        mappings["_meta"] = {"fetchcore_projection": PROJECTION_VERSION,
+                             "repository": repository}
+        return mapping
+
+    def _validate_alias_ownership(self, indexes: tuple[str, ...], repository: str) -> None:
+        if len(indexes) > 1:
+            raise KnowledgeSearchError("OpenSearch alias has multiple owners",
+                                       category="schema_mismatch")
+        if not indexes:
+            return
+        index = indexes[0]
+        payload = self.transport.request("GET", f"{quote(index, safe='')}/_mapping")
+        root = payload.get(index)
+        mappings = root.get("mappings") if isinstance(root, dict) else None
+        meta = mappings.get("_meta") if isinstance(mappings, dict) else None
+        if isinstance(meta, dict) and "repository" in meta:
+            if meta["repository"] == repository:
+                return
+            raise KnowledgeSearchError("OpenSearch index belongs to another repository",
+                                       category="ownership_unverified")
+        count = self.transport.request("POST", f"{quote(index, safe='')}/_count",
+                                       {"query": {"match_all": {}}}).get("count")
+        if count == 0:
+            return
+        owned = self.transport.request("POST", f"{quote(index, safe='')}/_count",
+                                       {"query": {"term": {"repository": repository}}}).get("count")
+        snapshots = self.transport.request("POST", f"{quote(index, safe='')}/_search", {
+            "size": 2,
+            "query": {"bool": {"filter": [
+                {"term": {"record_kind": "snapshot"}},
+                {"term": {"repository": repository}},
+            ]}},
+        })
+        records, _ = _search_documents(snapshots)
+        if not isinstance(count, int) or owned != count or len(records) != 1:
+            raise KnowledgeSearchError("OpenSearch index ownership is unverified",
+                                       category="ownership_unverified")
+
+    def _bulk_delete(self, index: str, identifiers: Iterable[str]) -> None:
+        values = sorted(set(identifiers))
+        if not values:
+            return
+        for offset in range(0, len(values), self.settings.batch_size):
+            batch = values[offset:offset + self.settings.batch_size]
+            payload = ("\n".join(json.dumps({"delete": {"_index": index, "_id": item}})
+                                 for item in batch) + "\n").encode("utf-8")
+            response = self.transport.request("POST", "_bulk", payload,
+                                              content_type="application/x-ndjson")
+            if response.get("errors") is True:
+                raise KnowledgeSearchError("OpenSearch bulk delete failed", category="index_update_failure")
+
+    def _copy_to_stage(self, body: dict[str, object]) -> dict[str, object]:
+        """Wait for a server-side copy task without a long blocking HTTP response."""
+        submitted = self.transport.request(
+            "POST", "_reindex?wait_for_completion=false&refresh=true", body,
+        )
+        task_id = submitted.get("task")
+        if not isinstance(task_id, str) or not task_id:
+            raise KnowledgeSearchError("OpenSearch reindex task id is missing",
+                                       category="response_parsing_failure")
+        deadline = self.timer() + max(60.0, self.settings.timeout_seconds * 12)
+        while self.timer() < deadline:
+            state = self.transport.request("GET", f"_tasks/{quote(task_id, safe=':')}")
+            if state.get("completed") is True:
+                response = state.get("response")
+                if not isinstance(response, dict) or state.get("error") is not None:
+                    raise KnowledgeSearchError("OpenSearch reindex task failed",
+                                               category="index_update_failure")
+                return response
+            time.sleep(0.2)
+        raise KnowledgeSearchError("OpenSearch reindex task did not finish before deadline",
+                                   category="timeout", metadata={"staging_task_active": True})
 
     def reset(self, repository: str) -> None:
         """Remove persisted projection state for the requested repository."""
@@ -717,6 +1000,12 @@ class OpenSearchIndexStore:
                 "OpenSearch staged projection document count is incomplete",
                 category="index_update_failure",
                 metadata={"expected": snapshot.document_count, "actual": count},
+            )
+        documents = self.load_documents(snapshot.repository, index=concrete)
+        if len(documents) != snapshot.document_count or corpus_checksum(documents) != snapshot.corpus_checksum:
+            raise KnowledgeSearchError(
+                "OpenSearch staged canonical corpus is inconsistent",
+                category="index_update_failure",
             )
 
     def _project_documents(
@@ -805,6 +1094,7 @@ class OpenSearchIndexStore:
                 None if serializer is None else serializer.serializer_fingerprint
             ),
             projection_fingerprint=self.projection_fingerprint,
+            indexing_fingerprint=self.indexing_fingerprint,
         )
 
     def _bulk_upsert(
@@ -914,9 +1204,22 @@ class OpenSearchKnowledgeIndex:
 
     def sync(self, workspace: Path) -> OpenSearchIndexSyncResult:
         """Synchronize the repository projection with canonical source state."""
-        # The parity slice intentionally prefers a safe full blue/green replacement
-        # over duplicating Solr's incremental persistence before backend value is proven.
-        return self.rebuild(workspace)
+        repository = self.indexer.resolve_repository_identity(workspace)
+        snapshot = self.store.load_snapshot(repository)
+        previous = self.store.load_documents(repository)
+        if len(previous) != snapshot.document_count or corpus_checksum(previous) != snapshot.corpus_checksum:
+            raise KnowledgeSearchError("OpenSearch active corpus differs from its snapshot",
+                                       category="index_stale")
+        result = self.indexer.index(workspace, previous_documents=previous)
+        changes = result.changes
+        if (not (changes.added or changes.updated or changes.removed)
+            and snapshot.revision == result.revision
+            and (result.branch is None or snapshot.branch == result.branch)):
+            return OpenSearchIndexSyncResult(
+                "incremental", snapshot, 0, 0, 0, snapshot.document_count, 0,
+                IndexSyncTelemetry(0, 0, 0),
+            )
+        return self.store.incremental_sync(result, expected_snapshot=snapshot)
 
 
 def _unconfigured_embedding_provider(retrieval: RetrievalConfig) -> EmbeddingProvider:
