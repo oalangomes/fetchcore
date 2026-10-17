@@ -49,6 +49,7 @@ class VectorLifecycleTransport(MemoryTransport):
         self.committed: dict[str, dict[str, object]] = {}
         self.schema_require_vectors: list[bool] = []
         self.search_channels: list[str] = []
+        self.dense_requests: list[dict[str, object]] = []
 
     def get(
         self,
@@ -81,6 +82,8 @@ class VectorLifecycleTransport(MemoryTransport):
     ) -> dict[str, object]:
         if path == "select":
             self.search_channels.append("dense")
+            assert isinstance(payload, dict)
+            self.dense_requests.append(payload)
             docs = self._search_documents()
             return {"response": {"numFound": len(docs), "docs": docs}}
         if isinstance(payload, dict) and "rollback" in payload:
@@ -451,7 +454,7 @@ def test_dense_and_hybrid_serving_use_query_embedding_without_fallback(
                 revision=_git(workspace, "rev-parse", "HEAD"),
                 knowledge_types=(),
                 max_results=5,
-                settings={},
+                settings={"diagnostic_candidate_window": 80, "ann_search_breadth": 160},
                 retrieval=_retrieval(hybrid=hybrid),
             ),
             (),
@@ -461,6 +464,19 @@ def test_dense_and_hybrid_serving_use_query_embedding_without_fallback(
         assert response.telemetry.mode == ("hybrid" if hybrid else "dense")
         assert provider.calls[-1] == ("first function",)
         assert "dense" in transport.search_channels
+        assert "topK=160" in str(transport.dense_requests[-1]["query"])
+        assert transport.dense_requests[-1]["limit"] == 80
+        assert response.metadata["ann_top_k_requested"] == 160
+        assert response.metadata["dense_candidate_window"] == 80
+        assert response.telemetry.metadata["dense_candidates_acquired"] == response.metadata[
+            "dense_candidates_acquired"
+        ]
+        assert isinstance(response.metadata["dense_candidates_acquired"], int)
+        assert response.metadata["dense_candidates_acquired"] <= 80
+        assert len(response.telemetry.metadata["query_vector_sha256"]) == 64
+        assert response.metadata["query_vector_sha256"] == response.telemetry.metadata[
+            "query_vector_sha256"
+        ]
         assert ("lexical" in transport.search_channels) is hybrid
         assert all(result.revision == _git(workspace, "rev-parse", "HEAD") for result in response.results)
         assert all(result.source_ref.startswith(f"repository://{repository}/") for result in response.results)

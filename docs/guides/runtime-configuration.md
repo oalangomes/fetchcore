@@ -36,6 +36,16 @@ embedding serializer versions. Unknown versions, unknown fields, malformed
 mappings, invalid URLs, timeouts, and batches fail during bootstrap. A missing
 field may use a safe default; an invalid field does not.
 
+For Solr dense or hybrid search, `backends.solr.ann_search_breadth: 160` can
+request a wider internal KNN search while keeping the configured candidate
+window unchanged. The default leaves KNN breadth equal to the window. The
+value must be a JSON integer between the window and its bounded 4x maximum,
+with an absolute cap of 5000. Use `diagnostic_candidate_window: 80` alongside
+`max_results: 20` to retain an 80-candidate response window; otherwise the
+window is 20 and a breadth of 160 is rejected. Record both values with
+evaluation artifacts when tuning. This setting is specific to Solr and is not
+an embedding or index fingerprint input.
+
 Precedence is:
 
 ```text

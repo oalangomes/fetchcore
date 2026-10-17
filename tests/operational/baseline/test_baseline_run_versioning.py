@@ -66,6 +66,18 @@ def test_new_bench_run_config_changes_only_in_memory_manifest(tmp_path: Path) ->
         BENCH_MODULE.load_run_config(path, corpus)
 
 
+def test_solr_ann_breadth_changes_only_copied_bench_manifest() -> None:
+    frozen = RUN_MODULE._load_json(RUN_MODULE.MANIFEST_PATH)
+    effective = json.loads(json.dumps(frozen))
+    BENCH_MODULE.configured_solr_ann_breadth(effective, 160)
+    assert effective["backend_settings"]["solr"]["ann_search_breadth"] == 160
+    assert effective["measurement"] == frozen["measurement"]
+    assert "ann_search_breadth" not in frozen["backend_settings"]["solr"]
+    for invalid in (79, 321):
+        with pytest.raises(RUN_MODULE.BaselineConfigurationError):
+            BENCH_MODULE.configured_solr_ann_breadth(effective, invalid)
+
+
 def test_new_bench_identity_records_observed_projection_without_mutating_artifacts(tmp_path: Path) -> None:
     run = {"arms": [{"id": "solr-lexical", "backend": "solr"}]}
     indexing = {"indexing_fingerprint": "sha256:indexing"}
