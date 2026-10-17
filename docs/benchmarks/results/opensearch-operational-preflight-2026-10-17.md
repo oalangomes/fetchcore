@@ -61,8 +61,8 @@ records because the snapshot is stored alongside the knowledge documents.
 The rebuild reported 5,081 backend writes and 0 deletes. Its indexing duration
 was 184.5 s, including 170.3 s for 26 embedding requests and 5,081 vectors
 (29.8 vectors/s); command wall time was 191.5 s. These are observations on a
-shared host, not causal latency estimates. One hybrid search completed in 193 ms
-of reported backend work; no latency distribution was measured.
+shared host, not causal latency estimates. One hybrid search reported 193 ms
+of total duration; no latency distribution was measured.
 
 ## Defect found during postflight
 
