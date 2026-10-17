@@ -1,0 +1,29 @@
+# One Lab with authorized DEV/BENCH targets on an existing shared network.
+# Its private default network keeps web-to-API DNS scoped to this app project.
+services:
+  api:
+    networks: [default, infra]
+    volumes:
+      - ${FETCHCORE_BENCH_SOURCE_PATH:-../..}:/bench-workspace:ro
+    labels:
+      io.fetchcore.owner: fetchcore-shared-infra-v1
+  mcp:
+    networks: [default, infra]
+    volumes:
+      - ${FETCHCORE_BENCH_SOURCE_PATH:-../..}:/bench-workspace:ro
+    labels:
+      io.fetchcore.owner: fetchcore-shared-infra-v1
+  web:
+    networks: [default]
+    labels:
+      io.fetchcore.owner: fetchcore-shared-infra-v1
+  indexer:
+    networks: [default, infra]
+  fetchcore:
+    networks: [default, infra]
+
+networks:
+  default: {}
+  infra:
+    external: true
+    name: ${FETCHCORE_INFRA_PROJECT:?use shared_infra.py}_default

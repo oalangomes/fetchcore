@@ -1,11 +1,13 @@
 export interface ExplorerTarget {
   id: string
+  environment?: 'dev' | 'bench' | 'operational' | null
   repository: string
   backend: string
   collection: string | null
   revision: string | null
   capabilities: Record<string, boolean>
   retrieval: Record<string, unknown> | null
+  indexing?: { supported: boolean; reason: string }
 }
 
 export interface ExplorerConfig {

@@ -126,6 +126,7 @@ jobs:
           docker compose -f infra/compose/solr.yml config --quiet
           docker compose -f infra/compose/opensearch.yml config --quiet
           docker compose -f infra/compose/qdrant.yml config --quiet
+          python scripts/shared_infra.py run --environment dev --repository oalangomes/fetchcore -- docker compose --env-file /dev/null -f infra/compose/shared.yml config --quiet
           FETCHCORE_BACKEND=opensearch docker compose -f infra/compose/app.yml -f infra/compose/opensearch.yml config --quiet
           FETCHCORE_BACKEND=qdrant-vector docker compose -f infra/compose/app.yml -f infra/compose/qdrant.yml config --quiet
       - name: Build and start root default web, API, MCP and Solr

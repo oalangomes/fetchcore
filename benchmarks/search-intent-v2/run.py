@@ -11,12 +11,14 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import platform
 import statistics
 import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -36,16 +38,34 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--revision", required=True)
-    parser.add_argument("--solr-url", required=True)
-    parser.add_argument("--collection", required=True)
+    parser.add_argument("--solr-url", default=os.environ.get("FETCHCORE_SOLR_URL"),
+                        required=not os.environ.get("FETCHCORE_SOLR_URL"))
+    parser.add_argument("--collection", default=os.environ.get("FETCHCORE_SOLR_COLLECTION"),
+                        required=not os.environ.get("FETCHCORE_SOLR_COLLECTION"))
     parser.add_argument("--scenarios", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--label", required=True)
+    parser.add_argument("--owner", default=os.environ.get("FETCHCORE_BENCH_OWNER"))
+    parser.add_argument("--historical-reproduction", action="store_true",
+                        help="Reproduce the previously frozen non-BENCH experiment")
+    parser.add_argument("--performance-comparable", action="store_true")
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--repetitions", type=int, default=20)
     args = parser.parse_args()
     if args.warmups < 1 or args.repetitions < 1:
         parser.error("warmups and repetitions must be positive")
+    if not args.historical_reproduction:
+        if os.environ.get("FETCHCORE_ENVIRONMENT") != "bench":
+            parser.error("new SearchIntent runs require BENCH routing")
+        if not args.owner or not args.owner.strip():
+            parser.error("new SearchIntent runs require --owner or FETCHCORE_BENCH_OWNER")
+        if os.environ.get("FETCHCORE_BACKEND", "solr") != "solr":
+            parser.error("SearchIntent runner requires Solr; no backend fallback")
+    if args.performance_comparable and (
+        os.environ.get("FETCHCORE_INFRA_PROJECT") != "fetchcore-bench-dedicated"
+        or os.environ.get("FETCHCORE_BENCH_PERFORMANCE") != "true"
+    ):
+        parser.error("comparable performance requires dedicated BENCH and exclusive host")
     workspace = args.workspace.resolve()
     if git(workspace, "rev-parse", "HEAD") != git(workspace, "rev-parse", args.revision):
         parser.error("corpus HEAD must equal requested revision")
@@ -53,6 +73,15 @@ def main():
         parser.error("corpus must be clean")
     payload = yaml.safe_load(args.scenarios.read_text())
     repository = payload["repository"]
+    if not args.historical_reproduction:
+        resource = (
+            f"fc-bench-{repository.split('/')[-1].lower()[:24]}-"
+            f"{hashlib.sha256(repository.encode()).hexdigest()[:16]}"
+        )
+        if args.collection != resource:
+            parser.error(f"BENCH collection must match repository routing: {resource}")
+        if urlsplit(args.solr_url).port == 38983:
+            parser.error("BENCH run cannot target the isolated OPERATIONAL Solr port")
     service = RetrievalApplicationService(
         {
             repository: RepositoryBinding(
@@ -102,6 +131,8 @@ def main():
                     if response.telemetry
                     else None,
                     "candidates_returned": len(response.results),
+                    "fingerprints": dict(response.telemetry.fingerprints)
+                    if response.telemetry else {},
                     "ranked_sources": sources,
                 }
             )
@@ -120,6 +151,19 @@ def main():
         "snapshot_revision": args.revision,
         "repository": repository,
         "collection": args.collection,
+        "environment": os.environ.get("FETCHCORE_ENVIRONMENT", "historical"),
+        "infrastructure_project": os.environ.get("FETCHCORE_INFRA_PROJECT"),
+        "owner": args.owner,
+        "baseline_id": args.label,
+        "projection_version": "3",
+        "fingerprints_observed": {
+            key: sorted({str(row["fingerprints"][key]) for row in observations
+                         if key in row["fingerprints"]})
+            for key in sorted({key for row in observations for key in row["fingerprints"]})
+        },
+        "provisioning": "reuse_only",
+        "cleanup": "retain",
+        "performance_comparable": args.performance_comparable,
         "scenarios_sha256": hashlib.sha256(args.scenarios.read_bytes()).hexdigest(),
         "python": sys.version,
         "platform": platform.platform(),

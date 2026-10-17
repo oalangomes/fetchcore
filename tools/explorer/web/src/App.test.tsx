@@ -21,7 +21,7 @@ beforeEach(() => {
       repository: 'demo/catalog', backend: 'local-semantic', revision: null, retrieval: null,
       capabilities: { lexical: true, dense: false }, max_results: 100,
       targets: [
-        { id: 'default', repository: 'demo/catalog', backend: 'local-semantic', collection: 'default-collection', revision: null, capabilities: { lexical: true }, retrieval: null },
+        { id: 'default', environment: 'operational', repository: 'demo/catalog', backend: 'local-semantic', collection: 'default-collection', revision: null, capabilities: { lexical: true }, retrieval: null, indexing: { supported: false, reason: 'operational indexing is unavailable for this backend' } },
         { id: 'alternate', repository: 'demo/catalog', backend: 'local-semantic', collection: 'other-collection', revision: null, capabilities: { lexical: true }, retrieval: null },
         { id: 'other-repo', repository: 'demo/other', backend: 'local-semantic', collection: 'other-repo-collection', revision: null, capabilities: { lexical: true }, retrieval: null },
       ],
@@ -141,9 +141,13 @@ describe('On-demand operational readiness', () => {
   it('does not probe until explicitly requested and never conflates healthy service with ready index', async () => {
     mount()
     await screen.findByLabelText('Repositório autorizado')
+    expect(await screen.findByText('Ambiente: OPERATIONAL')).toBeInTheDocument()
+    expect(screen.getByText('Busca: não verificada')).toBeInTheDocument()
+    expect(screen.getByText(/operational indexing is unavailable/)).toBeInTheDocument()
     expect(vi.mocked(globalThis.fetch).mock.calls.some(call => String(call[0]).includes('readiness'))).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Inspecionar índice' }))
     expect(await screen.findByText('Not ready')).toBeInTheDocument()
+    expect(screen.getByText('Busca: bloqueada')).toBeInTheDocument()
     expect(screen.getAllByText(/snapshot_missing/).length).toBeGreaterThan(0)
     expect(vi.mocked(globalThis.fetch).mock.calls.some(call => call[0] === '/api/readiness?target_id=default')).toBe(true)
   })

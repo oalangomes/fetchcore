@@ -12,7 +12,13 @@ export default defineConfig({
       url: 'http://127.0.0.1:8765/api/health',
       reuseExistingServer: !process.env.CI,
       timeout: 30000,
-      env: { FETCHCORE_WORKSPACE: '../fixtures/demo-repo', FETCHCORE_REPOSITORY: 'demo/catalog', FETCHCORE_SOLR_URL: 'http://127.0.0.1:8983/solr', FETCHCORE_SOLR_COLLECTION: 'fetchcore' },
+      env: {
+        FETCHCORE_WORKSPACE: '../fixtures/demo-repo',
+        FETCHCORE_REPOSITORY: 'demo/catalog',
+        FETCHCORE_ENVIRONMENT: process.env.FETCHCORE_ENVIRONMENT ?? '',
+        FETCHCORE_SOLR_URL: process.env.FETCHCORE_SOLR_URL ?? 'http://127.0.0.1:8983/solr',
+        FETCHCORE_SOLR_COLLECTION: process.env.FETCHCORE_SOLR_COLLECTION ?? 'fetchcore',
+      },
     },
     {
       command: 'npm run dev -- --port 15173',

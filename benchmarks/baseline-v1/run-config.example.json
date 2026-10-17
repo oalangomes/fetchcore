@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "environment": "bench",
+  "repository": "oalangomes/NeuroTrack_MS",
+  "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7",
+  "owner": "replace-with-run-owner",
+  "baseline_id": "fetchcore-bench-functional-v1",
+  "provisioning": "reuse_only",
+  "cleanup": "retain",
+  "performance_comparable": false,
+  "dedicated": false,
+  "exclusive_host": false,
+  "infrastructure_project": "fetchcore-shared",
+  "endpoints": {
+    "solr": "http://127.0.0.1:18983/solr",
+    "opensearch": "http://127.0.0.1:19200",
+    "qdrant": "http://127.0.0.1:16333",
+    "ollama": "http://127.0.0.1:11434"
+  },
+  "resources": {
+    "solr": "fc-bench-neurotrack_ms-5f6a70bb2b4b3145",
+    "opensearch": "fc-bench-neurotrack_ms-5f6a70bb2b4b3145",
+    "qdrant-vector": "fc-bench-neurotrack_ms-5f6a70bb2b4b3145"
+  },
+  "embedding": {
+    "provider": "ollama",
+    "model": "embeddinggemma",
+    "dimensions": 768
+  }
+}

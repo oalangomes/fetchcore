@@ -70,12 +70,14 @@ Create a clean detached worktree at `32fb976`. Start an isolated Solr using `inf
 
 ```bash
 PYTHONPATH=/path/to/before/src python benchmarks/search-intent-v2/run.py \
+  --historical-reproduction \
   --workspace /path/to/frozen-fetchcore --revision 32fb976 \
   --solr-url http://127.0.0.1:18983/solr --collection issue19 \
   --scenarios dogfood/scenarios/fetchcore-self.yaml \
   --label before --output /tmp/serving-before.json
 
 PYTHONPATH=/path/to/after/src python benchmarks/search-intent-v2/run.py \
+  --historical-reproduction \
   --workspace /path/to/frozen-fetchcore --revision 32fb976 \
   --solr-url http://127.0.0.1:18983/solr --collection issue19 \
   --scenarios dogfood/scenarios/fetchcore-self.yaml \
@@ -83,6 +85,14 @@ PYTHONPATH=/path/to/after/src python benchmarks/search-intent-v2/run.py \
 ```
 
 The native integration fixtures are opt-in and remove only their own uniquely identified records/index:
+
+New executions use `shared_infra.py run --environment bench` with a separately
+prepared BENCH Solr resource and an explicit `--owner`. The output records
+environment, project, resource, owner, scenario hash, repository revision,
+Projection version and observed fingerprints. `--performance-comparable` is
+accepted only with dedicated BENCH routing plus the explicit exclusive-host
+attestation. The historical commands above retain their frozen endpoints only
+when `--historical-reproduction` is supplied.
 
 ```bash
 FETCHCORE_INTENT_SOLR_CORE_URL=http://127.0.0.1:18983/solr/issue19 \

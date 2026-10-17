@@ -1,6 +1,6 @@
-"""Real Compose smoke: nginx -> API -> Solr -> source plus MCP over HTTP.
+"""Real Compose smoke for the shared Lab and legacy single-target fixture.
 
-Use after explicitly indexing the fixture:
+Use after explicitly indexing both authorized targets:
 docker compose exec -T api python -m tools.explorer.docker.smoke
 """
 
@@ -24,52 +24,63 @@ def fetch(path: str, payload: dict[str, object] | None = None) -> dict[str, obje
         return json.load(response)
 
 
-def web_smoke() -> tuple[str, str]:
+def web_smoke() -> dict[str, tuple[str, str, str]]:
     with urlopen(WEB, timeout=10) as response:
         assert "FetchCore" in response.read().decode()
     config = fetch("/api/config")
     assert config["backend"] == "solr", config
-    repository = str(config["repository"])
-    result = fetch(
-        "/api/search",
-        {
+    targets = {target["id"]: target for target in config["targets"]}
+    multi_target = "bench" in targets
+    if multi_target:
+        assert {targets[target]["environment"] for target in ("default", "bench")} == {
+            "dev", "bench",
+        }
+    checks = (
+        (("default", "SearchIntent"), ("bench", "eligibility_validator"))
+        if multi_target else (("default", "eligibility_validator"),)
+    )
+    found = {}
+    for target_id, query in checks:
+        repository = targets[target_id]["repository"]
+        result = fetch("/api/search", {
+            "target_id": target_id,
             "repository": repository,
             "limit": 10,
-            "intent": {"schema_version": 2, "canonical_query": "eligibility_validator"},
-        },
-    )
-    assert result["backend"] == "solr", result
-    assert result["results"], "Solr has no indexed fixture results"
-    hit = next(hit for hit in result["results"] if "eligibility.py" in hit["source_ref"])
-    assert "eligibility_validator" in hit["content"]
-    assert hit.get("revision"), "index evidence must retain its revision"
-    source = fetch("/api/source", {"repository": repository, "source_ref": hit["source_ref"]})
-    assert "eligibility_validator" in source["content"], source
-    print("PASS: browser gateway -> API -> Solr -> source", flush=True)
-    return repository, hit["source_ref"]
+            "intent": {"schema_version": 2, "canonical_query": query},
+        })
+        assert result["backend"] == "solr" and result["results"], result
+        hit = next(hit for hit in result["results"] if query in hit["content"])
+        assert hit.get("revision"), "index evidence must retain its revision"
+        source = fetch("/api/source", {
+            "target_id": target_id, "repository": repository, "source_ref": hit["source_ref"],
+        })
+        assert query in source["content"], source
+        found[target_id] = (repository, hit["source_ref"], query)
+    print(f"PASS: browser gateway -> API -> {','.join(found)} Solr -> source", flush=True)
+    return found
 
 
-async def mcp_smoke(repository: str, source_ref: str) -> None:
+async def mcp_smoke(found: dict[str, tuple[str, str, str]]) -> None:
     from mcp.client import Client
 
     async with Client(MCP) as client:
         names = {tool.name for tool in (await client.list_tools()).tools}
-        assert {"search", "get_source"} <= names, names
-        search = await client.call_tool(
-            "search", {"query": "eligibility_validator", "repository": repository, "limit": 10}
-        )
-        assert not search.is_error, search
-        assert search.structured_content and search.structured_content.get("results"), search
-        source = await client.call_tool(
-            "get_source", {"repository": repository, "source_ref": source_ref}
-        )
-        assert not source.is_error, source
-        assert source.structured_content and "eligibility_validator" in source.structured_content.get(
-            "content", ""
-        ), source
-    print("PASS: MCP HTTP -> Solr search -> authorized source", flush=True)
+        assert {"list_targets", "search", "get_source"} <= names, names
+        listed = await client.call_tool("list_targets", {})
+        assert {target["id"] for target in listed.structured_content["targets"]} == set(found)
+        for target_id, (repository, source_ref, query) in found.items():
+            search = await client.call_tool("search", {
+                "query": query, "repository": repository, "target_id": target_id, "limit": 10,
+            })
+            assert not search.is_error and search.structured_content.get("results"), search
+            source = await client.call_tool("get_source", {
+                "repository": repository, "source_ref": source_ref, "target_id": target_id,
+            })
+            assert not source.is_error and query in source.structured_content.get("content", ""), source
+        forbidden = await client.call_tool("search", {"query": "x", "target_id": "operational"})
+        assert forbidden.is_error, forbidden
+    print(f"PASS: MCP HTTP -> authorized {','.join(found)} search/source", flush=True)
 
 
 if __name__ == "__main__":
-    repo, ref = web_smoke()
-    asyncio.run(mcp_smoke(repo, ref))
+    asyncio.run(mcp_smoke(web_smoke()))

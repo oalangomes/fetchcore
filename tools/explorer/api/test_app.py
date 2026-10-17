@@ -1,13 +1,56 @@
 """Contract + real local-backend smoke coverage; no external services required."""
 
+import asyncio
+from mcp.server.mcpserver.exceptions import ToolError
+
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+import pytest
 
 from fetchcore.application import RepositoryBinding, RetrievalApplicationService
 from tools.explorer.api.app import (
     ExplorerContext, ExplorerTarget, _explorer_runtime_config, _operator_targets, create_app,
 )
+from tools.explorer.docker import mcp_http
+
+
+def test_single_lab_api_and_mcp_select_only_authorized_dev_and_bench_targets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dev_path = tmp_path / "dev"
+    bench_path = tmp_path / "bench"
+    dev_path.mkdir()
+    bench_path.mkdir()
+    (dev_path / "dev.py").write_text("dev_marker = True\n")
+    (bench_path / "bench.py").write_text("bench_marker = True\n")
+    dev_service = RetrievalApplicationService({
+        "owner/dev": RepositoryBinding("owner/dev", dev_path, "local-semantic"),
+    })
+    bench_service = RetrievalApplicationService({
+        "owner/bench": RepositoryBinding("owner/bench", bench_path, "local-semantic"),
+    })
+    dev = ExplorerTarget("default", dev_service, "owner/dev", "local-semantic", None,
+                         None, {"lexical": True}, None, environment="dev")
+    bench = ExplorerTarget("bench", bench_service, "owner/bench", "local-semantic", None,
+                           None, {"lexical": True}, None, environment="bench")
+    context = ExplorerContext(dev_service, "owner/dev", "local-semantic", None,
+                              {"lexical": True}, None, targets={"default": dev, "bench": bench})
+    monkeypatch.setattr(mcp_http, "_runtime", lambda: context)
+    server = mcp_http.create_lab_mcp_server()
+    listed = asyncio.run(server.call_tool("list_targets", {}))
+    assert {target["environment"] for target in listed.structured_content["targets"]} == {
+        "dev", "bench",
+    }
+    payload = {"query": "bench_marker", "target_id": "bench"}
+    api_result = TestClient(create_app(context)).post("/api/search", json={
+        "target_id": "bench", "intent": {"schema_version": 2, "canonical_query": "bench_marker"},
+    }).json()
+    mcp_result = asyncio.run(server.call_tool("search", payload))
+    assert mcp_result.is_error is False
+    assert mcp_result.structured_content["results"][0]["source_ref"] == api_result["results"][0]["source_ref"]
+    with pytest.raises(ToolError, match="unauthorized_target"):
+        asyncio.run(server.call_tool("search", {**payload, "target_id": "operational"}))
 
 
 def _client(tmp_path: Path) -> TestClient:
@@ -241,6 +284,7 @@ def test_target_registry_is_operator_owned_and_fails_closed(monkeypatch, tmp_pat
     base = FetchCoreRuntimeConfig(
         backend="local-semantic", workspace=tmp_path, repository="demo/default",
     )
+    monkeypatch.setenv("FETCHCORE_ENVIRONMENT", "dev")
     monkeypatch.setenv("FETCHCORE_EXPLORER_TARGETS", '{"id":"wrong-shape"}')
     try:
         _operator_targets(base)
@@ -257,6 +301,8 @@ def test_target_registry_is_operator_owned_and_fails_closed(monkeypatch, tmp_pat
     assert set(targets) == {"default", "allowed"}
     assert targets["allowed"].repository == "demo/allowed"
     assert targets["allowed"].public()["collection"] is None
+    assert targets["allowed"].public()["environment"] == "dev"
+    assert targets["allowed"].public()["indexing"]["supported"] is False
     monkeypatch.setenv("FETCHCORE_EXPLORER_TARGETS", (
         '[{"id":"default","backend":"local-semantic",'
         '"backend_settings":{},"repository":"demo/allowed","workspace":"' + str(allowed) + '"}]'
@@ -266,6 +312,13 @@ def test_target_registry_is_operator_owned_and_fails_closed(monkeypatch, tmp_pat
         assert False, "duplicate default target id must fail"
     except ValueError as exc:
         assert "duplicated" in str(exc)
+    monkeypatch.setenv("FETCHCORE_EXPLORER_TARGETS", (
+        '[{"id":"allowed","backend":"local-semantic",'
+        '"backend_settings":{},"repository":"demo/allowed","workspace":"' + str(allowed)
+        + '","environment":"production"}]'
+    ))
+    with pytest.raises(ValueError, match="environment"):
+        _operator_targets(base)
 
 
 def test_readiness_is_on_demand_and_uses_authorized_target(tmp_path: Path) -> None:

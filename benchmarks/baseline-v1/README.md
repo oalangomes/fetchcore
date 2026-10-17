@@ -11,6 +11,26 @@ FetchCore retrieval/performance baseline.
 
 The corpus is private. FetchCore stores no source content here.
 
+## New BENCH execution
+
+For a new run, copy [run-config.example.json](run-config.example.json) outside
+this directory, verify its endpoint/resource against `shared_infra.py env
+--environment bench --repository oalangomes/NeuroTrack_MS`, set a real owner,
+and run `run_bench.py` with `--run-config` and an output directory outside
+`artifacts/`. The
+mixed-case corpus repository identity remains the frozen Ground Truth identity;
+only the resource name segment is lowercase, while its digest uses the exact identity.
+
+`reuse_only` measures an already prepared snapshot. `--prepare-index` performs
+a full rebuild and requires `provisioning: explicit_rebuild` in the new run
+config. The wrapper writes BENCH owner, policy, resource and configuration
+identity into `bench-run.json` beside the new run. `performance_comparable: true` requires
+`dedicated: true` and `exclusive_host: true`, with a dedicated BENCH endpoint
+and an actual exclusive host. The wrapper does not create a service, remove a
+resource, or modify this frozen manifest, Ground Truth or historical results.
+For a lexical-only run, the wrapper renders inapplicable embedding throughput as
+`not measured` in the new report; measurements and frozen runner bytes are untouched.
+
 `ground-truth.json` stores query intent plus reviewed evidence requirements as
 repository paths and 1-based line regions. The selected revision intentionally
 predates later harness-only changes.

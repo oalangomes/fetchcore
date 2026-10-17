@@ -25,11 +25,12 @@ jobs:
       target_ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       target_branch: master
       fetchcore_ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-      solr_url: http://127.0.0.1:8983/solr
+      solr_url: ${{ vars.FETCHCORE_OPERATIONAL_SOLR_URL || 'http://127.0.0.1:38983/solr' }}
       solr_deployment_mode: standalone
-      collection: fetchcore
+      collection: ${{ vars.FETCHCORE_OPERATIONAL_SOLR_COLLECTION || 'fc-operational-fetchcore-635ab7352c2850f2' }}
       create_if_missing: false
       solr_provision_mode: reuse_only
+      require_existing_snapshot: true
       index_lifecycle: sync
       evaluate: false
       evaluation_modes_json: '["lexical"]'

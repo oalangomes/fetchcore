@@ -1,0 +1,37 @@
+# Explicit opt-in service fleet. Never included by the legacy root Compose.
+# Invoke through scripts/shared_infra.py to resolve instance routing.
+name: ${FETCHCORE_INFRA_PROJECT:?use shared_infra.py}
+x-owned: &owned
+  labels:
+    io.fetchcore.owner: ${FETCHCORE_INFRA_OWNER:?use shared_infra.py}
+services:
+  solr:
+    <<: *owned
+    extends:
+      file: solr.yml
+      service: solr
+    # Empty service: logical resources are created only by explicit preparation.
+    command: ["sh", "/fetchcore-start-shared.sh"]
+    volumes:
+      - ../solr/start-shared.sh:/fetchcore-start-shared.sh:ro
+  opensearch:
+    <<: *owned
+    extends:
+      file: opensearch.yml
+      service: opensearch
+  qdrant:
+    <<: *owned
+    extends:
+      file: qdrant.yml
+      service: qdrant
+
+volumes:
+  solr-data:
+    labels:
+      io.fetchcore.owner: ${FETCHCORE_INFRA_OWNER:?}
+  opensearch-data:
+    labels:
+      io.fetchcore.owner: ${FETCHCORE_INFRA_OWNER:?}
+  qdrant-data:
+    labels:
+      io.fetchcore.owner: ${FETCHCORE_INFRA_OWNER:?}

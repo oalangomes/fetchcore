@@ -56,6 +56,7 @@ class ExplorerTarget:
     capabilities: dict[str, bool]
     retrieval: dict[str, object] | None
     runtime_config: FetchCoreRuntimeConfig | None = None
+    environment: str | None = None
 
     def public(self) -> dict[str, object]:
         return {
@@ -66,6 +67,12 @@ class ExplorerTarget:
             "collection": self.collection,
             "capabilities": self.capabilities,
             "retrieval": self.retrieval,
+            "environment": self.environment,
+            "indexing": {
+                "supported": self.backend == "solr",
+                "reason": ("explicit Solr indexing command required" if self.backend == "solr"
+                           else "operational indexing is unavailable for this backend"),
+            },
         }
 
 
@@ -78,6 +85,9 @@ def _collection(backend: str, settings: Mapping[str, object]) -> str | None:
 def _operator_targets(base: FetchCoreRuntimeConfig) -> dict[str, ExplorerTarget]:
     """Operator-owned allowlist. Do not enumerate arbitrary backend collections."""
     default_service = service_from_runtime_config(base)
+    default_environment = os.environ.get("FETCHCORE_ENVIRONMENT", "").strip() or None
+    if default_environment not in {None, "dev", "bench", "operational"}:
+        raise ValueError("FETCHCORE_ENVIRONMENT must be dev, bench or operational")
     default = ExplorerTarget(
         id="default", service=default_service,
         repository=base.repository or base.workspace.name,
@@ -86,6 +96,7 @@ def _operator_targets(base: FetchCoreRuntimeConfig) -> dict[str, ExplorerTarget]
         capabilities=BackendRegistry().create(base.backend).retrieval_capabilities.to_mapping(),
         retrieval=base.retrieval.to_mapping() if base.retrieval else None,
         runtime_config=base,
+        environment=default_environment,
     )
     targets = {"default": default}
     raw = os.environ.get("FETCHCORE_EXPLORER_TARGETS", "").strip()
@@ -99,7 +110,8 @@ def _operator_targets(base: FetchCoreRuntimeConfig) -> dict[str, ExplorerTarget]
         raise ValueError("FETCHCORE_EXPLORER_TARGETS must be an array of up to 16 targets")
     for entry in entries:
         if not isinstance(entry, dict) or set(entry) - {
-            "id", "backend", "backend_settings", "repository", "workspace", "revision", "retrieval"
+            "id", "backend", "backend_settings", "repository", "workspace", "revision",
+            "retrieval", "environment"
         }:
             raise ValueError("Explorer targets contain unsupported fields")
         target_id = entry.get("id")
@@ -125,6 +137,9 @@ def _operator_targets(base: FetchCoreRuntimeConfig) -> dict[str, ExplorerTarget]
         if revision is not None and (not isinstance(revision, str) or not revision.strip()):
             raise ValueError("Explorer target revision must be null or a nonempty string")
         retrieval = base.retrieval
+        environment = entry.get("environment", default_environment)
+        if environment not in {None, "dev", "bench", "operational"}:
+            raise ValueError("Explorer target environment must be dev, bench or operational")
         if "retrieval" in entry:
             if not isinstance(entry["retrieval"], dict):
                 raise ValueError("Explorer target retrieval must be an object")
@@ -141,6 +156,7 @@ def _operator_targets(base: FetchCoreRuntimeConfig) -> dict[str, ExplorerTarget]
             capabilities=BackendRegistry().create(backend).retrieval_capabilities.to_mapping(),
             retrieval=retrieval.to_mapping() if retrieval else None,
             runtime_config=configured,
+            environment=environment,
         )
     return targets
 
