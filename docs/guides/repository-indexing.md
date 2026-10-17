@@ -136,9 +136,17 @@ compatible/current. Incompatibility can prevent decoding the indexed revision.
 policy or embedding identity mismatch is separately exposed by `reason`.
 
 Compatible plans also include the existing `planned_mutations`, `discovery`, and
-available `indexing_telemetry` (scan/chunk counts). Wall-clock timing and throughput
-are omitted from plans. Full-scan discovery placeholder counts are omitted rather
-than presented as measured zero changes. With an absent snapshot, prior document
+available `indexing_telemetry` (scan/chunk counts). The optional
+`discovery.discovery_duration_ms` measures the complete Git change-detection step;
+`discovery.git_diff_duration_ms` measures the accumulated execution/parsing time of
+the committed-revision and working-tree `git diff` commands. Both use a monotonic
+clock, are measured in milliseconds, and are exposed in `plan`, `status`, and
+`sync` discovery observations. The `git_diff` field is omitted if no successful
+Git delta could be established (including full-scan fallback); an absent field is
+**unmeasured**, not zero. These numbers are not total plan/sync durations, and
+they do not include canonical document comparison, materialization, or persistence.
+Full-scan discovery placeholder counts are omitted rather than presented as
+measured zero changes. With an absent snapshot, prior document
 and delete counts are null because orphan backend records cannot be ruled out.
 Counts describe canonical documents, not backend HTTP requests. In vector mode,
 execution telemetry reports measured embedding requests/vectors/duration and
