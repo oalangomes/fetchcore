@@ -73,6 +73,13 @@ ENV execution overrides are translated into `EmbeddingConfig` before
 composition, following the same source precedence. Qdrant's backend timeout
 controls only Qdrant transport; it does not override the embedding timeout.
 
+The Ollama embedding request timeout defaults to 30 seconds per attempt and can
+be set with `retrieval.dense.embedding.timeout_seconds`. The provider retries
+temporary transport failures and recognized transient Ollama HTTP 400 responses
+at most twice, after 0.25 and 1 second. Other HTTP errors, invalid responses,
+and permanent connection failures are not retried. Transport exhaustion raises
+a `KnowledgeSearchError` with the attempt count and a safe cause type and errno.
+
 Historical `FETCHCORE_MCP_*` names remain accepted when the canonical runtime
 name is absent. `OLLAMA_URL` is the fallback for `FETCHCORE_OLLAMA_URL`.
 `FETCHCORE_MCP_BACKEND_SETTINGS` and `FETCHCORE_MCP_RETRIEVAL` remain JSON
