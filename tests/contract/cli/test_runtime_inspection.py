@@ -210,11 +210,11 @@ def test_capabilities_come_from_backend_and_indexing_declarations(tmp_path: Path
     assert capabilities["retrieval"]["dense"] == declared["dense"] is True
     assert capabilities["retrieval"]["hybrid"] == declared["hybrid"] is True
     assert capabilities["intent_translation"]["structured_anchors"] is False
-    assert capabilities["indexing"] == {"incremental": False, "rebuild": False}
+    assert capabilities["indexing"] == {"incremental": True, "rebuild": True}
     human = CliRunner().invoke(cli.main, ["capabilities", "--config", str(path)])
     assert human.exit_code == 0, human.output
     assert "retrieval.dense=true" in human.output
-    assert "indexing.incremental=false" in human.output
+    assert "indexing.incremental=true" in human.output
 
 
 def test_capabilities_unknown_backend_is_typed() -> None:

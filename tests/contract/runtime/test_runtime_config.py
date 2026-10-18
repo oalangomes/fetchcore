@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
+from typing import Self
+from urllib.request import Request
 
 import pytest
 
@@ -64,6 +67,80 @@ def test_yaml_env_and_explicit_precedence(tmp_path: Path) -> None:
     assert "runtime.workspace" not in config.sources
     assert load_runtime_config(path=path, environ={}).backend_settings["url"] == "http://file:8983/solr"
 
+
+def test_qdrant_embedding_probe_uses_effective_ollama_endpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "operator.yaml"
+    path.write_text(
+        "version: 1\nruntime:\n  backend: qdrant-vector\n"
+        "  workspace: /workspace\n  repository: oalangomes/fetchcore\n"
+        "backends:\n  qdrant-vector:\n"
+        "    url: http://qdrant:6333\n"
+        "    collection: fc-operational-fetchcore\n"
+        "    embedding_model: embeddinggemma\n"
+        "embedding:\n  ollama:\n    url: http://localhost:11434\n",
+        encoding="utf-8",
+    )
+    endpoint = "http://wsl-gateway:11434"
+    config = load_runtime_config(
+        path=path,
+        environ={
+            "FETCHCORE_OLLAMA_URL": endpoint,
+            "FETCHCORE_QDRANT_VECTOR_DIMENSIONS": "768",
+        },
+    )
+    settings = QdrantVectorSettings.from_mapping(
+        {**config.backend_settings, "vector_dimensions": 768}
+    )
+    provider = EmbeddingProviderRegistry(
+        settings={"ollama": config.ollama.to_mapping()}
+    ).create(
+        EmbeddingConfig(
+            provider="ollama",
+            model=settings.embedding_model,
+            dimensions=768,
+        ),
+        backend_id="qdrant-vector",
+        backend_name="Qdrant",
+    )
+    requested_urls: list[str] = []
+    requested_models: list[str] = []
+
+    class FakeResponse:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps({"embeddings": [[0.25] * 768]}).encode()
+
+    def fake_urlopen(request: Request, timeout: float) -> FakeResponse:
+        del timeout
+        requested_urls.append(request.full_url)
+        data = request.data
+        assert isinstance(data, bytes)
+        body = json.loads(data)
+        requested_models.append(str(body["model"]))
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        "fetchcore.adapters.embedding.ollama.provider.urlopen",
+        fake_urlopen,
+    )
+    vectors = provider.embed(("operational preflight vector probe",))
+
+    assert config.ollama.url == endpoint
+    assert config.sources["embedding.ollama.url"] == "environment"
+    assert config.sources["backends.qdrant-vector.vector_dimensions"] == "environment"
+    assert settings.embedding_url == endpoint
+    assert settings.vector_dimensions == 768
+    assert requested_urls == [f"{endpoint}/api/embed"]
+    assert requested_models == ["embeddinggemma"]
+    assert len(vectors[0]) == 768
 
 @pytest.mark.parametrize(
     ("content", "message"),

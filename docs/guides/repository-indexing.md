@@ -17,6 +17,9 @@ case silently invokes rebuild. `rebuild` uses canonical full indexing and the
 adapter's validated projection replacement path. Solr does not create a collection
 or repair an incompatible live schema. OpenSearch creates a new index generation
 only for an explicit rebuild, then promotes its repository alias after validation.
+Qdrant creates a versioned collection for an explicit rebuild and promotes its
+repository alias only after the staged point corpus and snapshot have been
+validated. Prior generations remain available for operator rollback.
 Provision the backend service with the [runtime setup](self-hosted-indexing.md).
 
 ## Configuration and compatibility
@@ -34,9 +37,10 @@ fetchcore index --cache-root /srv/fetchcore-cache --allowed-root /srv/repos \
 Cache precedence and local source authorization are identical to
 [repo inspect](repository-registry.md). Backend settings retain
 `FETCHCORE_INDEX_BACKEND` and `FETCHCORE_INDEX_BACKEND_SETTINGS` support. Solr and
-OpenSearch support the registered operational lifecycle. Qdrant operational
-indexing remains a separate integration and returns `unsupported_backend`;
-retrieval support alone does not imply operational persistence support.
+OpenSearch and Qdrant support the registered operational lifecycle through the
+shared operational driver. Qdrant requires an explicit positive
+`vector_dimensions` setting for operational indexing; the configured value must
+match both the collection schema and the Ollama provider output.
 
 For OpenSearch, pass the endpoint and index namespace explicitly:
 
@@ -65,6 +69,29 @@ before any manual recovery. `plan` and `status` never acquire the lock or write.
 The [2026-10-17 operational preflight](../benchmarks/results/opensearch-operational-preflight-2026-10-17.md)
 records the verified Ollama route, explicit initial OpenSearch rebuild, and
 post-rebuild operational checks. It is not a comparative quality benchmark.
+
+Qdrant `sync` uses the same explicit full-scan fallback policy for unsafe or
+unavailable Git deltas, but never turns that scan into a projection rebuild.
+It stages a new generation, copies existing vectors without re-embedding
+unchanged documents, applies stable-ID upserts/deletes, verifies document count
+and corpus checksum, then promotes the alias. Dense and hybrid searches pin the
+concrete generation selected by the snapshot, so in-flight reads remain on the
+old immutable generation across promotion. Previous generations are retained;
+orphan cleanup is a separate, explicit maintenance operation. `sync` on an
+absent or incompatible snapshot fails and requires an explicit rebuild.
+
+Qdrant serializes rebuild/sync writers with a repository-scoped lock collection
+in Qdrant, shared across processes and hosts using the same endpoint. A competing
+writer receives `concurrent_write`. If a process terminates before releasing its
+lock, FetchCore fails closed and reports the lock collection for operator
+inspection; it does not automatically delete a possibly live lock. No-op avoids
+the writer lock and performs no point, snapshot, collection, or embedding writes.
+Qdrant retrieval capabilities remain dense and hybrid; targeted/exact lookup is
+not advertised by this backend.
+The [2026-10-18 Qdrant operational acceptance](../benchmarks/results/qdrant-operational-acceptance-2026-10-18.md)
+records a real OPERATIONAL rebuild, same-revision no-op, committed Git delta
+with add/update/delete/rename, dense/hybrid search, source retrieval, and P0
+generation/lock checks. It is a lifecycle gate, not a ranking-quality benchmark.
 
 Lexical indexing is the default and never resolves or calls an embedding
 provider. Dense and hybrid indexing are explicit opt-ins through the shared

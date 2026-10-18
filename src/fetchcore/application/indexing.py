@@ -38,9 +38,16 @@ from fetchcore.adapters.retrieval.opensearch.backend import (
     UrllibOpenSearchTransport,
 )
 from fetchcore.adapters.retrieval.opensearch.operational import OpenSearchOperationalIndex
+from fetchcore.adapters.retrieval.qdrant.backend import (
+    QdrantVectorBackend,
+    QdrantVectorIndexStore,
+    QdrantVectorSettings,
+    UrllibQdrantTransport,
+)
+from fetchcore.adapters.retrieval.qdrant.operational import QdrantOperationalIndex
 from fetchcore.repository.sources import LocalWorkspaceSourceProvider
 from fetchcore.repository.registry import RepositoryRegistryError
-from fetchcore.retrieval.config import RetrievalConfig
+from fetchcore.retrieval.config import EmbeddingConfig, RetrievalConfig
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 from fetchcore.retrieval.embedding import (
     VECTOR_EMBEDDING_SERIALIZATION_VERSION,
@@ -63,6 +70,8 @@ def indexing_capabilities(backend: str) -> IndexingCapabilities:
         return IndexingCapabilities(incremental=True, rebuild=True)
     if backend == "opensearch":
         return IndexingCapabilities(incremental=True, rebuild=True)
+    if backend == "qdrant-vector":
+        return IndexingCapabilities(incremental=True, rebuild=True)
     raise KnowledgeSearchError(
         "Unsupported operational indexing backend", category="unsupported_backend",
     )
@@ -78,10 +87,42 @@ class IndexContext:
     driver: OperationalIndexDriver | None = None
 
     @property
+    def retrieval_mode(self) -> str:
+        if self.retrieval is not None:
+            return self.retrieval.mode
+        return "dense" if self.backend == "qdrant-vector" else "lexical"
+
+    @property
     def require_vectors(self) -> bool:
-        return self.retrieval is not None and self.retrieval.mode in {"dense", "hybrid"}
+        return self.retrieval_mode in {"dense", "hybrid"}
 
     def legacy(self, operation: str) -> dict[str, object]:
+        if self.backend == "qdrant-vector":
+            store_qdrant = cast(QdrantVectorIndexStore, self.store)
+            driver_qdrant = cast(QdrantOperationalIndex, self.driver)
+            if operation == "bootstrap":
+                store_qdrant.validate_schema(require_vectors=True)
+                dimensions = store_qdrant.settings.vector_dimensions
+                if dimensions is None:
+                    raise KnowledgeSearchError(
+                        "Qdrant operational indexing requires configured vector_dimensions",
+                        category="schema_mismatch",
+                    )
+                qdrant_result: dict[str, object] = {
+                    "schema": "fetchcore.qdrant.projection-v3",
+                    "projection_version": store_qdrant.settings.projection_version,
+                    "validated": True,
+                    "retrieval_mode": self.retrieval_mode,
+                    "vectors_required": True,
+                    "retrieval_capabilities": QdrantVectorBackend.retrieval_capabilities.to_mapping(),
+                    "embedding_probe": _probe_embedding_provider(
+                        store_qdrant,
+                        expected_dimensions=dimensions,
+                    ),
+                }
+                qdrant_result.update(driver_qdrant.run("status"))
+                return qdrant_result
+            return driver_qdrant.run("plan" if operation == "dry-run" else operation)
         if self.backend == "opensearch":
             store = cast(OpenSearchIndexStore, self.store)
             driver = OpenSearchOperationalIndex(store, self.runtime)
@@ -135,6 +176,71 @@ def build_index_context(
     runtime = prepare_repository_index_runtime(
         root, repository=repository.strip(), branch=branch or None, revision=revision or None,
     )
+    if backend == "qdrant-vector":
+        settings_data = dict(backend_settings)
+        configured_settings = QdrantVectorSettings.from_mapping(settings_data)
+        if retrieval is not None:
+            if retrieval.mode not in {"dense", "hybrid"} or not retrieval.dense.enabled:
+                raise KnowledgeSearchError(
+                    "Qdrant operational indexing requires dense or hybrid retrieval capability",
+                    category="unsupported_capability",
+                    metadata={"backend": backend, "requested_mode": retrieval.mode},
+                )
+            embedding = retrieval.dense.embedding
+        else:
+            embedding = EmbeddingConfig(model=configured_settings.embedding_model)
+        configured_dimensions = configured_settings.vector_dimensions
+        requested_dimensions = embedding.dimensions
+        if (
+            configured_dimensions is not None
+            and requested_dimensions is not None
+            and configured_dimensions != requested_dimensions
+        ):
+            raise KnowledgeSearchError(
+                "configured embedding dimensions do not match the Qdrant vector schema",
+                category="schema_mismatch",
+                metadata={
+                    "configured_dimensions": configured_dimensions,
+                    "requested_dimensions": requested_dimensions,
+                    "rebuild_required": True,
+                },
+            )
+        vector_dimensions = configured_dimensions or requested_dimensions
+        if vector_dimensions is None:
+            raise KnowledgeSearchError(
+                "Qdrant operational indexing requires explicit vector_dimensions",
+                category="schema_mismatch",
+                metadata={"rebuild_required": True},
+            )
+        settings_data.update(
+            embedding_model=embedding.model,
+            vector_dimensions=vector_dimensions,
+        )
+        settings_qdrant = QdrantVectorSettings.from_mapping(settings_data)
+        registry = providers or EmbeddingProviderRegistry(
+            settings={"ollama": {"url": settings_qdrant.embedding_url}},
+        )
+        embedder = registry.create(
+            embedding,
+            backend_id=backend,
+            backend_name="Qdrant",
+        )
+        store_qdrant = QdrantVectorIndexStore(
+            UrllibQdrantTransport(settings_qdrant),
+            settings_qdrant,
+            embedder,
+            clock=lambda: datetime.now(UTC).isoformat(),
+        )
+        store_qdrant.repository = runtime.repository
+        store_qdrant.indexing_fingerprint = runtime.fingerprint
+        return IndexContext(
+            root,
+            backend,
+            runtime,
+            store_qdrant,
+            retrieval,
+            QdrantOperationalIndex(store_qdrant, runtime),
+        )
     if backend == "opensearch":
         settings_os = OpenSearchSettings.from_mapping(backend_settings)
         provider_os = None
@@ -189,7 +295,9 @@ def build_index_context(
 
 
 def _probe_embedding_provider(
-    store: SolrIndexStore | OpenSearchIndexStore, *, expected_dimensions: int = SOLR_VECTOR_DIMENSIONS,
+    store: SolrIndexStore | OpenSearchIndexStore | QdrantVectorIndexStore,
+    *,
+    expected_dimensions: int = SOLR_VECTOR_DIMENSIONS,
 ) -> dict[str, object]:
     """Probe the configured provider once without mutating the projection."""
     provider = store.embedding_provider
@@ -323,7 +431,7 @@ class RepositoryIndexApplicationService:
                     "source": registered.source, "source_ref": source.source_ref,
                     "branch": source.branch, "registered_revision": registered.revision,
                     "target_revision": source.revision,
-                    "retrieval_mode": self.retrieval.mode if self.retrieval else "lexical",
+                    "retrieval_mode": context.retrieval_mode,
                     **context.driver.run(operation),
                 }
             store = bind_indexing_contract_store(
