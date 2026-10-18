@@ -7,6 +7,7 @@ test('real Solr search → provenance → authorized source read (FetchCore)', a
     await expect(page.getByText('Ambiente: BENCH')).toBeVisible()
   }
   await expect(page.getByText('solr', { exact: true }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Opções avançadas de busca' })).toHaveAttribute('aria-expanded', 'false')
   await page.getByLabel('Canonical query').fill('eligibility_validator')
   await page.getByTestId('run-search').click()
 
@@ -28,6 +29,8 @@ test('real Solr visual OR query preserves declared branches and provenance', asy
   await page.goto('/')
   await expect(page.getByText('API conectada')).toBeVisible()
   await page.getByLabel('Canonical query').fill('eligibility_validator')
+  await page.getByRole('button', { name: 'Opções avançadas de busca' }).click()
+  await expect(page.getByLabel('Search scope mode')).toBeVisible()
   await page.getByRole('button', { name: '+ OR · qualquer alternativa' }).click()
   await page.getByLabel('Termo branch 0').fill('eligibility_validator')
   await page.getByRole('button', { name: '+ Anchor obrigatório' }).click()
