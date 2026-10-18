@@ -265,10 +265,11 @@ class OpenSearchOperationalIndex:
             started = self.timer()
             storage = self.store.full_rebuild(indexed)
             stage_timings_ms["persistence_call_ms"] = elapsed_ms(started, self.timer())
-            result["execution"] = _execution_result(storage)
-            result["execution"]["stage_timings_ms"] = IndexStageTelemetry.from_mapping(
+            execution = _execution_result(storage)
+            execution["stage_timings_ms"] = IndexStageTelemetry.from_mapping(
                 stage_timings_ms,
             ).to_mapping()
+            result["execution"] = execution
             result["mode"] = "rebuild"
             result["previous_indexed_revision"] = result.pop("indexed_revision")
             result["previous_currentness"] = result.pop("currentness")
