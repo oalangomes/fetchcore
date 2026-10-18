@@ -523,7 +523,9 @@ class RepositoryIndexApplicationService:
                 outcome["noop"] = synced.noop
                 outcome["discovery"] = synced.discovery.to_mapping()
                 if synced.stage_timings_ms is not None:
-                    outcome["stage_timings_ms"] = synced.stage_timings_ms
+                    outcome["stage_timings_ms"] = IndexStageTelemetry.from_mapping(
+                        synced.stage_timings_ms,
+                    ).to_mapping()
             else:
                 # Validate live schema even for explicit rebuild; never repair it here.
                 store.validate_schema(require_vectors=context.require_vectors)
