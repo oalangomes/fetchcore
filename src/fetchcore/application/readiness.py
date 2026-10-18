@@ -166,7 +166,8 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
             SOLR_VECTOR_DIMENSIONS,
         )
         from fetchcore.adapters.retrieval.opensearch.backend import (
-            OpenSearchIndexStore, OpenSearchSettings, UrllibOpenSearchTransport,
+            OpenSearchIndexStore, OpenSearchIndexSnapshot, OpenSearchSettings,
+            UrllibOpenSearchTransport, OPENSEARCH_VECTOR_DIMENSIONS,
         )
         from fetchcore.adapters.retrieval.qdrant.backend import (
             QdrantVectorIndexStore, QdrantVectorSettings, UrllibQdrantTransport,
@@ -180,9 +181,12 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
                     model=str(config.backend_settings.get("embedding_model", EmbeddingConfig.model)),
                 )
             )
-            if config.backend == "solr":
-                from fetchcore.adapters.retrieval.solr.backend import SOLR_VECTOR_DIMENSIONS
-                if selected.dimensions not in {None, SOLR_VECTOR_DIMENSIONS}:
+            if config.backend in {"solr", "opensearch"}:
+                expected_dimensions = (
+                    SOLR_VECTOR_DIMENSIONS if config.backend == "solr"
+                    else OPENSEARCH_VECTOR_DIMENSIONS
+                )
+                if selected.dimensions not in {None, expected_dimensions}:
                     checks["embedding"] = ReadinessFact(
                         "incompatible", "vector_dimensions_mismatch"
                     )
@@ -209,7 +213,7 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
                 backend_settings=dict(config.backend_settings),
             )
             if provider is None:
-                store = bind_indexing_contract_store(index.store, index.runtime.indexer)
+                store = bind_indexing_contract_store(cast(SolrIndexStore, index.store), index.runtime.indexer)
             else:
                 settings = SolrSettings.from_mapping(dict(config.backend_settings))
                 vector_store = SolrIndexStore(
@@ -276,6 +280,39 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
                     dimensions = validate_vector_dimensions(provider.embed(("fetchcore readiness",)))
                     checks["embedding"] = (
                         ReadinessFact("ready") if dimensions == SOLR_VECTOR_DIMENSIONS
+                        else ReadinessFact("incompatible", "vector_dimensions_mismatch")
+                    )
+        elif config.backend == "opensearch":
+            from fetchcore.application.index_operations import prepare_repository_index_runtime
+            from fetchcore.adapters.retrieval.opensearch.operational import OpenSearchOperationalIndex
+            os_store = cast(OpenSearchIndexStore, store)
+            os_snapshot = cast(OpenSearchIndexSnapshot, snapshot)
+            runtime = prepare_repository_index_runtime(
+                config.workspace, repository=config.repository, branch=None,
+                revision=config.revision,
+            )
+            observation = OpenSearchOperationalIndex(os_store, runtime).observe()
+            fingerprints["indexing"] = os_snapshot.indexing_fingerprint
+            fingerprints["expected_indexing"] = runtime.fingerprint
+            checks["indexing_fingerprint"] = (
+                ReadinessFact("ready")
+                if os_snapshot.indexing_fingerprint == runtime.fingerprint
+                else ReadinessFact("incompatible", "indexing_contract_changed")
+            )
+            checks["currentness"] = ReadinessFact(
+                "ready" if observation.currentness == "current" else cast(ReadinessState, observation.currentness),
+                None if observation.currentness == "current" else observation.reason,
+            )
+            if mode in {"dense", "hybrid"}:
+                if not os_store.embedding_snapshot_matches(os_snapshot):
+                    checks["embedding"] = ReadinessFact("incompatible", "embedding_identity_changed")
+                elif provider is None:
+                    checks["embedding"] = ReadinessFact("unavailable", "embedding_provider_missing")
+                else:
+                    from fetchcore.retrieval.embedding import validate_vector_dimensions
+                    dimensions = validate_vector_dimensions(provider.embed(("fetchcore readiness",)))
+                    checks["embedding"] = (
+                        ReadinessFact("ready") if dimensions == OPENSEARCH_VECTOR_DIMENSIONS
                         else ReadinessFact("incompatible", "vector_dimensions_mismatch")
                     )
         else:

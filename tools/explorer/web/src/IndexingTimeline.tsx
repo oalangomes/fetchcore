@@ -30,7 +30,7 @@ function Run({ artifact }: { artifact: IndexArtifact }) {
     <h4 className="my-3 text-sm">Revisão e motivo do trabalho</h4>
     <Facts data={result} fields={['target_revision', 'indexed_revision', 'previous_indexed_revision', 'currentness', 'previous_currentness', 'reason', 'schema_compatible', 'projection_compatible', 'indexing_fingerprint', 'projection_fingerprint']}/>
     <h4 className="my-3 text-sm">Scan / descoberta canônica</h4>
-    <Facts data={discovery} fields={['mode', 'reason', 'changed_paths', 'removed_paths', 'changed_path_values', 'removed_path_values']}/>
+    <Facts data={discovery} fields={['mode', 'reason', 'changed_paths', 'removed_paths', 'discovery_duration_ms', 'git_diff_duration_ms', 'changed_path_values', 'removed_path_values']}/>
     <p className="my-2 text-xs text-muted">Full scan não implica substituição completa da projeção persistida.</p>
     <Facts data={canonical} fields={['files_scanned', 'files_changed', 'chunks_total', 'chunks_changed', 'duration_ms', 'indexing_throughput_chunks_per_second']}/>
     <h4 className="my-3 text-sm">{artifact.command.operation === 'plan' ? 'Mutações planejadas (sem persistência)' : 'Mutações persistidas observadas'}</h4>

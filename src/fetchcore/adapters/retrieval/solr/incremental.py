@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import glob
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -10,11 +9,10 @@ from pathlib import Path
 
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 from fetchcore.repository.indexing import (
-    KnowledgeDocument, RepositoryIndexResult, RepositoryIndexTelemetry, RepositoryIndexer,
+    KnowledgeDocument, RepositoryIndexResult, RepositoryIndexer,
 )
 from fetchcore.repository.incremental import (
-    GitDeltaPlan, GitRepositoryChangeDetector, _delta_telemetry, _diff_documents,
-    _eligible_path, _full_scan,
+    GitDeltaPlan, GitRepositoryChangeDetector, _full_scan, index_repository_delta,
 )
 from fetchcore.repository.index_fingerprint import indexing_contract_fingerprint
 from fetchcore.adapters.retrieval.solr.index_contract import (
@@ -184,60 +182,7 @@ class GitAwareSolrSynchronizer:
         previous: tuple[KnowledgeDocument, ...],
         plan: GitDeltaPlan,
     ) -> RepositoryIndexResult | None:
-        affected_paths = set(plan.changed_paths) | set(plan.removed_paths)
-        eligible_changed = tuple(
-            path
-            for path in plan.changed_paths
-            if _eligible_path(path, self.indexer.config.include_patterns, self.indexer.config.exclude_patterns)
-        )
-        if len(eligible_changed) > self.indexer.config.max_files:
-            return None
-
-        delta_documents: tuple[KnowledgeDocument, ...] = ()
-        delta_telemetry: RepositoryIndexTelemetry | None = None
-        if eligible_changed:
-            delta_config = replace(
-                self.indexer.config,
-                include_patterns=tuple(glob.escape(path) for path in eligible_changed),
-            )
-            delta_indexer = RepositoryIndexer(
-                delta_config,
-                symbol_extractors=self.indexer.symbol_extractors,
-                clock=self.indexer.clock,
-                timer=self.indexer.timer,
-            )
-            delta = delta_indexer.index(workspace)
-            if (
-                not delta.changes.removal_detection_complete
-                or not delta.telemetry.scan_traversal_complete
-            ):
-                return None
-            delta_documents = delta.documents
-            delta_telemetry = delta.telemetry
-
-        retained = tuple(item for item in previous if item.path not in affected_paths)
-        documents = tuple(
-            sorted(
-                (*retained, *delta_documents),
-                key=lambda item: (item.path, item.line_start, item.line_end, item.chunk_ref),
-            )
-        )
-        changes = _diff_documents(documents, previous)
-        telemetry = _delta_telemetry(
-            repository=self.indexer.config.repository or self.indexer.resolve_repository_identity(workspace),
-            revision=plan.current_revision or self.indexer.config.revision or "unknown",
-            documents=documents,
-            changes=changes,
-            delta=delta_telemetry,
-        )
-        return RepositoryIndexResult(
-            repository=self.indexer.config.repository or self.indexer.resolve_repository_identity(workspace),
-            branch=self.indexer.config.branch,
-            revision=plan.current_revision or self.indexer.config.revision or "unknown",
-            documents=documents,
-            changes=changes,
-            telemetry=telemetry,
-        )
+        return index_repository_delta(self.indexer, workspace, previous, plan)
 
 
 

@@ -4,13 +4,18 @@ import json
 import threading
 from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import ClassVar
+
+import pytest
 
 from fetchcore.backends.solr import (
     PersistentSolrTransport,
     SolrBackend,
     SolrSettings,
 )
+from fetchcore.adapters.retrieval.solr.backend import _solr_dense_candidates
+from fetchcore.retrieval.contracts import KnowledgeSearchError, SearchScope
 
 
 class _KeepAliveHandler(BaseHTTPRequestHandler):
@@ -106,3 +111,87 @@ def test_solr_backend_reuses_transport_for_equal_settings() -> None:
     assert backend._transport_for(first) is backend._transport_for(equal)
     assert backend._transport_for(changed) is not backend._transport_for(first)
     assert len(created) == 3
+
+
+@pytest.mark.parametrize("breadth", [True, 0, -1, 5001, 80.0, "160", []])
+def test_solr_ann_search_breadth_rejects_invalid_values(breadth: object) -> None:
+    with pytest.raises(KnowledgeSearchError) as exc:
+        SolrSettings.from_mapping({"ann_search_breadth": breadth})
+    assert exc.value.category == "schema_mismatch"
+
+
+class _DenseCaptureTransport(_MemoryTransport):
+    def __init__(self) -> None:
+        self.params: dict[str, object] | None = None
+
+    def post(
+        self,
+        path: str,
+        payload: object,
+        params: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        assert path == "select"
+        assert isinstance(payload, dict)
+        self.params = payload
+        return {"response": {"numFound": 0, "docs": []}}
+
+
+@pytest.mark.parametrize("breadth,expected", [(None, 80), (160, 160)])
+def test_solr_dense_separates_ann_breadth_from_candidate_window(
+    breadth: int | None, expected: int,
+) -> None:
+    transport = _DenseCaptureTransport()
+    settings = SolrSettings.from_mapping({
+        "diagnostic_candidate_window": 80,
+        **({"ann_search_breadth": breadth} if breadth is not None else {}),
+    })
+    scope = SearchScope(workspace=Path("."), repository="owner/repo", revision=None,
+                        knowledge_types=(), max_results=20)
+    candidates, found, params, requested = _solr_dense_candidates(
+        transport=transport, scope=scope, snapshot=type("Snapshot", (), {"repository": "owner/repo"})(),
+        settings=settings, vector=(0.1, 0.2),
+    )
+    assert candidates == () and found == 0
+    assert requested == expected
+    assert params["query"] == f"{{!knn f=embedding_vector topK={expected}}}[0.1,0.2]"
+    assert params["limit"] == 80
+    assert transport.params == params
+
+
+@pytest.mark.parametrize("breadth,window,maximum", [(79, 80, 20), (321, 80, 20), (160, 20, 20)])
+def test_solr_dense_rejects_inconsistent_breadth_before_transport(
+    breadth: int, window: int, maximum: int,
+) -> None:
+    transport = _DenseCaptureTransport()
+    settings = SolrSettings.from_mapping({
+        "diagnostic_candidate_window": window, "ann_search_breadth": breadth,
+    })
+    scope = SearchScope(workspace=Path("."), repository="owner/repo", revision=None,
+                        knowledge_types=(), max_results=maximum)
+    with pytest.raises(KnowledgeSearchError) as exc:
+        _solr_dense_candidates(
+            transport=transport, scope=scope,
+            snapshot=type("Snapshot", (), {"repository": "owner/repo"})(),
+            settings=settings, vector=(0.1,),
+        )
+    assert exc.value.category == "schema_mismatch"
+    assert transport.params is None
+
+
+def test_solr_dense_propagates_typed_transport_error() -> None:
+    class FailingTransport(_DenseCaptureTransport):
+        def post(self, path: str, payload: object,
+                 params: Mapping[str, object] | None = None) -> dict[str, object]:
+            raise KnowledgeSearchError("Solr unavailable", category="backend_unavailable")
+
+    settings = SolrSettings.from_mapping({"diagnostic_candidate_window": 80,
+                                          "ann_search_breadth": 160})
+    scope = SearchScope(workspace=Path("."), repository="owner/repo", revision=None,
+                        knowledge_types=(), max_results=20)
+    with pytest.raises(KnowledgeSearchError) as exc:
+        _solr_dense_candidates(
+            transport=FailingTransport(), scope=scope,
+            snapshot=type("Snapshot", (), {"repository": "owner/repo"})(),
+            settings=settings, vector=(0.1,),
+        )
+    assert exc.value.category == "backend_unavailable"

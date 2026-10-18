@@ -10,9 +10,11 @@ from collections.abc import Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
+from datetime import UTC, datetime
 
 from fetchcore.application.composition import EmbeddingProviderRegistry
+from fetchcore.application.index_store import OperationalIndexDriver, OperationalIndexStore
 from fetchcore.application.index_operations import (
     RepositoryIndexRuntime, dry_run_repository_index, prepare_repository_index_runtime,
     repository_index_status,
@@ -31,6 +33,11 @@ from fetchcore.adapters.retrieval.solr.index_contract import (
 from fetchcore.adapters.retrieval.solr.incremental_persistence import (
     TargetedGitAwareSolrSynchronizer,
 )
+from fetchcore.adapters.retrieval.opensearch.backend import (
+    OPENSEARCH_VECTOR_DIMENSIONS, OpenSearchIndexStore, OpenSearchSettings,
+    UrllibOpenSearchTransport,
+)
+from fetchcore.adapters.retrieval.opensearch.operational import OpenSearchOperationalIndex
 from fetchcore.repository.sources import LocalWorkspaceSourceProvider
 from fetchcore.repository.registry import RepositoryRegistryError
 from fetchcore.retrieval.config import RetrievalConfig
@@ -54,6 +61,8 @@ def indexing_capabilities(backend: str) -> IndexingCapabilities:
     # Retrieval capability declarations do not imply operational persistence support.
     if backend == "solr":
         return IndexingCapabilities(incremental=True, rebuild=True)
+    if backend == "opensearch":
+        return IndexingCapabilities(incremental=True, rebuild=True)
     raise KnowledgeSearchError(
         "Unsupported operational indexing backend", category="unsupported_backend",
     )
@@ -64,33 +73,53 @@ class IndexContext:
     workspace: Path
     backend: str
     runtime: RepositoryIndexRuntime
-    store: SolrIndexStore
+    store: OperationalIndexStore
     retrieval: RetrievalConfig | None = None
+    driver: OperationalIndexDriver | None = None
 
     @property
     def require_vectors(self) -> bool:
         return self.retrieval is not None and self.retrieval.mode in {"dense", "hybrid"}
 
     def legacy(self, operation: str) -> dict[str, object]:
+        if self.backend == "opensearch":
+            store = cast(OpenSearchIndexStore, self.store)
+            driver = OpenSearchOperationalIndex(store, self.runtime)
+            if operation == "bootstrap":
+                store.validate_schema(require_vectors=self.require_vectors)
+                os_result: dict[str, object] = {
+                    "schema": "fetchcore.opensearch.projection-v3",
+                    "projection_version": store.settings.projection_version,
+                    "validated": True,
+                    "retrieval_mode": self.retrieval.mode if self.retrieval else "lexical",
+                    "vectors_required": self.require_vectors,
+                }
+                if self.require_vectors:
+                    os_result["embedding_probe"] = _probe_embedding_provider(
+                        store, expected_dimensions=OPENSEARCH_VECTOR_DIMENSIONS,
+                    )
+                return os_result
+            return driver.run("plan" if operation == "dry-run" else operation)
+        solr = cast(SolrIndexStore, self.store)
         if operation == "bootstrap":
-            self.store.validate_schema(require_vectors=self.require_vectors)
+            solr.validate_schema(require_vectors=self.require_vectors)
             result: dict[str, object] = {
                 "schema": "fetchcore.solr.projection-v3",
-                "projection_version": self.store.settings.projection_version,
+                "projection_version": solr.settings.projection_version,
                 "validated": True,
                 "retrieval_mode": self.retrieval.mode if self.retrieval else "lexical",
                 "vectors_required": self.require_vectors,
             }
             if self.require_vectors:
-                result["embedding_probe"] = _probe_embedding_provider(self.store)
+                result["embedding_probe"] = _probe_embedding_provider(solr)
             return result
         if operation == "status":
-            return repository_index_status(self.store, self.runtime)
+            return repository_index_status(solr, self.runtime)
         if operation == "dry-run":
-            return dry_run_repository_index(self.store, self.runtime)
+            return dry_run_repository_index(solr, self.runtime)
         if operation == "sync":
             return TargetedGitAwareSolrSynchronizer(
-                self.store, self.runtime.indexer,
+                solr, self.runtime.indexer,
             ).sync(self.workspace).to_mapping()
         raise ValueError("Unsupported legacy indexing operation")
 
@@ -106,6 +135,32 @@ def build_index_context(
     runtime = prepare_repository_index_runtime(
         root, repository=repository.strip(), branch=branch or None, revision=revision or None,
     )
+    if backend == "opensearch":
+        settings_os = OpenSearchSettings.from_mapping(backend_settings)
+        provider_os = None
+        if retrieval is not None and retrieval.mode in {"dense", "hybrid"}:
+            configured_dimensions = retrieval.dense.embedding.dimensions
+            if configured_dimensions not in {None, OPENSEARCH_VECTOR_DIMENSIONS}:
+                raise KnowledgeSearchError(
+                    "configured embedding dimensions do not match OpenSearch vector mapping",
+                    category="schema_mismatch",
+                    metadata={"expected_dimensions": OPENSEARCH_VECTOR_DIMENSIONS,
+                              "actual_dimensions": configured_dimensions,
+                              "rebuild_required": True},
+                )
+            provider_os = (providers or EmbeddingProviderRegistry()).create(
+                retrieval.dense.embedding, backend_id="opensearch", backend_name="OpenSearch",
+            )
+        store_os = OpenSearchIndexStore(
+            UrllibOpenSearchTransport(settings_os), settings_os,
+            clock=lambda: datetime.now(UTC).isoformat(), embedding_provider=provider_os,
+        )
+        store_os.repository = runtime.repository
+        store_os.indexing_fingerprint = runtime.fingerprint
+        return IndexContext(
+            root, backend, runtime, store_os, retrieval,
+            OpenSearchOperationalIndex(store_os, runtime),
+        )
     settings = SolrSettings.from_mapping(backend_settings)
     embedding_provider = None
     if retrieval is not None and retrieval.mode in {"dense", "hybrid"}:
@@ -133,15 +188,17 @@ def build_index_context(
     return IndexContext(root, backend, runtime, store, retrieval)
 
 
-def _probe_embedding_provider(store: SolrIndexStore) -> dict[str, object]:
-    """Probe the configured provider once without mutating the Solr projection."""
+def _probe_embedding_provider(
+    store: SolrIndexStore | OpenSearchIndexStore, *, expected_dimensions: int = SOLR_VECTOR_DIMENSIONS,
+) -> dict[str, object]:
+    """Probe the configured provider once without mutating the projection."""
     provider = store.embedding_provider
     serializer = store.embedding_serializer
     if provider is None or serializer is None:
         raise KnowledgeSearchError(
             "vector indexing requires a composed embedding provider",
             category="unsupported_capability",
-            metadata={"backend": "solr", "capability": "embedding_provider"},
+            metadata={"capability": "embedding_provider"},
         )
     vectors = provider.embed((_EMBEDDING_PROBE_TEXT,))
     dimensions = validate_vector_dimensions(vectors)
@@ -150,12 +207,12 @@ def _probe_embedding_provider(store: SolrIndexStore) -> dict[str, object]:
             "embedding probe returned an unexpected vector count",
             category="embedding_failed",
         )
-    if dimensions != SOLR_VECTOR_DIMENSIONS:
+    if dimensions != expected_dimensions:
         raise KnowledgeSearchError(
-            "embedding probe dimensions do not match the frozen Solr vector schema",
+            "embedding probe dimensions do not match the vector schema",
             category="schema_mismatch",
             metadata={
-                "expected_dimensions": SOLR_VECTOR_DIMENSIONS,
+                "expected_dimensions": expected_dimensions,
                 "actual_dimensions": dimensions,
                 "rebuild_required": True,
             },
@@ -184,7 +241,7 @@ class IndexObservation:
 
 
 def _observe(context: IndexContext) -> IndexObservation:
-    store, runtime = context.store, context.runtime
+    store, runtime = cast(SolrIndexStore, context.store), context.runtime
     try:
         store.validate_schema(require_vectors=context.require_vectors)
     except KnowledgeSearchError as exc:
@@ -260,7 +317,18 @@ class RepositoryIndexApplicationService:
                 revision=source.revision, backend=self.backend, backend_settings=self.backend_settings,
                 retrieval=self.retrieval, providers=self.providers,
             )
-            store = bind_indexing_contract_store(context.store, context.runtime.indexer)
+            if context.driver is not None:
+                return {
+                    "repository": source.repository, "provider": source.provider,
+                    "source": registered.source, "source_ref": source.source_ref,
+                    "branch": source.branch, "registered_revision": registered.revision,
+                    "target_revision": source.revision,
+                    "retrieval_mode": self.retrieval.mode if self.retrieval else "lexical",
+                    **context.driver.run(operation),
+                }
+            store = bind_indexing_contract_store(
+                cast(SolrIndexStore, context.store), context.runtime.indexer,
+            )
             context = IndexContext(
                 context.workspace,
                 context.backend,
@@ -358,6 +426,7 @@ class RepositoryIndexApplicationService:
             result["previous_currentness"] = result.pop("currentness")
             result["reason"] = "explicit_rebuild" if operation == "rebuild" else observation.reason
             return result
+        raise AssertionError("indexing operation did not return a result")
 
 
 def _execution_result(storage: SolrIndexSyncResult) -> dict[str, object]:

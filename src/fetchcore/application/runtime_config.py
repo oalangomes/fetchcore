@@ -35,6 +35,7 @@ _BACKEND_FIELDS = {
     "solr": frozenset({
         "url", "collection", "timeout_seconds", "projection_version", "field_boosts",
         "signal_type_boosts", "batch_size", "diagnostic_candidate_window",
+        "ann_search_breadth",
     }),
     "opensearch": frozenset({
         "url", "index", "collection", "timeout_seconds", "projection_version",
