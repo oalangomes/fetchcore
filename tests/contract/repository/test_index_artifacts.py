@@ -88,6 +88,35 @@ def test_observed_index_stage_timings_roundtrip_and_reject_invented_values():
             load_index_artifact(json.dumps(value))
 
 
+def test_qdrant_noop_and_vendor_stage_observations_stay_validated() -> None:
+    value = fixture()
+    value["backend"] = "qdrant-vector"
+    result = value["command"]["result"]
+    execution = result["execution"]
+    result["mode"] = "noop"
+    execution.update(mode="noop", noop=True, added=0, updated=0, deleted=0)
+    execution["telemetry"] = {
+        "backend_writes": 0,
+        "backend_deletes": 0,
+        "duration_ms": 0,
+        "stage_durations_ms": {"point_validation": 0, "alias_read": 2},
+    }
+    parsed = load_index_artifact(json.dumps(value))
+    assert parsed.command["result"]["execution"]["mode"] == "noop"
+
+    execution["updated"] = 1
+    with pytest.raises(ValueError, match="Contradictory noop"):
+        load_index_artifact(json.dumps(value))
+    execution["updated"] = 0
+    result["mode"] = "incremental"
+    with pytest.raises(ValueError, match="Backend noop"):
+        load_index_artifact(json.dumps(value))
+    result["mode"] = "noop"
+    execution["telemetry"]["stage_durations_ms"] = {"alias_read": -1}
+    with pytest.raises(ValueError, match="Invalid backend stage duration"):
+        load_index_artifact(json.dumps(value))
+
+
 def test_duplicate_keys_and_size_rejected():
     with pytest.raises(ValueError, match="Duplicate"):
         load_index_artifact('{"schema_version":1,"schema_version":1}')
