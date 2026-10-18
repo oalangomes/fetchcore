@@ -44,7 +44,7 @@ _BACKEND_FIELDS = {
     "qdrant-vector": frozenset({
         "url", "collection", "timeout_seconds", "projection_version",
         "embedding_serializer_mode", "embedding_url", "embedding_model", "batch_size",
-        "diagnostic_candidate_window", "api_key",
+        "diagnostic_candidate_window", "api_key", "vector_dimensions",
     }),
 }
 
@@ -168,7 +168,13 @@ def validate_backend_settings(backend: str, settings: Mapping[str, object]) -> N
     for key in ("timeout_seconds",):
         if key in data:
             _positive_float(data[key], f"backends.{backend}.{key}")
-    for key in ("batch_size", "max_files_scanned", "max_file_bytes", "max_total_bytes"):
+    for key in (
+        "batch_size",
+        "max_files_scanned",
+        "max_file_bytes",
+        "max_total_bytes",
+        "vector_dimensions",
+    ):
         if key in data:
             _positive_int(data[key], f"backends.{backend}.{key}")
     for key in ("collection", "index", "embedding_model", "api_key"):
@@ -256,10 +262,16 @@ def _env_overlay(env: Mapping[str, str], default_backend: str) -> dict[str, obje
     assert isinstance(backend_settings, dict)
     prefix = {"solr": "SOLR", "opensearch": "OPENSEARCH", "qdrant-vector": "QDRANT"}.get(selected)
     if prefix:
-        for field_name in ("URL", "COLLECTION", "INDEX", "API_KEY"):
+        for field_name in ("URL", "COLLECTION", "INDEX", "API_KEY", "VECTOR_DIMENSIONS"):
             name = f"FETCHCORE_{prefix}_{field_name}"
             if name in env:
-                backend_settings[field_name.lower()] = env[name]
+                setting_value: object = env[name]
+                if field_name == "VECTOR_DIMENSIONS":
+                    try:
+                        setting_value = int(env[name])
+                    except ValueError as exc:
+                        raise ValueError(f"{name} must be a positive integer") from exc
+                backend_settings[field_name.lower()] = setting_value
 
     retrieval = pick("FETCHCORE_RETRIEVAL", "FETCHCORE_MCP_RETRIEVAL")
     if "FETCHCORE_RETRIEVAL" in env and not env["FETCHCORE_RETRIEVAL"].strip():

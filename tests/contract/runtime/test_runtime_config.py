@@ -86,7 +86,10 @@ def test_qdrant_embedding_probe_uses_effective_ollama_endpoint(
     endpoint = "http://wsl-gateway:11434"
     config = load_runtime_config(
         path=path,
-        environ={"FETCHCORE_OLLAMA_URL": endpoint},
+        environ={
+            "FETCHCORE_OLLAMA_URL": endpoint,
+            "FETCHCORE_QDRANT_VECTOR_DIMENSIONS": "768",
+        },
     )
     settings = QdrantVectorSettings.from_mapping(
         {**config.backend_settings, "vector_dimensions": 768}
@@ -132,7 +135,9 @@ def test_qdrant_embedding_probe_uses_effective_ollama_endpoint(
 
     assert config.ollama.url == endpoint
     assert config.sources["embedding.ollama.url"] == "environment"
+    assert config.sources["backends.qdrant-vector.vector_dimensions"] == "environment"
     assert settings.embedding_url == endpoint
+    assert settings.vector_dimensions == 768
     assert requested_urls == [f"{endpoint}/api/embed"]
     assert requested_models == ["embeddinggemma"]
     assert len(vectors[0]) == 768
