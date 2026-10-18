@@ -9,8 +9,9 @@ snapshot established by the previous indexing deliveries.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
+import time
 from pathlib import Path
 
 from fetchcore.adapters.retrieval.solr.backend import SolrIndexSnapshot, SolrIndexStore
@@ -57,6 +58,7 @@ from fetchcore.repository.semantic_indexing import (
     SemanticDocumentRepositoryIndexer,
 )
 from fetchcore.retrieval.contracts import KnowledgeSearchError
+from fetchcore.telemetry import elapsed_ms
 
 
 _REBUILDABLE_SNAPSHOT_ERRORS = frozenset(
@@ -290,12 +292,15 @@ def dry_run_repository_index(
     runtime: RepositoryIndexRuntime,
     *,
     detector: GitRepositoryChangeDetector | None = None,
+    timer: Callable[[], float] = time.monotonic,
 ) -> dict[str, object]:
     """Calculate the next indexing mutation without persisting anything."""
 
     bound = bind_indexing_contract_store(store, runtime.indexer)
     change_detector = detector or GitRepositoryChangeDetector()
+    stage_started = timer()
     snapshot, snapshot_error = _load_snapshot_optional(bound, runtime.repository)
+    stage_timings_ms = {"snapshot_load_ms": elapsed_ms(stage_started, timer())}
 
     if snapshot is None:
         reason = f"snapshot_{snapshot_error}"
@@ -332,6 +337,7 @@ def dry_run_repository_index(
                 "reason": "up_to_date",
                 "snapshot": snapshot_mapping(snapshot),
                 "discovery": _discovery_mapping(plan),
+                "stage_timings_ms": stage_timings_ms,
                 "planned_mutations": {
                     "added": 0,
                     "updated": 0,
@@ -345,12 +351,15 @@ def dry_run_repository_index(
         )
         return payload
 
+    stage_started = timer()
     previous = bound.load_documents(snapshot.repository)
+    stage_timings_ms["previous_documents_load_ms"] = elapsed_ms(stage_started, timer())
     planner = DocumentAwareGitSolrSynchronizer(
         bound,
         runtime.indexer,
         detector=change_detector,
     )
+    stage_started = timer()
     if plan.mode == "git-delta":
         delta_result = planner._index_delta(runtime.workspace, previous, plan)
         if delta_result is None:
@@ -367,6 +376,7 @@ def dry_run_repository_index(
             previous_documents=previous,
         )
 
+    stage_timings_ms["canonical_delta_index_ms"] = elapsed_ms(stage_started, timer())
     if result.repository != snapshot.repository:
         raise KnowledgeSearchError(
             "repository identity differs from the active Solr snapshot",
@@ -398,6 +408,7 @@ def dry_run_repository_index(
                 "replace_repository": False,
             },
             "indexing_telemetry": result.telemetry.to_mapping(),
+            "stage_timings_ms": stage_timings_ms,
             "corpus_diagnostics": analyze_corpus_duplication(result.documents).to_mapping(),
         }
     )
