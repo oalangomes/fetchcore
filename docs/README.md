@@ -29,6 +29,7 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Configure or add a backend | [Runtime configuration](guides/runtime-configuration.md), [configuration reference](reference/configuration.md), and [adding a backend](guides/adding-a-backend.md) |
 | Maintain PT-BR documentation | [Documentation localization](guides/documentation-localization.md) |
 | Understand release gates, labels and the initial version | [Release policy](release-policy.md) and [v0.0.1 technical overview](releases/initial-release.md) |
+| Inspect the frozen operational indexing checkpoint | [Operational indexing freeze 2026-10-18](benchmarks/operational-indexing-freeze-2026-10-18.md) |
 | Reproduce a benchmark | [Experiment convention](benchmarks/protocol.md), [baseline v1 protocol](benchmarks/baseline-v1.md), [Markdown extraction S4](../benchmarks/markdown-extraction-s4/README.md), [Local references S5](../benchmarks/local-reference-s5/README.md), [SearchIntent v2 experiment](benchmarks/search-intent-v2.md), and [Repository Learning Benchmark](benchmarks/repository-learning.md) |
 | Understand a durable decision | [ADR index](adr/README.md) |
 | Follow a migration or inspect extraction provenance | [Namespace migration](migrations/fetchcore-namespace.md) and [historical extraction](history/extraction/README.md) |
