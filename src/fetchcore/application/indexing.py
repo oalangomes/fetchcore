@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 from datetime import UTC, datetime
+import time
 
 from fetchcore.application.composition import EmbeddingProviderRegistry
 from fetchcore.application.index_store import OperationalIndexDriver, OperationalIndexStore
@@ -49,6 +50,7 @@ from fetchcore.repository.sources import LocalWorkspaceSourceProvider
 from fetchcore.repository.registry import RepositoryRegistryError
 from fetchcore.retrieval.config import EmbeddingConfig, RetrievalConfig
 from fetchcore.retrieval.contracts import KnowledgeSearchError
+from fetchcore.telemetry import IndexStageTelemetry, elapsed_ms
 from fetchcore.retrieval.embedding import (
     VECTOR_EMBEDDING_SERIALIZATION_VERSION,
     validate_vector_dimensions,
@@ -525,9 +527,17 @@ class RepositoryIndexApplicationService:
             else:
                 # Validate live schema even for explicit rebuild; never repair it here.
                 store.validate_schema(require_vectors=context.require_vectors)
-                outcome = _execution_result(store.full_rebuild(
-                    context.runtime.indexer.index(context.workspace),
-                ))
+                started = time.monotonic()
+                indexed = context.runtime.indexer.index(context.workspace)
+                canonical_full_index_ms = elapsed_ms(started, time.monotonic())
+                started = time.monotonic()
+                persisted = store.full_rebuild(indexed)
+                persistence_call_ms = elapsed_ms(started, time.monotonic())
+                outcome = _execution_result(persisted)
+                outcome["stage_timings_ms"] = IndexStageTelemetry(
+                    canonical_full_index_ms=canonical_full_index_ms,
+                    persistence_call_ms=persistence_call_ms,
+                ).to_mapping()
             result["execution"] = outcome
             result["mode"] = "rebuild" if operation == "rebuild" else (
                 "noop" if outcome.get("noop") else "incremental"
