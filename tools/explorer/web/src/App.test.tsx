@@ -401,6 +401,7 @@ describe('Evidence Coverage Map — live typed observations', () => {
   it('reports missing required anchors from the observed typed window without promoting unrelated lexical signals', async () => {
     mount()
     await screen.findByText('API conectada')
+    fireEvent.click(screen.getByRole('button', { name: 'Opções avançadas de busca' }))
     fireEvent.click(screen.getByRole('button', { name: 'JSON completo' }))
     fireEvent.change(screen.getByLabelText('SearchIntent JSON'), { target: {
       value: JSON.stringify({
