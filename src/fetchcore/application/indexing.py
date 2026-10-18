@@ -372,7 +372,8 @@ class RepositoryIndexApplicationService:
                         )
                     # Only expose runtime-proven quantities. Full-scan path counts are
                     # discovery placeholders, not measured changed/deleted file counts.
-                    for key in ("planned_mutations", "discovery", "indexing_telemetry"):
+                    for key in ("planned_mutations", "discovery", "indexing_telemetry",
+                                "stage_timings_ms"):
                         if key in preview:
                             result[key] = preview[key]
                     mutations = result.get("planned_mutations")
@@ -411,6 +412,8 @@ class RepositoryIndexApplicationService:
                 outcome = _execution_result(synced.storage)
                 outcome["noop"] = synced.noop
                 outcome["discovery"] = synced.discovery.to_mapping()
+                if synced.stage_timings_ms is not None:
+                    outcome["stage_timings_ms"] = synced.stage_timings_ms
             else:
                 # Validate live schema even for explicit rebuild; never repair it here.
                 store.validate_schema(require_vectors=context.require_vectors)
