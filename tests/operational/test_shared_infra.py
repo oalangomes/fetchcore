@@ -369,7 +369,7 @@ def test_indexing_never_routes_to_another_backend(tmp_path, environment, backend
 
 
 @pytest.mark.parametrize("backend", ["qdrant"])
-def test_routed_unsupported_indexing_fails_before_backend_access(monkeypatch, backend):
+def test_routed_qdrant_requires_vector_dimensions_before_backend_access(monkeypatch, backend):
     from click.testing import CliRunner
     from fetchcore.cli import main
     from fetchcore.application import indexing
@@ -381,7 +381,8 @@ def test_routed_unsupported_indexing_fails_before_backend_access(monkeypatch, ba
         main, ["index", "--repository", "a/b", "sync"], env=config,
     )
     assert result.exit_code == 1, result.output
-    assert "unsupported_backend" in result.output
+    assert "schema_mismatch" in result.output
+    assert "requires explicit vector_dimensions" in result.output
     build_solr.assert_not_called()
 
 

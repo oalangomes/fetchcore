@@ -222,7 +222,7 @@ def test_schema_failure_is_read_only_even_for_rebuild(workspace, tmp_path, backe
 
 @pytest.mark.parametrize("operation", ["plan", "status", "sync", "rebuild"])
 def test_unsupported_backend_is_typed(invoke, operation):
-    result = invoke(operation, success=False, extra=("--backend", "qdrant-vector"))
+    result = invoke(operation, success=False, extra=("--backend", "local-semantic"))
     assert result["error"]["category"] == "unsupported_backend"
 
 
