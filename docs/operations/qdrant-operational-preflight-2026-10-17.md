@@ -1,5 +1,9 @@
 # Qdrant OPERATIONAL preflight — 2026-10-17
 
+This page records the historical preflight state. The subsequent real
+[Qdrant OPERATIONAL acceptance](../benchmarks/results/qdrant-operational-acceptance-2026-10-18.md)
+documents the rebuild, incremental sync, no-op, retrieval, and source gate.
+
 ## Decision
 
 **INCONCLUSIVE; no indexing writes were made.** This records a read-only

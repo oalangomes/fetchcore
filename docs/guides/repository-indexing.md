@@ -88,6 +88,10 @@ inspection; it does not automatically delete a possibly live lock. No-op avoids
 the writer lock and performs no point, snapshot, collection, or embedding writes.
 Qdrant retrieval capabilities remain dense and hybrid; targeted/exact lookup is
 not advertised by this backend.
+The [2026-10-18 Qdrant operational acceptance](../benchmarks/results/qdrant-operational-acceptance-2026-10-18.md)
+records a real OPERATIONAL rebuild, same-revision no-op, committed Git delta
+with add/update/delete/rename, dense/hybrid search, source retrieval, and P0
+generation/lock checks. It is a lifecycle gate, not a ranking-quality benchmark.
 
 Lexical indexing is the default and never resolves or calls an embedding
 provider. Dense and hybrid indexing are explicit opt-ins through the shared
