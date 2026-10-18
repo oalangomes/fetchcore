@@ -76,7 +76,9 @@ class MemoryQdrant:
         payload: object | None = None,
     ) -> dict[str, object]:
         if method in {"PUT", "DELETE"} or (
-            method == "POST" and path == "collections/aliases"
+            method == "POST" and (
+                path == "collections/aliases" or path.endswith("/points/delete?wait=true")
+            )
         ):
             self.writes.append((method, path))
 
@@ -230,7 +232,7 @@ class MemoryQdrant:
                 for point in raw_points:
                     points[str(point["id"])] = copy.deepcopy(point)
                 return {"result": {"status": "completed"}}
-            if method == "DELETE" and suffix.startswith("points"):
+            if method == "POST" and suffix == "points/delete?wait=true":
                 assert isinstance(payload, dict)
                 if self.fail_partial_delete and payload["points"]:
                     self.fail_partial_delete = False
@@ -576,6 +578,10 @@ def test_incremental_update_delete_rename_noop_and_provenance(tmp_path: Path) ->
     assert outcome.snapshot.revision == "rev-1"
     assert outcome.telemetry is not None
     assert outcome.telemetry.backend_deletes == outcome.deleted
+    assert any(
+        method == "POST" and path.endswith("/points/delete?wait=true")
+        for method, path in transport.writes
+    )
     assert len(embedder.texts) > embeddings_before_sync
     documents = index.load_documents(_REPOSITORY)
     assert {document.path for document in documents} == {
@@ -857,6 +863,7 @@ def test_application_driver_bootstrap_plan_rebuild_sync_and_noop(
     workspace.mkdir()
     source = workspace / "service.py"
     source.write_text("value = 1\n")
+    (workspace / "stable.py").write_text("stable_value = 7\n")
     git = ["git", "-C", str(workspace)]
     subprocess.run([*git, "init", "-b", "main"], check=True, capture_output=True)
     subprocess.run([*git, "config", "user.name", "FetchCore Test"], check=True)
@@ -992,6 +999,31 @@ def test_application_driver_bootstrap_plan_rebuild_sync_and_noop(
     assert no_op_execution["noop"] is True
     assert len(transport.writes) == writes_after_sync
     assert len(embedding_texts) == embeddings_after_sync
+
+    source.write_text("value = 3\n")
+    subprocess.run([*git, "add", "service.py"], check=True)
+    subprocess.run([*git, "commit", "-qm", "second"], check=True)
+    committed_revision = subprocess.check_output(
+        [*git, "rev-parse", "HEAD"], text=True,
+    ).strip()
+    committed_plan = service.run("plan", registered.repository)
+    assert committed_plan["mode"] == "incremental"
+    assert cast(dict[str, object], committed_plan["discovery"])["mode"] == "git-delta"
+    committed = service.run("sync", registered.repository)
+    committed_execution = cast(dict[str, object], committed["execution"])
+    committed_telemetry = cast(dict[str, object], committed_execution["telemetry"])
+    assert committed_execution["snapshot"]["revision"] == committed_revision
+    assert committed_telemetry["embedding_vectors"] == 1
+    assert committed_telemetry["embedding_vectors_reused"] == 1
+    documents = QdrantVectorIndexStore(
+        transport,
+        QdrantVectorSettings.from_mapping(backend_settings),
+        DeterministicEmbedder(),
+        clock=lambda: "test",
+    ).load_documents(registered.repository)
+    assert {document.path for document in documents} == {"service.py", "stable.py"}
+    assert all(document.revision == committed_revision for document in documents)
+    assert all(document.provenance.revision == committed_revision for document in documents)
 
 
 def test_driver_without_git_history_uses_incremental_full_scan_not_rebuild(

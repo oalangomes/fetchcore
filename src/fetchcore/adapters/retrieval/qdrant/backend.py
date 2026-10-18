@@ -1820,8 +1820,8 @@ class QdrantVectorIndexStore:
     ) -> None:
         if point_ids:
             self.transport.request(
-                "DELETE",
-                f"collections/{quote(collection, safe='')}/points?wait=true",
+                "POST",
+                f"collections/{quote(collection, safe='')}/points/delete?wait=true",
                 {"points": list(point_ids)},
             )
 

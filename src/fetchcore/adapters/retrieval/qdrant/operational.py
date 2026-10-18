@@ -288,7 +288,46 @@ class QdrantOperationalIndex:
                 plan,
             )
             if delta is not None:
-                return delta, plan
+                prior_by_id = {document.id: document for document in previous}
+                affected_paths = set(plan.changed_paths) | set(plan.removed_paths)
+                current_documents: list[KnowledgeDocument] = []
+                for document in delta.documents:
+                    if document.revision == delta.revision:
+                        if document.provenance.revision != delta.revision:
+                            raise KnowledgeSearchError(
+                                "Git delta contains inconsistent source provenance",
+                                category="unsafe_snapshot",
+                            )
+                        current_documents.append(document)
+                        continue
+                    prior = prior_by_id.get(document.id)
+                    if (
+                        prior != document
+                        or document.path in affected_paths
+                        or document.provenance.revision != document.revision
+                    ):
+                        raise KnowledgeSearchError(
+                            "Git delta cannot prove retained source provenance",
+                            category="unsafe_snapshot",
+                        )
+                    current_documents.append(replace(
+                        document,
+                        branch=delta.branch,
+                        revision=delta.revision,
+                        provenance=replace(document.provenance, revision=delta.revision),
+                    ))
+                current_by_id = {document.id: document for document in current_documents}
+                return replace(
+                    delta,
+                    documents=tuple(current_documents),
+                    changes=replace(
+                        delta.changes,
+                        unchanged=tuple(
+                            current_by_id[document.id]
+                            for document in delta.changes.unchanged
+                        ),
+                    ),
+                ), plan
             plan = replace(plan, mode="full-scan", reason="delta_scan_unsafe")
         return (
             self.runtime.indexer.index(
