@@ -58,7 +58,7 @@ from fetchcore.repository.semantic_indexing import (
     SemanticDocumentRepositoryIndexer,
 )
 from fetchcore.retrieval.contracts import KnowledgeSearchError
-from fetchcore.telemetry import elapsed_ms
+from fetchcore.telemetry import IndexStageTelemetry, elapsed_ms
 
 
 _REBUILDABLE_SNAPSHOT_ERRORS = frozenset(
@@ -304,23 +304,29 @@ def dry_run_repository_index(
 
     if snapshot is None:
         reason = f"snapshot_{snapshot_error}"
+        stage_started = timer()
         result = runtime.indexer.index(runtime.workspace)
+        stage_timings_ms["canonical_full_index_ms"] = elapsed_ms(stage_started, timer())
         return _full_rebuild_preview(
             runtime,
             result,
             reason=reason,
             previous_snapshot=None,
             snapshot_error=snapshot_error,
+            stage_timings_ms=stage_timings_ms,
         )
 
     if snapshot_indexing_fingerprint(snapshot) != runtime.fingerprint:
+        stage_started = timer()
         result = runtime.indexer.index(runtime.workspace)
+        stage_timings_ms["canonical_full_index_ms"] = elapsed_ms(stage_started, timer())
         return _full_rebuild_preview(
             runtime,
             result,
             reason="indexing_contract_changed",
             previous_snapshot=snapshot,
             snapshot_error=None,
+            stage_timings_ms=stage_timings_ms,
         )
 
     plan = change_detector.plan(
@@ -337,7 +343,9 @@ def dry_run_repository_index(
                 "reason": "up_to_date",
                 "snapshot": snapshot_mapping(snapshot),
                 "discovery": _discovery_mapping(plan),
-                "stage_timings_ms": stage_timings_ms,
+                "stage_timings_ms": IndexStageTelemetry.from_mapping(
+                    stage_timings_ms,
+                ).to_mapping(),
                 "planned_mutations": {
                     "added": 0,
                     "updated": 0,
@@ -408,7 +416,9 @@ def dry_run_repository_index(
                 "replace_repository": False,
             },
             "indexing_telemetry": result.telemetry.to_mapping(),
-            "stage_timings_ms": stage_timings_ms,
+            "stage_timings_ms": IndexStageTelemetry.from_mapping(
+                stage_timings_ms,
+            ).to_mapping(),
             "corpus_diagnostics": analyze_corpus_duplication(result.documents).to_mapping(),
         }
     )
@@ -422,6 +432,7 @@ def _full_rebuild_preview(
     reason: str,
     previous_snapshot: SolrIndexSnapshot | None,
     snapshot_error: str | None,
+    stage_timings_ms: dict[str, int],
 ) -> dict[str, object]:
     payload = runtime.to_mapping()
     payload.update(
@@ -433,6 +444,9 @@ def _full_rebuild_preview(
                 None if previous_snapshot is None else snapshot_mapping(previous_snapshot)
             ),
             "snapshot_error": snapshot_error,
+            "stage_timings_ms": IndexStageTelemetry.from_mapping(
+                stage_timings_ms,
+            ).to_mapping(),
             "discovery": _full_scan_mapping(
                 None if previous_snapshot is None else previous_snapshot.revision,
                 result.revision,

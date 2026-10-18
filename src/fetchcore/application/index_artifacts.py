@@ -13,13 +13,11 @@ import re
 from typing import Any
 from collections.abc import Mapping
 
+from fetchcore.telemetry import IndexStageTelemetry
+
 MAX_ARTIFACT_BYTES = 2_000_000
 OPERATIONS = {"status", "plan", "sync", "rebuild"}
 MODES = {"initial", "incremental", "noop", "rebuild", "rebuild_required"}
-STAGE_TIMING_FIELDS = frozenset({
-    "snapshot_load_ms", "previous_documents_load_ms",
-    "canonical_delta_index_ms", "persistence_call_ms",
-})
 
 
 def _text(value: object, name: str) -> str:
@@ -158,8 +156,12 @@ def _validate_result(value: object, repository: str, operation: str) -> None:
         execution = result["execution"]
         if "stage_timings_ms" in execution:
             _validate_stage_timings(execution["stage_timings_ms"])
-        if execution.get("mode") not in ("incremental", "full_rebuild"):
+        if execution.get("mode") not in ("incremental", "full_rebuild", "noop"):
             raise ValueError("Unsupported persisted projection mutation mode")
+        if execution["mode"] == "noop" and result["mode"] != "noop":
+            raise ValueError("Backend noop cannot claim index mutations")
+        if result["mode"] == "noop" and execution["mode"] == "full_rebuild":
+            raise ValueError("Full rebuild cannot claim noop")
         for key in ("added", "updated", "deleted", "unchanged", "duration_ms"):
             if key not in execution or type(execution[key]) is not int:
                 raise ValueError("Missing or invalid execution measurement: " + key)
@@ -217,12 +219,18 @@ def _validate_result(value: object, repository: str, operation: str) -> None:
 
 
 def _validate_stage_timings(value: object) -> None:
-    stages = _object(value, "stage_timings_ms")
-    if not set(stages).issubset(STAGE_TIMING_FIELDS):
-        raise ValueError("Unknown indexing stage measurement")
-    for key, milliseconds in stages.items():
-        if type(milliseconds) is not int or milliseconds < 0:
-            raise ValueError("Invalid indexing stage duration: " + key)
+    IndexStageTelemetry.from_mapping(_object(value, "stage_timings_ms"))
+
+
+def _validate_adapter_stage_timings(value: object) -> None:
+    stages = _object(value, "stage_durations_ms")
+    if len(stages) > 32:
+        raise ValueError("Too many backend stage measurements")
+    for name, duration in stages.items():
+        if not isinstance(name, str) or not name.strip() or len(name) > 128:
+            raise ValueError("Invalid backend stage name")
+        if type(duration) is not int or duration < 0:
+            raise ValueError("Invalid backend stage duration")
 
 
 def _validate_measurements(data: dict[str, Any], name: str) -> None:
@@ -245,6 +253,9 @@ def _validate_measurements(data: dict[str, Any], name: str) -> None:
     for key, value in data.items():
         if key == "stage_timings_ms":
             _validate_stage_timings(value)
+            continue
+        if key == "stage_durations_ms":
+            _validate_adapter_stage_timings(value)
             continue
         if (
             key in counts

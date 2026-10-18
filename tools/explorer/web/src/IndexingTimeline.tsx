@@ -34,7 +34,7 @@ function Run({ artifact }: { artifact: IndexArtifact }) {
     <Facts data={discovery} fields={['mode', 'reason', 'changed_paths', 'removed_paths', 'discovery_duration_ms', 'git_diff_duration_ms', 'changed_path_values', 'removed_path_values']}/>
     <p className="my-2 text-xs text-muted">Full scan não implica substituição completa da projeção persistida.</p>
     <h4 className="my-3 text-sm">Duração observada por etapa (ms)</h4>
-    <Facts data={stages} fields={['snapshot_load_ms', 'previous_documents_load_ms', 'canonical_delta_index_ms', 'persistence_call_ms']}/>
+    <Facts data={stages} fields={['snapshot_load_ms', 'previous_documents_load_ms', 'canonical_delta_index_ms', 'canonical_full_index_ms', 'persistence_call_ms']}/>
     <p className="my-2 text-xs text-muted">Etapas ausentes não foram executadas ou medidas. Estes tempos não incluem todo o comando.</p>
     <Facts data={canonical} fields={['files_scanned', 'files_changed', 'chunks_total', 'chunks_changed', 'duration_ms', 'indexing_throughput_chunks_per_second']}/>
     <h4 className="my-3 text-sm">{artifact.command.operation === 'plan' ? 'Mutações planejadas (sem persistência)' : 'Mutações persistidas observadas'}</h4>

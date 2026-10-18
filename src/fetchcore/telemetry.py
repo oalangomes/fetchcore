@@ -7,7 +7,7 @@ metrics (whether Ground Truth was recovered).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 
 
@@ -101,6 +101,58 @@ class RetrievalTelemetry:
             if value is not None and value not in ({}, [], ())
         }
 
+
+
+
+@dataclass(frozen=True)
+class IndexStageTelemetry:
+    """Optional observed indexing phases, independent from a storage backend.
+
+    Omitted means not executed or unmeasured; even a real 0 ms is an observation.
+    Durations do not cover the full command, startup, or external readiness checks.
+    """
+
+    snapshot_load_ms: int | None = None
+    previous_documents_load_ms: int | None = None
+    canonical_delta_index_ms: int | None = None
+    canonical_full_index_ms: int | None = None
+    persistence_call_ms: int | None = None
+
+    def __post_init__(self) -> None:
+        for name, duration in asdict(self).items():
+            if duration is not None and (type(duration) is not int or duration < 0):
+                raise ValueError(f"Invalid indexing stage duration: {name}")
+
+    def to_mapping(self) -> dict[str, int]:
+        """Preserve only measured phases and their stable field names."""
+        return {
+            name: duration
+            for name, duration in asdict(self).items()
+            if duration is not None
+        }
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, object]) -> IndexStageTelemetry:
+        """Reject unknown or invalid observations; never synthesize zeros."""
+        names = cls.__dataclass_fields__
+        if not set(value).issubset(names):
+            raise ValueError("Unknown indexing stage measurement")
+
+        def measured(name: str) -> int | None:
+            if name not in value:
+                return None
+            duration = value[name]
+            if type(duration) is not int or duration < 0:
+                raise ValueError(f"Invalid indexing stage duration: {name}")
+            return duration
+
+        return cls(
+            snapshot_load_ms=measured("snapshot_load_ms"),
+            previous_documents_load_ms=measured("previous_documents_load_ms"),
+            canonical_delta_index_ms=measured("canonical_delta_index_ms"),
+            canonical_full_index_ms=measured("canonical_full_index_ms"),
+            persistence_call_ms=measured("persistence_call_ms"),
+        )
 
 
 @dataclass(frozen=True)

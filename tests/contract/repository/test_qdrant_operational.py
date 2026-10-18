@@ -937,6 +937,8 @@ def test_application_driver_bootstrap_plan_rebuild_sync_and_noop(
 
     initial_plan = service.run("plan", registered.repository)
     assert initial_plan["mode"] == "initial"
+    assert "canonical_full_index_ms" in initial_plan["stage_timings_ms"]
+    assert "previous_documents_load_ms" not in initial_plan["stage_timings_ms"]
     assert transport.writes == []
     with pytest.raises(KnowledgeSearchError) as missing_sync:
         service.run("sync", registered.repository)
@@ -945,6 +947,9 @@ def test_application_driver_bootstrap_plan_rebuild_sync_and_noop(
 
     rebuilt = service.run("rebuild", registered.repository)
     assert rebuilt["mode"] == "rebuild"
+    assert set(rebuilt["execution"]["stage_timings_ms"]) == {
+        "canonical_full_index_ms", "persistence_call_ms",
+    }
     rebuild_execution = cast(dict[str, object], rebuilt["execution"])
     rebuild_snapshot = cast(dict[str, object], rebuild_execution["snapshot"])
     assert rebuild_snapshot["revision"] == rebuilt["target_revision"]
@@ -973,19 +978,31 @@ def test_application_driver_bootstrap_plan_rebuild_sync_and_noop(
     assert "targeted_lookup" not in retrieval_capabilities
     assert len(transport.writes) == writes_after_rebuild
     embeddings_after_rebuild = len(embedding_texts)
-    assert service.run("plan", registered.repository)["mode"] == "noop"
+    noop_plan = service.run("plan", registered.repository)
+    assert noop_plan["mode"] == "noop"
+    assert set(noop_plan["stage_timings_ms"]) == {
+        "snapshot_load_ms", "previous_documents_load_ms", "canonical_delta_index_ms",
+    }
     noop = service.run("sync", registered.repository)
     noop_execution = cast(dict[str, object], noop["execution"])
     assert noop_execution["noop"] is True
+    assert set(noop_execution["stage_timings_ms"]) == {"snapshot_load_ms"}
     assert len(transport.writes) == writes_after_rebuild
     assert len(embedding_texts) == embeddings_after_rebuild
 
     source.write_text("value = 2\n")
     changed_plan = service.run("plan", registered.repository)
     assert changed_plan["mode"] == "incremental"
+    assert set(changed_plan["stage_timings_ms"]) == {
+        "snapshot_load_ms", "previous_documents_load_ms", "canonical_delta_index_ms",
+    }
     assert len(transport.writes) == writes_after_rebuild
     changed = service.run("sync", registered.repository)
     assert changed["mode"] == "incremental"
+    assert set(changed["execution"]["stage_timings_ms"]) == {
+        "snapshot_load_ms", "previous_documents_load_ms",
+        "canonical_delta_index_ms", "persistence_call_ms",
+    }
     changed_execution = cast(dict[str, object], changed["execution"])
     changed_telemetry = cast(dict[str, object], changed_execution["telemetry"])
     assert (

@@ -117,13 +117,20 @@ def test_registered_lifecycle_initial_noop_incremental_rebuild(workspace, tmp_pa
     assert first["mode"] == "initial"
     assert first["currentness"] == "absent"
     assert first["planned_mutations"]["upsert_documents"] == 2
-    assert first == invoke("plan")["result"]
+    repeated_first = invoke("plan")["result"]
+    assert {key: value for key, value in first.items() if key != "stage_timings_ms"} == {
+        key: value for key, value in repeated_first.items() if key != "stage_timings_ms"
+    }
+    assert first["stage_timings_ms"]["canonical_full_index_ms"] >= 0
     assert tree_bytes(tmp_path) == before
     assert backend.post_calls == []
     assert invoke("sync", success=False)["error"]["category"] == "snapshot_missing"
     assert backend.post_calls == []
     rebuilt = invoke("rebuild")["result"]
     assert rebuilt["execution"]["snapshot"]["revision"] == registered["revision"]
+    assert set(rebuilt["execution"]["stage_timings_ms"]) == {
+        "canonical_full_index_ms", "persistence_call_ms",
+    }
     assert invoke("status")["result"]["currentness"] == "current"
     backend.post_calls.clear()
     noop_plan = invoke("plan")["result"]

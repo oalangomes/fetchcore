@@ -415,20 +415,40 @@ def test_registered_application_lifecycle(tmp_path: Path, monkeypatch: pytest.Mo
         backend="opensearch",
         backend_settings={"index": "fetchcore-test"},
     )
-    assert service.run("plan", registered.repository)["mode"] == "initial"
+    initial_plan = service.run("plan", registered.repository)
+    assert initial_plan["mode"] == "initial"
+    assert "canonical_full_index_ms" in initial_plan["stage_timings_ms"]
+    assert "persistence_call_ms" not in initial_plan["stage_timings_ms"]
     assert transport.writes == []
     assert service.run("status", registered.repository)["currentness"] == "absent"
     assert transport.writes == []
-    assert service.run("rebuild", registered.repository)["execution"]["snapshot"]["revision"]
+    rebuilt = service.run("rebuild", registered.repository)
+    assert rebuilt["execution"]["snapshot"]["revision"]
+    assert set(rebuilt["execution"]["stage_timings_ms"]) == {
+        "canonical_full_index_ms", "persistence_call_ms",
+    }
     assert service.run("status", registered.repository)["currentness"] == "current"
     writes = len(transport.writes)
-    assert service.run("plan", registered.repository)["mode"] == "noop"
-    assert service.run("sync", registered.repository)["execution"]["noop"] is True
+    noop_plan = service.run("plan", registered.repository)
+    assert noop_plan["mode"] == "noop"
+    assert "previous_documents_load_ms" in noop_plan["stage_timings_ms"]
+    assert "canonical_delta_index_ms" in noop_plan["stage_timings_ms"]
+    noop_sync = service.run("sync", registered.repository)["execution"]
+    assert noop_sync["noop"] is True
+    assert set(noop_sync["stage_timings_ms"]) == {"snapshot_load_ms"}
     assert len(transport.writes) == writes
     (workspace / "file.py").write_text("value = 2\n")
     assert service.run("status", registered.repository)["currentness"] == "unknown"
-    assert service.run("plan", registered.repository)["mode"] == "incremental"
+    changed_plan = service.run("plan", registered.repository)
+    assert changed_plan["mode"] == "incremental"
+    assert set(changed_plan["stage_timings_ms"]) == {
+        "snapshot_load_ms", "previous_documents_load_ms", "canonical_delta_index_ms",
+    }
     dirty = service.run("sync", registered.repository)
+    assert set(dirty["execution"]["stage_timings_ms"]) == {
+        "snapshot_load_ms", "previous_documents_load_ms",
+        "canonical_delta_index_ms", "persistence_call_ms",
+    }
     assert dirty["mode"] == "incremental"
     writes = len(transport.writes)
     assert service.run("plan", registered.repository)["mode"] == "noop"
