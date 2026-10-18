@@ -13,7 +13,7 @@ from fetchcore.adapters.retrieval.solr.document_incremental import (
 from fetchcore.adapters.retrieval.solr.incremental import RepositorySyncOutcome
 from fetchcore.adapters.retrieval.solr.index_contract import snapshot_indexing_fingerprint
 from fetchcore.repository.indexing import KnowledgeDocument, RepositoryIndexResult
-from fetchcore.telemetry import IndexSyncTelemetry
+from fetchcore.telemetry import IndexSyncTelemetry, elapsed_ms
 from fetchcore.adapters.retrieval.solr.backend import (
     SolrIndexSnapshot,
     SolrIndexStore,
@@ -34,8 +34,10 @@ class TargetedGitAwareSolrSynchronizer(DocumentAwareGitSolrSynchronizer):
     def sync(self, workspace: Path) -> RepositorySyncOutcome:
         """Synchronize repository state while preserving persistent index contracts."""
         repository = self.indexer.resolve_repository_identity(workspace)
+        stage_started = self.timer()
         try:
             snapshot = self.store.load_snapshot(repository)
+            stage_timings_ms = {"snapshot_load_ms": elapsed_ms(stage_started, self.timer())}
         except KnowledgeSearchError as exc:
             if exc.category not in {
                 "snapshot_missing",
@@ -76,7 +78,9 @@ class TargetedGitAwareSolrSynchronizer(DocumentAwareGitSolrSynchronizer):
             and snapshot.revision == plan.current_revision
             and (current_branch is None or snapshot.branch == current_branch)
         ):
-            return _noop_outcome(snapshot, plan, indexing_duration_ms=0)
+            return _noop_outcome(
+                snapshot, plan, indexing_duration_ms=0, stage_timings_ms=stage_timings_ms,
+            )
 
         if lexical_view_of_vector_snapshot:
             return self._full_rebuild_outcome(
@@ -85,7 +89,11 @@ class TargetedGitAwareSolrSynchronizer(DocumentAwareGitSolrSynchronizer):
                 reason="vector_snapshot_requires_embedding_configuration",
             )
 
+        stage_started = self.timer()
         previous = self.store.load_documents(snapshot.repository)
+        stage_timings_ms["previous_documents_load_ms"] = elapsed_ms(
+            stage_started, self.timer(),
+        )
         indexing_started = self.timer()
         if plan.mode == "git-delta":
             delta_result = self._index_delta(workspace, previous, plan)
@@ -103,6 +111,7 @@ class TargetedGitAwareSolrSynchronizer(DocumentAwareGitSolrSynchronizer):
                 category="snapshot_revision_mismatch",
             )
         indexing_duration_ms = max(0, round((self.timer() - indexing_started) * 1_000))
+        stage_timings_ms["canonical_delta_index_ms"] = indexing_duration_ms
 
         if (
             plan.mode == "git-delta"
@@ -114,8 +123,10 @@ class TargetedGitAwareSolrSynchronizer(DocumentAwareGitSolrSynchronizer):
                 snapshot,
                 plan,
                 indexing_duration_ms=indexing_duration_ms,
+                stage_timings_ms=stage_timings_ms,
             )
 
+        stage_started = self.timer()
         if plan.mode == "git-delta" and self.store.embedding_provider is None:
             storage = targeted_incremental_sync(
                 self.store,
@@ -128,10 +139,12 @@ class TargetedGitAwareSolrSynchronizer(DocumentAwareGitSolrSynchronizer):
             # restore persisted raw vectors without depending on the embedding
             # provider that may have caused the failed mutation.
             storage = self.store.incremental_sync(result)
+        stage_timings_ms["persistence_call_ms"] = elapsed_ms(stage_started, self.timer())
         return RepositorySyncOutcome(
             storage=storage,
             discovery=plan,
             indexing_duration_ms=indexing_duration_ms,
+            stage_timings_ms=stage_timings_ms,
         )
 
 
@@ -140,6 +153,7 @@ def _noop_outcome(
     plan: object,
     *,
     indexing_duration_ms: int,
+    stage_timings_ms: dict[str, int] | None = None,
 ) -> RepositorySyncOutcome:
     from fetchcore.repository.incremental import GitDeltaPlan
 
@@ -167,6 +181,7 @@ def _noop_outcome(
         discovery=discovery,
         indexing_duration_ms=indexing_duration_ms,
         noop=True,
+        stage_timings_ms=stage_timings_ms,
     )
 
 
