@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from collections.abc import Callable
+import time
 
 from fetchcore.adapters.retrieval.qdrant.backend import (
     QdrantVectorIndexStore,
@@ -18,7 +20,7 @@ from fetchcore.repository.incremental import (
 )
 from fetchcore.repository.indexing import KnowledgeDocument, RepositoryIndexResult
 from fetchcore.retrieval.contracts import KnowledgeSearchError
-from fetchcore.telemetry import IndexSyncTelemetry
+from fetchcore.telemetry import IndexStageTelemetry, IndexSyncTelemetry, elapsed_ms
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,7 @@ class QdrantObservation:
     snapshot: QdrantVectorSnapshot | None = None
     schema_compatible: bool = True
     projection_compatible: bool | None = None
+    snapshot_load_ms: int | None = None
 
 
 class QdrantOperationalIndex:
@@ -38,7 +41,10 @@ class QdrantOperationalIndex:
         self,
         store: QdrantVectorIndexStore,
         runtime: RepositoryIndexRuntimeView,
+        *,
+        timer: Callable[[], float] = time.monotonic,
     ) -> None:
+        self.timer = timer
         self.store = store
         self.runtime = runtime
         self.store.repository = runtime.repository
@@ -59,8 +65,10 @@ class QdrantOperationalIndex:
                 )
             raise
 
+        started = self.timer()
         try:
             snapshot = self.store.load_snapshot(self.runtime.repository)
+            snapshot_load_ms = elapsed_ms(started, self.timer())
         except KnowledgeSearchError as exc:
             if exc.category == "snapshot_missing":
                 return QdrantObservation("initial", "absent", "snapshot_missing")
@@ -116,6 +124,7 @@ class QdrantOperationalIndex:
             "up_to_date" if clean else plan.reason,
             snapshot,
             projection_compatible=True,
+            snapshot_load_ms=snapshot_load_ms,
         )
 
     def run(self, operation: str) -> dict[str, object]:
@@ -123,6 +132,9 @@ class QdrantOperationalIndex:
             raise ValueError("Unsupported indexing operation")
         observation = self.observe()
         snapshot = observation.snapshot
+        stage_timings_ms: dict[str, int] = {}
+        if observation.snapshot_load_ms is not None:
+            stage_timings_ms["snapshot_load_ms"] = observation.snapshot_load_ms
         result: dict[str, object] = {
             "indexed_revision": None if snapshot is None else snapshot.revision,
             "mode": observation.mode,
@@ -141,8 +153,16 @@ class QdrantOperationalIndex:
         if operation == "plan":
             if observation.mode == "rebuild_required":
                 return result
+            started = self.timer()
             previous = self._load_previous(snapshot)
+            if snapshot is not None:
+                stage_timings_ms["previous_documents_load_ms"] = elapsed_ms(
+                    started, self.timer(),
+                )
+            started = self.timer()
             indexed, discovery = self._index_changed(previous, snapshot)
+            phase = "canonical_full_index_ms" if snapshot is None else "canonical_delta_index_ms"
+            stage_timings_ms[phase] = elapsed_ms(started, self.timer())
             changes = indexed.changes
             same = (
                 not (changes.added or changes.updated or changes.removed)
@@ -159,7 +179,10 @@ class QdrantOperationalIndex:
                 result.update(mode="noop", currentness="current", reason="canonical_noop")
             elif snapshot is not None:
                 result.update(mode="incremental", currentness="stale")
-            result["discovery"] = _discovery(discovery, include_timings=False)
+            result["discovery"] = _discovery(discovery, include_timings=True)
+            result["stage_timings_ms"] = IndexStageTelemetry.from_mapping(
+                stage_timings_ms,
+            ).to_mapping()
             result["planned_mutations"] = {
                 "added": len(changes.added),
                 "updated": len(changes.updated),
@@ -200,21 +223,34 @@ class QdrantOperationalIndex:
                 )
                 noop = True
             else:
+                started = self.timer()
                 previous = self._load_previous(snapshot)
+                stage_timings_ms["previous_documents_load_ms"] = elapsed_ms(
+                    started, self.timer(),
+                )
+                started = self.timer()
                 indexed, discovery = self._index_changed(previous, snapshot, discovery)
+                stage_timings_ms["canonical_delta_index_ms"] = elapsed_ms(
+                    started, self.timer(),
+                )
                 if indexed.repository != snapshot.repository:
                     raise KnowledgeSearchError(
                         "Qdrant repository binding changed",
                         category="snapshot_revision_mismatch",
                     )
+                started = self.timer()
                 storage = self.store.incremental_sync(
                     indexed,
                     expected_snapshot=snapshot,
                 )
+                stage_timings_ms["persistence_call_ms"] = elapsed_ms(started, self.timer())
                 noop = storage.mode == "noop"
                 result["indexing_telemetry"] = indexed.telemetry.to_mapping()
             execution = _execution_result(storage)
             execution["noop"] = noop
+            execution["stage_timings_ms"] = IndexStageTelemetry.from_mapping(
+                stage_timings_ms,
+            ).to_mapping()
             execution["discovery"] = _discovery(discovery, include_timings=True)
             result["execution"] = execution
             result["discovery"] = _discovery(discovery, include_timings=True)
@@ -223,9 +259,17 @@ class QdrantOperationalIndex:
             result["previous_currentness"] = result.pop("currentness")
             return result
 
+        started = self.timer()
         indexed = self.runtime.indexer.index(self.runtime.workspace)
+        stage_timings_ms["canonical_full_index_ms"] = elapsed_ms(started, self.timer())
+        started = self.timer()
         storage = self.store.full_rebuild(indexed)
-        result["execution"] = _execution_result(storage)
+        stage_timings_ms["persistence_call_ms"] = elapsed_ms(started, self.timer())
+        execution = _execution_result(storage)
+        execution["stage_timings_ms"] = IndexStageTelemetry.from_mapping(
+            stage_timings_ms,
+        ).to_mapping()
+        result["execution"] = execution
         result["indexing_telemetry"] = indexed.telemetry.to_mapping()
         result["mode"] = "rebuild"
         result["previous_indexed_revision"] = result.pop("indexed_revision")
