@@ -71,7 +71,7 @@ def test_observed_index_stage_timings_roundtrip_and_reject_invented_values():
     ):
         value = fixture(artifact_name)
         result = value["command"]["result"]
-        stages = {"snapshot_load_ms": 3, "previous_documents_load_ms": 25}
+        stages = {"snapshot_load_ms": 3, "canonical_full_index_ms": 25}
         target = result["execution"] if location == "execution" else result
         target["stage_timings_ms"] = stages
         parsed = load_index_artifact(json.dumps(value))
