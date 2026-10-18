@@ -243,6 +243,9 @@ def _validate_measurements(data: dict[str, Any], name: str) -> None:
         "embedding_cache_hits",
     }
     for key, value in data.items():
+        if key == "stage_timings_ms":
+            _validate_stage_timings(value)
+            continue
         if (
             key in counts
             or key.endswith(("_ms", "_count", "_requests", "_vectors"))
