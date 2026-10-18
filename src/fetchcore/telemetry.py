@@ -7,7 +7,7 @@ metrics (whether Ground Truth was recovered).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 
 
@@ -132,7 +132,7 @@ class IndexStageTelemetry:
         }
 
     @classmethod
-    def from_mapping(cls, value: dict[str, object]) -> IndexStageTelemetry:
+    def from_mapping(cls, value: Mapping[str, object]) -> IndexStageTelemetry:
         """Reject unknown or invalid observations; never synthesize zeros."""
         names = cls.__dataclass_fields__
         if not set(value).issubset(names):
