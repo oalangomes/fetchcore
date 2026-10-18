@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from collections.abc import Callable
+import time
 
 from fetchcore.application.index_store import RepositoryIndexRuntimeView
 from fetchcore.repository.indexing import KnowledgeDocument, RepositoryIndexResult
@@ -18,7 +20,7 @@ from fetchcore.repository.incremental import (
 )
 from fetchcore.projection import corpus_checksum
 from fetchcore.retrieval.contracts import KnowledgeSearchError
-from fetchcore.telemetry import IndexSyncTelemetry
+from fetchcore.telemetry import IndexStageTelemetry, IndexSyncTelemetry, elapsed_ms
 
 
 @dataclass(frozen=True)
@@ -29,12 +31,17 @@ class OpenSearchObservation:
     snapshot: OpenSearchIndexSnapshot | None = None
     schema_compatible: bool = True
     projection_compatible: bool | None = None
+    snapshot_load_ms: int | None = None
 
 
 class OpenSearchOperationalIndex:
     """Use canonical indexing and Git currentness with OpenSearch persistence."""
 
-    def __init__(self, store: OpenSearchIndexStore, runtime: RepositoryIndexRuntimeView) -> None:
+    def __init__(
+        self, store: OpenSearchIndexStore, runtime: RepositoryIndexRuntimeView,
+        *, timer: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.timer = timer
         self.store = store
         self.runtime = runtime
         self.store.indexing_fingerprint = runtime.fingerprint
@@ -51,8 +58,10 @@ class OpenSearchOperationalIndex:
                     "rebuild_required", "incompatible", "schema_mismatch", schema_compatible=False
                 )
             raise
+        started = self.timer()
         try:
             snapshot = self.store.load_snapshot(self.runtime.repository)
+            snapshot_load_ms = elapsed_ms(started, self.timer())
         except KnowledgeSearchError as exc:
             if exc.category == "snapshot_missing" and exc.metadata.get("snapshot_count") in (
                 None,
@@ -110,11 +119,15 @@ class OpenSearchOperationalIndex:
             "up_to_date" if clean else plan.reason,
             snapshot,
             projection_compatible=True,
+            snapshot_load_ms=snapshot_load_ms,
         )
 
     def run(self, operation: str) -> dict[str, object]:
         observation = self.observe()
         snapshot = observation.snapshot
+        stage_timings_ms: dict[str, int] = {}
+        if observation.snapshot_load_ms is not None:
+            stage_timings_ms["snapshot_load_ms"] = observation.snapshot_load_ms
         result: dict[str, object] = {
             "indexed_revision": None if snapshot is None else snapshot.revision,
             "mode": observation.mode,
@@ -131,12 +144,18 @@ class OpenSearchOperationalIndex:
         if operation == "plan":
             if observation.mode == "rebuild_required":
                 return result
-            previous = (
-                () if snapshot is None else self.store.load_documents(self.runtime.repository)
-            )
+            previous: tuple[KnowledgeDocument, ...] = ()
             if snapshot is not None:
+                started = self.timer()
+                previous = self.store.load_documents(self.runtime.repository)
                 self._validate_previous(snapshot, previous)
+                stage_timings_ms["previous_documents_load_ms"] = elapsed_ms(
+                    started, self.timer(),
+                )
+            started = self.timer()
             indexed, discovery = self._index_changed(previous, snapshot)
+            phase = "canonical_full_index_ms" if snapshot is None else "canonical_delta_index_ms"
+            stage_timings_ms[phase] = elapsed_ms(started, self.timer())
             result["discovery"] = _discovery(discovery)
             changes = indexed.changes
             same = not (changes.added or changes.updated or changes.removed)
@@ -144,6 +163,9 @@ class OpenSearchOperationalIndex:
                 result.update(mode="noop", currentness="current", reason="canonical_noop")
             elif snapshot is not None:
                 result.update(mode="incremental", currentness="stale")
+            result["stage_timings_ms"] = IndexStageTelemetry.from_mapping(
+                stage_timings_ms,
+            ).to_mapping()
             result["planned_mutations"] = {
                 "added": len(changes.added),
                 "updated": len(changes.updated),
@@ -184,9 +206,17 @@ class OpenSearchOperationalIndex:
                 )
                 noop = True
             else:
+                started = self.timer()
                 previous = self.store.load_documents(self.runtime.repository)
                 self._validate_previous(snapshot, previous)
+                stage_timings_ms["previous_documents_load_ms"] = elapsed_ms(
+                    started, self.timer(),
+                )
+                started = self.timer()
                 indexed, discovery = self._index_changed(previous, snapshot, discovery)
+                stage_timings_ms["canonical_delta_index_ms"] = elapsed_ms(
+                    started, self.timer(),
+                )
                 if indexed.repository != snapshot.repository:
                     raise KnowledgeSearchError(
                         "OpenSearch repository binding changed",
@@ -212,10 +242,15 @@ class OpenSearchOperationalIndex:
                     )
                     noop = True
                 else:
+                    started = self.timer()
                     storage = self.store.incremental_sync(indexed, expected_snapshot=snapshot)
+                    stage_timings_ms["persistence_call_ms"] = elapsed_ms(started, self.timer())
                     noop = False
             execution = _execution_result(storage)
             execution["noop"] = noop
+            execution["stage_timings_ms"] = IndexStageTelemetry.from_mapping(
+                stage_timings_ms,
+            ).to_mapping()
             result["execution"] = execution
             result["discovery"] = _discovery(discovery)
             result["mode"] = "noop" if noop else "incremental"
@@ -224,9 +259,16 @@ class OpenSearchOperationalIndex:
             return result
         if operation == "rebuild":
             # Explicitly requested generation creation permits a mapping change.
+            started = self.timer()
             indexed = self.runtime.indexer.index(self.runtime.workspace)
+            stage_timings_ms["canonical_full_index_ms"] = elapsed_ms(started, self.timer())
+            started = self.timer()
             storage = self.store.full_rebuild(indexed)
+            stage_timings_ms["persistence_call_ms"] = elapsed_ms(started, self.timer())
             result["execution"] = _execution_result(storage)
+            result["execution"]["stage_timings_ms"] = IndexStageTelemetry.from_mapping(
+                stage_timings_ms,
+            ).to_mapping()
             result["mode"] = "rebuild"
             result["previous_indexed_revision"] = result.pop("indexed_revision")
             result["previous_currentness"] = result.pop("currentness")
