@@ -4,6 +4,7 @@ import pytest
 
 from fetchcore.search import KnowledgeSearchResponse
 from fetchcore.telemetry import (
+    IndexStageTelemetry,
     IndexSyncTelemetry,
     RetrievalStageTelemetry,
     RetrievalTelemetry,
@@ -78,3 +79,33 @@ def test_index_sync_telemetry_reports_embedding_throughput() -> None:
     assert payload["embedding_throughput_vectors_per_second"] == 20.0
     assert payload["backend_writes"] == 10
     assert payload["backend_deletes"] == 2
+
+
+def test_index_stages_preserve_only_measured_phases_and_roundtrip() -> None:
+    stages = IndexStageTelemetry(
+        snapshot_load_ms=0,
+        previous_documents_load_ms=27_819,
+        canonical_delta_index_ms=915,
+    )
+    assert stages.to_mapping() == {
+        "snapshot_load_ms": 0,
+        "previous_documents_load_ms": 27_819,
+        "canonical_delta_index_ms": 915,
+    }
+    assert IndexStageTelemetry.from_mapping(stages.to_mapping()) == stages
+    assert IndexStageTelemetry(canonical_full_index_ms=3).to_mapping() == {
+        "canonical_full_index_ms": 3,
+    }
+
+
+@pytest.mark.parametrize("value", [None, True, -1, 1.5, "17", float("nan")])
+def test_index_stages_reject_unmeasured_or_invalid_fake_durations(value: object) -> None:
+    with pytest.raises(ValueError, match="Invalid indexing stage"):
+        IndexStageTelemetry.from_mapping({"snapshot_load_ms": value})
+
+
+def test_index_stages_reject_unknown_metrics_without_silently_dropping_them() -> None:
+    with pytest.raises(ValueError, match="Unknown indexing stage"):
+        IndexStageTelemetry.from_mapping({"backend_magic_ms": 2})
+    with pytest.raises(ValueError, match="Invalid indexing stage"):
+        IndexStageTelemetry(snapshot_load_ms=-1)
