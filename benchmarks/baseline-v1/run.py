@@ -858,12 +858,17 @@ def _allocate_run_output_dir(output_root: Path) -> tuple[str, Path]:
     output_root.mkdir(parents=True, exist_ok=True)
     prefix = "V0."
     observed_versions: list[int] = []
-    for entry in output_root.iterdir():
-        if not entry.is_dir() or not entry.name.startswith(prefix):
+    # Runs live outside the frozen catalog. Reserve published version numbers
+    # too so a clean machine never silently starts another V0.1.
+    for catalog in {output_root, ARTIFACTS_DIR.resolve()}:
+        if not catalog.is_dir():
             continue
-        suffix = entry.name[len(prefix) :]
-        if suffix.isdigit():
-            observed_versions.append(int(suffix))
+        for entry in catalog.iterdir():
+            if not entry.is_dir() or not entry.name.startswith(prefix):
+                continue
+            suffix = entry.name[len(prefix) :]
+            if suffix.isdigit():
+                observed_versions.append(int(suffix))
 
     version_number = max(observed_versions, default=0) + 1
     while True:
