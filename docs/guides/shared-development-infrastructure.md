@@ -75,6 +75,16 @@ Omitted backends retain their managed defaults; an unavailable endpoint fails ex
 
 Host-process and Docker URLs are different configurations. A host process can use
 published loopback ports; containers use service DNS on the correct network.
+For Ollama, resolve the operator runtime first: `FETCHCORE_CONFIG` selects the
+operator YAML, `FETCHCORE_OLLAMA_URL` overrides its URL, and `OLLAMA_URL` is the
+legacy environment fallback. The runtime loader records the winning source.
+`shared_infra.py` defaults to `host.docker.internal:11434` for Docker callers;
+when running in WSL, pass the verified WSL-reachable URL through `--ollama-url`.
+Do not assume that WSL loopback reaches the Windows Ollama service. Confirm
+`/api/tags` lists the required model and `/api/embed` returns the configured
+dimension before dense indexing. Record the chosen URL and its configuration
+source; an unreachable or mismatched provider blocks the operation rather than
+triggering an endpoint fallback. This tool never creates an Ollama instance.
 `shared_infra.py app` starts only API, MCP and web after backend service readiness,
 using `infra/compose/shared-app.yml` and the already created network. It never
 prepares a logical resource. One `fetchcore-lab` serves authorized DEV and BENCH
