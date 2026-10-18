@@ -220,8 +220,8 @@ def _validate_stage_timings(value: object) -> None:
     stages = _object(value, "stage_timings_ms")
     if not set(stages).issubset(STAGE_TIMING_FIELDS):
         raise ValueError("Unknown indexing stage measurement")
-    for key, value in stages.items():
-        if type(value) is not int or value < 0:
+    for key, milliseconds in stages.items():
+        if type(milliseconds) is not int or milliseconds < 0:
             raise ValueError("Invalid indexing stage duration: " + key)
 
 
