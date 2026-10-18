@@ -48,6 +48,42 @@ beforeEach(() => {
 })
 
 describe('Search Lab', () => {
+  it('offers a simple search with advanced settings collapsed and a stable default envelope', async () => {
+    mount()
+    await screen.findByLabelText('Repositório autorizado')
+    expect(screen.getByRole('button', { name: 'Opções avançadas de busca' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByLabelText('Search scope mode')).not.toBeInTheDocument()
+    expect(screen.getByText(/Nenhum filtro avançado declarado/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Canonical query'), { target: { value: 'find eligibility' } })
+    fireEvent.click(screen.getByTestId('run-search'))
+    await screen.findByText('Trecho recuperado')
+    const body = JSON.parse(String((vi.mocked(globalThis.fetch).mock.calls.find(call => call[0] === '/api/search')?.[1] as RequestInit).body))
+    expect(body.mode).toBe('discovery')
+    expect(body.limit).toBe(10)
+    expect(body.intent.canonical_query).toBe('find eligibility')
+    expect(body.intent.anchors).toEqual([])
+  })
+
+  it('preserves required constraints while collapsed and never silently broadens the payload', async () => {
+    mount()
+    await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: 'Opções avançadas de busca' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ Anchor' }))
+    fireEvent.change(screen.getByLabelText('Valor do anchor 1'), { target: { value: 'src/eligibility.py' } })
+    fireEvent.change(screen.getByLabelText('Search scope mode'), { target: { value: 'targeted' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ocultar opções avançadas' }))
+    expect(screen.getByText(/1 referências obrigatórias/)).toBeInTheDocument()
+    expect(screen.getByText(/escopo targeted/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Valor do anchor 1')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('run-search'))
+    await screen.findByText('Trecho recuperado')
+    const body = JSON.parse(String((vi.mocked(globalThis.fetch).mock.calls.find(call => call[0] === '/api/search')?.[1] as RequestInit).body))
+    expect(body.mode).toBe('targeted')
+    expect(body.intent.anchors).toEqual([{ type: 'anchor', kind: 'path', value: 'src/eligibility.py', origin: 'caller' }])
+    fireEvent.click(screen.getByRole('button', { name: 'Opções avançadas de busca' }))
+    expect(screen.getByLabelText('Valor do anchor 1')).toHaveValue('src/eligibility.py')
+  })
+
   it('sends edited SearchIntent and inspects a live result', async () => {
     mount()
     await screen.findByLabelText('Repositório autorizado')
@@ -65,6 +101,7 @@ describe('Search Lab', () => {
   it('rejects broken JSON on the client instead of silently broadening a query', async () => {
     mount()
     await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: 'Opções avançadas de busca' }))
     fireEvent.click(screen.getByRole('button', { name: 'JSON completo' }))
     fireEvent.change(screen.getByLabelText('SearchIntent JSON'), { target: { value: '{ invalid' } })
     fireEvent.click(screen.getByTestId('run-search'))
@@ -77,6 +114,7 @@ describe('Query builder and authorized target selectors', () => {
   it('retains advanced JSON semantics when editing through the form', async () => {
     mount()
     await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: 'Opções avançadas de busca' }))
     fireEvent.click(screen.getByRole('button', { name: 'JSON completo' }))
     const intent = {
       schema_version: 2, canonical_query: 'find source',
@@ -104,6 +142,7 @@ describe('Query builder and authorized target selectors', () => {
   it('generates typed required anchors and selects an operator-bound collection', async () => {
     mount()
     await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: 'Opções avançadas de busca' }))
     await screen.findByRole('option', { name: /other-collection/ })
     await waitFor(() => expect(screen.getByLabelText('Coleção / índice configurado')).toBeEnabled())
     fireEvent.change(screen.getByLabelText('Coleção / índice configurado'), { target: { value: 'alternate' } })
@@ -129,6 +168,7 @@ describe('Query builder and authorized target selectors', () => {
   it('blocks switching to form with malformed JSON while preserving the draft', async () => {
     mount()
     await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: 'Opções avançadas de busca' }))
     fireEvent.click(screen.getByRole('button', { name: 'JSON completo' }))
     fireEvent.change(screen.getByLabelText('SearchIntent JSON'), { target: { value: '{ broken' } })
     fireEvent.click(screen.getByRole('button', { name: 'Formulário' }))
@@ -141,6 +181,7 @@ describe('On-demand operational readiness', () => {
   it('does not probe until explicitly requested and never conflates healthy service with ready index', async () => {
     mount()
     await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: 'Opções avançadas de busca' }))
     expect(await screen.findByText('Ambiente: OPERATIONAL')).toBeInTheDocument()
     expect(screen.getByText('Busca: não verificada')).toBeInTheDocument()
     expect(screen.getByText(/operational indexing is unavailable/)).toBeInTheDocument()
@@ -157,6 +198,7 @@ describe('Advanced SearchIntent v2 builder', () => {
   it('edits nested AND/OR branches without flattening their JSON or losing origin', async () => {
     mount()
     await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: 'Opções avançadas de busca' }))
     fireEvent.click(screen.getByRole('button', { name: '+ AND · todas as condições' }))
     fireEvent.change(screen.getByLabelText('Termo branch 0'), { target: { value: 'eligibility_validator' } })
     fireEvent.click(screen.getByRole('button', { name: '+ OR · qualquer alternativa' }))
@@ -187,6 +229,7 @@ describe('Advanced SearchIntent v2 builder', () => {
   it('requires explicit preset action and refuses OR broadening on merge', async () => {
     mount()
     await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: 'Opções avançadas de busca' }))
     fireEvent.change(screen.getByLabelText('Preset'), { target: { value: 'behavior' } })
     fireEvent.click(screen.getByRole('button', { name: 'Aplicar preset' }))
     expect(screen.getByLabelText('Editor visual de expression')).toBeInTheDocument()
@@ -202,6 +245,7 @@ describe('Advanced SearchIntent v2 builder', () => {
   it('requires explicit import confirmation and blocks incompatible schema without overwriting edits', async () => {
     mount()
     await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: 'Opções avançadas de busca' }))
     fireEvent.click(screen.getByRole('button', { name: 'Importar JSON' }))
     fireEvent.change(screen.getByLabelText(/Cole JSON completo para importar/), {
       target: { value: '{"schema_version":8,"canonical_query":"bad"}' },
@@ -230,6 +274,7 @@ describe('Advanced SearchIntent v2 builder', () => {
   it('blocks submission of blank expression nodes without silent fallback', async () => {
     mount()
     await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: 'Opções avançadas de busca' }))
     fireEvent.click(screen.getByRole('button', { name: '+ OR · qualquer alternativa' }))
     fireEvent.click(screen.getByTestId('run-search'))
     expect(await screen.findByRole('alert')).toHaveTextContent('Term')
@@ -244,6 +289,7 @@ describe('Advanced SearchIntent v2 builder', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
     mount()
     await screen.findByLabelText('Repositório autorizado')
+    fireEvent.click(screen.getByRole('button', { name: 'Opções avançadas de busca' }))
     fireEvent.click(screen.getByRole('button', { name: 'Exportar JSON' }))
     expect(createObjectURL).toHaveBeenCalledOnce()
     expect(createObjectURL.mock.calls[0][0]).toBeInstanceOf(Blob)
