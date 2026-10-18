@@ -29,6 +29,7 @@ class RepositorySyncOutcome:
     discovery: GitDeltaPlan
     indexing_duration_ms: int
     noop: bool = False
+    stage_timings_ms: dict[str, int] | None = None
 
     def to_mapping(self) -> dict[str, object]:
         """Return the combined discovery and persistence synchronization evidence."""
@@ -36,6 +37,8 @@ class RepositorySyncOutcome:
         payload["discovery"] = self.discovery.to_mapping()
         payload["indexing_duration_ms"] = self.indexing_duration_ms
         payload["noop"] = self.noop
+        if self.stage_timings_ms is not None:
+            payload["stage_timings_ms"] = self.stage_timings_ms
         return payload
 
 
