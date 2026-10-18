@@ -71,7 +71,7 @@ export function SearchIntentForm({ intentText, onChange }: {
     update('signals', signalRows.map((row, i) => i === index ? { ...row, ...patch } : row))
   }
   return <div className="space-y-5" aria-label="Construtor visual de SearchIntent">
-    <p className="text-xs leading-5 text-muted">Campos declarativos do SearchIntent v2. Alterar um campo preserva os demais, inclusive expressões avançadas e sinais existentes.</p>
+    <p className="text-xs leading-5 text-muted">Refine a intenção somente quando necessário. Estes campos descrevem a busca: nenhum sinal, score ou anchor prova sozinho que uma evidência atende à necessidade do consumidor. Ao editar, o JSON v2 original e as expressões estruturadas são preservados.</p>
     <div className="grid gap-4 sm:grid-cols-2">
       {(['exact_terms', 'semantic_terms', 'hints'] as const).map(field =>
         <div key={field}>
@@ -85,6 +85,7 @@ export function SearchIntentForm({ intentText, onChange }: {
               update(field, list(value))
             }}
             placeholder="Um termo por linha" rows={3}/>
+          <p className="mt-1 text-xs text-muted">{{ exact_terms: 'Termos literais declarados; não prometem correspondência exata em todo backend.', semantic_terms: 'Conceitos declarados; não ligam dense ou embeddings automaticamente.', hints: 'Pistas opcionais para descoberta; não são restrições obrigatórias.' }[field]}</p>
         </div>,
       )}
     </div>
@@ -92,7 +93,7 @@ export function SearchIntentForm({ intentText, onChange }: {
     <div className="space-y-3 rounded-xl border border-line bg-background/20 p-3">
       <div className="flex items-center justify-between gap-3">
         <div><strong className="text-xs text-white">Required anchors</strong>
-          <p className="mt-1 text-xs text-muted">Caminhos, símbolos, identifiers, routes e source refs explícitos — não são hints.</p></div>
+          <p className="mt-1 text-xs text-muted">Referências explícitas (arquivo, símbolo, identifier, rota ou source ref). São exigências declaradas, não prova automática de satisfação nem filtro garantido em todo backend.</p></div>
         <button type="button" className="switch-button border border-line" onClick={() => update('anchors', [
           ...anchorRows, { type: 'anchor', kind: 'path', value: '', origin: 'caller' },
         ])}>+ Anchor</button>
@@ -113,7 +114,7 @@ export function SearchIntentForm({ intentText, onChange }: {
 
     <div className="space-y-3 rounded-xl border border-line bg-background/20 p-3">
       <div className="flex items-center justify-between gap-3">
-        <div><strong className="text-xs text-white">Expansions</strong><p className="mt-1 text-xs text-muted">Ampliações declaradas, sem substituir a query canônica.</p></div>
+        <div><strong className="text-xs text-white">Expansions</strong><p className="mt-1 text-xs text-muted">Termos adicionais explícitos para ampliar descoberta (recall). Não substituem a query canônica nem criam OR silenciosamente.</p></div>
         <button type="button" className="switch-button border border-line" onClick={() => update('expansions', [...expansionRows, { value: '', origin: 'caller' }])}>+ Expansion</button>
       </div>
       {expansionRows.map((row, index) =>
@@ -128,7 +129,7 @@ export function SearchIntentForm({ intentText, onChange }: {
 
     <div className="space-y-3 rounded-xl border border-line bg-background/20 p-3">
       <div className="flex items-center justify-between gap-3">
-        <div><strong className="text-xs text-white">Query signals</strong><p className="mt-1 text-xs text-muted">Classificação tipada; `required` é uma propriedade declarada, não satisfação.</p></div>
+        <div><strong className="text-xs text-white">Query signals</strong><p className="mt-1 text-xs text-muted">Sinais tipados para informar intenção, classificação e provenance. A opção required não comprova correspondência ou satisfação.</p></div>
         <button type="button" className="switch-button border border-line" onClick={() => update('signals', [...signalRows, newSignal()])}>+ Signal</button>
       </div>
       {signalRows.map((row, index) =>
@@ -153,6 +154,7 @@ export function SearchIntentForm({ intentText, onChange }: {
         </div>,
       )}
     </div>
+    <p className="text-xs leading-5 text-muted">AND exige todas as condições declaradas na expressão; OR representa alternativas. Veja o payload final antes de executar. O resultado só atesta matches reportados, não satisfação semântica.</p>
     <ExpressionEditor
       expression={(intent.expression ?? null) as Expression | null}
       occupiedNodes={anchorRows.length + expansionRows.length}
