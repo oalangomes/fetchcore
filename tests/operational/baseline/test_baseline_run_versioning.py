@@ -243,9 +243,9 @@ def test_new_output_root_skips_versions_already_published(
     published = tmp_path / "catalog"
     (published / "V0.4").mkdir(parents=True)
     (tmp_path / "runs" / "V0.3").mkdir(parents=True)
-    monkeypatch.setattr(RUN_MODULE, "ARTIFACTS_DIR", published)
+    monkeypatch.setattr(BENCH_MODULE, "PUBLISHED_ARTIFACTS", published)
 
-    version, directory = RUN_MODULE._allocate_run_output_dir(tmp_path / "runs")
+    version, directory = BENCH_MODULE.allocate_bench_run_directory(tmp_path / "runs")
     assert version == "V0.5"
     assert directory.name == "V0.5"
     assert (published / "V0.4").is_dir()
