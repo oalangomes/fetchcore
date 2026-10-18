@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import glob
 import json
 import os
 import subprocess
@@ -16,6 +17,8 @@ from fetchcore.repository.indexing import (
     DocumentUpdate,
     KnowledgeDocument,
     RemovedKnowledgeDocument,
+    RepositoryIndexer,
+    RepositoryIndexResult,
     RepositoryIndexChanges,
     RepositoryIndexTelemetry,
 )
@@ -56,6 +59,59 @@ class GitDeltaPlan:
         if self.git_diff_duration_ms is not None:
             payload["git_diff_duration_ms"] = self.git_diff_duration_ms
         return payload
+
+
+def index_repository_delta(
+    indexer: RepositoryIndexer,
+    workspace: Path,
+    previous: tuple[KnowledgeDocument, ...],
+    plan: GitDeltaPlan,
+) -> RepositoryIndexResult | None:
+    """Index only safely changed paths, preserving the complete canonical corpus."""
+    raw_policy = getattr(indexer, "requires_full_scan_for_paths", None)
+    if callable(raw_policy) and raw_policy(plan.changed_paths, plan.removed_paths):
+        return None
+    affected_paths = set(plan.changed_paths) | set(plan.removed_paths)
+    eligible_changed = tuple(
+        path for path in plan.changed_paths
+        if _eligible_path(path, indexer.config.include_patterns, indexer.config.exclude_patterns)
+    )
+    if len(eligible_changed) > indexer.config.max_files:
+        return None
+    delta_documents: tuple[KnowledgeDocument, ...] = ()
+    delta_telemetry: RepositoryIndexTelemetry | None = None
+    if eligible_changed:
+        delta_config = replace(
+            indexer.config,
+            include_patterns=tuple(glob.escape(path) for path in eligible_changed),
+        )
+        delta_indexer = RepositoryIndexer(
+            delta_config,
+            symbol_extractors=indexer.symbol_extractors,
+            clock=indexer.clock,
+            timer=indexer.timer,
+        )
+        delta = delta_indexer.index(workspace)
+        if not delta.changes.removal_detection_complete or not delta.telemetry.scan_traversal_complete:
+            return None
+        delta_documents = delta.documents
+        delta_telemetry = delta.telemetry
+    retained = tuple(item for item in previous if item.path not in affected_paths)
+    documents = tuple(sorted(
+        (*retained, *delta_documents),
+        key=lambda item: (item.path, item.line_start, item.line_end, item.chunk_ref),
+    ))
+    changes = _diff_documents(documents, previous)
+    repository = indexer.config.repository or indexer.resolve_repository_identity(workspace)
+    revision = plan.current_revision or indexer.config.revision or "unknown"
+    telemetry = _delta_telemetry(
+        repository=repository, revision=revision, documents=documents,
+        changes=changes, delta=delta_telemetry,
+    )
+    return RepositoryIndexResult(
+        repository=repository, branch=indexer.config.branch, revision=revision,
+        documents=documents, changes=changes, telemetry=telemetry,
+    )
 
 
 class GitRepositoryChangeDetector:

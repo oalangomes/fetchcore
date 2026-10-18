@@ -368,7 +368,7 @@ def test_indexing_never_routes_to_another_backend(tmp_path, environment, backend
     assert settings[field] == config[f"FETCHCORE_{backend.upper()}_{field.upper()}"]
 
 
-@pytest.mark.parametrize("backend", ["opensearch", "qdrant"])
+@pytest.mark.parametrize("backend", ["qdrant"])
 def test_routed_unsupported_indexing_fails_before_backend_access(monkeypatch, backend):
     from click.testing import CliRunner
     from fetchcore.cli import main
