@@ -63,6 +63,8 @@ def _source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         _write(source / f"{arm['id']}.json", {
             "protocol": PUBLISH.PROTOCOL, "arm": arm, "corpus": CORPUS,
             "ground_truth_fingerprint": "sha256:ground-truth",
+            "metrics_fingerprint": "sha256:metrics",
+            "config_fingerprint": f"sha256:{arm['id']}",
             "config": {"identity": {"fetchcore_revision": REVISION}},
             "observations": [{}, {}, {}, {}],
             "aggregate": {"run_count": 4},
@@ -73,6 +75,13 @@ def _source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     })
     _write(source / "context-yield.json", {
         "protocol": "fetchcore.baseline-v1-context-yield",
+        "source_protocol": PUBLISH.PROTOCOL,
+        "ground_truth_fingerprint": "sha256:ground-truth",
+        "source_metrics_fingerprint": "sha256:metrics",
+        "arms": [
+            {"arm": arm, "source_config_fingerprint": f"sha256:{arm['id']}"}
+            for arm in ARMS
+        ],
     })
     (source / "README.md").write_text("# Report\n", encoding="utf-8")
     (source / "context-yield.md").write_text("# Context\n", encoding="utf-8")
