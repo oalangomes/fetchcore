@@ -147,6 +147,17 @@ def test_rejects_tampered_revision_and_context_yield(
         PUBLISH.validate(source)
 
 
+def test_rejects_stale_context_yield(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source(tmp_path, monkeypatch)
+    derived = json.loads((source / "context-yield.json").read_text())
+    derived["arms"][0]["source_config_fingerprint"] = "sha256:stale"
+    _write(source / "context-yield.json", derived)
+    with pytest.raises(PUBLISH.PublicationError, match="context-yield does not match"):
+        PUBLISH.validate(source)
+
+
 def test_rejects_symlinked_measurements(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
