@@ -214,6 +214,32 @@ function ResultList({ response, selected, onSelect }: {
   </div>
 }
 
+const scopeHelp: Record<SearchPayload['mode'], string> = {
+  discovery: 'Exploração ampla: descubra candidatos relacionados à intenção declarada.',
+  targeted: 'Busca direcionada: use quando tiver identificadores, caminhos ou referências técnicas.',
+  repository_source: 'Foco em evidências de fonte do repositório; não significa ler o arquivo automaticamente.',
+}
+
+function describeActiveIntent(raw: string): string[] {
+  try {
+    const intent = parseIntent(raw)
+    const summary: string[] = []
+    const parts: [string, string][] = [
+      ['exact_terms', 'termos literais'], ['semantic_terms', 'termos semânticos'],
+      ['anchors', 'referências obrigatórias'], ['hints', 'pistas opcionais'],
+      ['expansions', 'expansões'], ['signals', 'sinais tipados'],
+    ]
+    for (const [key, title] of parts) {
+      const values = intent[key]
+      if (Array.isArray(values) && values.length) summary.push(`${values.length} ${title}`)
+    }
+    if (intent.expression) summary.push('expressão AND/OR')
+    return summary
+  } catch {
+    return ['SearchIntent incompleto ou inválido: revise no editor avançado']
+  }
+}
+
 export function App() {
   const config = useQuery({ queryKey: ['config'], queryFn: getConfig, retry: false })
   const [query, setQuery] = useState(initialQuery)
@@ -225,6 +251,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activePanel, setActivePanel] = useState<'results' | 'telemetry'>('results')
   const [intentView, setIntentView] = useState<'form' | 'json'>('form')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [editorEpoch, setEditorEpoch] = useState(0)
   const [presetId, setPresetId] = useState(intentPresets[0].id)
   const [presetAction, setPresetAction] = useState<'replace' | 'merge'>('replace')
@@ -447,6 +474,10 @@ export function App() {
   } catch (error) {
     previewError = error instanceof Error ? error.message : 'SearchIntent inválido'
   }
+  const activeConstraints = describeActiveIntent(intentText)
+  if (mode !== 'discovery') activeConstraints.push('escopo ' + mode)
+  if (limit !== 10) activeConstraints.push('limite ' + limit)
+  if (knowledgeTypes.trim()) activeConstraints.push('tipos de conhecimento')
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="mb-10 flex items-center gap-3">
@@ -481,7 +512,14 @@ export function App() {
           <div>
             <div className="eyebrow mb-2 flex items-center gap-2"><Sparkles size={13}/> RETRIEVAL WORKBENCH <span className="h-px w-9 bg-line"/></div>
             <h1 className="text-3xl font-bold tracking-tight text-white lg:text-4xl">Search <span className="text-accent">Lab</span><span className="ml-3 align-middle text-base font-normal text-muted">/ Playground</span></h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Investigue buscas reais, inspecione evidências tipadas e entenda o comportamento do backend — sem inferir autoridade.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Encontre evidências técnicas primeiro. Refine a intenção e investigue a execução apenas quando precisar — resultados são candidatos, não provas de satisfação.</p>
+            <nav className="mt-4 flex flex-wrap gap-2 text-xs" aria-label="Ir para ferramentas do Lab">
+              <a className="switch-button border border-line" href="#search-form">1. Buscar</a>
+              <a className="switch-button border border-line" href="#search-results">2. Inspecionar resultados</a>
+              <a className="switch-button border border-line" href="#coverage-map">Cobertura de evidências</a>
+              <a className="switch-button border border-line" href="#indexing-timeline">Indexação</a>
+              <a className="switch-button border border-line" href="#comparison-lab">Comparar buscas</a>
+            </nav>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             {Object.entries(activeTarget?.capabilities ?? {}).filter(([,enabled]) => enabled).map(([capability]) => <span key={capability} className="chip chip-teal"><Check size={11}/>{capability}</span>)}
@@ -491,8 +529,8 @@ export function App() {
 
         <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
           <div className="min-w-0 self-start">
-          <section className="panel" aria-label="Editor de busca">
-            <div className="panel-heading"><div className="flex items-center gap-2"><TerminalSquare size={17} className="text-accent"/><h2>Configurar busca</h2></div><span className="chip">SearchIntent v2</span></div>
+          <section className="panel" id="search-form" aria-label="Editor de busca">
+            <div className="panel-heading"><div className="flex items-center gap-2"><TerminalSquare size={17} className="text-accent"/><h2>1. Buscar evidências</h2></div><span className="chip">SearchIntent v2</span></div>
             <form className="space-y-5 p-5" onSubmit={submit}>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
@@ -512,8 +550,9 @@ export function App() {
                   </select>
                 </div>
               </div>
-              <p className="text-xs leading-5 text-muted">Opções autorizadas pelo operador. A seleção troca o destino, não realiza busca federada.</p>
+              <p className="text-xs leading-5 text-muted">Onde pesquisar: escolha uma fonte autorizada e um índice já configurado. Isso não cria collections nem combina repositórios.</p>
               <div>
+                <h3 className="mb-2 text-sm font-semibold text-white">O que você quer encontrar?</h3>
                 <label className="field-label" htmlFor="canonical-query">Canonical query</label>
                 <textarea
                   id="canonical-query" rows={3} value={query}
@@ -521,8 +560,21 @@ export function App() {
                   placeholder="Descreva a evidência técnica que deseja recuperar"
                   className="field-input min-h-[92px] resize-y"
                 />
-                <p className="mt-2 text-xs text-muted">Texto da intenção declarada. Anchors e boolean expressions são editáveis abaixo.</p>
+                <p className="mt-2 text-xs text-muted">Descreva um comportamento, função ou regra do repositório. Para uma primeira busca, basta escrever aqui e clicar em Executar busca.</p>
               </div>
+              <section className="rounded-lg border border-line bg-background/20 p-3" aria-label="Refinamento de busca">
+                <button type="button" className="flex w-full items-center justify-between gap-3 text-left text-sm font-semibold text-white"
+                  aria-expanded={advancedOpen} aria-controls="advanced-search-settings"
+                  onClick={() => setAdvancedOpen(value => !value)}>
+                  <span>{advancedOpen ? 'Ocultar opções avançadas' : 'Opções avançadas de busca'}</span>
+                  <ChevronRight size={16} className={advancedOpen ? 'rotate-90' : ''}/>
+                </button>
+                <p className="mt-2 text-xs leading-5 text-muted">Filtros estruturados, escopo, presets e diagnósticos. Tudo é opcional para uma busca simples.</p>
+                <p className="mt-2 text-xs leading-5 text-muted" aria-live="polite">
+                  {activeConstraints.length ? 'Ativos: ' + activeConstraints.join(' · ') : 'Nenhum filtro avançado declarado. Escopo: discovery · 10 resultados.'}
+                </p>
+              </section>
+              {advancedOpen && <div id="advanced-search-settings" className="space-y-5">
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="field-label" htmlFor="search-mode">Search scope mode</label>
                   <select id="search-mode" className="field-input" value={mode} onChange={event => setMode(event.target.value as SearchPayload['mode'])}>
@@ -533,9 +585,11 @@ export function App() {
                   <input id="search-limit" className="field-input" type="number" min={1} max={100} value={limit} onChange={event => setLimit(Number(event.target.value))}/>
                 </div>
               </div>
+              <p className="text-xs leading-5 text-muted">Escopo: {scopeHelp[mode]} Esse seletor não ativa dense, hybrid ou um backend diferente. Limite controla apenas o máximo retornado (1–100).</p>
               <div><label className="field-label" htmlFor="knowledge-types">Knowledge types <span className="font-normal normal-case text-muted">(opcional)</span></label>
                 <input id="knowledge-types" value={knowledgeTypes} onChange={event => setKnowledgeTypes(event.target.value)} className="field-input" placeholder="code, documentation (separados por vírgula)"/>
               </div>
+              <p className="text-xs text-muted">Tipos de conhecimento: informe apenas valores tipados que o seu destino suporta; campo vazio não restringe por tipo.</p>
               <section className="space-y-3 rounded-xl border border-line bg-background/20 p-3" aria-label="Presets versionados">
                 <div>
                   <strong className="text-xs text-white">Presets de SearchIntent v2</strong>
@@ -641,6 +695,7 @@ export function App() {
                   : <pre className="json-output mt-2" aria-label="JSON final da busca">{JSON.stringify(finalPayload, null, 2)}</pre>)}
                 <p className="mt-2 text-xs text-muted">Scope e budget não são SearchIntent. Payload exibido inclui o destino autorizado, modo, limite e knowledge types.</p>
               </section>
+              </div>}
               {parseError && <div className="error-panel" role="alert">{parseError}</div>}
               {run.isError && <div className="error-panel" role="alert"><strong>Busca falhou:</strong> {run.error.message}</div>}
               <Button type="submit" className="w-full py-3" disabled={!config.data || run.isPending} data-testid="run-search">
@@ -663,7 +718,7 @@ export function App() {
               <Metric label="Examinados" value={response?.telemetry?.candidates_examined ?? '—'} hint="telemetry"/>
               <Metric label="Backend" value={response?.backend ?? activeTarget?.backend ?? '—'} hint="destino autorizado"/>
             </div>
-            <section className="panel min-h-[640px]">
+            <section className="panel min-h-[640px]" id="search-results">
               <div className="panel-heading flex-wrap gap-3">
                 <div className="flex items-center gap-2"><ListFilter size={17} className="text-accent"/><h2>Explorar evidências</h2>{response && <span className="chip">{response.status}</span>}</div>
                 <div className="flex items-center gap-1 rounded-lg border border-line bg-background/50 p-1">
@@ -692,12 +747,12 @@ export function App() {
             </section>}
           </div>
         </div>
-        {response && run.variables && <EvidenceCoverageMap key={runs[0]?.id ?? 'active'}
+        <div id="coverage-map">{response && run.variables && <EvidenceCoverageMap key={runs[0]?.id ?? 'active'}
           request={run.variables} response={response}
           repository={resultTarget?.repository ?? ''}
-          revision={resultTarget?.revision ?? null} onInspect={inspectCurrentCoverageCandidate}/>}
-        <IndexingTimeline/>
-        <ComparisonLab runs={runs} onInspect={inspectRecordedCandidate}/>
+          revision={resultTarget?.revision ?? null} onInspect={inspectCurrentCoverageCandidate}/>}</div>
+        <div id="indexing-timeline"><IndexingTimeline/></div>
+        <div id="comparison-lab"><ComparisonLab runs={runs} onInspect={inspectRecordedCandidate}/></div>
         <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-line py-5 text-xs text-muted"><span>FetchCore · Repositories → evidence</span><span>Local-only tooling · Sem agentes · Sem authority</span></footer>
       </div>
     </main>
