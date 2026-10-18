@@ -65,6 +65,29 @@ def test_invalid_artifacts_rejected(mutate):
         load_index_artifact(json.dumps(value))
 
 
+def test_observed_index_stage_timings_roundtrip_and_reject_invented_values():
+    for artifact_name, location in (
+        ("incremental", "execution"), ("delta-plan", "plan"),
+    ):
+        value = fixture(artifact_name)
+        result = value["command"]["result"]
+        stages = {"snapshot_load_ms": 3, "previous_documents_load_ms": 25}
+        target = result["execution"] if location == "execution" else result
+        target["stage_timings_ms"] = stages
+        parsed = load_index_artifact(json.dumps(value))
+        observed = parsed.command["result"]
+        actual = observed["execution"] if location == "execution" else observed
+        assert actual["stage_timings_ms"] == stages
+
+        for invalid in (-1, True, None, 1.5):
+            target["stage_timings_ms"] = {"snapshot_load_ms": invalid}
+            with pytest.raises(ValueError):
+                load_index_artifact(json.dumps(value))
+        target["stage_timings_ms"] = {"invented_time_ms": 0}
+        with pytest.raises(ValueError):
+            load_index_artifact(json.dumps(value))
+
+
 def test_duplicate_keys_and_size_rejected():
     with pytest.raises(ValueError, match="Duplicate"):
         load_index_artifact('{"schema_version":1,"schema_version":1}')

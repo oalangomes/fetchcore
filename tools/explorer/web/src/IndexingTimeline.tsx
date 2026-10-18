@@ -16,6 +16,7 @@ function Run({ artifact }: { artifact: IndexArtifact }) {
   const discovery = object(result.discovery ?? execution.discovery)
   const telemetry = object(execution.telemetry)
   const canonical = object(result.indexing_telemetry)
+  const stages = object(result.stage_timings_ms ?? execution.stage_timings_ms)
   function download() {
     const url = URL.createObjectURL(new Blob([exportArtifact(artifact)], { type: 'application/json' }))
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'index-run.json'; anchor.click()
@@ -32,6 +33,9 @@ function Run({ artifact }: { artifact: IndexArtifact }) {
     <h4 className="my-3 text-sm">Scan / descoberta canônica</h4>
     <Facts data={discovery} fields={['mode', 'reason', 'changed_paths', 'removed_paths', 'discovery_duration_ms', 'git_diff_duration_ms', 'changed_path_values', 'removed_path_values']}/>
     <p className="my-2 text-xs text-muted">Full scan não implica substituição completa da projeção persistida.</p>
+    <h4 className="my-3 text-sm">Duração observada por etapa (ms)</h4>
+    <Facts data={stages} fields={['snapshot_load_ms', 'previous_documents_load_ms', 'canonical_delta_index_ms', 'persistence_call_ms']}/>
+    <p className="my-2 text-xs text-muted">Etapas ausentes não foram executadas ou medidas. Estes tempos não incluem todo o comando.</p>
     <Facts data={canonical} fields={['files_scanned', 'files_changed', 'chunks_total', 'chunks_changed', 'duration_ms', 'indexing_throughput_chunks_per_second']}/>
     <h4 className="my-3 text-sm">{artifact.command.operation === 'plan' ? 'Mutações planejadas (sem persistência)' : 'Mutações persistidas observadas'}</h4>
     <Facts data={artifact.command.operation === 'plan' ? object(result.planned_mutations) : execution} fields={['mode', 'replace_repository', 'added', 'updated', 'deleted', 'unchanged', 'duration_ms']}/>
