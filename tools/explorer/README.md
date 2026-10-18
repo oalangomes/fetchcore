@@ -14,6 +14,40 @@ An **optional, local-only** retrieval workbench. The core remains headless throu
 - On-demand **operational readiness** view for selected authorized targets (#134): separates backend reachability, schema, snapshot, currentness, fingerprint and embedding readiness from retrieval quality.
 
 
+## Search Lab: straightforward search and advanced investigations (#195)
+
+The initial Search Lab view prioritizes the **authorized repository/index**, the
+**canonical query** and **Executar busca**. No advanced controls are needed to
+run the default discovery request with up to 10 candidates. All results remain
+real backend candidates; ranking and matches are not semantic authority.
+
+**Opções avançadas de busca** is a progressive disclosure, not a second query
+model. It exposes scope (`discovery`, `targeted`, `repository_source`),
+result budget, knowledge type constraints, presets, SearchIntent form/JSON,
+readiness, policy and the final payload. The toggle only hides/shows editor
+controls. It never removes anchors, hints, expansions, signals, nested AND/OR,
+unrecognized-but-valid v2 fields or any explicitly configured parameters.
+The summary of active controls remains visible while collapsed, including a
+notice when the SearchIntent JSON is invalid. Submission still validates the
+**entire original SearchIntent v2** and fails closed.
+
+Scope and retrieval channel are independent: selecting `targeted` does not
+automatically activate dense, hybrid or an embedding provider. The UI explains
+that required anchors are declared constraints, not guaranteed backend filtering
+or evidence satisfaction. Hints are optional, expansions broaden explicitly,
+and `QueryMatchEvidence` remains only observed matching.
+
+Top-of-page navigation links to existing sections: search, results, coverage,
+indexing and comparison. It does not duplicate the panels or change their
+application/service boundaries. Retrieval history remains next to the search
+form and all original advanced JSON tools remain available.
+
+**Manual UX smoke:** run a query with the advanced controls closed; reopen,
+declare an anchor and targeted scope, collapse and verify the active summary;
+run and inspect the captured payload; then change between the form and complete
+JSON without loss. Invalid JSON/blank AND/OR nodes must still block submission.
+Unit and real-Solr browser tests cover the simple and advanced entry paths.
+
 ## Evidence Coverage Map (#127)
 
 The Explorer adds a **read-only bounded intent-to-evidence matrix** for the
