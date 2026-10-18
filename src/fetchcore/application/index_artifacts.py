@@ -13,13 +13,11 @@ import re
 from typing import Any
 from collections.abc import Mapping
 
+from fetchcore.telemetry import IndexStageTelemetry
+
 MAX_ARTIFACT_BYTES = 2_000_000
 OPERATIONS = {"status", "plan", "sync", "rebuild"}
 MODES = {"initial", "incremental", "noop", "rebuild", "rebuild_required"}
-STAGE_TIMING_FIELDS = frozenset({
-    "snapshot_load_ms", "previous_documents_load_ms",
-    "canonical_delta_index_ms", "persistence_call_ms",
-})
 
 
 def _text(value: object, name: str) -> str:
@@ -217,12 +215,7 @@ def _validate_result(value: object, repository: str, operation: str) -> None:
 
 
 def _validate_stage_timings(value: object) -> None:
-    stages = _object(value, "stage_timings_ms")
-    if not set(stages).issubset(STAGE_TIMING_FIELDS):
-        raise ValueError("Unknown indexing stage measurement")
-    for key, milliseconds in stages.items():
-        if type(milliseconds) is not int or milliseconds < 0:
-            raise ValueError("Invalid indexing stage duration: " + key)
+    IndexStageTelemetry.from_mapping(_object(value, "stage_timings_ms"))
 
 
 def _validate_measurements(data: dict[str, Any], name: str) -> None:
