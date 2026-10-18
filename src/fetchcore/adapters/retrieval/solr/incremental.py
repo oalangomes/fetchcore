@@ -19,6 +19,7 @@ from fetchcore.adapters.retrieval.solr.index_contract import (
     bind_indexing_contract_store, snapshot_indexing_fingerprint,
 )
 from fetchcore.adapters.retrieval.solr.backend import SolrIndexStore, SolrIndexSyncResult
+from fetchcore.telemetry import IndexStageTelemetry
 
 
 @dataclass(frozen=True)
@@ -38,7 +39,9 @@ class RepositorySyncOutcome:
         payload["indexing_duration_ms"] = self.indexing_duration_ms
         payload["noop"] = self.noop
         if self.stage_timings_ms is not None:
-            payload["stage_timings_ms"] = self.stage_timings_ms
+            payload["stage_timings_ms"] = IndexStageTelemetry.from_mapping(
+                self.stage_timings_ms,
+            ).to_mapping()
         return payload
 
 
