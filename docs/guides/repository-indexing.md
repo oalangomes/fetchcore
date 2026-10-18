@@ -202,22 +202,32 @@ clock, are measured in milliseconds, and are exposed in `plan`, `status`, and
 Git delta could be established (including full-scan fallback); an absent field is
 **unmeasured**, not zero. These numbers are not total plan/sync durations, and
 they do not include canonical document comparison, materialization, or persistence.
-On Solr, an existing compatible snapshot additionally exposes optional observed
-`stage_timings_ms` measurements under the registered `plan` result and the `sync`
-`execution` result. `snapshot_load_ms` times the snapshot read within the plan or
-sync step; `previous_documents_load_ms` times loading and decoding the existing
-canonical corpus; `canonical_delta_index_ms` times the chosen incremental delta
-indexing/compare path (including an explicit full-scan fallback when required);
-`persistence_call_ms` times the adapter call to persist and validate mutations
-and is available only for a sync that actually writes. The existing
-`execution.duration_ms` remains the backend adapter's own measurement and need not
-match `persistence_call_ms`. These are monotonic *observations* and are not
-predictions or complete CLI/Actions step durations: materialization, repeated
-status/readiness checks, separate Solr calls and process startup are outside the
-reported spans. No-op only includes the snapshot read; absent stages are
-unmeasured/not applicable, **not** elapsed zero. Full-scan/rebuild-only branches
-are not claimed as fully instrumented. Incompatible projection states still fail
-closed. This diagnostic does not change index/projection/serializer fingerprints.
+Solr, OpenSearch and Qdrant use the same backend-neutral `IndexStageTelemetry`
+contract. The optional `stage_timings_ms` fields appear in registered
+`plan.stage_timings_ms` and `sync/rebuild.execution.stage_timings_ms`:
+
+- `snapshot_load_ms`: successful snapshot read during the operation's observation;
+- `previous_documents_load_ms`: reading and decoding the previous canonical
+  documents (OpenSearch/Qdrant also include snapshot-corpus validation);
+- `canonical_delta_index_ms`: incremental canonical delta/full-scan fallback;
+- `canonical_full_index_ms`: initial/full-rebuild canonical extraction;
+- `persistence_call_ms`: adapter persistence *call* including its validation and
+  possible no-op result (not proof of backend writes).
+
+Measurements are monotonic integer milliseconds and **only present when that
+phase executed and completed successfully**. Zero is a rounded measurement,
+not an invented unmeasured duration; absent means not executed or unmeasured.
+A same-revision fast no-op generally observes a snapshot but skips loading the
+entire corpus and skips persistence. The existing `execution.duration_ms` is
+the adapter's storage measurement; it need not equal `persistence_call_ms`.
+These phase spans do **not** add up to the total CLI/CI time: repository
+materialization, schema validation, repeated status/readiness checks, Git delta
+(which has its own measured discovery fields), startup and result rendering
+remain outside the measured stages. Qdrant and OpenSearch may validate the
+active corpus as part of the previous-document stage; their persistence
+strategies and embedding costs differ. Failure paths never publish success
+telemetry; incompatible projection states remain fail-closed. This
+observability change does not affect index/projection/serializer fingerprints.
 
 Full-scan discovery placeholder counts are omitted rather than presented as
 measured zero changes. With an absent snapshot, prior document
