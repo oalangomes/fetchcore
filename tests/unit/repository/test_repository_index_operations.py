@@ -394,8 +394,16 @@ def test_dry_run_calculates_targeted_update_without_solr_writes(tmp_path: Path) 
         )
     )
 
-    payload = dry_run_repository_index(store, runtime, detector=detector)  # type: ignore[arg-type]
+    ticks = iter((0.0, 0.1, 0.2, 0.3, 0.4, 0.5))
+    payload = dry_run_repository_index(  # type: ignore[arg-type]
+        store, runtime, detector=detector, timer=lambda: next(ticks),
+    )
     mutations = payload["planned_mutations"]
+    assert payload["stage_timings_ms"] == {
+        "snapshot_load_ms": 100,
+        "previous_documents_load_ms": 100,
+        "canonical_delta_index_ms": 100,
+    }
 
     assert payload["mode"] == "incremental"
     assert payload["noop"] is False
