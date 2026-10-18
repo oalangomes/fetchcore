@@ -81,6 +81,8 @@ def validate(source: Path) -> tuple[str, tuple[str, ...], dict[str, str]]:
         raise PublicationError("missing metrics report reference")
 
     ground_truth_fingerprints: set[str] = set()
+    metrics_fingerprints: set[str] = set()
+    config_fingerprints: dict[str, str] = {}
     for arm, name in zip(arms, expected_names):
         item = _object(_artifact(source, name))
         if (item.get("protocol") != PROTOCOL or item.get("arm") != arm
@@ -99,8 +101,14 @@ def validate(source: Path) -> tuple[str, tuple[str, ...], dict[str, str]]:
         if not isinstance(fingerprint, str) or not fingerprint:
             raise PublicationError(f"missing Ground Truth fingerprint: {name}")
         ground_truth_fingerprints.add(fingerprint)
-    if len(ground_truth_fingerprints) != 1:
-        raise PublicationError("retrieval artifacts disagree on Ground Truth fingerprint")
+        metrics = item.get("metrics_fingerprint")
+        config_fingerprint = item.get("config_fingerprint")
+        if not isinstance(metrics, str) or not metrics or not isinstance(config_fingerprint, str) or not config_fingerprint:
+            raise PublicationError(f"missing metric/config fingerprint: {name}")
+        metrics_fingerprints.add(metrics)
+        config_fingerprints[arm["id"]] = config_fingerprint
+    if len(ground_truth_fingerprints) != 1 or len(metrics_fingerprints) != 1:
+        raise PublicationError("retrieval artifacts disagree on frozen fingerprints")
 
     bench = _object(_artifact(source, "bench-run.json"))
     config = bench.get("config")
@@ -126,8 +134,18 @@ def validate(source: Path) -> tuple[str, tuple[str, ...], dict[str, str]]:
             raise PublicationError("incomplete or incompatible indexing telemetry")
 
     context_yield = _object(_artifact(source, "context-yield.json"))
-    if context_yield.get("protocol") != "fetchcore.baseline-v1-context-yield":
-        raise PublicationError("invalid derived context-yield protocol")
+    if (context_yield.get("protocol") != "fetchcore.baseline-v1-context-yield"
+            or context_yield.get("source_protocol") != PROTOCOL
+            or context_yield.get("ground_truth_fingerprint") not in ground_truth_fingerprints
+            or context_yield.get("source_metrics_fingerprint") not in metrics_fingerprints):
+        raise PublicationError("invalid derived context-yield protocol or fingerprints")
+    derived_arms = context_yield.get("arms")
+    if (not isinstance(derived_arms, list) or len(derived_arms) != len(arms)
+            or any(not isinstance(item, dict)
+                   or item.get("arm") != arm
+                   or item.get("source_config_fingerprint") != config_fingerprints[arm["id"]]
+                   for item, arm in zip(derived_arms, arms))):
+        raise PublicationError("context-yield does not match ranked retrieval artifacts")
 
     for name in names:
         _artifact(source, name)
@@ -138,8 +156,8 @@ def validate(source: Path) -> tuple[str, tuple[str, ...], dict[str, str]]:
 
 def publish(source: Path, published: Path, *, write: bool = False) -> Path:
     version, names, hashes = validate(source)
-    if source.resolve() == published.resolve() / version:
-        raise PublicationError("source is already inside the published artifact directory")
+    if published.resolve() in source.resolve().parents:
+        raise PublicationError("source must be outside the published artifact directory")
     destination = published / version
     if destination.exists() or destination.is_symlink():
         raise PublicationError(f"published version already exists: {destination}")
