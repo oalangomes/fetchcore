@@ -126,8 +126,15 @@ def test_registered_lifecycle_initial_noop_incremental_rebuild(workspace, tmp_pa
     assert rebuilt["execution"]["snapshot"]["revision"] == registered["revision"]
     assert invoke("status")["result"]["currentness"] == "current"
     backend.post_calls.clear()
-    assert invoke("plan")["result"]["mode"] == "noop"
-    assert invoke("sync")["result"]["mode"] == "noop"
+    noop_plan = invoke("plan")["result"]
+    noop_sync = invoke("sync")["result"]
+    assert noop_plan["mode"] == "noop"
+    assert noop_sync["mode"] == "noop"
+    assert noop_plan["stage_timings_ms"]["snapshot_load_ms"] >= 0
+    assert noop_sync["execution"]["stage_timings_ms"]["snapshot_load_ms"] >= 0
+    assert "previous_documents_load_ms" not in noop_plan["stage_timings_ms"]
+    assert "previous_documents_load_ms" not in noop_sync["execution"]["stage_timings_ms"]
+    assert "persistence_call_ms" not in noop_sync["execution"]["stage_timings_ms"]
     assert backend.post_calls == []
 
     (workspace / "a.py").write_text("def first():\n    return 42\n")
@@ -142,11 +149,20 @@ def test_registered_lifecycle_initial_noop_incremental_rebuild(workspace, tmp_pa
     assert plan["discovery"]["removed_path_values"] == ["removed.py"]
     assert plan["planned_mutations"]["updated"] == 1
     assert plan["planned_mutations"]["deleted"] == 1
+    for stage in ("snapshot_load_ms", "previous_documents_load_ms",
+                  "canonical_delta_index_ms"):
+        assert isinstance(plan["stage_timings_ms"][stage], int)
+        assert plan["stage_timings_ms"][stage] >= 0
+    assert "persistence_call_ms" not in plan["stage_timings_ms"]
     assert backend.post_calls == []
     outcome = invoke("sync")["result"]
     assert outcome["mode"] == "incremental"
     assert outcome["execution"]["snapshot"]["revision"] == revision
     assert outcome["execution"]["updated"] == 1
+    for stage in ("snapshot_load_ms", "previous_documents_load_ms",
+                  "canonical_delta_index_ms", "persistence_call_ms"):
+        assert isinstance(outcome["execution"]["stage_timings_ms"][stage], int)
+        assert outcome["execution"]["stage_timings_ms"][stage] >= 0
     assert all("rollback" not in payload for _, payload, _ in backend.post_calls)
     assert invoke("status")["result"]["currentness"] == "current"
     canonical = copy.deepcopy(backend.documents)

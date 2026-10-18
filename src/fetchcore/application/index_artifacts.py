@@ -16,6 +16,10 @@ from collections.abc import Mapping
 MAX_ARTIFACT_BYTES = 2_000_000
 OPERATIONS = {"status", "plan", "sync", "rebuild"}
 MODES = {"initial", "incremental", "noop", "rebuild", "rebuild_required"}
+STAGE_TIMING_FIELDS = frozenset({
+    "snapshot_load_ms", "previous_documents_load_ms",
+    "canonical_delta_index_ms", "persistence_call_ms",
+})
 
 
 def _text(value: object, name: str) -> str:
@@ -128,6 +132,8 @@ def _validate_result(value: object, repository: str, operation: str) -> None:
     for key in ("target_revision", "indexed_revision", "previous_indexed_revision"):
         if result.get(key) is not None:
             _text(result[key], key)
+    if "stage_timings_ms" in result:
+        _validate_stage_timings(result["stage_timings_ms"])
     executing = operation in {"sync", "rebuild"}
     if executing != ("execution" in result):
         raise ValueError("Execution evidence does not match operation")
@@ -150,6 +156,8 @@ def _validate_result(value: object, repository: str, operation: str) -> None:
             _validate_measurements(_object(result[section], section), section)
     if executing:
         execution = result["execution"]
+        if "stage_timings_ms" in execution:
+            _validate_stage_timings(execution["stage_timings_ms"])
         if execution.get("mode") not in ("incremental", "full_rebuild"):
             raise ValueError("Unsupported persisted projection mutation mode")
         for key in ("added", "updated", "deleted", "unchanged", "duration_ms"):
@@ -208,6 +216,15 @@ def _validate_result(value: object, repository: str, operation: str) -> None:
         raise ValueError("Planned mutations require plan operation")
 
 
+def _validate_stage_timings(value: object) -> None:
+    stages = _object(value, "stage_timings_ms")
+    if not set(stages).issubset(STAGE_TIMING_FIELDS):
+        raise ValueError("Unknown indexing stage measurement")
+    for key, milliseconds in stages.items():
+        if type(milliseconds) is not int or milliseconds < 0:
+            raise ValueError("Invalid indexing stage duration: " + key)
+
+
 def _validate_measurements(data: dict[str, Any], name: str) -> None:
     counts = {
         "added",
@@ -226,6 +243,9 @@ def _validate_measurements(data: dict[str, Any], name: str) -> None:
         "embedding_cache_hits",
     }
     for key, value in data.items():
+        if key == "stage_timings_ms":
+            _validate_stage_timings(value)
+            continue
         if (
             key in counts
             or key.endswith(("_ms", "_count", "_requests", "_vectors"))

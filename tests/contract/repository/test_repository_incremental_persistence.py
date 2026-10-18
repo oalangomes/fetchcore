@@ -124,10 +124,12 @@ def test_noop_uses_snapshot_count_without_loading_corpus(tmp_path: Path) -> None
                 current_revision=current_revision,
             )
 
+    ticks = iter((0.0, 0.2))
     synchronizer = TargetedGitAwareSolrSynchronizer(
         cast(SolrIndexStore, SnapshotOnlyStore()),
         _indexer(),
         detector=NoopDetector(),  # type: ignore[arg-type]
+        timer=lambda: next(ticks),
     )
 
     outcome = synchronizer.sync(tmp_path)
@@ -135,6 +137,7 @@ def test_noop_uses_snapshot_count_without_loading_corpus(tmp_path: Path) -> None
     assert outcome.noop is True
     assert outcome.storage.unchanged == 2422
     assert outcome.storage.duration_ms == 0
+    assert outcome.stage_timings_ms == {"snapshot_load_ms": 200}
 
 
 def test_indexing_contract_mismatch_forces_rebuild_before_loading_corpus(
@@ -283,16 +286,23 @@ def test_dirty_path_without_corpus_changes_skips_solr_mutation(tmp_path: Path) -
             )
 
     indexer = _indexer()
+    ticks = iter((0.0, 0.1, 0.2, 0.3, 0.4, 0.6))
     outcome = TargetedGitAwareSolrSynchronizer(
         _store(transport),
         indexer,
         detector=NonCorpusDetector(),  # type: ignore[arg-type]
+        timer=lambda: next(ticks),
     ).sync(tmp_path)
 
     assert outcome.noop is True
     assert outcome.storage.snapshot == snapshot
     assert outcome.storage.duration_ms == 0
     assert outcome.storage.unchanged == len(first.documents)
+    assert outcome.stage_timings_ms == {
+        "snapshot_load_ms": 100,
+        "previous_documents_load_ms": 100,
+        "canonical_delta_index_ms": 200,
+    }
     assert transport.post_calls == []
 
 

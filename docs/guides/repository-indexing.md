@@ -198,6 +198,23 @@ clock, are measured in milliseconds, and are exposed in `plan`, `status`, and
 Git delta could be established (including full-scan fallback); an absent field is
 **unmeasured**, not zero. These numbers are not total plan/sync durations, and
 they do not include canonical document comparison, materialization, or persistence.
+On Solr, an existing compatible snapshot additionally exposes optional observed
+`stage_timings_ms` measurements under the registered `plan` result and the `sync`
+`execution` result. `snapshot_load_ms` times the snapshot read within the plan or
+sync step; `previous_documents_load_ms` times loading and decoding the existing
+canonical corpus; `canonical_delta_index_ms` times the chosen incremental delta
+indexing/compare path (including an explicit full-scan fallback when required);
+`persistence_call_ms` times the adapter call to persist and validate mutations
+and is available only for a sync that actually writes. The existing
+`execution.duration_ms` remains the backend adapter's own measurement and need not
+match `persistence_call_ms`. These are monotonic *observations* and are not
+predictions or complete CLI/Actions step durations: materialization, repeated
+status/readiness checks, separate Solr calls and process startup are outside the
+reported spans. No-op only includes the snapshot read; absent stages are
+unmeasured/not applicable, **not** elapsed zero. Full-scan/rebuild-only branches
+are not claimed as fully instrumented. Incompatible projection states still fail
+closed. This diagnostic does not change index/projection/serializer fingerprints.
+
 Full-scan discovery placeholder counts are omitted rather than presented as
 measured zero changes. With an absent snapshot, prior document
 and delete counts are null because orphan backend records cannot be ruled out.
