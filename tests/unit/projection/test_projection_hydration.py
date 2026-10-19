@@ -236,6 +236,18 @@ def test_projection_reader_rejects_incompatible_fingerprint_with_metadata() -> N
     }
 
 
+def test_projection_reader_requires_rebuild_for_prior_route_contract() -> None:
+    mapping = ProjectionV3Compiler().compile(_document()).to_mapping()
+    mapping["projection_fingerprint"] = (
+        "sha256:cfd4a63f85c8e4034bf17f0f82f08a47c717d52e75a9180ffb1eb6cad719e039"
+    )
+
+    with pytest.raises(ProjectionCompatibilityError) as raised:
+        ProjectionV3CanonicalDocumentReader().read(mapping)
+
+    assert raised.value.metadata["rebuild_required"] is True
+
+
 def test_projection_reader_rejects_corrupt_canonical_payload() -> None:
     mapping = ProjectionV3Compiler().compile(_document()).to_mapping()
     mapping["canonical_payload"] = "{invalid"

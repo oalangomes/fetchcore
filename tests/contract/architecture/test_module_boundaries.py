@@ -270,9 +270,9 @@ def test_top_level_module_import_graph_is_acyclic() -> None:
         visit(module)
 
 
-def test_persisted_identities_preserve_projection_with_explicit_indexing_rebuild() -> None:
+def test_persisted_identities_version_projection_route_semantics() -> None:
     assert projection_contract_fingerprint() == (
-        "sha256:cfd4a63f85c8e4034bf17f0f82f08a47c717d52e75a9180ffb1eb6cad719e039"
+        "sha256:80d19b9400141cd7bb73f7ba7f64de414cd5a896b87c2dc1713959804696cef2"
     )
     assert vector_embedding_serializer_fingerprint(ProjectionEmbeddingMode.PROJECTION_V3) == (
         "sha256:5f859289b8b3a594e924545edb1c3ae6178b77ea22cf3ff224d43c5ec7aeb43a"

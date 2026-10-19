@@ -66,6 +66,9 @@ Each arm declares a backend and supported lexical, dense or hybrid mode.
 Solr and OpenSearch additionally exercise their real exact route lookup on
 API cases with an effective two-result window; Qdrant has no declared targeted
 lookup arm. This acquisition path is scored separately from ranked discovery.
+The runner records the canonical route-path candidate count for each case.
+An exact-ID score can establish unique targeted acquisition only when the path
+has one candidate; repeated methods or requests can make the path ambiguous.
 SourceRecall@K checks the source path; EvidenceRecall@K, MRR and nDCG use the
 exact reviewed canonical evidence ID. API pointers have no proved line span,
 so SpanCoverage and ContextYield are unavailable for API cases. For Markdown
@@ -76,3 +79,10 @@ returned characters and candidates examined are separate measurements.
 Unavailable tokens, cost or time-to-first-candidate appear as `null`, never
 as an invented zero. A completed run is `MEASURED`; promoting it to PASS
 requires reviewed objective thresholds and comparable isolation evidence.
+
+The [first authorized measurement](artifacts/backend-measurement-projection-r3.json.gz)
+completed on projection contract revision 3. Its [result review](../../docs/benchmarks/results/typed-knowledge-retrieval.md)
+records real backend queries and the targeted route failure. Projection contract
+revision 4 repairs the route fields but has only offline validation so far.
+A fresh backend run needs a new approval, namespace and output path. The
+revision-3 resources remain retained for review.

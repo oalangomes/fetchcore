@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
-from typing import Any
+from typing import Any, cast
 
 from fetchcore.adapters.embedding.ollama.provider import OllamaEmbeddingProvider, OllamaEmbeddingSettings
 from fetchcore.adapters.retrieval.opensearch.backend import (
@@ -226,9 +226,31 @@ def _attest(store: Any, *, repository: str, revision: str, expected_documents: t
             "generation": generation}
 
 
+def _targeted_route_analysis(documents: tuple[Any, ...], truth: dict[str, Any],
+                             expected_ids: dict[str, str]) -> dict[str, dict[str, object]]:
+    """Describe whether a route path can identify one canonical document."""
+    compiler = ProjectionV3Compiler()
+    candidate_ids: dict[str, set[str]] = {}
+    for document in documents:
+        record = compiler.compile(document)
+        for route in cast(tuple[str, ...], record.fields["route_paths"]):
+            candidate_ids.setdefault(route, set()).add(document.id)
+    analysis: dict[str, dict[str, object]] = {}
+    for case in truth["acquisition_cases"]:
+        if case["expect"] != "present" or case["kind"] not in {"api_operation", "api_request"}:
+            continue
+        candidates = candidate_ids.get(case["route"].casefold(), set())
+        if expected_ids[case["id"]] not in candidates:
+            raise AssertionError(f"targeted route does not contain reviewed evidence: {case['id']}")
+        analysis[case["id"]] = {"candidate_count": len(candidates),
+                                "exact_id_score_eligible": len(candidates) == 1}
+    return analysis
+
+
 def _query_arms(config: dict[str, Any], *, workspace: Path, truth: dict[str, Any],
                 expected_ids: dict[str, str], resource: str,
-                embedder: RunEmbeddingCache, output: dict[str, object]) -> None:
+                embedder: RunEmbeddingCache, targeted_route_analysis: dict[str, dict[str, object]],
+                output: dict[str, object]) -> None:
     registry = BackendRegistry(providers=EmbeddingProviderRegistry(
         factories={config["embedding"]["provider"]: lambda _embedding, _settings: embedder},
     ))
@@ -281,10 +303,13 @@ def _query_arms(config: dict[str, Any], *, workspace: Path, truth: dict[str, Any
                     raise AssertionError("retrieval returned a different repository")
                 metrics = evaluate(response, case, expected_ids[query["id"]],
                                    k=config["measurement"]["k"])
-                observations.append({"query_id": query["id"], "iteration": repeat + 1,
-                                     "metrics": metrics,
-                                     "ranked_ids": [hit.id for hit in response.results],
-                                     "telemetry": response.telemetry.to_mapping() if response.telemetry else None})
+                observation = {"query_id": query["id"], "iteration": repeat + 1,
+                               "metrics": metrics,
+                               "ranked_ids": [hit.id for hit in response.results],
+                               "telemetry": response.telemetry.to_mapping() if response.telemetry else None}
+                if mode == "targeted":
+                    observation["route_analysis"] = targeted_route_analysis[query["id"]]
+                observations.append(observation)
         output[arm["id"]] = {"backend": backend_name, "mode": mode,
                               "effective_k": 2 if mode == "targeted" else config["measurement"]["k"],
                               "observations": observations,
@@ -294,6 +319,7 @@ def _query_arms(config: dict[str, Any], *, workspace: Path, truth: dict[str, Any
 def run(args: argparse.Namespace) -> dict[str, Any]:
     truth = json.loads(args.ground_truth.read_text(encoding="utf-8"))
     canonical_summary, documents, expected_ids = preflight(args.corpus, args.ground_truth)
+    targeted_route_analysis = _targeted_route_analysis(documents, truth, expected_ids)
     record: dict[str, Any] = {
         "protocol": truth["protocol"], "status": "BLOCKED",
         "product_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
@@ -302,6 +328,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "metrics_sha256": hashlib.sha256((HERE / "metrics.py").read_bytes()).hexdigest(),
         "ground_truth_sha256": canonical_summary["ground_truth_sha256"],
         "canonical": canonical_summary,
+        "targeted_route_analysis": targeted_route_analysis,
         "snapshot_attestation": None, "retrieval": None, "performance": None,
         "reason": "explicit operational authorization and isolated BENCH resources required",
     }
@@ -409,7 +436,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         record["retrieval"] = {}
         _query_arms(config, workspace=args.corpus, truth=truth,
                     expected_ids=expected_ids, resource=resource,
-                    embedder=embedder, output=record["retrieval"])
+                    embedder=embedder, targeted_route_analysis=targeted_route_analysis,
+                    output=record["retrieval"])
         # Source deletion exercises incremental projection after ranking on the full corpus.
         with tempfile.TemporaryDirectory(prefix="typed-knowledge-") as temp:
             copy_root = Path(temp)
