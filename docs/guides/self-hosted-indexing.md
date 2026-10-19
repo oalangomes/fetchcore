@@ -103,7 +103,7 @@ endpoint and the initial lifecycle must be an explicit rebuild:
       embedding_provider: ollama
       embedding_model: embeddinggemma
       embedding_dimensions: 768
-      ollama_url: http://127.0.0.1:11434
+      ollama_url: http://172.21.32.1:11434
 ```
 
 The workflow passes this backend-neutral embedding contract to FetchCore. It

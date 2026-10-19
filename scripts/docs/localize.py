@@ -187,7 +187,7 @@ def translator_from_environment(environ: dict[str, str]) -> ChatTranslator:
 
     if mode == "ollama-local":
         if not endpoint:
-            endpoint = "http://127.0.0.1:11434/v1/chat/completions"
+            endpoint = "http://172.21.32.1:11434/v1/chat/completions"
         parts = urlsplit(endpoint)
         try:
             port = parts.port

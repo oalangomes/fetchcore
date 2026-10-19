@@ -473,7 +473,7 @@ container at `http://host.docker.internal:11434`. `/api/tags` found
 through the FetchCore adapter using that model. No model was downloaded and no
 Ollama service was started.
 
-The WSL host itself could not reach the existing service on `127.0.0.1:11434`;
+The WSL host itself could not reach the existing service on `172.21.32.1:11434`;
 `host.docker.internal` resolved but timed out from WSL. The container path is
 validated; WSL-host processes need an explicitly reachable endpoint via
 `--ollama-url` and must fail rather than silently falling back if none is available.

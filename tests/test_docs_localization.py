@@ -162,7 +162,7 @@ def test_local_ollama_transport_is_explicit_and_loopback_only() -> None:
     env = {
         "FETCHCORE_DOCS_TRANSLATION_PROVIDER": "ollama-local",
         "FETCHCORE_DOCS_TRANSLATION_MODEL": "qwen3.5:9b",
-        "FETCHCORE_DOCS_TRANSLATION_API_URL": "http://127.0.0.1:11434/v1/chat/completions",
+        "FETCHCORE_DOCS_TRANSLATION_API_URL": "http://172.21.32.1:11434/v1/chat/completions",
         "FETCHCORE_DOCS_TRANSLATION_API_KEY": "ambient-cloud-key",
     }
     translator = translator_from_environment(env)
@@ -174,10 +174,10 @@ def test_local_ollama_transport_is_explicit_and_loopback_only() -> None:
     for invalid in (
         "http://192.168.1.9:11434/v1/chat/completions",
         "http://127.0.0.1.evil.example:11434/v1/chat/completions",
-        "https://127.0.0.1:11434/v1/chat/completions",
-        "http://user@127.0.0.1:11434/v1/chat/completions",
-        "http://127.0.0.1:11434/other",
-        "http://127.0.0.1:11434/v1/chat/completions?unsafe=1",
+        "https://172.21.32.1:11434/v1/chat/completions",
+        "http://user@172.21.32.1:11434/v1/chat/completions",
+        "http://172.21.32.1:11434/other",
+        "http://172.21.32.1:11434/v1/chat/completions?unsafe=1",
         "http://127.0.0.1:99999/v1/chat/completions",
     ):
         with pytest.raises(LocalizationError):

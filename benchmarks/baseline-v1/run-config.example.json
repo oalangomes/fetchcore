@@ -15,7 +15,7 @@
     "solr": "http://127.0.0.1:18983/solr",
     "opensearch": "http://127.0.0.1:19200",
     "qdrant": "http://127.0.0.1:16333",
-    "ollama": "http://127.0.0.1:11434"
+    "ollama": "http://172.21.32.1:11434"
   },
   "resources": {
     "solr": "fc-bench-neurotrack_ms-5f6a70bb2b4b3145",

@@ -47,7 +47,7 @@ def test_new_bench_run_config_changes_only_in_memory_manifest(tmp_path: Path) ->
         "endpoints": {"solr": "http://127.0.0.1:18983/solr",
                       "opensearch": "http://127.0.0.1:19200",
                       "qdrant": "http://127.0.0.1:16333",
-                      "ollama": "http://127.0.0.1:11434"},
+                      "ollama": "http://172.21.32.1:11434"},
         "resources": {"solr": resource, "opensearch": resource,
                       "qdrant-vector": resource},
         "embedding": {"provider": "ollama", "model": "embeddinggemma", "dimensions": 768},

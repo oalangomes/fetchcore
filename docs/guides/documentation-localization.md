@@ -71,7 +71,7 @@ The local-only provider is explicitly selected by:
 ```bash
 export FETCHCORE_DOCS_TRANSLATION_PROVIDER=ollama-local
 export FETCHCORE_DOCS_TRANSLATION_MODEL=qwen3.5:9b
-export FETCHCORE_DOCS_TRANSLATION_API_URL=http://127.0.0.1:11434/v1/chat/completions
+export FETCHCORE_DOCS_TRANSLATION_API_URL=http://172.21.32.1:11434/v1/chat/completions
 python scripts/docs/localize.py sync
 python scripts/docs/localize.py check --strict
 python scripts/check_docs.py --include-localizations

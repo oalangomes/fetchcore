@@ -92,11 +92,11 @@ def test_qdrant_legacy_embedding_settings_compose_equivalently() -> None:
     backend = BackendRegistry().create("qdrant-vector")
     assert isinstance(backend, QdrantVectorBackend)
     settings = QdrantVectorSettings.from_mapping(
-        {"embedding_url": "http://127.0.0.1:11434", "embedding_model": "legacy-model"}
+        {"embedding_url": "http://172.21.32.1:11434", "embedding_model": "legacy-model"}
     )
     provider = backend.embedding_factory(settings, EmbeddingConfig(model="legacy-model"))
     assert isinstance(provider, OllamaEmbeddingProvider)
-    assert provider.url == "http://127.0.0.1:11434"
+    assert provider.url == "http://172.21.32.1:11434"
     assert provider.model_id == "legacy-model"
 
     with pytest.raises(KnowledgeSearchError) as captured:
@@ -105,7 +105,7 @@ def test_qdrant_legacy_embedding_settings_compose_equivalently() -> None:
     assert captured.value.metadata["capability"] == "embedding_provider:missing"
 
     isolated = QdrantVectorSettings.from_mapping({
-        "embedding_url": "http://127.0.0.1:11434",
+        "embedding_url": "http://172.21.32.1:11434",
         "timeout_seconds": 5,
     })
     provider = backend.embedding_factory(
@@ -140,7 +140,7 @@ def test_solr_and_opensearch_honor_embedding_transport_controls(
         solr_embedding_provider,
     )
 
-    monkeypatch.setenv("OLLAMA_URL", "http://127.0.0.1:11434")
+    monkeypatch.setenv("OLLAMA_URL", "http://172.21.32.1:11434")
     retrieval = RetrievalConfig.from_mapping(
         {
             "dense": {
@@ -160,7 +160,7 @@ def test_solr_and_opensearch_honor_embedding_transport_controls(
         opensearch_embedding_provider(retrieval),
     ):
         assert isinstance(provider, OllamaEmbeddingProvider)
-        assert provider.url == "http://127.0.0.1:11434"
+        assert provider.url == "http://172.21.32.1:11434"
         assert provider.model_id == "embeddinggemma"
         assert provider.request_batch_size == 7
         assert provider.timeout_seconds == 45.0

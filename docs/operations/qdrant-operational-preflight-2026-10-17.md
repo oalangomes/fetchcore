@@ -30,7 +30,7 @@ embedding service was unavailable.
 
 ## Embedding and host capacity
 
-- Ollama at `127.0.0.1:11434` refused the connection. Provider, model
+- Ollama at `172.21.32.1:11434` refused the connection. Provider, model
   `embeddinggemma`, and 768-dimensional output could not be validated.
 - No model was downloaded, installed, or started.
 - Host capacity at inspection: 19 GiB memory total, approximately 5.8 GiB

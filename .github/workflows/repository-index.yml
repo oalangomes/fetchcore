@@ -117,7 +117,7 @@ on:
         description: Explicit Ollama endpoint; the workflow never downloads a model.
         required: false
         type: string
-        default: http://127.0.0.1:11434
+        default: http://172.21.32.1:11434
       evaluation_gate:
         description: Fail when one or more MCP evaluation scenarios miss expected evidence.
         required: false
@@ -246,7 +246,7 @@ on:
         description: Ollama endpoint; no model is downloaded by this workflow.
         required: false
         type: string
-        default: http://127.0.0.1:11434
+        default: http://172.21.32.1:11434
       evaluation_gate:
         description: Fail when MCP evaluation scenarios miss expected evidence.
         required: false

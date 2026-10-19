@@ -208,7 +208,7 @@ def test_workflow_rejects_deprecated_inputs_with_actionable_error(
         "EMBEDDING_PROVIDER": "ollama",
         "EMBEDDING_MODEL": "embeddinggemma",
         "EMBEDDING_DIMENSIONS": "768",
-        "OLLAMA_URL": "http://127.0.0.1:11434",
+        "OLLAMA_URL": "http://172.21.32.1:11434",
         "SOLR_PORT": "",
         "SOLR_VOLUME": "",
     }
@@ -243,7 +243,7 @@ def test_workflow_accepts_explicit_vector_modes_and_rejects_schema_dimension() -
         "EMBEDDING_PROVIDER": "ollama",
         "EMBEDDING_MODEL": "embeddinggemma",
         "EMBEDDING_DIMENSIONS": "768",
-        "OLLAMA_URL": "http://127.0.0.1:11434",
+        "OLLAMA_URL": "http://172.21.32.1:11434",
         "SOLR_PORT": "",
         "SOLR_VOLUME": "",
     }

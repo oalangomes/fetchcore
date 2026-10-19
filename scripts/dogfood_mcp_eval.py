@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--embedding-provider", default="ollama")
     parser.add_argument("--embedding-model", default="embeddinggemma")
     parser.add_argument("--embedding-dimensions", type=int, default=768)
-    parser.add_argument("--ollama-url", default="http://127.0.0.1:11434")
+    parser.add_argument("--ollama-url", default="http://172.21.32.1:11434")
     parser.add_argument("--scenarios", type=Path, required=True)
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--output-markdown", type=Path, required=True)
