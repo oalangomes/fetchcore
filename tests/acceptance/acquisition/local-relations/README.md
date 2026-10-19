@@ -1,9 +1,11 @@
+> **Classification:** synthetic acceptance fixture, not a production benchmark. The historical timing/metric records below remain archival observations.
+
 # Bounded local references S5 benchmark
 
 Status: construction-only synthetic benchmark. Run from the repository root:
 
 ```bash
-PYTHONPATH=src python benchmarks/local-reference-s5/run.py
+PYTHONPATH=src python tests/acceptance/acquisition/local-relations/run.py
 ```
 
 The original S5 baseline used four source files; `results.json` preserves its
@@ -48,7 +50,7 @@ same five-file corpus and 100 generated Markdown files, Python 3.11.16,
 11 small-corpus passes, nine large-corpus passes, and nearest-rank p50/p95.
 Only implementation source changed between arms. A separate budget-pressure
 run sets `max_references=1` on the same small corpus. Reproduce with
-`python benchmarks/local-reference-s5/compare.py --before-src PATH_TO_D5049D8/src`.
+`python tests/acceptance/acquisition/local-relations/compare.py --before-src PATH_TO_D5049D8/src`.
 Timings below are medians of the five recorded run summaries; the JSON keeps
 every sample and its range.
 
