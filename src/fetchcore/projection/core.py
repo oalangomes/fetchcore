@@ -13,6 +13,7 @@ from types import MappingProxyType
 from typing import cast
 
 from fetchcore.knowledge.evidence import KnowledgeEvidence
+from fetchcore.repository.api_contracts import ApiEvidenceV1
 from fetchcore.repository.indexing import KnowledgeDocument, KnowledgeProvenance
 from fetchcore.repository.lexical import supports_lexical_analysis
 
@@ -131,7 +132,7 @@ def _validate_evidence_representation(raw: object, canonical: object, field: str
 
 
 PROJECTION_VERSION = "3"
-_PROJECTION_CONTRACT_REVISION = "3"
+_PROJECTION_CONTRACT_REVISION = "4"
 _PROJECTED_KNOWLEDGE_FIELDS = (
     "branch",
     "canonical_payload",
@@ -275,11 +276,32 @@ def _route_channel_values(
     document: KnowledgeDocument,
 ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
     routes = document.evidence.behavior.routes
+    api_routes: list[ApiEvidenceV1] = []
+    for envelope in document.evidence.semantic:
+        if envelope.namespace != "api_contract" or envelope.kind not in {
+            "api_operation", "api_request"
+        }:
+            continue
+        try:
+            api_routes.append(ApiEvidenceV1.from_envelope(envelope))
+        except ValueError as exc:
+            raise ProjectionParsingError(
+                "Canonical API route evidence is invalid",
+                metadata={"schema_id": envelope.schema_id},
+            ) from exc
     return (
         _casefold_identifiers(
-            route.http_method for route in routes if route.http_method is not None
+            (
+                *(route.http_method for route in routes if route.http_method is not None),
+                *(route.method for route in api_routes if route.method is not None),
+            )
         ),
-        _casefold_identifiers(route.path for route in routes),
+        _casefold_identifiers(
+            (
+                *(route.path for route in routes),
+                *(route.route for route in api_routes if route.route is not None),
+            )
+        ),
         _casefold_identifiers(
             route.mechanism for route in routes if route.mechanism is not None
         ),

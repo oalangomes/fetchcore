@@ -94,3 +94,28 @@ def test_embedding_endpoint_preflight_rejects_model_or_dimension_mismatch(
         runner._verify_embedding_endpoint(url, provider, 3)
     assert runner._verify_embedding_endpoint(url, provider, 2) == {
         "endpoint": url, "model": "embeddinggemma", "dimensions": 2}
+
+
+def test_targeted_route_analysis_marks_ambiguous_paths_without_discarding_scores(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.syspath_prepend(str(MODULE.parent))
+    runner_spec = importlib.util.spec_from_file_location(
+        "typed_knowledge_run", MODULE.parent / "run.py")
+    assert runner_spec is not None and runner_spec.loader is not None
+    runner = importlib.util.module_from_spec(runner_spec)
+    runner_spec.loader.exec_module(runner)
+    documents = (SimpleNamespace(id="a", routes=("/unique", "/shared")),
+                 SimpleNamespace(id="b", routes=("/shared",)))
+    monkeypatch.setattr(runner, "ProjectionV3Compiler", lambda: SimpleNamespace(
+        compile=lambda doc: SimpleNamespace(fields={"route_paths": doc.routes})))
+    truth = {"acquisition_cases": [
+        {"id": "unique", "kind": "api_operation", "expect": "present", "route": "/unique"},
+        {"id": "shared", "kind": "api_request", "expect": "present", "route": "/shared"},
+    ]}
+    analysis = runner._targeted_route_analysis(documents, truth, {"unique": "a", "shared": "a"})
+    assert analysis == {
+        "unique": {"candidate_count": 1, "exact_id_score_eligible": True},
+        "shared": {"candidate_count": 2, "exact_id_score_eligible": False},
+    }
+    with pytest.raises(AssertionError, match="does not contain reviewed evidence"):
+        runner._targeted_route_analysis(documents, truth, {"unique": "b", "shared": "a"})
