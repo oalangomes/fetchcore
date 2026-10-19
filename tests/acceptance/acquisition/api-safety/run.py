@@ -1,8 +1,8 @@
 """Reproducible synthetic API corpus baseline, without persisting source content.
 
 Compare independently with an unchanged checkout:
-  python benchmarks/api-extraction-s0/run.py --implementation-root /tmp/fetchcore-pre-s0
-  python benchmarks/api-extraction-s0/run.py --implementation-root .
+  python tests/acceptance/acquisition/api-safety/run.py --implementation-root /tmp/fetchcore-pre-s0
+  python tests/acceptance/acquisition/api-safety/run.py --implementation-root .
 
 The first checkout must have the dependencies installed and contain the
 pre-S0 implementation (specified in this protocol's README).
@@ -162,9 +162,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--implementation-root", type=Path, default=Path("."))
     parser.add_argument("--fixtures", type=Path,
-                        default=Path("benchmarks/api-extraction-s0/fixtures"))
+                        default=Path("tests/acceptance/acquisition/api-safety/fixtures"))
     parser.add_argument("--ground-truth", type=Path,
-                        default=Path("benchmarks/api-extraction-s0/ground-truth.json"))
+                        default=Path("tests/acceptance/acquisition/api-safety/ground-truth.json"))
     parser.add_argument("--repeats", type=int, default=5)
     args = parser.parse_args()
     if args.repeats < 1:
