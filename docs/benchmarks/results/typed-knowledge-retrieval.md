@@ -121,19 +121,78 @@ both lexical arms. API line-based measures remain unavailable. The embedding
 cache generated 507 vectors, reused 2,405 and reported a 0.826 hit rate;
 token count and monetary cost remain unavailable.
 
+## Reserved workload window on the current PC
+
+The [third authorized measurement](../../../benchmarks/typed-knowledge-retrieval/artifacts/backend-measurement-projection-r4-quiescent.json.gz)
+ran once on clean product revision
+`7b6dabf0e0787ba6aa51c06dc0254375bea1fec9` from 21:44:33 to
+21:46:29 UTC on 2026-10-19 (PID 237625, exit 0, status `MEASURED`). Its
+uncompressed SHA-256 is
+`29ffb618f4d24abdf69147870fbda92d3fc8a1517ece54b96f8cdc10021235b9`.
+The artifact records `performance_comparable=true` for this **temporarily
+reserved workload window**. The separate
+[isolation attestation](../../../benchmarks/typed-knowledge-retrieval/artifacts/isolation-attestation-r4.json)
+records the observed conditions and restoration.
+
+Before the run, the three `shared` containers were running, the three
+`operational` containers were already stopped, and the `fetchcore` and
+`ai-ops-alan` runners were active. The user authorized pausing the competing
+containers, stopping the runners and leaving Windows applications and hosted
+Ollama idle. At the start and end of the benchmark, only the three BENCH
+containers were running; the `shared` containers were paused, the others
+remained stopped, and no runner worker was observed. Sampled Windows CPU was
+6% before and 4% after. The three paused containers and two runners were
+restored to their initial active states; restoration exited 0. Two earlier
+preflight attempts stopped before benchmark execution and also restored state.
+This was **temporal workload isolation on a shared physical PC**, not a
+dedicated machine. Windows CPU was not sampled continuously, and paused
+containers retained memory. The flag is based on the approved configuration
+and these observations; the runner does not independently detect isolation.
+
+The same runner, evaluator, Ground Truth, projection and embedding fingerprints
+were used in the second and third measurements. Observed p95 latency changed
+as follows; the previous run had a shared workload, so this is descriptive
+evidence of the reserved window, not a causal performance claim.
+
+| Arm | Shared p95 ms | Reserved-window p95 ms |
+| --- | ---: | ---: |
+| Solr lexical | 3.898 | 3.195 |
+| Solr dense | 26.789 | 23.279 |
+| Solr hybrid | 18.945 | 14.412 |
+| Solr route lookup | 2.516 | 2.127 |
+| OpenSearch lexical | 11.048 | 10.127 |
+| OpenSearch dense | 29.569 | 21.868 |
+| OpenSearch hybrid | 27.597 | 20.629 |
+| OpenSearch route lookup | 3.709 | 4.078 |
+| Qdrant dense | 63.973 | 59.791 |
+| Qdrant hybrid | 101.908 | 99.174 |
+
+The Solr p99 remained 938–959 ms in the reserved window. The first observation
+of each Solr arm accounts for its largest duration; its cause is not established
+by this run. All eight ranked arms again had exact-ID Recall@K 1.0, and both
+targeted backends recovered the six unique route paths in 30/30 observations.
+Solr, OpenSearch and Qdrant each attested 799 records, then the same 779-record
+incremental state. The new `fc-typed-e17d832f7dd8` namespace was retained;
+pre-existing resource names were preserved and the temporary Qdrant lock was
+absent after the run.
+
 ## Limits and decision
 
-The services shared a host with other workloads, so both artifacts record
-`performance_comparable=false`. The reported indexing throughput and query
-latencies are observations, not controlled performance comparisons. No frozen
+The first two artifacts record `performance_comparable=false`. The third
+records `true` under the documented temporary workload reservation. This
+supports comparison among the arms within that window, with the caveats above;
+it does not prove a physically dedicated host or remove ordering, cache and
+first-query effects. No frozen
 `baseline-v1` runner or V0.1–V0.4 artifact was changed. The prior BENCH
 snapshots were not used as a baseline or modified.
 
 **End-to-end acceptance remains BLOCKED for performance promotion and broader
 ambiguous-operation semantics.** Acquisition, isolated snapshot integrity,
 incremental deletion, real ranked retrieval and unique-route lookup have
-measured evidence on revision 4. Comparable p95/p99 and indexing cost need
-documented host isolation; no PASS is claimed for those criteria. Revision-3
+measured evidence on revision 4. Performance thresholds and regression budgets
+have not been approved, and monetary cost remains unavailable. The reserved
+window supports measured latency comparison but does not justify a blanket
+performance PASS. Revision-3
 snapshots are incompatible with revision 4 and remain intact pending an
 operator lifecycle decision. A new BENCH run would require another explicit
 authorization.

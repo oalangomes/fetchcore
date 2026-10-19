@@ -1,0 +1,102 @@
+{
+  "configuration_sha256": "da7f1fb8a2b0599fe4c95ba1448fbed4132e51c85b30a499149fb52205a94d97",
+  "containers": {
+    "after_benchmark_before_restore": {
+      "fetchcore-bench-dedicated-opensearch-1": "Up 6 hours (healthy)",
+      "fetchcore-bench-dedicated-qdrant-1": "Up 6 hours",
+      "fetchcore-bench-dedicated-solr-1": "Up 6 hours (healthy)",
+      "fetchcore-lab-api-1": "Exited (0) 6 hours ago",
+      "fetchcore-lab-mcp-1": "Exited (0) 6 hours ago",
+      "fetchcore-lab-web-1": "Exited (0) 6 hours ago",
+      "fetchcore-operational-opensearch-1": "Exited (143) 4 minutes ago",
+      "fetchcore-operational-qdrant-1": "Exited (143) 4 minutes ago",
+      "fetchcore-operational-solr-1": "Exited (143) 4 minutes ago",
+      "fetchcore-shared-opensearch-1": "Up 6 hours (Paused)",
+      "fetchcore-shared-qdrant-1": "Up 6 hours (Paused)",
+      "fetchcore-shared-solr-1": "Up 6 hours (Paused)"
+    },
+    "before": {
+      "fetchcore-bench-dedicated-opensearch-1": "Up 6 hours (healthy)",
+      "fetchcore-bench-dedicated-qdrant-1": "Up 6 hours",
+      "fetchcore-bench-dedicated-solr-1": "Up 6 hours (healthy)",
+      "fetchcore-lab-api-1": "Exited (0) 6 hours ago",
+      "fetchcore-lab-mcp-1": "Exited (0) 6 hours ago",
+      "fetchcore-lab-web-1": "Exited (0) 6 hours ago",
+      "fetchcore-operational-opensearch-1": "Exited (143) 2 minutes ago",
+      "fetchcore-operational-qdrant-1": "Exited (143) 2 minutes ago",
+      "fetchcore-operational-solr-1": "Exited (143) 2 minutes ago",
+      "fetchcore-shared-opensearch-1": "Up 6 hours (healthy)",
+      "fetchcore-shared-qdrant-1": "Up 6 hours",
+      "fetchcore-shared-solr-1": "Up 6 hours (healthy)"
+    },
+    "during": {
+      "fetchcore-bench-dedicated-opensearch-1": "Up 6 hours (healthy)",
+      "fetchcore-bench-dedicated-qdrant-1": "Up 6 hours",
+      "fetchcore-bench-dedicated-solr-1": "Up 6 hours (healthy)",
+      "fetchcore-lab-api-1": "Exited (0) 6 hours ago",
+      "fetchcore-lab-mcp-1": "Exited (0) 6 hours ago",
+      "fetchcore-lab-web-1": "Exited (0) 6 hours ago",
+      "fetchcore-operational-opensearch-1": "Exited (143) 2 minutes ago",
+      "fetchcore-operational-qdrant-1": "Exited (143) 2 minutes ago",
+      "fetchcore-operational-solr-1": "Exited (143) 2 minutes ago",
+      "fetchcore-shared-opensearch-1": "Up 6 hours (Paused)",
+      "fetchcore-shared-qdrant-1": "Up 6 hours (Paused)",
+      "fetchcore-shared-solr-1": "Up 6 hours (Paused)"
+    }
+  },
+  "interpretation": "Temporal workload exclusivity on a shared physical PC; BENCH services and hosted Ollama remained available. This is not a dedicated physical host.",
+  "limits": [
+    "Windows CPU was sampled before and after, not continuously during the run.",
+    "Paused non-BENCH containers retained allocated memory.",
+    "The artifact flag is based on the approved configuration and these operational observations; it is not an automatic isolation detector."
+  ],
+  "measurement_sha256": "29ffb618f4d24abdf69147870fbda92d3fc8a1517ece54b96f8cdc10021235b9",
+  "performance_comparable_reported": true,
+  "preflight_attempts": [
+    {
+      "attempt": 1,
+      "benchmark_started": false,
+      "reason": "Docker ps listed paused containers; preflight treated them as active.",
+      "restoration_exit_code": 0
+    },
+    {
+      "attempt": 2,
+      "benchmark_started": false,
+      "reason": "Process-text search matched its own command.",
+      "restoration_exit_code": 0
+    }
+  ],
+  "process": {
+    "benchmark_exit_code": 0,
+    "restoration_exit_code": 0,
+    "wrapper_pid": 237625
+  },
+  "product_revision": "7b6dabf0e0787ba6aa51c06dc0254375bea1fec9",
+  "protocol": "fetchcore.typed-knowledge-isolation-attestation-v1",
+  "resource": "fc-typed-e17d832f7dd8",
+  "runners": {
+    "after_restoration": {
+      "ai-ops-alan": "active",
+      "fetchcore": "active"
+    },
+    "before": {
+      "ai-ops-alan": "active",
+      "fetchcore": "active"
+    },
+    "during": {
+      "ai-ops-alan": "inactive",
+      "fetchcore": "inactive"
+    },
+    "worker_process_at_end": false,
+    "worker_process_at_start": false
+  },
+  "user_commitment": "No interactive Windows work or other Ollama use during the reserved benchmark window (explicit user approval).",
+  "window_utc": {
+    "end": "2026-10-19T21:46:29Z",
+    "start": "2026-10-19T21:44:33Z"
+  },
+  "windows_cpu_percent": {
+    "after": 4,
+    "before": 6
+  }
+}

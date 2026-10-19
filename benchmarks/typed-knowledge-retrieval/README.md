@@ -87,5 +87,9 @@ records real backend queries and the targeted route failure. The
 ran against projection contract revision 4 and recovered all six reviewed
 unique route paths in both targeted backends. Ambiguous path-only lookups and
 performance comparability remain limited as described in the result review.
-Both resource namespaces remain retained. A further backend run needs a new
-approval, namespace and output path.
+The [third authorized measurement](artifacts/backend-measurement-projection-r4-quiescent.json.gz)
+ran during a temporarily reserved workload window on the current PC and records
+`performance_comparable=true`; the
+[isolation attestation](artifacts/isolation-attestation-r4.json) specifies its
+operational observations and limits. All three typed resource namespaces remain
+retained. A further backend run needs a new approval, namespace and output path.
