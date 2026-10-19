@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "benchmarks": [
+    {
+      "id": "baseline-v1",
+      "classification": "official_frozen",
+      "protocol": "fetchcore.baseline-v1",
+      "purpose": "backend-neutral retrieval and ContextYield on frozen real corpus"
+    },
+    {
+      "id": "search-intent-v2",
+      "classification": "controlled_experiment",
+      "protocol": "fetchcore.search-intent-v2-evidence",
+      "purpose": "controlled paired query representation"
+    },
+    {
+      "id": "targeted-exact",
+      "classification": "controlled_experiment",
+      "protocol": "experiment-local",
+      "purpose": "exact candidate acquisition and fallback behavior"
+    }
+  ]
+}
