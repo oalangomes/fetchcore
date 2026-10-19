@@ -73,13 +73,13 @@ experiments so a better score cannot be attributed to multiple simultaneous
 variables.
 
 The frozen empirical result and its permitted interpretation are recorded in the
-[V1 to V2 controlled conclusion](repository-learning-v1-v2-conclusion.md). The
+[V1 to V2 controlled conclusion](V1_V2_CONCLUSION.md). The
 [artifact index](../../studies/repository-learning/.artifacts/repository-learning/INDEX.md)
 identifies the canonical baseline, controlled replay, reproduction, and invalid
 historical attempt.
 
 The remaining original-ruler failures are classified in the separate
-[scorer audit](repository-learning-scorer-audit.md). That audit reuses existing
+[scorer audit](SCORER_AUDIT.md). That audit reuses existing
 outputs and does not change retrieval, memory recall, or evaluator behavior.
 
 The subsequent full fresh V2 execution is recorded as
