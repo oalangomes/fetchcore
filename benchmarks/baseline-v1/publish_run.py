@@ -127,10 +127,28 @@ def validate(source: Path) -> tuple[str, tuple[str, ...], dict[str, str]]:
 
     if "indexing.json" in names:
         indexing = _object(_artifact(source, "indexing.json"))
-        if (indexing.get("corpus") != run["corpus"]
+        corpus = indexing.get("corpus")
+        canonical = indexing.get("canonical")
+        backends = indexing.get("backends")
+        if (indexing.get("schema_version") != 1
+                or indexing.get("protocol") != PROTOCOL
                 or indexing.get("fetchcore_revision") != run["fetchcore_revision"]
-                or not isinstance(indexing.get("backends"), dict)
-                or set(indexing["backends"]) != {"solr", "opensearch", "qdrant"}):
+                or not isinstance(indexing.get("indexing_fingerprint"), str)
+                or not indexing["indexing_fingerprint"]
+                or not isinstance(corpus, dict)
+                or any(corpus.get(key) != run["corpus"][key]
+                       for key in ("repository", "revision"))
+                or not isinstance(canonical, dict)
+                or any(canonical.get(key) != run["corpus"][key]
+                       for key in ("repository", "revision"))
+                or not isinstance(backends, dict)
+                or set(backends) != {"solr", "opensearch", "qdrant"}
+                or any(not isinstance(result, dict)
+                       or not isinstance(result.get("snapshot"), dict)
+                       or not isinstance(result.get("telemetry"), dict)
+                       or result["snapshot"].get("repository") != run["corpus"]["repository"]
+                       or result["snapshot"].get("snapshot_revision") != run["corpus"]["revision"]
+                       for result in backends.values())):
             raise PublicationError("incomplete or incompatible indexing telemetry")
 
     context_yield = _object(_artifact(source, "context-yield.json"))

@@ -70,8 +70,21 @@ def _source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             "aggregate": {"run_count": 4},
         })
     _write(source / "indexing.json", {
-        "corpus": CORPUS, "fetchcore_revision": REVISION,
-        "backends": {"solr": {}, "opensearch": {}, "qdrant": {}},
+        "schema_version": 1, "protocol": PUBLISH.PROTOCOL,
+        "corpus": {"repository": CORPUS["repository"], "revision": CORPUS["revision"]},
+        "fetchcore_revision": REVISION,
+        "indexing_fingerprint": "sha256:indexing",
+        "canonical": {"repository": CORPUS["repository"], "revision": CORPUS["revision"]},
+        "backends": {
+            backend: {
+                "snapshot": {
+                    "repository": CORPUS["repository"],
+                    "snapshot_revision": CORPUS["revision"],
+                },
+                "telemetry": {"backend_writes": 1},
+            }
+            for backend in ("solr", "opensearch", "qdrant")
+        },
     })
     _write(source / "context-yield.json", {
         "protocol": "fetchcore.baseline-v1-context-yield",
@@ -155,6 +168,33 @@ def test_rejects_stale_context_yield(
     derived["arms"][0]["source_config_fingerprint"] = "sha256:stale"
     _write(source / "context-yield.json", derived)
     with pytest.raises(PUBLISH.PublicationError, match="context-yield does not match"):
+        PUBLISH.validate(source)
+
+
+@pytest.mark.parametrize("invalid_field", [
+    "schema_version", "protocol", "fetchcore_revision", "indexing_fingerprint",
+    "corpus", "canonical", "backends", "snapshot", "telemetry",
+])
+def test_rejects_incompatible_indexing_telemetry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, invalid_field: str,
+) -> None:
+    source = _source(tmp_path, monkeypatch)
+    indexing_path = source / "indexing.json"
+    indexing = json.loads(indexing_path.read_text())
+    if invalid_field in {"schema_version", "protocol", "fetchcore_revision",
+                         "indexing_fingerprint"}:
+        indexing[invalid_field] = None
+    elif invalid_field in {"corpus", "canonical"}:
+        indexing[invalid_field]["revision"] = "different"
+    elif invalid_field == "backends":
+        del indexing["backends"]["qdrant"]
+    elif invalid_field == "snapshot":
+        indexing["backends"]["solr"]["snapshot"]["snapshot_revision"] = "different"
+    else:
+        del indexing["backends"]["solr"]["telemetry"]
+    _write(indexing_path, indexing)
+
+    with pytest.raises(PUBLISH.PublicationError, match="indexing telemetry"):
         PUBLISH.validate(source)
 
 

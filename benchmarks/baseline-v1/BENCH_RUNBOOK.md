@@ -121,6 +121,12 @@ The validator requires:
 - `README.md`, `context-yield.json` and `context-yield.md`;
 - no symlinks for published input files; no accidental machine-local state.
 
+For indexing, corpus identity is checked by `repository` and `revision`.
+`run.json` also carries `corpus_id`, while the consolidated `indexing.json`
+produced by the frozen runner does not. Publication checks the indexing
+protocol, fingerprint, canonical identity and each backend's snapshot and
+telemetry without requiring that extra run-manifest field.
+
 If it passes, inspect the source and **especially** `bench-run.json` for
 private or sensitive operator data. The tool does not redact or invent metadata.
 
