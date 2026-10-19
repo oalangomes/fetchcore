@@ -1,3 +1,5 @@
+> **Classification:** synthetic acceptance fixture, not a production benchmark. The historical timing/metric records below remain archival observations.
+
 # Markdown extraction S4 benchmark
 
 This local benchmark holds a small redistributable Markdown corpus and six
@@ -9,7 +11,7 @@ S4, and corrected S4.1 arms.
 From the repository root:
 
 ```bash
-PYTHONPATH=src python benchmarks/markdown-extraction-s4/run.py
+PYTHONPATH=src python tests/acceptance/acquisition/markdown/run.py
 ```
 
 The JSON output includes canonical document/chunk counts, source/content bytes,
