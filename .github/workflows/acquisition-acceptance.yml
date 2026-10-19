@@ -1,24 +1,15 @@
-name: Typed extraction S0-S5 synthetic acceptance
+name: Acquisition acceptance
 
 on:
   workflow_dispatch:
   pull_request:
     paths:
-      - "benchmarks/typed-extraction-s1-s5/**"
-      - "benchmarks/api-extraction-s0/**"
-      - "benchmarks/api-extraction-s2/**"
-      - "benchmarks/api-extraction-s3/**"
-      - "benchmarks/markdown-extraction-s4/**"
-      - "benchmarks/local-reference-s5/**"
+      - "tests/acceptance/acquisition/**"
+      - "tests/unit/repository/**"
       - "src/fetchcore/repository/**"
       - "src/fetchcore/knowledge/**"
-      - "tests/unit/repository/test_api_artifact_s0.py"
-      - "tests/unit/repository/test_api_contracts_s1.py"
-      - "tests/unit/repository/test_openapi_s2.py"
-      - "tests/unit/repository/test_postman_s3.py"
-      - "tests/unit/repository/test_markdown_extraction_s4.py"
-      - "tests/unit/repository/test_local_references_s5.py"
-      - ".github/workflows/typed-extraction-s1-s5.yml"
+      - "src/fetchcore/projection/**"
+      - ".github/workflows/acquisition-acceptance.yml"
 
 permissions:
   contents: read
@@ -34,13 +25,13 @@ jobs:
           python-version: "3.11"
       - name: Install development dependencies
         run: python -m pip install -e ".[dev]"
-      - name: Run existing S0-S5 contracts and benchmarks
+      - name: Run acquisition acceptance tests and synthetic fixtures
         run: |
-          python benchmarks/typed-extraction-s1-s5/run.py \
-            --output benchmark-output/s1-s5-gate.json
+          python tests/acceptance/acquisition/run.py \
+            --output test-output/acquisition-acceptance.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: typed-extraction-s1-s5-gate
-          path: benchmark-output/s1-s5-gate.json
+          name: acquisition-acceptance
+          path: test-output/acquisition-acceptance.json
           if-no-files-found: warn
