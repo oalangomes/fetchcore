@@ -99,7 +99,7 @@ and tests, not a claim of full CommonMark conformance.
 ## Measurement
 
 The frozen before/after fixture, ground truth, runner, and recorded results are
-in the [S4 benchmark protocol](../../benchmarks/markdown-extraction-s4/README.md).
+in the [Markdown acceptance fixture](../../tests/acceptance/acquisition/markdown/README.md).
 Extraction recovery and locator precision are reported separately from the
 benchmark's intentionally simple fixture ranker. The ranker is not a production
 retrieval backend; no production Recall@K or ranking improvement is claimed.
