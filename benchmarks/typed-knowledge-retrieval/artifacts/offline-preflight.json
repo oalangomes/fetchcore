@@ -1,0 +1,95 @@
+{
+  "canonical": {
+    "acquisition_cases": 20,
+    "arms": {
+      "api_contracts": {
+        "documents": 799,
+        "fingerprint": "sha256:838a2f8c51234bae78544e1b9113bf02c12787364fe39f9b3f28faaeac0c7cb1",
+        "skip_reasons": {
+          "api_artifact_blocked_postman_environment": 2,
+          "not_included": 1177
+        }
+      },
+      "default": {
+        "documents": 175,
+        "fingerprint": "sha256:3b3e854c1c14b0f662df6138ac5c0c112704952086d1eab6b4cbaa7f3a10ea3f",
+        "skip_reasons": {
+          "api_artifact_blocked_openapi": 1,
+          "api_artifact_blocked_postman_collection": 1,
+          "api_artifact_blocked_postman_environment": 2,
+          "not_included": 1177
+        }
+      },
+      "local_relations": {
+        "documents": 799,
+        "fingerprint": "sha256:97910d4f33c8e6abc83551a2fbd0c366d2fed4ba8c149cf1784a55127804e4f4",
+        "skip_reasons": {
+          "api_artifact_blocked_postman_environment": 2,
+          "not_included": 1177
+        }
+      },
+      "openapi": {
+        "documents": 647,
+        "fingerprint": "sha256:52095ecbd8fa1b16ff498754d3baa5f2eb4ac09c1114537e8df44cb4ddafc0e0",
+        "skip_reasons": {
+          "api_artifact_blocked_postman_collection": 1,
+          "api_artifact_blocked_postman_environment": 2,
+          "not_included": 1177
+        }
+      }
+    },
+    "canonical_digest": "bc804859da2b4a281727842b9ea16be90d3e711908cecc9c0bf84aadda3daa7b",
+    "canonical_records": 799,
+    "deletion_diff": {
+      "added": 0,
+      "removed": 20,
+      "updated": 2
+    },
+    "facts_by_kind": {
+      "api_operation": 169,
+      "api_reference": 261,
+      "api_request": 152,
+      "api_schema": 42,
+      "coverage": 1,
+      "resolution": 463
+    },
+    "ground_truth_sha256": "a1e42be1fd68d0e49a0a3104741e7b63ce7daa4fc3904e2805bd1afd208eddea",
+    "incremental_equals_rebuild": true,
+    "pending_cases": 1,
+    "positive_evidence": 17,
+    "projection_fingerprint": "sha256:cfd4a63f85c8e4034bf17f0f82f08a47c717d52e75a9180ffb1eb6cad719e039",
+    "projection_records": 799,
+    "protocol": "fetchcore.canonical-consistency-v1",
+    "relation_cases": 5,
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7",
+    "scope": "real corpus acquisition and projection, no remote backend or ranked retrieval",
+    "source_sha256": {
+      "docs/reference/api/api/auth.md": "a8634885aad4a56e76af0333e8e0bb0fac47636338ec9635e9a0a34ffb829c39",
+      "docs/reference/api/api/health.md": "64332e5de5a6cccdc5294e689cfbbc0d50acf453a62acad3f56b2d62bd1cb409",
+      "docs/reference/api/api/readme.md": "282851f4dd2aae1e7ee5f516158bdad13a662755009d15eba087f3b34c9e28b1",
+      "docs/reference/api/api/tasks.md": "a46ff96ce950a38d73b6cb130f65a83a2e9ea14aeaa890677e3720b578550269",
+      "docs/reference/api/functional-flows/health.md": "15faec181e7bd8d47839ffb5bbb86222bb5c84323df7bb748c915fc5966f80a1",
+      "docs/reference/api/functional-flows/index.md": "af00f955f830d2bed17b8763c1e278d68fe8730e84bea2f8ff52ddb4c24e5078",
+      "docs/reference/api/openapi.json": "4e33efdef29b8e58d5b28f932c799cbd4e518ca105c12e1198ca9c27403f2463",
+      "docs/reference/api/postman-collections/NeuroTrack - Local.postman_environment.json": "6dd5a2c240b24e57677a4a44a93c95fd09cfca8e23dd233e9caba5b307fa4fc6",
+      "docs/reference/api/postman-collections/NeuroTrack - Prod.postman_environment.json": "2c71185770792308f1b17ec20ed295ea8f10a86de9a26a380300aab7dd5cfdee",
+      "docs/reference/api/postman-collections/NeuroTrack API2.postman_collection.json": "406a4be05e1e5fd30b03789e4b4258726ab95491aa898cccf7f4c6b72c4c07aa",
+      "src/modules/health/controllers/healthController.js": "e302eabc88fc06c845e578ba24cfc997bd7d29e214f782025a81b2b0e689b137",
+      "src/modules/health/routes/index.js": "0b3c60b45a567cced257fabd3a6a4ca528e66673da73802d92c45381d3af8dfb"
+    },
+    "status": "PASS",
+    "unchanged_reindex_noop": true
+  },
+  "ground_truth_sha256": "a1e42be1fd68d0e49a0a3104741e7b63ce7daa4fc3904e2805bd1afd208eddea",
+  "metrics_sha256": "eb5d4ce9e6e2a387c167d3d2ef012f331b7fbabeb2fa21449d9cd850ef81cd0b",
+  "performance": null,
+  "product_revision": "90fa5414d7aa94f64f8ebb8f0b9baa7adb9e6f3a",
+  "product_tree_dirty": true,
+  "protocol": "fetchcore.typed-knowledge-retrieval-v1",
+  "reason": "explicit operational authorization and isolated BENCH resources required",
+  "retrieval": null,
+  "runner_sha256": "9bc5eaa59772a3d1fb1a77b66acea0449d3940efaadeac19dc5ff407098269da",
+  "snapshot_attestation": null,
+  "status": "BLOCKED"
+}

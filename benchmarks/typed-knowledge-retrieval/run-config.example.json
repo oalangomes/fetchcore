@@ -1,0 +1,59 @@
+{
+  "authorization": {
+    "status": "not-approved",
+    "reference": "",
+    "approved_by": "",
+    "owner": "",
+    "scope": "",
+    "service_class": "BENCH",
+    "compose_project": "fetchcore-bench-dedicated",
+    "resource_prefix": "fc-typed-",
+    "embedding_endpoint": "http://127.0.0.1:11434"
+  },
+  "cleanup_policy": "retain",
+  "containers": {
+    "solr": "fetchcore-bench-dedicated-solr-1",
+    "opensearch": "fetchcore-bench-dedicated-opensearch-1",
+    "qdrant": "fetchcore-bench-dedicated-qdrant-1"
+  },
+  "endpoints": {
+    "solr": "http://127.0.0.1:28983/solr",
+    "opensearch": "http://127.0.0.1:29200",
+    "qdrant": "http://127.0.0.1:26333",
+    "ollama": "http://127.0.0.1:11434"
+  },
+  "embedding": {
+    "provider": "ollama",
+    "model": "embeddinggemma",
+    "dimensions": 768,
+    "timeout_seconds": 120,
+    "batch_size": 4
+  },
+  "solr_configset": "fetchcore",
+  "index_batch_size": 100,
+  "measurement": {
+    "k": 20,
+    "repetitions": 5
+  },
+  "backend_settings": {
+    "solr": {"diagnostic_candidate_window": 80},
+    "opensearch": {"diagnostic_candidate_window": 80},
+    "qdrant-vector": {"diagnostic_candidate_window": 80}
+  },
+  "arms": [
+    {"id": "solr-lexical", "backend": "solr", "mode": "lexical"},
+    {"id": "solr-dense", "backend": "solr", "mode": "dense"},
+    {"id": "solr-hybrid", "backend": "solr", "mode": "hybrid"},
+    {"id": "solr-targeted", "backend": "solr", "mode": "targeted"},
+    {"id": "opensearch-lexical", "backend": "opensearch", "mode": "lexical"},
+    {"id": "opensearch-dense", "backend": "opensearch", "mode": "dense"},
+    {"id": "opensearch-hybrid", "backend": "opensearch", "mode": "hybrid"},
+    {"id": "opensearch-targeted", "backend": "opensearch", "mode": "targeted"},
+    {"id": "qdrant-dense", "backend": "qdrant-vector", "mode": "dense"},
+    {"id": "qdrant-hybrid", "backend": "qdrant-vector", "mode": "hybrid"}
+  ],
+  "isolation": {
+    "exclusive_host": false,
+    "evidence": ""
+  }
+}
