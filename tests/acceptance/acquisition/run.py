@@ -1,4 +1,4 @@
-"""Run existing S0-S5 extraction gates on synthetic fixtures, without live backends."""
+"""Run deterministic acquisition acceptance checks without live backends."""
 
 from __future__ import annotations
 
@@ -10,21 +10,21 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 TESTS = (
-    "tests/unit/repository/test_api_artifact_s0.py",
-    "tests/unit/repository/test_api_contracts_s1.py",
-    "tests/unit/repository/test_openapi_s2.py",
-    "tests/unit/repository/test_postman_s3.py",
-    "tests/unit/repository/test_markdown_extraction_s4.py",
-    "tests/unit/repository/test_local_references_s5.py",
+    "tests/unit/repository/test_api_artifact_safety.py",
+    "tests/unit/repository/test_api_contracts.py",
+    "tests/unit/repository/test_openapi_extraction.py",
+    "tests/unit/repository/test_postman_extraction.py",
+    "tests/unit/repository/test_markdown_evidence.py",
+    "tests/unit/repository/test_local_relations.py",
 )
-BENCHMARKS = (
-    ("s0", "benchmarks/api-extraction-s0/run.py"),
-    ("s2", "benchmarks/api-extraction-s2/run.py"),
-    ("s3", "benchmarks/api-extraction-s3/run.py"),
-    ("s4", "benchmarks/markdown-extraction-s4/run.py"),
-    ("s5", "benchmarks/local-reference-s5/run.py"),
+CHECKS = (
+    ("api_safety", "tests/acceptance/acquisition/api-safety/run.py"),
+    ("openapi", "tests/acceptance/acquisition/openapi/run.py"),
+    ("postman", "tests/acceptance/acquisition/postman/run.py"),
+    ("markdown", "tests/acceptance/acquisition/markdown/run.py"),
+    ("local_relations", "tests/acceptance/acquisition/local-relations/run.py"),
 )
 
 
@@ -49,18 +49,18 @@ def _execute(command: list[str], label: str) -> str:
     return result.stdout
 
 
-def _benchmark(path: str, label: str) -> dict[str, Any]:
+def _fixture_check(path: str, label: str) -> dict[str, Any]:
     raw = _execute([sys.executable, path], label)
     try:
         value = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise GateFailure(f"{label}: expected a single JSON benchmark result") from exc
-    _require(isinstance(value, dict), f"{label}: benchmark result must be a JSON object")
+        raise GateFailure(f"{label}: expected a single JSON acceptance result") from exc
+    _require(isinstance(value, dict), f"{label}: acceptance result must be a JSON object")
     return value
 
 
 def _validate(label: str, data: dict[str, Any]) -> dict[str, Any]:
-    if label == "s0":
+    if label == "api_safety":
         _require(data.get("protocol") == "fetchcore.api-extraction-s0", "S0 protocol")
         _require(data.get("secret_in_canonical") is False, "S0 leaked sentinel to canonical")
         _require(len(data.get("source_access", [])) == 4, "S0 source guard coverage")
@@ -75,7 +75,7 @@ def _validate(label: str, data: dict[str, Any]) -> dict[str, Any]:
             "indexing_fingerprint": data["indexing_fingerprint"],
         }
 
-    if label == "s2":
+    if label == "openapi":
         _require(data.get("protocol") == "fetchcore.api-extraction-s2", "S2 protocol")
         _require(data.get("mode") == "explicit-opt-in", "S2 opt-in boundary")
         _require(data.get("expected_operations") == 3, "S2 expected operations")
@@ -91,7 +91,7 @@ def _validate(label: str, data: dict[str, Any]) -> dict[str, Any]:
             "mode": "explicit-opt-in",
         }
 
-    if label == "s3":
+    if label == "postman":
         _require(data.get("protocol") == "fetchcore.api-extraction-s3", "S3 protocol")
         _require(data.get("mode") == "explicit-opt-in", "S3 opt-in boundary")
         _require(data.get("postman_requests_expected") == 2, "S3 expected requests")
@@ -108,7 +108,7 @@ def _validate(label: str, data: dict[str, Any]) -> dict[str, Any]:
             "mode": "explicit-opt-in",
         }
 
-    if label == "s4":
+    if label == "markdown":
         _require(data.get("protocol") == "fetchcore.markdown-extraction-s4", "S4 protocol")
         _require(data.get("ground_truth_recovered") == 6, "S4 ground-truth recovery")
         _require(data.get("exact_source_locators") == 6, "S4 exact locators")
@@ -137,7 +137,7 @@ def _validate(label: str, data: dict[str, Any]) -> dict[str, Any]:
             "unchanged_reindex_noop": True,
         }
 
-    if label == "s5":
+    if label == "local_relations":
         _require(data.get("ground_truth_positive") == 3, "S5 positive ground truth")
         _require(data.get("ground_truth_recovered") == 3, "S5 positive relations")
         _require(data.get("false_positive_contract_to_code_links") == 0,
@@ -153,7 +153,7 @@ def _validate(label: str, data: dict[str, Any]) -> dict[str, Any]:
             "budget_pressure_observed": True,
         }
 
-    raise GateFailure(f"unknown slice {label}")
+    raise GateFailure(f"unknown acquisition check {label}")
 
 
 def main() -> int:
@@ -164,32 +164,32 @@ def main() -> int:
     revision = _execute(["git", "rev-parse", "HEAD"], "git revision").strip()
     dirty = bool(_execute(["git", "status", "--porcelain"], "git status").strip())
     report: dict[str, Any] = {
-        "protocol": "fetchcore.typed-extraction-s1-s5-synthetic-gate",
+        "protocol": "fetchcore.acquisition-acceptance-v1",
         "schema_version": 1,
         "fetchcore_revision": revision,
         "source_tree_dirty": dirty,
         "scope": "synthetic acquisition/security/construction; no live retrieval backend",
         "status": "FAIL",
         "tests": {},
-        "slices": {},
+        "checks": {},
     }
     try:
-        _execute([sys.executable, "-m", "pytest", "-q", *TESTS], "S0-S5 contract tests")
+        _execute([sys.executable, "-m", "pytest", "-q", *TESTS], "acquisition contract tests")
         report["tests"] = {"status": "PASS", "files": list(TESTS)}
-        for label, script in BENCHMARKS:
-            value = _benchmark(script, label)
+        for label, script in CHECKS:
+            value = _fixture_check(script, label)
             summary = _validate(label, value)
-            report["slices"][label] = {"status": "PASS", "script": script, "metrics": summary}
-            print(f"[s1-s5] {label}=PASS", file=sys.stderr)
+            report["checks"][label] = {"status": "PASS", "script": script, "metrics": summary}
+            print(f"[acquisition] {label}=PASS", file=sys.stderr)
         report["status"] = "PASS"
     except GateFailure as exc:
         report["failure"] = str(exc)
-        print(f"[s1-s5] FAIL: {exc}", file=sys.stderr)
+        print(f"[acquisition] FAIL: {exc}", file=sys.stderr)
     serialized = json.dumps(report, sort_keys=True, indent=2) + "\n"
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(serialized, encoding="utf-8")
-        print(f"[s1-s5] report={args.output}", file=sys.stderr)
+        print(f"[acquisition] report={args.output}", file=sys.stderr)
     else:
         print(serialized)
     return 0 if report["status"] == "PASS" else 1
