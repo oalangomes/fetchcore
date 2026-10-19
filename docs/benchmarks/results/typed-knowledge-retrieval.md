@@ -57,13 +57,8 @@ thresholds.
 
 The route lookup returned zero expected IDs because revision 3 omitted typed
 OpenAPI/Postman facts from the projected route fields. Revision 4 maps those
-validated facts into the existing fields. Its offline corpus audit confirms
-all 12 reviewed routes are present, but **no live retrieval has measured this
-fix**. Six routes identify one canonical document; six match multiple documents
-by path alone. The runner now records that cardinality per targeted observation.
-Raw exact-ID scores remain available, but ambiguous paths cannot establish
-unique operation lookup. The full artifact contains the per-query hit IDs and
-telemetry for independent review.
+validated facts into the existing fields. The revision-4 run below measures
+this fix. The full revision-3 artifact contains per-query hit IDs and telemetry.
 
 For the five Markdown queries, the artifact includes SpanCoverage and
 ContextYield for 100/250/500/1000-line budgets. Across these budgets,
@@ -73,18 +68,72 @@ pointers have no proved line span, so their line-based measures are `null`.
 The embedding cache generated 507 vectors and reused 2,405; its hit rate was
 0.826. Token count and monetary cost were unavailable (`null`).
 
+## Second authorized backend measurement: projection contract revision 4
+
+The [complete revision-4 artifact](../../../benchmarks/typed-knowledge-retrieval/artifacts/backend-measurement-projection-r4.json.gz)
+is the result of the separately authorized run on 2026-10-19. Its uncompressed
+SHA-256 is `89a1aa5c34fbcc7640b01e94fd46bcd75c0b58d4f282e6bd39bc6c8fee444c9d`.
+The command ran once (PID 223165, 21:33:39–21:35:38 UTC), exited 0 and wrote
+status `MEASURED`. Product revision
+`1e6f19f1bf2bb25556608ba2f63e08b12f0b4390` had a clean tree and
+projection fingerprint
+`sha256:80d19b9400141cd7bb73f7ba7f64de414cd5a896b87c2dc1713959804696cef2`.
+Hosted Ollama supplied 768-dimensional `embeddinggemma` vectors. The resource
+namespace was `fc-typed-9da2b604ee9b`.
+
+New isolated Solr, OpenSearch and Qdrant snapshots each attested 799 records
+with the same full record-set checksum as revision 3. After the one source
+deletion, each attested 779 records with the same final checksum as revision 3.
+The before/after inventory preserved all pre-existing resource names and
+contained exactly the recorded new resources. The temporary Qdrant writer
+lock was absent after the run. Both sets of typed snapshots remain retained.
+
+The same 17 ranked queries ran five times in eight arms. The 12 route cases
+ran five times each on Solr and OpenSearch. Values below are observed exact-ID
+means and latency percentiles; the host was shared, so latency columns are
+descriptive only.
+
+| Arm | Queries | Recall@K | MRR | nDCG | p50 / p95 / p99 ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Solr lexical | 85 | 1.000 | 0.686 | 0.766 | 2.507 / 3.898 / 1055.448 |
+| Solr dense | 85 | 1.000 | 0.681 | 0.757 | 9.584 / 26.789 / 1042.166 |
+| Solr hybrid | 85 | 1.000 | 0.723 | 0.792 | 11.677 / 18.945 / 1035.205 |
+| OpenSearch lexical | 85 | 1.000 | 0.686 | 0.766 | 6.315 / 11.048 / 15.285 |
+| OpenSearch dense | 85 | 1.000 | 0.673 | 0.750 | 14.181 / 29.569 / 64.119 |
+| OpenSearch hybrid | 85 | 1.000 | 0.723 | 0.792 | 16.083 / 27.597 / 31.680 |
+| Qdrant dense | 85 | 1.000 | 0.673 | 0.750 | 54.039 / 63.973 / 69.255 |
+| Qdrant hybrid | 85 | 1.000 | 0.688 | 0.762 | 85.952 / 101.908 / 114.913 |
+| Solr route lookup | 60 | 0.917 | 0.792 | 0.824 | 1.974 / 2.516 / 1053.238 |
+| OpenSearch route lookup | 60 | 0.917 | 0.792 | 0.824 | 3.063 / 3.709 / 9.528 |
+
+For route lookup, the six paths with exactly one canonical candidate recovered
+their reviewed IDs in **30/30 observations per backend**. The other six paths
+are ambiguous by path alone; five reviewed IDs appeared in the two-result
+diagnostic window (25/30 observations per backend). `postman-login` has four
+canonical candidates and its reviewed ID was outside that window on both
+backends. The raw aggregate 0.917 is therefore not a unique-operation success
+rate. Revision 4 fixes the missing route fields, while path-only lookup cannot
+identify a single operation in these ambiguous cases.
+
+Markdown SpanCoverage was 1.0 for all eight ranked arms. ContextYield at each
+100/250/500/1000-line budget was 1.0 for all dense/hybrid arms and 0.4 for
+both lexical arms. API line-based measures remain unavailable. The embedding
+cache generated 507 vectors, reused 2,405 and reported a 0.826 hit rate;
+token count and monetary cost remain unavailable.
+
 ## Limits and decision
 
-The services shared a host with other workloads, so the artifact records
+The services shared a host with other workloads, so both artifacts record
 `performance_comparable=false`. The reported indexing throughput and query
 latencies are observations, not controlled performance comparisons. No frozen
 `baseline-v1` runner or V0.1–V0.4 artifact was changed. The prior BENCH
 snapshots were not used as a baseline or modified.
 
-**End-to-end acceptance remains BLOCKED.** A fresh, separately authorized
-run must use a new isolated namespace, revision-4 projection fingerprint
-`sha256:80d19b9400141cd7bb73f7ba7f64de414cd5a896b87c2dc1713959804696cef2`,
-and a new output path. Review its real route hits, ranked metrics, snapshot
-attestations and performance isolation before any PASS claim. Revision-3
-snapshots are incompatible with revision 4 and must remain intact until an
-operator explicitly decides their lifecycle.
+**End-to-end acceptance remains BLOCKED for performance promotion and broader
+ambiguous-operation semantics.** Acquisition, isolated snapshot integrity,
+incremental deletion, real ranked retrieval and unique-route lookup have
+measured evidence on revision 4. Comparable p95/p99 and indexing cost need
+documented host isolation; no PASS is claimed for those criteria. Revision-3
+snapshots are incompatible with revision 4 and remain intact pending an
+operator lifecycle decision. A new BENCH run would require another explicit
+authorization.

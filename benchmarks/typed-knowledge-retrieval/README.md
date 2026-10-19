@@ -82,7 +82,10 @@ requires reviewed objective thresholds and comparable isolation evidence.
 
 The [first authorized measurement](artifacts/backend-measurement-projection-r3.json.gz)
 completed on projection contract revision 3. Its [result review](../../docs/benchmarks/results/typed-knowledge-retrieval.md)
-records real backend queries and the targeted route failure. Projection contract
-revision 4 repairs the route fields but has only offline validation so far.
-A fresh backend run needs a new approval, namespace and output path. The
-revision-3 resources remain retained for review.
+records real backend queries and the targeted route failure. The
+[second authorized measurement](artifacts/backend-measurement-projection-r4.json.gz)
+ran against projection contract revision 4 and recovered all six reviewed
+unique route paths in both targeted backends. Ambiguous path-only lookups and
+performance comparability remain limited as described in the result review.
+Both resource namespaces remain retained. A further backend run needs a new
+approval, namespace and output path.
