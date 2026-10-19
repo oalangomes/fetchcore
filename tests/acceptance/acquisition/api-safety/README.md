@@ -1,3 +1,5 @@
+> **Classification:** synthetic acceptance fixture, not a production benchmark. The historical timing/metric records below remain archival observations.
+
 # API artifact extraction S0 — quarantine and synthetic baseline
 
 Tracking: issue #155, epic #154. Priority: P0. This document describes intentionally incomplete S0 coverage, not a general-purpose secret scanner.
@@ -48,8 +50,8 @@ A changed fingerprint, read-only plan/status, or source-level guard is not a his
 Execution with an isolated pre-S0 checkout (requires project development dependencies):
 
     git worktree add /tmp/fetchcore-pre-s0 ef57d6b8f9fc49e465e7a26f26d1c151e527316b
-    python benchmarks/api-extraction-s0/run.py --implementation-root /tmp/fetchcore-pre-s0 > /tmp/api-s0-before.json
-    python benchmarks/api-extraction-s0/run.py --implementation-root . > /tmp/api-s0-after.json
+    python tests/acceptance/acquisition/api-safety/run.py --implementation-root /tmp/fetchcore-pre-s0 > /tmp/api-s0-before.json
+    python tests/acceptance/acquisition/api-safety/run.py --implementation-root . > /tmp/api-s0-after.json
 
 The benchmark does not send data to backends or run external requests. Compare latency only on the same runner. The existing baseline-v1 for private NeuroTrack_MS corpus (20 queries, 42 evidence requirements) is preserved unchanged and must not be republished as raw content.
 

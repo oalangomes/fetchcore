@@ -53,7 +53,7 @@ These are **single-run point observations** from earlier PR code, not current-ch
 
 [Baseline v1](baseline-v1.md) is already frozen under its own protocol, corpus, Ground Truth, fingerprints, nine retrieval arms and 20 measured repetitions per query. The [baseline-v1 results](results/baseline-v1.md) contain EvidenceRecall@K, SpanCoverage@K, Evidence MRR/nDCG, context density, and p50/p95/p99. **Do not overwrite those artifacts** with this checkpoint or claim that their results were measured at `ea057d40e8b93760e510fc74eb99bf64bb76cdf7`.
 
-The [V0.2/S0 verification](baseline-v1-s0-verification.md) explicitly classifies its historical retrieval run as `RETRIEVAL_ONLY_OBSERVATION`, **not** an accepted S0 provenance checkpoint. A current-checkpoint retrieval comparison requires new revision-pinned artifacts and snapshot identities, not a provenance upgrade by inference.
+The [V0.2/S0 verification](baseline-v1-provenance-verification.md) explicitly classifies its historical retrieval run as `RETRIEVAL_ONLY_OBSERVATION`, **not** an accepted S0 provenance checkpoint. A current-checkpoint retrieval comparison requires new revision-pinned artifacts and snapshot identities, not a provenance upgrade by inference.
 
 ## Comparison and promotion policy
 

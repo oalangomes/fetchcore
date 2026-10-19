@@ -16,7 +16,7 @@ from fetchcore.repository.openapi_indexing import OpenApiRepositoryIndexer
 def evaluate(*, repeats: int = 5) -> dict[str, object]:
     if repeats < 1:
         raise ValueError("benchmark repeats must be positive")
-    fixture = Path(__file__).resolve().parents[1] / "api-extraction-s0" / "fixtures"
+    fixture = Path(__file__).resolve().parents[1] / "api-safety" / "fixtures"
     truth = json.loads(
         (fixture.parent / "ground-truth.json").read_text(encoding="utf-8")
     )

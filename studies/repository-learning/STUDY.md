@@ -45,7 +45,7 @@ A wrapper that cannot verify actual tool events is marked externally unverified.
 
 ## Protocol and reproduction
 
-The executable protocol, prompts, self-study scenario and artifact contract live in [`benchmarks/repository-learning/`](../../benchmarks/repository-learning/). Its README documents dry-run validation and the opt-in end-to-end setup with an external agent wrapper plus a fresh ai-memory MCP server.
+The executable study protocol, prompts, scenario and artifacts live in this directory. Its README documents dry-run validation and the opt-in end-to-end setup with an external agent wrapper plus a fresh ai-memory MCP server.
 
 The initial scenario is intentionally small and must not become a tuning corpus. Results are product evidence for the measured repository, revision, model and harness—not a universal superiority claim.
 
@@ -73,13 +73,13 @@ experiments so a better score cannot be attributed to multiple simultaneous
 variables.
 
 The frozen empirical result and its permitted interpretation are recorded in the
-[V1 to V2 controlled conclusion](repository-learning-v1-v2-conclusion.md). The
-[artifact index](../../benchmarks/repository-learning/.artifacts/repository-learning/INDEX.md)
+[V1 to V2 controlled conclusion](V1_V2_CONCLUSION.md). The
+[artifact index](../../studies/repository-learning/.artifacts/repository-learning/INDEX.md)
 identifies the canonical baseline, controlled replay, reproduction, and invalid
 historical attempt.
 
 The remaining original-ruler failures are classified in the separate
-[scorer audit](repository-learning-scorer-audit.md). That audit reuses existing
+[scorer audit](SCORER_AUDIT.md). That audit reuses existing
 outputs and does not change retrieval, memory recall, or evaluator behavior.
 
 The subsequent full fresh V2 execution is recorded as

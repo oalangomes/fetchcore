@@ -25,4 +25,4 @@
 `SearchResult.to_mapping()` omits empty/absent fields and validates alignment score and capability source identity. `SearchScope.to_mapping()` excludes runtime-only `settings`. `KnowledgeSearchResponse.to_mapping()` includes telemetry when present. Consult the dataclasses and round-trip tests before changing serialized meaning. See [capabilities](capabilities.md) and [evidence vocabulary](../concepts/evidence-and-provenance.md).
 
 Markdown section details and their explicit rebuild behavior are documented in
-[Technical Markdown extraction S4](../architecture/markdown-extraction-s4.md).
+[Technical Markdown extraction S4](../architecture/markdown-evidence.md).

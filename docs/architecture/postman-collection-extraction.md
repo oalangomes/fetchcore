@@ -75,6 +75,6 @@ These are **explicit programmatic** indexing modes, not automatic CLI/MCP enable
 
 ## Benchmark and known trade-offs
 
-`benchmarks/api-extraction-s3/run.py` exercises the frozen S0 synthetic collection and its two exact request ground-truth entries, comparing S2 OpenAPI-only with S3 combined mode. The result measures **request acquisition and canonical evidence**; it is not Recall@K, nDCG, real-repository speed, Solr/Qdrant cleanup or end-to-end MCP retrieval. `tests/unit/repository/test_postman_s3.py` tests the larger nested collection with fake credentials.
+`tests/acceptance/acquisition/postman/run.py` exercises the frozen S0 synthetic collection and its two exact request ground-truth entries, comparing S2 OpenAPI-only with S3 combined mode. The result measures **request acquisition and canonical evidence**; it is not Recall@K, nDCG, real-repository speed, Solr/Qdrant cleanup or end-to-end MCP retrieval. `tests/unit/repository/test_postman_extraction.py` tests the larger nested collection with fake credentials.
 
 Next: independently benchmark ranked lexical/hybrid retrieval using retrievalgate; assess true incremental scanning costs (all active interpreters currently imply a full-scan path on changed sources), and expand typed contract fields only after a schema compatibility decision. Native Postman v3 YAML is separate S6; exact relation resolution remains S5. No graph or agent framework dependency is required.

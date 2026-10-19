@@ -1,6 +1,6 @@
-# Repository Learning Benchmark
+# Repository learning — consumer study
 
-Status: experimental product-proof harness owned by #89 / #33. It is not a FetchCore runtime contract.
+Status: external consumer study. Issue/PR references are provenance, not suite names or FetchCore contracts. This study is not a core retrieval benchmark.
 
 The benchmark asks:
 
@@ -94,8 +94,8 @@ Malformed, incomplete or unknown IDs fail closed. The bounded arm also fails whe
 No LLM or ai-memory server is needed to validate the scenario, freeze and prompt rendering:
 
 ```bash
-python benchmarks/repository-learning/run.py \
-  --scenario benchmarks/repository-learning/scenarios/fetchcore-self.yaml \
+python studies/repository-learning/run.py \
+  --scenario studies/repository-learning/scenarios/fetchcore-self.yaml \
   --workspace /path/to/fetchcore-at-frozen-revision \
   --output /tmp/fetchcore-rlb-plan \
   --run-id smoke-001 \
@@ -116,9 +116,9 @@ projects, performs `memory_query → memory_read_page`, and starts only the fres
 evaluator:
 
 ```bash
-python benchmarks/repository-learning/reevaluate.py \
-  --source-run benchmarks/repository-learning/.artifacts/repository-learning/codex-20261008-002/run/run.json \
-  --scenario benchmarks/repository-learning/scenarios/fetchcore-self.yaml \
+python studies/repository-learning/reevaluate.py \
+  --source-run studies/repository-learning/.artifacts/repository-learning/codex-20261008-002/run/run.json \
+  --scenario studies/repository-learning/scenarios/fetchcore-self.yaml \
   --output /tmp/fetchcore-rlb-v2-reeval \
   --run-id codex-20261008-002-v2
 ```
@@ -170,8 +170,8 @@ Do not add `--http-stateful` for this runner: its minimal MCP client intentional
 Then provide wrapper commands for all study arms plus one fresh evaluator command:
 
 ```bash
-python benchmarks/repository-learning/run.py \
-  --scenario benchmarks/repository-learning/scenarios/fetchcore-self.yaml \
+python studies/repository-learning/run.py \
+  --scenario studies/repository-learning/scenarios/fetchcore-self.yaml \
   --workspace /path/to/fetchcore-at-frozen-revision \
   --output /tmp/fetchcore-rlb-run \
   --run-id run-001 \
@@ -210,7 +210,7 @@ separate controlled variable from the v2 recall change.
 `scorer_audit.py` evaluates that variable without rerunning acquisition, memory
 recall, or the evaluator. It verifies the frozen source artifact, reproduces the
 original stage scores, and applies an explicitly versioned concept ruler. See the
-[scorer audit](../../docs/benchmarks/repository-learning-scorer-audit.md) for the
+[scorer audit](SCORER_AUDIT.md) for the
 canonical result and reproduction command.
 
 This is a deterministic **learning-memory** ruler, not a FetchCore retrieval metric and not an authority score. Retrievalgate can evaluate retrieval-level regressions separately.

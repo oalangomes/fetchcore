@@ -254,7 +254,7 @@ python benchmarks/baseline-v1/compare_runs.py \
 The comparator checks artifact identity and completeness, recomputes derived
 ContextYield from frozen spans, and reports aggregate and per-query differences
 across all measured repetitions. The [S0 verification
-report](../../docs/benchmarks/baseline-v1-s0-verification.md) explains the V0.2
+report](../../docs/benchmarks/baseline-v1-provenance-verification.md) explains the V0.2
 decision and its snapshot-provenance limit.
 
 The evidence-aware artifacts captured before automatic versioning are preserved

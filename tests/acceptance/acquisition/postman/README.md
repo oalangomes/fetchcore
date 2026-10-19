@@ -1,3 +1,5 @@
+> **Classification:** synthetic acceptance fixture, not a production benchmark. The historical timing/metric records below remain archival observations.
+
 # Postman Collection 2.1 S3 — synthetic acquisition benchmark
 
 This deterministic benchmark compares the S2 opt-in OpenAPI-only indexer to
@@ -7,7 +9,7 @@ runtime success, end-user satisfaction, or parser conformance.
 
 Run after installation:
 
-    python benchmarks/api-extraction-s3/run.py
+    python tests/acceptance/acquisition/postman/run.py
 
 Expected: 2/2 Postman requests recovered, no duplicates, OpenAPI operations
 preserved, environments/globals excluded, and zero synthetic credential

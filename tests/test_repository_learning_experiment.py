@@ -9,7 +9,7 @@ import pytest
 
 RUNNER = (
     Path(__file__).resolve().parents[1]
-    / "benchmarks"
+    / "studies"
     / "repository-learning"
     / "run.py"
 )

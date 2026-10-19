@@ -1,0 +1,37 @@
+name: Acquisition acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "tests/acceptance/acquisition/**"
+      - "tests/unit/repository/**"
+      - "src/fetchcore/repository/**"
+      - "src/fetchcore/knowledge/**"
+      - "src/fetchcore/projection/**"
+      - ".github/workflows/acquisition-acceptance.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install development dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Run acquisition acceptance tests and synthetic fixtures
+        run: |
+          python tests/acceptance/acquisition/run.py \
+            --output test-output/acquisition-acceptance.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acquisition-acceptance
+          path: test-output/acquisition-acceptance.json
+          if-no-files-found: warn

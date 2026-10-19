@@ -18,12 +18,12 @@ def evaluate(*, repeats: int = 5) -> dict[str, object]:
     if repeats < 1:
         raise ValueError("repeats must be positive")
     root = Path(__file__).resolve().parents[1]
-    fixture = root / "api-extraction-s0" / "fixtures"
+    fixture = root / "api-safety" / "fixtures"
     baseline_ground_truth = json.loads(
-        (root / "api-extraction-s0" / "ground-truth.json").read_text(encoding="utf-8")
+        (root / "api-safety" / "ground-truth.json").read_text(encoding="utf-8")
     )
     truth = json.loads(
-        (root / "api-extraction-s3" / "ground-truth.json").read_text(encoding="utf-8")
+        (root / "postman" / "ground-truth.json").read_text(encoding="utf-8")
     )
     config = RepositoryIndexConfig(
         repository="fetchcore/s3-fixture", revision="synthetic-fixture-revision",
