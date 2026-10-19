@@ -1,12 +1,14 @@
+> **Classification:** synthetic acceptance fixture, not a production benchmark. The historical timing/metric records below remain archival observations.
+
 # S2 — OpenAPI/Swagger safe extraction benchmark
 
 This is a **small, synthetic, self-contained operation recovery fixture** built on
-the frozen S0 corpus in ../api-extraction-s0/fixtures. It makes **no network calls**,
+the frozen S0 corpus in ../api-safety/fixtures. It makes **no network calls**,
 does not access live APIs, and does not persist to a search backend.
 
 Run after installation:
 
-    python benchmarks/api-extraction-s2/run.py
+    python tests/acceptance/acquisition/openapi/run.py
 
 Expected: 3/3 OpenAPI/Swagger operations recovered as typed canonical evidence;
 the Postman collection/environment stay quarantined, the synthetic credential
