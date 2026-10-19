@@ -23,3 +23,56 @@ The API preview ceiling now matches the existing 1 MB scanner file ceiling.
 This changes admission for eligible files between 256,001 and 1,000,000
 characters; the indexing contract version is 27. Existing persisted typed
 snapshots require an explicit rebuild before this corpus can be projected.
+
+## Offline and authorized runs
+
+`run.py` first repeats source and canonical attestation. Without
+`--execute-authorized` it writes an [offline artifact](artifacts/offline-preflight.json)
+with `BLOCKED` for backend snapshot and retrieval fields. The command performs
+no service calls:
+
+```bash
+python benchmarks/typed-knowledge-retrieval/run.py \
+  --corpus /path/to/pinned/checkout --output /tmp/typed-offline.json
+```
+
+The [configuration example](run-config.example.json) is **unapproved**. An
+authorized run requires an external, explicit operational approval covering
+the named BENCH services, endpoints, generated `fc-typed-*` resource prefix,
+embedding endpoint, owner and lifecycle. Record that approval in a separate
+configuration, then pass both `--config` and `--execute-authorized`. The runner
+checks Docker Compose labels, published ports, owned volumes, existing resource
+inventory, backend capabilities, and the selected embedding model and dimension
+before writing. The runner currently executes in WSL, where the hosted Ollama
+endpoint `http://172.21.32.1:11434` responds. BENCH containers reach the same
+hosted service through `http://host.docker.internal:11434`. The latter currently
+refuses connections from this WSL host, so it is not the runner endpoint. Verify
+the exact WSL-reachable address before each run because it can change, and record
+it in both `authorization.embedding_endpoint` and `endpoints.ollama`. Do not
+substitute WSL loopback or silently fall back to another address. A healthy
+endpoint is not authorization. On any mismatch it fails closed. The generated namespace must
+be absent on all backends. Resources are retained for review; deletion requires
+a separate operator action after checking the recorded before/after inventories.
+No baseline, DEV or OPERATIONAL namespace is selected or cleaned up.
+
+After a permitted run, each backend snapshot must match canonical record IDs,
+checksums, repository, revision, corpus checksum, indexing and Projection v3
+fingerprints, serializer and embedding identity. Ranking begins only after all
+snapshots attest. The runner then applies one source deletion incrementally
+and compares each backend with the expected canonical state. An exception
+leaves a `FAIL` artifact and records newly observed resource names for review.
+
+Each arm declares a backend and supported lexical, dense or hybrid mode.
+Solr and OpenSearch additionally exercise their real exact route lookup on
+API cases with an effective two-result window; Qdrant has no declared targeted
+lookup arm. This acquisition path is scored separately from ranked discovery.
+SourceRecall@K checks the source path; EvidenceRecall@K, MRR and nDCG use the
+exact reviewed canonical evidence ID. API pointers have no proved line span,
+so SpanCoverage and ContextYield are unavailable for API cases. For Markdown
+cases, `ContextYield` reuses the frozen baseline definition: best Ground Truth
+span coverage in a ranked prefix packed under 100/250/500/1000 **line**
+budgets. Useful evidence density is relevant hits divided by returned hits;
+returned characters and candidates examined are separate measurements.
+Unavailable tokens, cost or time-to-first-candidate appear as `null`, never
+as an invented zero. A completed run is `MEASURED`; promoting it to PASS
+requires reviewed objective thresholds and comparable isolation evidence.
