@@ -13,7 +13,7 @@ satisfaction or authority.
 > run was captured on 2026-10-01. This protocol remains the comparison contract;
 > later experiments must identify their own protocol and execution versions.
 
-The [V0.1 to V0.2 S0 verification](baseline-v1-s0-verification.md) records the
+The [V0.1 to V0.2 S0 verification](baseline-v1-provenance-verification.md) records the
 offline comparison and the snapshot-provenance decision after API-artifact
 quarantine.
 
