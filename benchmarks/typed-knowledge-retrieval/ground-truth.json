@@ -1,0 +1,439 @@
+{
+  "schema_version": 1,
+  "protocol": "fetchcore.typed-knowledge-retrieval-v1",
+  "corpus": {
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7",
+    "source_sha256": {
+      "docs/reference/api/openapi.json": "4e33efdef29b8e58d5b28f932c799cbd4e518ca105c12e1198ca9c27403f2463",
+      "docs/reference/api/postman-collections/NeuroTrack API2.postman_collection.json": "406a4be05e1e5fd30b03789e4b4258726ab95491aa898cccf7f4c6b72c4c07aa",
+      "docs/reference/api/postman-collections/NeuroTrack - Local.postman_environment.json": "6dd5a2c240b24e57677a4a44a93c95fd09cfca8e23dd233e9caba5b307fa4fc6",
+      "docs/reference/api/postman-collections/NeuroTrack - Prod.postman_environment.json": "2c71185770792308f1b17ec20ed295ea8f10a86de9a26a380300aab7dd5cfdee",
+      "docs/reference/api/api/health.md": "64332e5de5a6cccdc5294e689cfbbc0d50acf453a62acad3f56b2d62bd1cb409",
+      "docs/reference/api/functional-flows/health.md": "15faec181e7bd8d47839ffb5bbb86222bb5c84323df7bb748c915fc5966f80a1",
+      "docs/reference/api/api/readme.md": "282851f4dd2aae1e7ee5f516158bdad13a662755009d15eba087f3b34c9e28b1",
+      "docs/reference/api/functional-flows/index.md": "af00f955f830d2bed17b8763c1e278d68fe8730e84bea2f8ff52ddb4c24e5078",
+      "docs/reference/api/api/auth.md": "a8634885aad4a56e76af0333e8e0bb0fac47636338ec9635e9a0a34ffb829c39",
+      "docs/reference/api/api/tasks.md": "a46ff96ce950a38d73b6cb130f65a83a2e9ea14aeaa890677e3720b578550269",
+      "src/modules/health/controllers/healthController.js": "e302eabc88fc06c845e578ba24cfc997bd7d29e214f782025a81b2b0e689b137",
+      "src/modules/health/routes/index.js": "0b3c60b45a567cced257fabd3a6a4ca528e66673da73802d92c45381d3af8dfb"
+    }
+  },
+  "acquisition_cases": [
+    {
+      "id": "openapi-health",
+      "kind": "api_operation",
+      "path": "docs/reference/api/openapi.json",
+      "method": "GET",
+      "route": "/health",
+      "pointer": "#/paths/~1health/get",
+      "expect": "present",
+      "rationale": "Simple endpoint and competing Markdown/Postman sources",
+      "verified_by": "Parse pinned OpenAPI paths and HTTP method"
+    },
+    {
+      "id": "openapi-health-check",
+      "kind": "api_operation",
+      "path": "docs/reference/api/openapi.json",
+      "method": "GET",
+      "route": "/health/check",
+      "pointer": "#/paths/~1health~1check/get",
+      "expect": "present",
+      "rationale": "Adjacent route with distinct behavior",
+      "verified_by": "Parse pinned OpenAPI paths and HTTP method"
+    },
+    {
+      "id": "openapi-auth-register",
+      "kind": "api_operation",
+      "path": "docs/reference/api/openapi.json",
+      "method": "POST",
+      "route": "/auth/register",
+      "pointer": "#/paths/~1auth~1register/post",
+      "expect": "present",
+      "rationale": "Auth operation with local schema reference",
+      "verified_by": "Parse pinned OpenAPI paths and HTTP method"
+    },
+    {
+      "id": "openapi-tasks-item",
+      "kind": "api_operation",
+      "path": "docs/reference/api/openapi.json",
+      "method": "GET",
+      "route": "/tasks/{id}",
+      "pointer": "#/paths/~1tasks~1{id}/get",
+      "expect": "present",
+      "rationale": "Parameterized task route",
+      "verified_by": "Parse pinned OpenAPI paths and HTTP method"
+    },
+    {
+      "id": "openapi-agenda-update",
+      "kind": "api_operation",
+      "path": "docs/reference/api/openapi.json",
+      "method": "PATCH",
+      "route": "/agenda/events/{id}",
+      "pointer": "#/paths/~1agenda~1events~1{id}/patch",
+      "expect": "present",
+      "rationale": "Different domain and method",
+      "verified_by": "Parse pinned OpenAPI paths and HTTP method"
+    },
+    {
+      "id": "openapi-medication-reminder",
+      "kind": "api_operation",
+      "path": "docs/reference/api/openapi.json",
+      "method": "POST",
+      "route": "/medications/{id}/reminders",
+      "pointer": "#/paths/~1medications~1{id}~1reminders/post",
+      "expect": "present",
+      "rationale": "Nested parameterized route",
+      "verified_by": "Parse pinned OpenAPI paths and HTTP method"
+    },
+    {
+      "id": "openapi-shopping-toggle",
+      "kind": "api_operation",
+      "path": "docs/reference/api/openapi.json",
+      "method": "PATCH",
+      "route": "/shoppinglists/{id}/items/{index}/toggle",
+      "pointer": "#/paths/~1shoppinglists~1{id}~1items~1{index}~1toggle/patch",
+      "expect": "present",
+      "rationale": "Two route parameters and deep path",
+      "verified_by": "Parse pinned OpenAPI paths and HTTP method"
+    },
+    {
+      "id": "openapi-billing-invitation",
+      "kind": "api_operation",
+      "path": "docs/reference/api/openapi.json",
+      "method": "POST",
+      "route": "/billing/organizations/{organizationId}/invitations",
+      "pointer": "#/paths/~1billing~1organizations~1{organizationId}~1invitations/post",
+      "expect": "present",
+      "rationale": "Long domain route",
+      "verified_by": "Parse pinned OpenAPI paths and HTTP method"
+    },
+    {
+      "id": "postman-health",
+      "kind": "api_request",
+      "path": "docs/reference/api/postman-collections/NeuroTrack API2.postman_collection.json",
+      "method": "GET",
+      "route": "/neurotrack/api/v1/health",
+      "pointer": "#/item/0/item/0/item/0",
+      "expect": "present",
+      "rationale": "Health request competing with OpenAPI/Markdown",
+      "verified_by": "Traverse pinned Postman item JSON Pointer and inspect request method and URL path"
+    },
+    {
+      "id": "postman-login",
+      "kind": "api_request",
+      "path": "docs/reference/api/postman-collections/NeuroTrack API2.postman_collection.json",
+      "method": "POST",
+      "route": "/neurotrack/api/v1/auth/login",
+      "pointer": "#/item/0/item/1/item/0",
+      "expect": "present",
+      "rationale": "Auth request",
+      "verified_by": "Traverse pinned Postman item JSON Pointer and inspect request method and URL path"
+    },
+    {
+      "id": "postman-task-item",
+      "kind": "api_request",
+      "path": "docs/reference/api/postman-collections/NeuroTrack API2.postman_collection.json",
+      "method": "GET",
+      "route": "/neurotrack/api/v1/tasks/{taskId}",
+      "pointer": "#/item/0/item/2/item/3",
+      "expect": "present",
+      "rationale": "Parameterized Postman URL",
+      "verified_by": "Traverse pinned Postman item JSON Pointer and inspect request method and URL path",
+      "source_route": "/neurotrack/api/v1/tasks/{{taskId}}"
+    },
+    {
+      "id": "postman-medication-usage",
+      "kind": "api_request",
+      "path": "docs/reference/api/postman-collections/NeuroTrack API2.postman_collection.json",
+      "method": "POST",
+      "route": "/neurotrack/api/v1/medications/{medicationId}/usage",
+      "pointer": "#/item/0/item/4/item/3",
+      "expect": "present",
+      "rationale": "Nested request from medication domain",
+      "verified_by": "Traverse pinned Postman item JSON Pointer and inspect request method and URL path",
+      "source_route": "/neurotrack/api/v1/medications/{{medicationId}}/usage"
+    },
+    {
+      "id": "markdown-health",
+      "kind": "markdown_span",
+      "path": "docs/reference/api/api/health.md",
+      "line_start": 16,
+      "line_end": 21,
+      "evidence": "GET `/health`",
+      "expect": "present",
+      "rationale": "Exact endpoint heading and description",
+      "verified_by": "Inspect numbered lines in pinned Markdown source"
+    },
+    {
+      "id": "markdown-health-check",
+      "kind": "markdown_span",
+      "path": "docs/reference/api/api/health.md",
+      "line_start": 54,
+      "line_end": 59,
+      "evidence": "GET `/health/check`",
+      "expect": "present",
+      "rationale": "Distinct adjacent Markdown span",
+      "verified_by": "Inspect numbered lines in pinned Markdown source"
+    },
+    {
+      "id": "markdown-health-flow",
+      "kind": "markdown_span",
+      "path": "docs/reference/api/functional-flows/health.md",
+      "line_start": 11,
+      "line_end": 19,
+      "evidence": "GET /health/check",
+      "expect": "present",
+      "rationale": "Functional flow, not API reference",
+      "verified_by": "Inspect numbered lines in pinned Markdown source"
+    },
+    {
+      "id": "markdown-auth-register",
+      "kind": "markdown_span",
+      "path": "docs/reference/api/api/auth.md",
+      "line_start": 16,
+      "line_end": 21,
+      "evidence": "POST `/auth/register`",
+      "expect": "present",
+      "rationale": "Auth documentation counterpart",
+      "verified_by": "Inspect numbered lines in pinned Markdown source"
+    },
+    {
+      "id": "markdown-tasks-create",
+      "kind": "markdown_span",
+      "path": "docs/reference/api/api/tasks.md",
+      "line_start": 16,
+      "line_end": 21,
+      "evidence": "POST `/tasks`",
+      "expect": "present",
+      "rationale": "Task documentation counterpart",
+      "verified_by": "Inspect numbered lines in pinned Markdown source"
+    },
+    {
+      "id": "wrong-method-health",
+      "kind": "api_operation",
+      "path": "docs/reference/api/openapi.json",
+      "method": "POST",
+      "route": "/health",
+      "pointer": "#/paths/~1health/post",
+      "expect": "absent",
+      "rationale": "Wrong method must not be inferred from existing GET route",
+      "verified_by": "Inspect pinned OpenAPI paths[/health] methods"
+    },
+    {
+      "id": "unsafe-environment",
+      "kind": "quarantined_source",
+      "path": "docs/reference/api/postman-collections/NeuroTrack - Local.postman_environment.json",
+      "expect": "absent",
+      "rationale": "Environment is a credential-bearing source class",
+      "verified_by": "Inspect Postman environment signature and scanner policy"
+    }
+  ],
+  "relation_cases": [
+    {
+      "id": "schema-local-pointer",
+      "kind": "api_reference",
+      "source_path": "docs/reference/api/openapi.json",
+      "target_path": "docs/reference/api/openapi.json",
+      "target_locator": "#/components/schemas/UserRegistration",
+      "expect": "resolved",
+      "rationale": "OpenAPI contains a literal local schema reference",
+      "verified_by": "Inspect $ref in pinned OpenAPI"
+    },
+    {
+      "id": "api-readme-health",
+      "kind": "markdown_reference",
+      "source_path": "docs/reference/api/api/readme.md",
+      "target_path": "docs/reference/api/api/health.md",
+      "target_locator": null,
+      "expect": "resolved",
+      "rationale": "Index explicitly links health.md",
+      "verified_by": "Inspect Markdown relative link"
+    },
+    {
+      "id": "flow-index-health",
+      "kind": "markdown_reference",
+      "source_path": "docs/reference/api/functional-flows/index.md",
+      "target_path": "docs/reference/api/functional-flows/health.md",
+      "target_locator": null,
+      "expect": "resolved",
+      "rationale": "Flow index explicitly links health.md",
+      "verified_by": "Inspect Markdown relative link"
+    },
+    {
+      "id": "unproven-controller",
+      "kind": "route_correspondence",
+      "source_path": "docs/reference/api/openapi.json",
+      "target_path": "src/modules/health/controllers/healthController.js",
+      "target_locator": null,
+      "expect": "not_resolved",
+      "rationale": "No source-observed proof of an exact contract-to-controller join",
+      "verified_by": "Inspect controller and contract; do not infer correspondence from similar names"
+    },
+    {
+      "id": "unproven-router",
+      "kind": "route_correspondence",
+      "source_path": "docs/reference/api/openapi.json",
+      "target_path": "src/modules/health/routes/index.js",
+      "target_locator": null,
+      "expect": "not_resolved",
+      "rationale": "Do not infer implementation from path similarity",
+      "verified_by": "Inspect route declaration against OpenAPI source"
+    }
+  ],
+  "ranking_ground_truth": [
+    {
+      "id": "openapi-health",
+      "exact_terms": [
+        "GET /health"
+      ],
+      "semantic_terms": [
+        "API health status endpoint in OpenAPI"
+      ]
+    },
+    {
+      "id": "openapi-health-check",
+      "exact_terms": [
+        "GET /health/check"
+      ],
+      "semantic_terms": [
+        "API detailed infrastructure health metrics endpoint"
+      ]
+    },
+    {
+      "id": "openapi-auth-register",
+      "exact_terms": [
+        "POST /auth/register"
+      ],
+      "semantic_terms": [
+        "register a new user API operation"
+      ]
+    },
+    {
+      "id": "openapi-tasks-item",
+      "exact_terms": [
+        "GET /tasks/{id}"
+      ],
+      "semantic_terms": [
+        "get a task by ID API operation"
+      ]
+    },
+    {
+      "id": "openapi-agenda-update",
+      "exact_terms": [
+        "PATCH /agenda/events/{id}"
+      ],
+      "semantic_terms": [
+        "update calendar event by ID API operation"
+      ]
+    },
+    {
+      "id": "openapi-medication-reminder",
+      "exact_terms": [
+        "POST /medications/{id}/reminders"
+      ],
+      "semantic_terms": [
+        "create medication reminder API operation"
+      ]
+    },
+    {
+      "id": "openapi-shopping-toggle",
+      "exact_terms": [
+        "PATCH /shoppinglists/{id}/items/{index}/toggle"
+      ],
+      "semantic_terms": [
+        "toggle shopping list item status API operation"
+      ]
+    },
+    {
+      "id": "openapi-billing-invitation",
+      "exact_terms": [
+        "POST /billing/organizations/{organizationId}/invitations"
+      ],
+      "semantic_terms": [
+        "invite member to billing organization API operation"
+      ]
+    },
+    {
+      "id": "postman-health",
+      "exact_terms": [
+        "GET /neurotrack/api/v1/health"
+      ],
+      "semantic_terms": [
+        "Postman request for health flow check"
+      ]
+    },
+    {
+      "id": "postman-login",
+      "exact_terms": [
+        "POST /neurotrack/api/v1/auth/login"
+      ],
+      "semantic_terms": [
+        "Postman login end to end request"
+      ]
+    },
+    {
+      "id": "postman-task-item",
+      "exact_terms": [
+        "GET /neurotrack/api/v1/tasks/{taskId}"
+      ],
+      "semantic_terms": [
+        "Postman get task by ID request"
+      ]
+    },
+    {
+      "id": "postman-medication-usage",
+      "exact_terms": [
+        "POST /neurotrack/api/v1/medications/{medicationId}/usage"
+      ],
+      "semantic_terms": [
+        "Postman record medication usage request"
+      ]
+    },
+    {
+      "id": "markdown-health",
+      "exact_terms": [
+        "GET `/health`"
+      ],
+      "semantic_terms": [
+        "Health API documentation endpoint"
+      ]
+    },
+    {
+      "id": "markdown-health-check",
+      "exact_terms": [
+        "GET `/health/check`"
+      ],
+      "semantic_terms": [
+        "Health API detailed check documentation"
+      ]
+    },
+    {
+      "id": "markdown-health-flow",
+      "exact_terms": [
+        "GET /health/check"
+      ],
+      "semantic_terms": [
+        "health functional flow diagnostics"
+      ]
+    },
+    {
+      "id": "markdown-auth-register",
+      "exact_terms": [
+        "POST `/auth/register`"
+      ],
+      "semantic_terms": [
+        "Auth API register endpoint documentation"
+      ]
+    },
+    {
+      "id": "markdown-tasks-create",
+      "exact_terms": [
+        "POST `/tasks`"
+      ],
+      "semantic_terms": [
+        "Tasks API create task documentation"
+      ]
+    }
+  ]
+}

@@ -10,6 +10,7 @@ satisfaction or semantic authority.
 | [baseline-v1](baseline-v1/) | Official, frozen | Nine-backend/mode retrieval matrix and ContextYield |
 | [search-intent-v2](search-intent-v2/) | Controlled experiment | Paired serving/query representation comparison |
 | [targeted-exact](targeted-exact/) | Controlled experiment | Exact acquisition and constrained fallback measurements |
+| [typed-knowledge-retrieval](typed-knowledge-retrieval/) | Controlled experiment | Pinned typed evidence and isolated backend retrieval |
 
 The machine-readable [catalog](catalog.json) is a small inventory, not a new
 benchmark runner. Experiment-specific results remain versioned under their

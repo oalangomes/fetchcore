@@ -10,9 +10,9 @@ from dataclasses import asdict
 from fetchcore.repository.indexing import RepositoryIndexer
 
 
-# S4.1 scopes Markdown observations to emitted chunks and bounds their evidence.
-# Existing snapshots must explicitly rebuild to adopt this canonical evidence contract.
-INDEXING_CONTRACT_VERSION = "26"
+# API detection now accepts the scanner's existing per-file ceiling. Existing
+# snapshots must explicitly rebuild to adopt the expanded admission contract.
+INDEXING_CONTRACT_VERSION = "27"
 
 
 def indexing_contract_fingerprint(indexer: RepositoryIndexer) -> str:

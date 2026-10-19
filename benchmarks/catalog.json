@@ -18,6 +18,12 @@
       "classification": "controlled_experiment",
       "protocol": "experiment-local",
       "purpose": "exact candidate acquisition and fallback behavior"
+    },
+    {
+      "id": "typed-knowledge-retrieval",
+      "classification": "controlled_experiment",
+      "protocol": "fetchcore.typed-knowledge-retrieval-v1",
+      "purpose": "pinned typed evidence acquisition and isolated backend retrieval"
     }
   ]
 }

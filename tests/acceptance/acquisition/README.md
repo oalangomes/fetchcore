@@ -16,6 +16,14 @@ python tests/acceptance/acquisition/run.py \
 The gate runs the established contract/unit checks and the following local
 fixture checks; it never contacts Solr, OpenSearch, Qdrant or Ollama:
 
+For the pinned real corpus, add `--corpus /path/to/checkout`. This verifies
+the revision and source checksums in the [versioned Ground Truth](../../../benchmarks/typed-knowledge-retrieval/ground-truth.json),
+checks independent source locators, then compares canonical typed evidence,
+relations, provenance, Projection v3 round trips, no-op reindexing and a
+deletion against a full rebuild. The checkout must be clean. No backend writes
+or ranked retrieval occur. CI runs the redistributable synthetic checks; the
+real corpus check is opt-in because that repository is not vendored here.
+
 | Fixture check | Requirement |
 | --- | --- |
 | [API safety](api-safety/) | Recognized unsafe raw artifacts remain quarantined; no synthetic secret sentinel escapes |
