@@ -74,6 +74,14 @@ def test_malformed_and_conflicting_inputs_fail_closed_without_payload_leak() -> 
     assert all(detect_api_artifact(*case).status == "invalid" for case in examples)
 
 
+def test_api_detection_uses_scanner_file_ceiling() -> None:
+    within_limit = '{"openapi":"3.0.0","paths":{},"description":"' + "x" * 300_000 + '"}'
+    beyond_limit = '{"openapi":"3.0.0","paths":{},"description":"' + "x" * 1_000_000 + '"}'
+    assert detect_api_artifact("openapi.json", within_limit).status == "supported"
+    too_large = detect_api_artifact("openapi.json", beyond_limit)
+    assert (too_large.status, too_large.reason) == ("invalid", "size_limit")
+
+
 @pytest.mark.parametrize(
     ("path", "pointer"),
     [

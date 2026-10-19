@@ -159,6 +159,8 @@ def _validate(label: str, data: dict[str, Any]) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, help="Optional JSON report destination")
+    parser.add_argument("--corpus", type=Path,
+                        help="Pinned real repository checkout for optional canonical validation")
     args = parser.parse_args()
 
     revision = _execute(["git", "rev-parse", "HEAD"], "git revision").strip()
@@ -181,6 +183,13 @@ def main() -> int:
             summary = _validate(label, value)
             report["checks"][label] = {"status": "PASS", "script": script, "metrics": summary}
             print(f"[acquisition] {label}=PASS", file=sys.stderr)
+        if args.corpus is not None:
+            value = json.loads(_execute(
+                [sys.executable, "tests/acceptance/acquisition/typed_knowledge.py",
+                 "--corpus", str(args.corpus)], "typed_knowledge",
+            ))
+            _require(value.get("status") == "PASS", "real canonical validation failed")
+            report["checks"]["typed_knowledge"] = value
         report["status"] = "PASS"
     except GateFailure as exc:
         report["failure"] = str(exc)
