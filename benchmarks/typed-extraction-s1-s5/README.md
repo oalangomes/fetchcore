@@ -39,7 +39,13 @@ The suite operates on synthetic fixtures only. It does **not** contact Solr, Ope
 
 **FAIL is a stopping condition**. Do not suppress a failing gate or dilute Ground Truth. On failures, fix one slice at a time and rerun.
 
-## NEXT — integrated acquisition / projection (separate, controlled exercise)
+## Integrated canonical/projection gate (issue #181)
+
+Run `python benchmarks/typed-extraction-s1-s5/integrated.py --output /tmp/issue-181-integrated.json` after installing development dependencies. The new versioned [Ground Truth](integrated-ground-truth.json) combines the existing safe S0, S4 and S5 fixtures in one temporary corpus. The output pins every input SHA-256, a corpus revision digest, the FetchCore revision, indexing fingerprints and canonical digests. CI runs this gate alongside the slice gate.
+
+It checks the S0→S2→S3 opt-in sequence, six exact Markdown spans, eight API operation/request facts, three proven S5 relations, forbidden joins, repository/revision/checksum provenance, Projection v3 round trips, no-op reindex, and deletion versus full rebuild equivalence. This is still a **synthetic, backend-free** gate; the six Markdown cases and three relation cases are inherited from the existing slice Ground Truth rather than newly reviewed real-repository cases.
+
+## NEXT — live backend projection and ranked retrieval
 
 The default `RepositoryIndexer` retains S0 quarantine. The OpenAPI and Postman S2/S3 indexers are **explicitly opt-in**. Merging S1–S5 does not mean default source scanning, MCP get_source or preexisting persisted indexes suddenly serve typed API facts.
 
@@ -57,5 +63,5 @@ Use **isolated backend resources**. Do not run a full rebuild, delete collection
 
 ## LATER / DO NOT DO YET
 
-- LATER: dedicated operation/request/section/relation retrieval Ground Truth and controlled S1–S5 end-to-end comparison against a new indexed baseline.
+- LATER: dedicated real-repository operation/request/section/relation retrieval Ground Truth and controlled S1–S5 end-to-end comparison against a new indexed baseline.
 - DO NOT DO YET: merge all typed interpreters into default indexing silently; promote S0 V0.2 into a causally controlled experiment; change baseline-v1 formulas; tune RRF based on acquisition shifts; treat S5 relations as graph-required or authoritative.

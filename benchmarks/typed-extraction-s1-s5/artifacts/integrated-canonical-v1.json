@@ -1,0 +1,84 @@
+{
+  "api_facts": 8,
+  "arms": {
+    "s0": {
+      "canonical_digest": "sha256:188d90a7678ab8044644a06e6abdf0a4586db869381d8093cc7b1d0cb9a44803",
+      "documents": 30,
+      "fingerprint": "sha256:b707fb986db0936b704dcb2958696942353fd66efbf78f0dfcd9a42c6c454a82",
+      "paths": 10,
+      "skip_reasons": {
+        "api_artifact_blocked_openapi": 2,
+        "api_artifact_blocked_postman_collection": 1,
+        "api_artifact_blocked_postman_environment": 1,
+        "api_artifact_blocked_swagger": 1
+      }
+    },
+    "s2": {
+      "canonical_digest": "sha256:20e86df0224f7de0662ef5b5f38927f9e029e6143a75909b055b0a28b8b0519e",
+      "documents": 39,
+      "fingerprint": "sha256:40ff58a7e279fc06fad051e4869e2c707932c4ebeb0a4c81b583a557a1d6a494",
+      "paths": 13,
+      "skip_reasons": {
+        "api_artifact_blocked_postman_collection": 1,
+        "api_artifact_blocked_postman_environment": 1
+      }
+    },
+    "s3_s4": {
+      "canonical_digest": "sha256:0003d78139edcfbba441814ab8d1eb1c65e1c24688d734d2a1f2fa1e0a2bcdc6",
+      "documents": 41,
+      "fingerprint": "sha256:b316c10960aa4689b4f44305d4fd6aed872466009781c52f3ac7cf0f5c34e9d9",
+      "paths": 14,
+      "skip_reasons": {
+        "api_artifact_blocked_postman_environment": 1
+      }
+    },
+    "s5": {
+      "canonical_digest": "sha256:ea47b0662521bf7e9f7e1dbde98a24391586bbe5a22d91fcf7894add5e90a3f6",
+      "documents": 41,
+      "fingerprint": "sha256:9e02384633a564b57083484b7eecdb94a960325d7b1e2bd8eef3122cee398572",
+      "paths": 14,
+      "skip_reasons": {
+        "api_artifact_blocked_postman_environment": 1
+      }
+    }
+  },
+  "deleted_relation_absent": true,
+  "deletion_diff": {
+    "added": 0,
+    "removed": 1,
+    "unchanged": 38,
+    "updated": 2
+  },
+  "fetchcore_product_revision": "fb1712574d0869e87a3ffd6f4532abadeb747650",
+  "ground_truth_sha256": "49ecd3919babfef3ac845f1b9a28a1bc9b45bc5168152ec35e7c85fe65890915",
+  "incremental_equals_rebuild": true,
+  "markdown_spans": 6,
+  "projection_fingerprint": "sha256:cfd4a63f85c8e4034bf17f0f82f08a47c717d52e75a9180ffb1eb6cad719e039",
+  "projection_records": 41,
+  "projection_round_trip": true,
+  "protocol": "fetchcore.issue-181-integrated-canonical-v1",
+  "repository": "fetchcore/issue-181-safe-fixtures",
+  "resolved_relations": 3,
+  "revision": "sha256:6d9f642d483918a4c3000fb9ff7b17acb02b616e95300748aa2dd27a0fc2f9be",
+  "scope": "synthetic canonical and projection; no live backend or ranked retrieval",
+  "sentinel_exposed": false,
+  "source_sha256": {
+    "api/README.md": "b98f56d0e64c068be8f0c3ebe9e65d6868eeedf4076f9e1c6a7520f05d8d9c81",
+    "api/demo.postman_collection.json": "96a3f89a185e2ed7ee739b28760307ce5f71bb0d378b305157c67c000a9eae4e",
+    "api/demo.postman_environment.json": "27cbb97965df39c9589f907c77834f652ef9f5915f34d4a906ba1f1e92614204",
+    "api/openapi.json": "282532f0e10fd59776885ee72fc1e83e893ae160f1db2c9cc9524b0db68c7bb2",
+    "api/swagger.yaml": "22033b04fa3415ff5fb221104b15f02f997bf635123a81967ed6195fd79f46bb",
+    "markdown/README.md": "fd66b8d6ec444091e11989a54858a1cc67b77c5c23a601bf557f05d668810ce0",
+    "markdown/adr/ADR-0001.md": "5f1e74e4739bd37d93eab69c00e7819a410d384055f3a219173ed6268d05f0e4",
+    "markdown/docs/api.md": "e2389700c596b33556ab18a9337331b03ceb39d962aa8d9b0dab181779737da0",
+    "markdown/docs/cli.md": "06a305656746340872cb0727c28d06aba57d37a31ab9b8382fe9fcda74f9ca42",
+    "markdown/docs/references.md": "b8b0f3a26e1d1a70d097a13553d282e011e0170c41288506fc236e3b2e29070d",
+    "references/README.md": "b52f81edeb81880b85c7a3b4cdbeaa6dde2d4c5487c45c46f00f3340e90ab93b",
+    "references/api.json": "10691b103b54b8effef53e511fb1721f8035b37654625929e47eac365b055142",
+    "references/app.py": "1fefa5c36205928b5ac55f563b25524d195698204d00788f226c75d3eb3dd758",
+    "references/architecture.md": "264074503ad3a46bc915cb9fa7fe72999c86b7884621e79c1ed878abe31658af",
+    "references/unrelated.py": "551ceda1a53baf8a210b9f8348467689c0e668d52a4c1ba3f3a12caa64e38ccc"
+  },
+  "status": "PASS",
+  "unchanged_reindex_noop": true
+}

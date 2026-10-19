@@ -38,9 +38,13 @@ jobs:
         run: |
           python benchmarks/typed-extraction-s1-s5/run.py \
             --output benchmark-output/s1-s5-gate.json
+      - name: Run integrated canonical and projection gate
+        run: |
+          python benchmarks/typed-extraction-s1-s5/integrated.py \
+            --output benchmark-output/s1-s5-integrated.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: typed-extraction-s1-s5-gate
-          path: benchmark-output/s1-s5-gate.json
+          path: benchmark-output/s1-s5-*.json
           if-no-files-found: warn
