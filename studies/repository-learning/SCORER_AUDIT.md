@@ -46,13 +46,13 @@ regression cases ensure partial concepts and forbidden claims still fail.
 ## Reproduction
 
 ```bash
-python benchmarks/repository-learning/scorer_audit.py \
-  --source-run benchmarks/repository-learning/.artifacts/repository-learning/codex-20261008-002-v2/run/run.json \
-  --scenario benchmarks/repository-learning/scenarios/fetchcore-self.yaml \
-  --ruler benchmarks/repository-learning/scenarios/fetchcore-self-ruler-v2.yaml \
-  --annotations benchmarks/repository-learning/scenarios/fetchcore-self-v2-audit.yaml \
+python studies/repository-learning/scorer_audit.py \
+  --source-run studies/repository-learning/.artifacts/repository-learning/codex-20261008-002-v2/run/run.json \
+  --scenario studies/repository-learning/scenarios/fetchcore-self.yaml \
+  --ruler studies/repository-learning/scenarios/fetchcore-self-ruler-v2.yaml \
+  --annotations studies/repository-learning/scenarios/fetchcore-self-v2-audit.yaml \
   --output /tmp/repository-learning-scorer-audit \
   --run-id codex-20261008-002-v2-scorer-audit
 ```
 
-The checked-in result is cataloged in the [artifact index](../../benchmarks/repository-learning/.artifacts/repository-learning/INDEX.md).
+The checked-in result is cataloged in the [artifact index](../../studies/repository-learning/.artifacts/repository-learning/INDEX.md).
