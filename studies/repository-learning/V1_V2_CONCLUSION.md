@@ -1,7 +1,7 @@
 # Repository Learning V1 to V2 Controlled Conclusion
 
 Status: frozen interpretation of `codex-20261008-002` and its canonical
-`codex-20261008-002-v2` controlled replay. The [artifact index](../../benchmarks/repository-learning/.artifacts/repository-learning/INDEX.md)
+`codex-20261008-002-v2` controlled replay. The [artifact index](../../studies/repository-learning/.artifacts/repository-learning/INDEX.md)
 is the source of truth for run classification.
 
 ## Hypothesis and controlled variable
