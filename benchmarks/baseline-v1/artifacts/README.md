@@ -4,6 +4,11 @@ The evidence-aware retrieval artifacts captured on 2026-10-01 before automatic
 run versioning existed are preserved as run `V0.1`. Their JSON measurement
 payloads were moved without modification.
 
+For current execution/publication instructions, see
+[the BENCH runbook](../BENCH_RUNBOOK.md). Existing V0.1–V0.3 payloads are
+frozen and **must not** be rewritten to impersonate dedicated BENCH runs.
+V0.4 is added only from the completed operator run, in a separate commit.
+
 From the versioned runner onward, each benchmark execution is isolated under a
 monotonic run directory:
 

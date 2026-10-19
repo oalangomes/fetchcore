@@ -26,6 +26,35 @@ sys.modules[spec.name] = frozen
 spec.loader.exec_module(frozen)
 
 
+PUBLISHED_ARTIFACTS = HERE / "artifacts"
+
+
+def allocate_bench_run_directory(output_root: Path) -> tuple[str, Path]:
+    """Reserve a version above both local runs and published frozen history.
+
+    This is an operational wrapper policy: the frozen measurement runner stays
+    byte-identical for historical reproducibility.
+    """
+    output_root.mkdir(parents=True, exist_ok=True)
+    versions: list[int] = []
+    for catalog in (output_root, PUBLISHED_ARTIFACTS):
+        if not catalog.is_dir():
+            continue
+        for entry in catalog.iterdir():
+            if entry.is_dir() and entry.name.startswith("V0.") and entry.name[3:].isdigit():
+                versions.append(int(entry.name[3:]))
+    version = max(versions, default=0) + 1
+    while True:
+        name = f"V0.{version}"
+        destination = output_root / name
+        try:
+            destination.mkdir()
+        except FileExistsError:
+            version += 1
+            continue
+        return name, destination
+
+
 def load_run_config(path: Path, corpus: dict[str, object]) -> dict[str, object]:
     config = frozen._load_json(path)
     required = {"schema_version", "environment", "repository", "revision", "owner",
@@ -204,14 +233,17 @@ def main(argv: list[str] | None = None) -> int:
         # frozen report formatter raises on None; represent it as unmeasured
         # for this new-run wrapper without mutating source measurements.
         original_format = frozen._format_number
+        original_allocator = frozen._allocate_run_output_dir
         frozen._format_number = lambda value: (
             "not measured" if value is None else original_format(value)
         )
+        frozen._allocate_run_output_dir = allocate_bench_run_directory
         try:
             result = frozen.main()
         finally:
             sys.argv = original_argv
             frozen._format_number = original_format
+            frozen._allocate_run_output_dir = original_allocator
     if args.resume:
         run_dir = output / args.resume
     else:
