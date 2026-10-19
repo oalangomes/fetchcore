@@ -57,7 +57,7 @@ def evaluate(*, repeats: int = 5) -> dict[str, object]:
     sentinel = baseline_ground_truth["security_sentinel"]
     serialized = json.dumps(after.to_mapping(), default=str)
     return {
-        "protocol": "fetchcore.postman",
+        "protocol": "fetchcore.api-extraction-s3",
         "mode": "explicit-opt-in",
         "baseline_s2_canonical_documents": len(before.documents),
         "combined_canonical_documents": len(after.documents),
