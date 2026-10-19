@@ -27,6 +27,25 @@ SENTINEL = "S0_FAKE_SECRET_MUST_NEVER_APPEAR_IN_EVIDENCE"
 SCHEMA = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 
 
+def test_large_safe_collection_is_sanitized_but_oversize_fails_closed() -> None:
+    collection = {
+        "info": {"name": "Large safe collection", "schema": SCHEMA,
+                 "description": SENTINEL + "x" * 300_000},
+        "item": [{"name": "Get customer", "request": {
+            "method": "GET", "url": {"path": ["customers", "42"]},
+        }}],
+    }
+    payload = json.dumps(collection)
+    result = sanitize_postman_collection("example.postman_collection.json", payload)
+    assert result is not None
+    assert len(result.units) == 1
+    assert result.units[0].route == "/customers/42"
+    assert SENTINEL not in json.dumps([unit.content for unit in result.units])
+    assert sanitize_postman_collection(
+        "example.postman_collection.json", payload + " " * 700_000,
+    ) is None
+
+
 def _collection() -> dict[str, object]:
     return {
         "info": {"name": "Safe collection", "schema": SCHEMA},

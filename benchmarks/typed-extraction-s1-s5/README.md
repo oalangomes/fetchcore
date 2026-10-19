@@ -43,7 +43,7 @@ The suite operates on synthetic fixtures only. It does **not** contact Solr, Ope
 
 Run `python benchmarks/typed-extraction-s1-s5/integrated.py --output /tmp/issue-181-integrated.json` after installing development dependencies. The new versioned [Ground Truth](integrated-ground-truth.json) combines the existing safe S0, S4 and S5 fixtures in one temporary corpus. The output pins every input SHA-256, a corpus revision digest, the FetchCore revision, indexing fingerprints and canonical digests. CI runs this gate alongside the slice gate.
 
-It checks the S0→S2→S3 opt-in sequence, six exact Markdown spans, eight API operation/request facts, three proven S5 relations, forbidden joins, repository/revision/checksum provenance, Projection v3 round trips, no-op reindex, and deletion versus full rebuild equivalence. This is still a **synthetic, backend-free** gate; the six Markdown cases and three relation cases are inherited from the existing slice Ground Truth rather than newly reviewed real-repository cases.
+It checks the default quarantine → OpenAPI opt-in → combined API contract opt-in sequence, six exact Markdown spans, eight API operation/request facts, three proven local relations, forbidden joins, repository/revision/checksum provenance, Projection v3 round trips, no-op reindex, and deletion versus full rebuild equivalence. This is still a **synthetic, backend-free** gate; the six Markdown cases and three relation cases are inherited from the existing Ground Truth rather than newly reviewed real-repository cases.
 
 ## NEXT — live backend projection and ranked retrieval
 

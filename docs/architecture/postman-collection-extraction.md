@@ -46,7 +46,7 @@ The following are **never** emitted by this slice: original URL/host/query value
 
 - Recognized Postman environment/globals files remain excluded before raw read. Postman v3 native multi-file YAML remains excluded pending S6.
 - Strict JSON parse rejects duplicate object keys. Version/format and collection `info.schema` must match the supported v2.1 collection signature.
-- Maximum source byte constraints still come from `safe_scan`; the S1 classifier also limits JSON character input to 256k. Parsing imposes bounded node/depth/folder-depth and request count limits.
+- Maximum source byte constraints still come from `safe_scan`; format preflight accepts at most 1,000,000 JSON characters, aligned with the default 1 MB scanner ceiling. Parsing retains bounded node/depth/folder-depth and request count limits. The expanded admission uses indexing-contract version 27 and requires an explicit rebuild of prior snapshots.
 - Invalid, unsupported, ambiguous, malformed or empty/no-safe-request sources remain quarantined. There is no downgrade to raw JSON or fallback to a generic source interpreter.
 - `get_source` retains the S0 raw-content access restriction even for collections that have generated sanitized canonical documents. Clients can retrieve the safe canonical evidence through retrieval APIs, not unsafe raw bytes.
 
@@ -75,6 +75,6 @@ These are **explicit programmatic** indexing modes, not automatic CLI/MCP enable
 
 ## Benchmark and known trade-offs
 
-`benchmarks/api-extraction-s3/run.py` exercises the frozen S0 synthetic collection and its two exact request ground-truth entries, comparing S2 OpenAPI-only with S3 combined mode. The result measures **request acquisition and canonical evidence**; it is not Recall@K, nDCG, real-repository speed, Solr/Qdrant cleanup or end-to-end MCP retrieval. `tests/unit/repository/test_postman_s3.py` tests the larger nested collection with fake credentials.
+`benchmarks/api-extraction-s3/run.py` exercises the frozen S0 synthetic collection and its two exact request ground-truth entries, comparing S2 OpenAPI-only with S3 combined mode. The result measures **request acquisition and canonical evidence**; it is not Recall@K, nDCG, real-repository speed, Solr/Qdrant cleanup or end-to-end MCP retrieval. `tests/unit/repository/test_postman_s3_s3.py` tests the larger nested collection with fake credentials.
 
 Next: independently benchmark ranked lexical/hybrid retrieval using retrievalgate; assess true incremental scanning costs (all active interpreters currently imply a full-scan path on changed sources), and expand typed contract fields only after a schema compatibility decision. Native Postman v3 YAML is separate S6; exact relation resolution remains S5. No graph or agent framework dependency is required.

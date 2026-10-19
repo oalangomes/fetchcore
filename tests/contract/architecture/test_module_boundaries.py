@@ -281,9 +281,9 @@ def test_persisted_identities_preserve_projection_with_explicit_indexing_rebuild
         RepositoryIndexConfig(),
         symbol_extractors=default_structural_symbol_extractors(),
     )
-    # Pattern-capture proof changes canonical Python route evidence; rebuild explicitly.
+    # The expanded API admission ceiling changes canonical evidence; rebuild explicitly.
     assert indexing_contract_fingerprint(indexer) == (
-        "sha256:52910ebf9236f50c0b1a07f20beaa16c8a3a9770009bd9bc1cd7a1c2bebb8113"
+        "sha256:0e32e408c447392ded84bc01ea0709b5c43f7eb93875cb6e850476360efc028b"
     )
 
 

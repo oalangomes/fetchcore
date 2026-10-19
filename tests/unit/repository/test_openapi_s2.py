@@ -20,6 +20,20 @@ from fetchcore.retrieval.embedding import ProjectionV3EmbeddingSerializer
 SECRET = "S0_FAKE_SECRET_MUST_NEVER_APPEAR_IN_EVIDENCE"
 
 
+def test_large_safe_openapi_is_sanitized_but_oversize_spec_fails_closed() -> None:
+    payload = json.dumps({
+        "openapi": "3.1.0",
+        "info": {"title": "Large safe spec", "version": "1", "description": SECRET + "x" * 300_000},
+        "paths": {"/customers": {"get": {"responses": {"200": {"description": "OK"}}}}},
+    })
+    result = sanitize_openapi("openapi.json", payload)
+    assert result is not None
+    assert any(unit.kind == "api_operation" and unit.route == "/customers"
+               for unit in result.units)
+    assert SECRET not in json.dumps([unit.content for unit in result.units])
+    assert sanitize_openapi("openapi.json", payload + " " * 700_000) is None
+
+
 def _fixture(root: Path) -> None:
     (root / "openapi.json").write_text(
         json.dumps({

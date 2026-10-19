@@ -24,7 +24,9 @@ _POSTMAN_VERSION = re.compile(r"/v(\d+\.\d+\.\d+)/", re.IGNORECASE)
 _YAML_VERSION = re.compile(
     r"""(?m)^(openapi|swagger):\s*['"]?([A-Za-z0-9._-]+)"""
 )
-_MAX_PREVIEW_CHARS = 256_000
+# Match the default safe scanner's 1 MB per-file ceiling. The structural
+# extractors retain their independent node/depth/unit budgets and fail closed.
+_MAX_PREVIEW_CHARS = 1_000_000
 
 
 @dataclass(frozen=True)

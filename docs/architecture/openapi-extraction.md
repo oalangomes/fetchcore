@@ -32,6 +32,7 @@ The source rendition is an *allowlist* of safe structural tokens — **never sum
 ## Parser safety and explicit limits
 
 - Strict JSON parsing with duplicate-key rejection; bounded YAML SafeLoader, no aliases, duplicate map keys rejected; bounded nesting, nodes, units and source file byte limits.
+- The format preflight accepts up to 1,000,000 characters, aligned with the default 1 MB safe-scanner file ceiling. The parser's node/depth/unit budgets still reject oversized structures. This expanded admission changes canonical output for previously quarantined files and uses indexing-contract version 27; existing snapshots require an explicit rebuild.
 - OpenAPI/Swagger content signature and version are required. Wrong, malformed and unsupported formats remain blocked; files with no safe operations or schemas remain blocked.
 - Schema/reference traversal is shallow and bounded. Recursive JSON Schema, composition/anyOf/allOf/oneOf, nested examples and external refs are not interpreted. S5 adds safe relative local reference observations at this sanitizer boundary; see [S5](local-reference-resolution-s5.md).
 - Only local `$ref` *observations* (not resolved links). No HTTP I/O, code execution, spec validation-as-a-service, generated API clients or agent orchestration.

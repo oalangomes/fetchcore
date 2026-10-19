@@ -1,0 +1,85 @@
+{
+  "protocol": "fetchcore.typed-knowledge-neurotrack-v1",
+  "repository": "oalangomes/NeuroTrack_MS",
+  "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7",
+  "include_paths": [
+    "docs/reference/api/openapi.json",
+    "docs/reference/api/postman-collections/NeuroTrack API2.postman_collection.json",
+    "docs/reference/api/postman-collections/NeuroTrack - Local.postman_environment.json",
+    "docs/reference/api/postman-collections/NeuroTrack - Prod.postman_environment.json",
+    "docs/reference/api/api/health.md",
+    "docs/reference/api/api/readme.md",
+    "docs/reference/api/functional-flows/health.md",
+    "docs/reference/api/functional-flows/index.md",
+    "src/modules/health/controllers/healthController.js",
+    "src/modules/health/routes/index.js"
+  ],
+  "queries": [
+    {
+      "id": "openapi-health",
+      "exact_terms": ["GET /health"],
+      "semantic_terms": ["health endpoint OpenAPI check"],
+      "path": "docs/reference/api/openapi.json",
+      "kind": "api_operation",
+      "method": "GET",
+      "route": "/health",
+      "pointer": "#/paths/~1health/get"
+    },
+    {
+      "id": "openapi-health-check",
+      "exact_terms": ["GET /health/check"],
+      "semantic_terms": ["health infrastructure diagnostics endpoint"],
+      "path": "docs/reference/api/openapi.json",
+      "kind": "api_operation",
+      "method": "GET",
+      "route": "/health/check",
+      "pointer": "#/paths/~1health~1check/get"
+    },
+    {
+      "id": "postman-health-flow",
+      "exact_terms": ["GET /neurotrack/api/v1/health"],
+      "semantic_terms": ["Health Flow E2E collection request"],
+      "path": "docs/reference/api/postman-collections/NeuroTrack API2.postman_collection.json",
+      "kind": "api_request",
+      "method": "GET",
+      "route": "/neurotrack/api/v1/health",
+      "pointer": "#/item/0/item/0/item/0"
+    },
+    {
+      "id": "markdown-health",
+      "exact_terms": ["GET /health"],
+      "semantic_terms": ["Health API endpoint documentation"],
+      "path": "docs/reference/api/api/health.md",
+      "line_start": 16,
+      "line_end": 21,
+      "evidence": "GET `/health`"
+    },
+    {
+      "id": "markdown-health-check",
+      "exact_terms": ["GET /health/check"],
+      "semantic_terms": ["Health API detailed check endpoint"],
+      "path": "docs/reference/api/api/health.md",
+      "line_start": 54,
+      "line_end": 59,
+      "evidence": "GET `/health/check`"
+    },
+    {
+      "id": "markdown-health-flow",
+      "exact_terms": ["GET /health/check"],
+      "semantic_terms": ["health functional flow detailed diagnostics"],
+      "path": "docs/reference/api/functional-flows/health.md",
+      "line_start": 11,
+      "line_end": 19,
+      "evidence": "GET /health/check"
+    }
+  ],
+  "resolved_relations": [
+    ["api_reference", "docs/reference/api/openapi.json", "docs/reference/api/openapi.json", "#/components/schemas/UserRegistration"],
+    ["markdown_reference", "docs/reference/api/api/readme.md", "docs/reference/api/api/health.md", null],
+    ["markdown_reference", "docs/reference/api/functional-flows/index.md", "docs/reference/api/functional-flows/health.md", null]
+  ],
+  "forbidden_resolved_relations": [
+    ["route_correspondence", "docs/reference/api/openapi.json", "src/modules/health/controllers/healthController.js"],
+    ["route_correspondence", "docs/reference/api/openapi.json", "src/modules/health/routes/index.js"]
+  ]
+}

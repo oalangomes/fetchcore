@@ -1,4 +1,4 @@
-"""Integrated, backend-free S0-S5 canonical and projection acceptance exercise."""
+"""Integrated, backend-free typed-knowledge acceptance exercise."""
 
 from __future__ import annotations
 
@@ -86,28 +86,31 @@ def run() -> dict[str, object]:
         revision = _digest(source_hashes)
         config = RepositoryIndexConfig(repository=REPOSITORY, revision=revision)
         indexers = {
-            "s0": RepositoryIndexer(config),
-            "s2": OpenApiRepositoryIndexer(config),
-            "s3_s4": ApiContractRepositoryIndexer(config),
-            "s5": ApiContractRepositoryIndexer(
+            "quarantine": RepositoryIndexer(config),
+            "openapi": OpenApiRepositoryIndexer(config),
+            "api_contracts": ApiContractRepositoryIndexer(config),
+            "resolved_references": ApiContractRepositoryIndexer(
                 config, resolve_local_references=True, structured_python=True,
             ),
         }
         runs = {name: indexer.index(root) for name, indexer in indexers.items()}
-        repeated = indexers["s5"].index(root, previous_documents=runs["s5"].documents)
+        repeated = indexers["resolved_references"].index(
+            root, previous_documents=runs["resolved_references"].documents,
+        )
         _require(not repeated.changes.added and not repeated.changes.updated
-                 and not repeated.changes.removed, "unchanged S5 reindex must be a no-op")
-        _require(_stable_documents(repeated.documents) == _stable_documents(runs["s5"].documents),
-                 "repeated S5 canonical corpus changed")
+                 and not repeated.changes.removed, "unchanged reindex must be a no-op")
+        _require(_stable_documents(repeated.documents) ==
+                 _stable_documents(runs["resolved_references"].documents),
+                 "repeated canonical corpus changed")
 
         expected_api = {tuple(row) for row in TRUTH["api"]}
         expected_relations = {tuple(row) for row in TRUTH["resolved_relations"]}
-        api, relations = _facts(runs["s5"].documents)
+        api, relations = _facts(runs["resolved_references"].documents)
         _require(api == expected_api, f"integrated API evidence mismatch: {api ^ expected_api}")
-        _require(expected_relations <= relations, "integrated S5 relations missing")
+        _require(expected_relations <= relations, "integrated relations missing")
         _require(not ({tuple(row) for row in TRUTH["forbidden_relations"]} & relations),
-                 "S5 emitted a forbidden resolved relation")
-        for document in runs["s5"].documents:
+                 "resolver emitted a forbidden relation")
+        for document in runs["resolved_references"].documents:
             _require(document.repository == REPOSITORY and document.revision == revision,
                      f"incorrect canonical repository/revision: {document.path}")
             _require(document.provenance.source_checksum == "sha256:" + source_hashes[document.path],
@@ -123,21 +126,22 @@ def run() -> dict[str, object]:
                                   and relation["status"] == "resolved"),
                              "wrong HTTP method produced a resolved route")
 
-        s0_paths = {doc.path for doc in runs["s0"].documents}
-        s2_paths = {doc.path for doc in runs["s2"].documents}
-        s3_paths = {doc.path for doc in runs["s3_s4"].documents}
+        quarantine_paths = {doc.path for doc in runs["quarantine"].documents}
+        openapi_paths = {doc.path for doc in runs["openapi"].documents}
+        api_contract_paths = {doc.path for doc in runs["api_contracts"].documents}
         for path in TRUTH["quarantined"]:
-            _require(path not in s0_paths, f"S0 admitted {path}")
-        _require("api/demo.postman_collection.json" not in s2_paths,
-                 "S2 admitted Postman without opt-in")
-        _require("api/demo.postman_collection.json" in s3_paths,
-                 "S3 failed to admit sanitized Postman")
-        _require("api/demo.postman_environment.json" not in s3_paths,
-                 "S3 admitted Postman environment")
-        _require(TRUTH["sentinel"] not in json.dumps(runs["s5"].to_mapping()),
+            _require(path not in quarantine_paths, f"default indexer admitted {path}")
+        _require("api/demo.postman_collection.json" not in openapi_paths,
+                 "OpenAPI indexer admitted Postman without opt-in")
+        _require("api/demo.postman_collection.json" in api_contract_paths,
+                 "API contract indexer failed to admit sanitized Postman")
+        _require("api/demo.postman_environment.json" not in api_contract_paths,
+                 "API contract indexer admitted Postman environment")
+        _require(TRUTH["sentinel"] not in json.dumps(runs["resolved_references"].to_mapping()),
                  "secret sentinel reached canonical output")
 
-        markdown = [doc for doc in runs["s5"].documents if doc.path.startswith("markdown/")]
+        markdown = [doc for doc in runs["resolved_references"].documents
+                    if doc.path.startswith("markdown/")]
         for case in TRUTH["markdown"]:
             _require(any(doc.path == case["path"] and doc.line_start == case["line_start"]
                          and doc.line_end == case["line_end"] and case["evidence"] in doc.content
@@ -145,16 +149,20 @@ def run() -> dict[str, object]:
 
         compiler = ProjectionV3Compiler()
         reader = ProjectionV3CanonicalDocumentReader()
-        projected = [compiler.compile(doc).to_mapping() for doc in runs["s5"].documents]
+        projected = [compiler.compile(doc).to_mapping()
+                     for doc in runs["resolved_references"].documents]
         hydrated = tuple(reader.read(record) for record in projected)
-        _require(_stable_documents(hydrated) == _stable_documents(runs["s5"].documents),
+        _require(_stable_documents(hydrated) ==
+                 _stable_documents(runs["resolved_references"].documents),
                  "Projection v3 round trip changed canonical evidence")
         _require(TRUTH["sentinel"] not in json.dumps(projected),
                  "secret sentinel reached projected records")
 
         (root / "references/architecture.md").unlink()
-        incremental = indexers["s5"].index(root, previous_documents=runs["s5"].documents)
-        rebuilt = indexers["s5"].index(root)
+        incremental = indexers["resolved_references"].index(
+            root, previous_documents=runs["resolved_references"].documents,
+        )
+        rebuilt = indexers["resolved_references"].index(root)
         _require(_stable_documents(incremental.documents) == _stable_documents(rebuilt.documents),
                  "incremental state differs from full canonical rebuild")
         _, remaining_relations = _facts(incremental.documents)
@@ -171,6 +179,13 @@ def run() -> dict[str, object]:
             "fetchcore_product_revision": subprocess.check_output(
                 ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
             ).strip(),
+            "product_source_sha256": {
+                path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+                for path in (
+                    "src/fetchcore/repository/api_detection.py",
+                    "src/fetchcore/repository/index_fingerprint.py",
+                )
+            },
             "repository": REPOSITORY,
             "revision": revision,
             "source_sha256": source_hashes,

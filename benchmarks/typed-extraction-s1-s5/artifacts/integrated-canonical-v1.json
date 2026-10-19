@@ -1,10 +1,29 @@
 {
   "api_facts": 8,
   "arms": {
-    "s0": {
+    "api_contracts": {
+      "canonical_digest": "sha256:0003d78139edcfbba441814ab8d1eb1c65e1c24688d734d2a1f2fa1e0a2bcdc6",
+      "documents": 41,
+      "fingerprint": "sha256:25de9c890cda4a79ff9279590540b179f276df47c565ff01768d8992807b95e4",
+      "paths": 14,
+      "skip_reasons": {
+        "api_artifact_blocked_postman_environment": 1
+      }
+    },
+    "openapi": {
+      "canonical_digest": "sha256:20e86df0224f7de0662ef5b5f38927f9e029e6143a75909b055b0a28b8b0519e",
+      "documents": 39,
+      "fingerprint": "sha256:c28154a20c7339c396708dab0f7160cfa95695796a2c3746760407eba4d40cd2",
+      "paths": 13,
+      "skip_reasons": {
+        "api_artifact_blocked_postman_collection": 1,
+        "api_artifact_blocked_postman_environment": 1
+      }
+    },
+    "quarantine": {
       "canonical_digest": "sha256:188d90a7678ab8044644a06e6abdf0a4586db869381d8093cc7b1d0cb9a44803",
       "documents": 30,
-      "fingerprint": "sha256:b707fb986db0936b704dcb2958696942353fd66efbf78f0dfcd9a42c6c454a82",
+      "fingerprint": "sha256:fc41ce87a989acc4b481eb4976acabff2fd5cc8a55407e1d30d766aa8980a076",
       "paths": 10,
       "skip_reasons": {
         "api_artifact_blocked_openapi": 2,
@@ -13,29 +32,10 @@
         "api_artifact_blocked_swagger": 1
       }
     },
-    "s2": {
-      "canonical_digest": "sha256:20e86df0224f7de0662ef5b5f38927f9e029e6143a75909b055b0a28b8b0519e",
-      "documents": 39,
-      "fingerprint": "sha256:40ff58a7e279fc06fad051e4869e2c707932c4ebeb0a4c81b583a557a1d6a494",
-      "paths": 13,
-      "skip_reasons": {
-        "api_artifact_blocked_postman_collection": 1,
-        "api_artifact_blocked_postman_environment": 1
-      }
-    },
-    "s3_s4": {
-      "canonical_digest": "sha256:0003d78139edcfbba441814ab8d1eb1c65e1c24688d734d2a1f2fa1e0a2bcdc6",
-      "documents": 41,
-      "fingerprint": "sha256:b316c10960aa4689b4f44305d4fd6aed872466009781c52f3ac7cf0f5c34e9d9",
-      "paths": 14,
-      "skip_reasons": {
-        "api_artifact_blocked_postman_environment": 1
-      }
-    },
-    "s5": {
+    "resolved_references": {
       "canonical_digest": "sha256:ea47b0662521bf7e9f7e1dbde98a24391586bbe5a22d91fcf7894add5e90a3f6",
       "documents": 41,
-      "fingerprint": "sha256:9e02384633a564b57083484b7eecdb94a960325d7b1e2bd8eef3122cee398572",
+      "fingerprint": "sha256:8d5c3a84b5624c19cfb576d0e5a5e8dba68c7ed29ee39286da3a32f1fb170610",
       "paths": 14,
       "skip_reasons": {
         "api_artifact_blocked_postman_environment": 1
@@ -49,7 +49,7 @@
     "unchanged": 38,
     "updated": 2
   },
-  "fetchcore_product_revision": "fb1712574d0869e87a3ffd6f4532abadeb747650",
+  "fetchcore_product_revision": "b9158d3e16f1e17f586b49766d3a396380d84881",
   "ground_truth_sha256": "49ecd3919babfef3ac845f1b9a28a1bc9b45bc5168152ec35e7c85fe65890915",
   "incremental_equals_rebuild": true,
   "markdown_spans": 6,
