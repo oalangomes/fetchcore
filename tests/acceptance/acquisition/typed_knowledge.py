@@ -76,6 +76,18 @@ def _verify_source(root: Path, truth: dict[str, Any]) -> dict[str, str]:
             request = item["request"]
             route = "/" + "/".join(request["url"]["path"])
             _require((request["method"], route) == (case["method"], case.get("source_route", case["route"])), f"source request mismatch: {case['id']}")
+        elif case["kind"] == "ambiguous_request":
+            parsed = json.loads(source.read_text(encoding="utf-8"))
+            pointers = case["pointers"]
+            _require(len(pointers) >= 2 and len(set(pointers)) == len(pointers), f"invalid ambiguity: {case['id']}")
+            names = set()
+            for pointer in pointers:
+                item = _pointer(parsed, pointer)
+                request = item["request"]
+                route = "/" + "/".join(request["url"]["path"])
+                _require((request["method"], route) == (case["method"], case["route"]), f"source ambiguity mismatch: {case['id']}")
+                names.add(item.get("name"))
+            _require(len(names) >= 2, f"ambiguous requests are not distinct: {case['id']}")
         elif case["kind"] == "markdown_span":
             lines = source.read_text(encoding="utf-8").splitlines()
             start, end = case["line_start"], case["line_end"]
@@ -124,7 +136,7 @@ def preflight(workspace: Path, truth_path: Path = TRUTH_PATH) -> tuple[dict[str,
             _require(case["path"] not in typed_paths, f"unsafe source admitted: {case['id']}")
     expected_ids = {}
     for case in truth["acquisition_cases"]:
-        if case["kind"] == "quarantined_source":
+        if case["kind"] == "quarantined_source" or case["expect"] == "pending":
             continue
         matches = []
         for document in canonical.documents:
@@ -185,6 +197,7 @@ def preflight(workspace: Path, truth_path: Path = TRUTH_PATH) -> tuple[dict[str,
         "repository": corpus["repository"], "revision": corpus["revision"],
         "ground_truth_sha256": _sha(truth_path.read_bytes()), "source_sha256": hashes,
         "acquisition_cases": len(truth["acquisition_cases"]), "positive_evidence": len(expected_ids),
+        "pending_cases": sum(case["expect"] == "pending" for case in truth["acquisition_cases"]),
         "relation_cases": len(truth["relation_cases"]),
         "arms": {name: {"documents": len(result.documents), "fingerprint": indexing_contract_fingerprint(indexers[name]), "skip_reasons": result.telemetry.skip_reasons} for name, result in runs.items()},
         "canonical_records": len(canonical.documents), "canonical_digest": _sha(json.dumps(_stable(canonical.documents), sort_keys=True, separators=(",", ":")).encode()),

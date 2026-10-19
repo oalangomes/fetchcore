@@ -227,6 +227,20 @@
       "expect": "absent",
       "rationale": "Environment is a credential-bearing source class",
       "verified_by": "Inspect Postman environment signature and scanner policy"
+    },
+    {
+      "id": "postman-task-create-ambiguous",
+      "kind": "ambiguous_request",
+      "path": "docs/reference/api/postman-collections/NeuroTrack API2.postman_collection.json",
+      "method": "POST",
+      "route": "/neurotrack/api/v1/tasks",
+      "pointers": [
+        "#/item/0/item/2/item/0",
+        "#/item/0/item/2/item/1"
+      ],
+      "expect": "pending",
+      "rationale": "Two distinct Postman requests share the same method and route; route-only retrieval cannot establish which request is intended",
+      "verified_by": "Traverse both item JSON Pointers in the pinned Postman collection and compare request method and URL path"
     }
   ],
   "relation_cases": [

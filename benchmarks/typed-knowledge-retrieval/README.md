@@ -1,8 +1,8 @@
 # Typed knowledge retrieval
 
 The versioned [Ground Truth](ground-truth.json) pins a real repository and
-revision in **corpus data**. It contains 19 acquisition cases (17 positive,
-2 negative), five relation cases, and a separate set of 17 positive ranking
+revision in **corpus data**. It contains 20 acquisition cases (17 positive,
+2 negative, one pending ambiguity), five relation cases, and a separate set of 17 positive ranking
 queries. Source hashes and exact locators were checked directly against the
 pinned checkout, independently of FetchCore output. Case rationales state why
 each source was selected; these cases are not a representative statistical

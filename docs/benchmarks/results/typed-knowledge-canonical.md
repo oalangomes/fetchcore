@@ -13,10 +13,10 @@ when the PR is published.
 
 ## Method
 
-The 19 acquisition cases were selected from the pinned source before testing
+The 20 acquisition cases were selected from the pinned source before testing
 FetchCore: eight OpenAPI operations across several domains, four Postman
-requests, five exact Markdown spans, one wrong-method negative, and one
-quarantined environment. Five relation cases cover a local JSON Pointer, two
+requests, five exact Markdown spans, one wrong-method negative, one
+quarantined environment, and one pending ambiguous Postman route. Five relation cases cover a local JSON Pointer, two
 explicit Markdown links, and two unproven contract-to-code joins. Source
 parsing and numbered-line checks validate the Ground Truth before indexing.
 The 17 positive locators form a separate ranking Ground Truth; no ranking
@@ -36,7 +36,7 @@ deleting a linked Markdown target were compared with a full rebuild.
 | --- | --- |
 | Source identity | Pinned revision and all 12 source hashes matched |
 | Default quarantine | OpenAPI, Postman collection, and two environments excluded |
-| Typed recovery | 17/17 positive evidence cases; 2/2 negative cases excluded |
+| Typed recovery | 17/17 positive evidence cases; 2/2 negative cases excluded; one verified ambiguity pending and excluded from metrics |
 | Relations | 3/3 positive resolved; 2/2 unproven joins not resolved |
 | Canonical state | 799 typed documents with repository, revision, source checksum and canonical checksum checked |
 | Projection v3 | 799/799 records round-tripped without canonical evidence change |
