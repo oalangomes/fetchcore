@@ -201,7 +201,7 @@ def test_interpreter_has_deterministic_id_and_source_pointer(tmp_path: Path) -> 
 
 
 def test_frozen_s2_operation_recovery_protocol() -> None:
-    protocol = Path(__file__).resolve().parents[3] / "benchmarks/api-extraction-s2/run.py"
+    protocol = Path(__file__).resolve().parents[3] / "tests/acceptance/acquisition/openapi/run.py"
     metrics = runpy.run_path(str(protocol))["evaluate"](repeats=2)
     assert metrics["protocol"] == "fetchcore.api-extraction-s2"
     assert metrics["expected_operations"] == 3
