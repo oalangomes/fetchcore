@@ -212,13 +212,13 @@ def test_safe_source_still_available_via_get_source(tmp_path: Path) -> None:
 
 def test_synthetic_protocol_reports_safe_current_index() -> None:
     root = Path(__file__).resolve().parents[3]
-    protocol = runpy.run_path(str(root / "benchmarks/api-extraction-s0/run.py"))
+    protocol = runpy.run_path(str(root / "tests/acceptance/acquisition/api-safety/run.py"))
     truth = json.loads(
-        (root / "benchmarks/api-extraction-s0/ground-truth.json").read_text(encoding="utf-8")
+        (root / "tests/acceptance/acquisition/api-safety/ground-truth.json").read_text(encoding="utf-8")
     )
     metrics = protocol["measure"](
         root,
-        root / "benchmarks/api-extraction-s0/fixtures",
+        root / "tests/acceptance/acquisition/api-safety/fixtures",
         truth["queries"],
         truth["security_sentinel"],
         2,
