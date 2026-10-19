@@ -42,8 +42,15 @@ the named BENCH services, endpoints, generated `fc-typed-*` resource prefix,
 embedding endpoint, owner and lifecycle. Record that approval in a separate
 configuration, then pass both `--config` and `--execute-authorized`. The runner
 checks Docker Compose labels, published ports, owned volumes, existing resource
-inventory and backend capabilities before writing. A healthy endpoint is not
-authorization. On any mismatch it fails closed. The generated namespace must
+inventory, backend capabilities, and the selected embedding model and dimension
+before writing. The runner currently executes in WSL, where the hosted Ollama
+endpoint `http://172.21.32.1:11434` responds. BENCH containers reach the same
+hosted service through `http://host.docker.internal:11434`. The latter currently
+refuses connections from this WSL host, so it is not the runner endpoint. Verify
+the exact WSL-reachable address before each run because it can change, and record
+it in both `authorization.embedding_endpoint` and `endpoints.ollama`. Do not
+substitute WSL loopback or silently fall back to another address. A healthy
+endpoint is not authorization. On any mismatch it fails closed. The generated namespace must
 be absent on all backends. Resources are retained for review; deletion requires
 a separate operator action after checking the recorded before/after inventories.
 No baseline, DEV or OPERATIONAL namespace is selected or cleaned up.

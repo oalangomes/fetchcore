@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -73,3 +74,23 @@ def test_unapproved_remote_config_stops_before_service_inspection(monkeypatch: p
     monkeypatch.setattr(runner.subprocess, "run", forbidden)
     with pytest.raises(RuntimeError, match="authorization is missing"):
         runner._verify_ownership(config)
+
+
+def test_embedding_endpoint_preflight_rejects_model_or_dimension_mismatch(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.syspath_prepend(str(MODULE.parent))
+    benchmark = MODULE.parent / "run.py"
+    runner_spec = importlib.util.spec_from_file_location("typed_knowledge_run", benchmark)
+    assert runner_spec is not None and runner_spec.loader is not None
+    runner = importlib.util.module_from_spec(runner_spec)
+    runner_spec.loader.exec_module(runner)
+    url = "http://hosted-ollama:11434"
+    provider = SimpleNamespace(model_id="embeddinggemma", embed=lambda _: ((0.1, 0.2),))
+    monkeypatch.setattr(runner, "_http", lambda *_: {"models": [{"name": "other:latest"}]})
+    with pytest.raises(RuntimeError, match="unavailable"):
+        runner._verify_embedding_endpoint(url, provider, 2)
+    monkeypatch.setattr(runner, "_http", lambda *_: {"models": [{"name": "embeddinggemma:latest"}]})
+    with pytest.raises(RuntimeError, match="dimension"):
+        runner._verify_embedding_endpoint(url, provider, 3)
+    assert runner._verify_embedding_endpoint(url, provider, 2) == {
+        "endpoint": url, "model": "embeddinggemma", "dimensions": 2}

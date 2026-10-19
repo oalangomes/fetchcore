@@ -96,6 +96,27 @@ def _inventory(endpoints: dict[str, str]) -> dict[str, set[str]]:
     }
 
 
+def _verify_embedding_endpoint(url: str, provider: OllamaEmbeddingProvider,
+                               dimensions: int) -> dict[str, object]:
+    """Check the selected Ollama model before creating any backend resource."""
+    parsed = urlparse(url)
+    if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+            or parsed.username or parsed.password or parsed.path not in {"", "/"}
+            or parsed.query or parsed.fragment):
+        raise RuntimeError("Ollama endpoint must be an HTTP(S) base URL without credentials or path")
+    tags = _http("GET", url.rstrip("/") + "/api/tags")
+    models = {str(item.get("name", "")) for item in tags.get("models", [])}
+    if not any(name == provider.model_id or
+               (":" not in provider.model_id and name == provider.model_id + ":latest")
+               for name in models):
+        raise RuntimeError(f"Ollama model {provider.model_id} is unavailable at the authorized endpoint")
+    vectors = provider.embed(("fetchcore typed knowledge endpoint preflight",))
+    if len(vectors) != 1 or len(vectors[0]) != dimensions:
+        raise RuntimeError("Ollama embedding dimension differs from the authorized backend schemas")
+    return {"endpoint": url.rstrip("/"), "model": provider.model_id,
+            "dimensions": len(vectors[0])}
+
+
 def _verify_ownership(config: dict[str, Any]) -> dict[str, object]:
     """Match exact local BENCH container identity and published endpoint ports."""
     approval = config["authorization"]
@@ -335,6 +356,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         url=endpoints["ollama"], model=embedding["model"],
         timeout_seconds=embedding["timeout_seconds"],
         request_batch_size=embedding["batch_size"]))
+    record["embedding_preflight"] = _verify_embedding_endpoint(
+        endpoints["ollama"], provider, embedding["dimensions"])
     embedder = RunEmbeddingCache(provider, provider_id=embedding["provider"],
                                  model_id=embedding["model"])
     compiler = ProjectionV3Compiler()

@@ -8,7 +8,7 @@
     "service_class": "BENCH",
     "compose_project": "fetchcore-bench-dedicated",
     "resource_prefix": "fc-typed-",
-    "embedding_endpoint": "http://127.0.0.1:11434"
+    "embedding_endpoint": "http://172.21.32.1:11434"
   },
   "cleanup_policy": "retain",
   "containers": {
@@ -20,7 +20,7 @@
     "solr": "http://127.0.0.1:28983/solr",
     "opensearch": "http://127.0.0.1:29200",
     "qdrant": "http://127.0.0.1:26333",
-    "ollama": "http://127.0.0.1:11434"
+    "ollama": "http://172.21.32.1:11434"
   },
   "embedding": {
     "provider": "ollama",

@@ -1,12 +1,19 @@
 {
   "compose_project": "fetchcore-bench-dedicated",
+  "embedding_endpoint_attestation": {
+    "endpoint": "http://172.21.32.1:11434",
+    "model_listed": "embeddinggemma:latest",
+    "probe": "GET /api/tags",
+    "reachable_from": "WSL host runner",
+    "vector_dimensions": null
+  },
   "endpoints": {
-    "ollama": "http://127.0.0.1:11434",
+    "ollama": "http://172.21.32.1:11434",
     "opensearch": "http://127.0.0.1:29200",
     "qdrant": "http://127.0.0.1:26333",
     "solr": "http://127.0.0.1:28983/solr"
   },
-  "observed_at_utc": "2026-10-19T19:36:46.748977+00:00",
+  "observed_at_utc": "2026-10-19T20:05:40.959490+00:00",
   "resource_inventory": {
     "opensearch": {
       "count": 5,
