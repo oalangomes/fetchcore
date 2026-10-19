@@ -102,5 +102,5 @@ explicit rebuild; `local_reference/resolution@2`,
 fingerprint remain unchanged. Old `local_reference/resolution@1` envelopes
 are not silently treated as version 2.
 
-See the [S5 construction benchmark](../../benchmarks/local-reference-s5/README.md)
+See the [local-relations acceptance fixture](../../tests/acceptance/acquisition/local-relations/README.md)
 for the frozen corpus, ground truth, paired measurements and limits.
