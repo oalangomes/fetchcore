@@ -1,6 +1,6 @@
-# Repository Learning Benchmark
+# Repository learning — consumer study
 
-Status: experimental product-proof harness owned by #89 / #33. It is not a FetchCore runtime contract.
+Status: external consumer study. Issue/PR references are provenance, not suite names or FetchCore contracts. This study is not a core retrieval benchmark.
 
 The benchmark asks:
 
