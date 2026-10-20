@@ -160,6 +160,15 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     assert operational_inputs["evaluate"] is False
     assert "github.event.workflow_run.head_sha || github.sha" in operational_inputs["target_ref"]
     assert "github.event.workflow_run.head_sha || github.sha" in operational_inputs["fetchcore_ref"]
+    assert "FETCHCORE_OPERATIONAL_OLLAMA_URL" in operational_inputs["ollama_url"]
+    assert operational_inputs["embedding_provider"] == "ollama"
+    assert operational_inputs["embedding_model"] == "embeddinggemma"
+    assert operational_inputs["embedding_dimensions"] == 768
+    assert "FETCHCORE_OPERATIONAL_RETRIEVAL_MODE" in operational_inputs["evaluation_modes_json"]
+    assert "'hybrid'" in operational_inputs["evaluation_modes_json"]
+    solr_dispatch = yaml.safe_load(operational_index)["on"]["workflow_dispatch"]["inputs"]["retrieval_mode"]
+    assert solr_dispatch["default"] == "hybrid"
+    assert solr_dispatch["options"] == ["hybrid", "dense"]
 
     assert list(operational_jobs) == ["operational-index"]  # Solr unchanged
 
@@ -178,9 +187,22 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
         assert vector["concurrency"]["group"] == f"fetchcore-operational-{backend}"
         assert vector["concurrency"]["cancel-in-progress"] is False
         assert "FETCHCORE_OPERATIONAL_OLLAMA_URL" in vector["env"]["FC_OLLAMA_URL"]
-        assert "embeddinggemma" in vector["env"]["FETCHCORE_RETRIEVAL"]
-        assert '"dimensions":768' in vector["env"]["FETCHCORE_RETRIEVAL"]
+        assert "FETCHCORE_OPERATIONAL_RETRIEVAL_MODE" in vector["env"]["FC_RETRIEVAL_MODE"]
+        assert "'hybrid'" in vector["env"]["FC_RETRIEVAL_MODE"]
+        dispatch = yaml.safe_load(backend_workflow)["on"]["workflow_dispatch"]["inputs"]["retrieval_mode"]
+        assert dispatch["default"] == "hybrid"
+        assert dispatch["options"] == ["hybrid", "dense"]
         assert "github.event.workflow_run.head_sha || github.sha" in vector["env"]["FC_TARGET_SHA"]
+        profile_step = next(
+            step["run"] for step in vector["steps"]
+            if step.get("name") == "Resolve explicit retrieval profile"
+        )
+        assert "hybrid|dense" in profile_step
+        assert '"provider": "ollama"' in profile_step
+        assert '"model": "embeddinggemma"' in profile_step
+        assert '"dimensions": 768' in profile_step
+        assert '"enabled": mode == "hybrid"' in profile_step
+        assert "FETCHCORE_RETRIEVAL=" in profile_step
         vector_steps = "\n".join(
             step.get("run", "") for step in vector["steps"] if isinstance(step, dict)
         )
