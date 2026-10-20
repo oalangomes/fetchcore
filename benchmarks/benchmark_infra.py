@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Explicit, owner-checked BENCH infrastructure planning and lifecycle.
 
 Functional benchmarks reuse the existing BENCH fleet. Performance runs use
