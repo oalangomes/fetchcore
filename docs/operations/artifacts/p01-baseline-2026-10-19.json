@@ -1,0 +1,59 @@
+{
+  "artifact": "P0.1 installed P0.0 baseline",
+  "raw_sha256": "046d422decd096524e943862c121cc66526967cc8ca08ff14fd3c8620c6a6542",
+  "source_commit": "96f6146b9bcf22f208d84ea2fd511d85e3081c58",
+  "status": "passed",
+  "scope": "Controlled Git fixture; installed wheel with MCP extra; isolated standalone Solr; lexical retrieval. Timers exclude installation and backend provisioning.",
+  "backend": {
+    "project": "fetchcore-p01-codex",
+    "resource": "fetchcore-p01-codex-baseline",
+    "endpoint": "http://127.0.0.1:18984/solr",
+    "image_digest": "sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb"
+  },
+  "repository": "acme/fetchcore-p01-fixture",
+  "initial_revision": "21e2773f5a3c805489d9c54990557b435553cc19",
+  "updated_revision": "2cdb5e72988edfad9aed58378be25db077a968ff",
+  "initial_corpus_checksum": "c22b4e4c7319534a61b9f869e34e5e06e971fc0a954b61a82e9cc582196bbeec",
+  "updated_corpus_checksum": "c019f26219f5111e5aaf25bcc9a75d7ce36780f2900a9b36f0ecf997390f9288",
+  "indexing_fingerprint": "sha256:05b062d902618c1017a6548124dd606bedf2635ec903a4ac0019655a18f9d885",
+  "projection_fingerprint": "sha256:80d19b9400141cd7bb73f7ba7f64de414cd5a896b87c2dc1713959804696cef2",
+  "evidence": {
+    "source_ref": "repository://acme/fetchcore-p01-fixture/src/widgets.py",
+    "revision": "21e2773f5a3c805489d9c54990557b435553cc19",
+    "source_span": "1-2",
+    "checksum": "sha256:5b6d1517924cac82c276006266c7b272d7cc9c6595a54989f3d38d35394208ed",
+    "cli_source_matched": true,
+    "mcp_source_matched": true
+  },
+  "metrics": {
+    "commands_to_first_evidence": 8,
+    "time_to_first_evidence_ms": 30651.15,
+    "search_wall_ms": 1281.991,
+    "search_to_source_ms": 218.061,
+    "mcp_first_startup_ms": 1077.902,
+    "mcp_first_search_ms": 1129.751,
+    "mcp_second_startup_ms": 569.509,
+    "mcp_second_search_ms": 1034.149
+  },
+  "step_wall_ms": {
+    "config": 320.878,
+    "doctor_before": 2330.373,
+    "register": 240.975,
+    "initial_plan": 4848.239,
+    "rebuild": 13087.075,
+    "status": 3215.275,
+    "readiness": 5325.946,
+    "search": 1281.991,
+    "source": 218.061,
+    "search_after_restart": 1237.326,
+    "delta_plan": 5358.902,
+    "sync": 12851.451,
+    "noop_sync": 3959.305
+  },
+  "indexing": {
+    "rebuild": {"documents": 2, "backend_writes": 2, "embedding_requests": 0},
+    "incremental_sync": {"added": 1, "updated": 1, "deleted": 1},
+    "noop_sync": {"backend_writes": 0, "backend_deletes": 0, "embedding_requests": 0}
+  },
+  "all_step_exit_codes_zero": true
+}
