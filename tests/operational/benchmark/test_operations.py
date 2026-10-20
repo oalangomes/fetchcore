@@ -17,8 +17,15 @@ import benchmark_infra as infra  # noqa: E402
 def sample_run(tmp_path: Path, *, kind: str = "full") -> Path:
     run_dir = tmp_path / "runs" / "targeted-exact" / "b4e4d2c6a0e8"
     (run_dir / "native").mkdir(parents=True)
-    ops.save(run_dir / "native" / "measurement.json", {
+    for representation in ("canonical", "legacy"):
+        ops.save(run_dir / "native" / f"{representation}.json", {
+            "status": "complete", "representation": representation,
+            "repetitions": 20, "warmups": 1,
+            "protocol": "fetchcore.targeted-exact-v2",
+        })
+    ops.save(run_dir / "native" / "run.json", {
         "status": "complete", "repetitions": 20, "warmups": 1,
+        "representations": ["canonical", "legacy"],
         "protocol": "fetchcore.targeted-exact-v2",
     })
     ops.save(run_dir / "bundle.json", {
@@ -34,7 +41,7 @@ def sample_run(tmp_path: Path, *, kind: str = "full") -> Path:
 def test_detects_mutated_and_unlisted_measurements(tmp_path: Path) -> None:
     run = sample_run(tmp_path)
     assert ops.validate(run)["status"] == "completed"
-    (run / "native" / "measurement.json").write_text("{}")
+    (run / "native" / "canonical.json").write_text("{}")
     with pytest.raises(ops.BundleError, match="checksum"):
         ops.validate(run)
     run = sample_run(tmp_path / "another")
@@ -45,7 +52,7 @@ def test_detects_mutated_and_unlisted_measurements(tmp_path: Path) -> None:
 
 def test_refuses_symlink_and_path_escape(tmp_path: Path) -> None:
     run = sample_run(tmp_path)
-    (run / "native" / "link.json").symlink_to(run / "native" / "measurement.json")
+    (run / "native" / "link.json").symlink_to(run / "native" / "canonical.json")
     with pytest.raises(ops.BundleError, match="symlink"):
         ops.validate(run)
     (run / "native" / "link.json").unlink()
