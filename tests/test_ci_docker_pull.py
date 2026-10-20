@@ -166,7 +166,7 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     assert operational_inputs["embedding_dimensions"] == 768
     assert "FETCHCORE_OPERATIONAL_RETRIEVAL_MODE" in operational_inputs["evaluation_modes_json"]
     assert "'hybrid'" in operational_inputs["evaluation_modes_json"]
-    solr_dispatch = yaml.safe_load(operational_index)["on"]["workflow_dispatch"]["inputs"]["retrieval_mode"]
+    solr_dispatch = yaml.safe_load(operational_index)[True]["workflow_dispatch"]["inputs"]["retrieval_mode"]
     assert solr_dispatch["default"] == "hybrid"
     assert solr_dispatch["options"] == ["hybrid", "dense"]
 
@@ -189,7 +189,7 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
         assert "FETCHCORE_OPERATIONAL_OLLAMA_URL" in vector["env"]["FC_OLLAMA_URL"]
         assert "FETCHCORE_OPERATIONAL_RETRIEVAL_MODE" in vector["env"]["FC_RETRIEVAL_MODE"]
         assert "'hybrid'" in vector["env"]["FC_RETRIEVAL_MODE"]
-        dispatch = yaml.safe_load(backend_workflow)["on"]["workflow_dispatch"]["inputs"]["retrieval_mode"]
+        dispatch = yaml.safe_load(backend_workflow)[True]["workflow_dispatch"]["inputs"]["retrieval_mode"]
         assert dispatch["default"] == "hybrid"
         assert dispatch["options"] == ["hybrid", "dense"]
         assert "github.event.workflow_run.head_sha || github.sha" in vector["env"]["FC_TARGET_SHA"]
