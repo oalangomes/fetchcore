@@ -98,9 +98,9 @@ from WSL. The routing default is `http://host.docker.internal:11434`; pass
 it with container `localhost` or start another Ollama. `FETCHCORE_BACKEND` selects
 `solr`, `opensearch`, or `qdrant-vector` (`--backend qdrant` maps to the latter);
 `FETCHCORE_INDEX_BACKEND` and its endpoint/resource settings select that same backend.
-The indexing CLI consequently rejects OpenSearch/Qdrant with its existing
-`unsupported_backend` error (operational capability unavailable, #123). Selection
-must never redirect an unsupported indexing operation to Solr.
+Registered indexing now supports Solr, OpenSearch and Qdrant through the
+same application boundary (#123, operationally accepted in #130/#202/#203).
+Unsupported backend capabilities still fail explicitly; no request is redirected to Solr.
 
 ## Explicit service and resource preparation
 
@@ -151,10 +151,11 @@ with `--create-if-missing` only for an intentional new resource; subsequent
 checks use `--provision-mode reuse_only`. Then explicitly run `fetchcore index bootstrap`, registration,
 plan and sync using the routed environment. Bootstrap remains Projection v3.
 OpenSearch/Qdrant infrastructure preparation creates only empty schemas and aliases;
-it does not create an indexed snapshot. Their operational index lifecycle remains
-unavailable pending #123 (`unsupported_backend` in the current indexing CLI,
-reported as an unsupported operational capability). Do not switch operational consumers to those
-resources until the indexing lifecycle is explicitly implemented and validated.
+it does not create an indexed snapshot. Their indexing lifecycle is operationally
+supported (#123/#202/#203), but source registration, initial rebuild, and migration
+remain explicit. The OPERATIONAL workflow performs only incremental `sync` on
+pre-existing compatible snapshots after CI succeeds; missing/incompatible snapshots
+require a separate, authorized operator action rather than automatic reconstruction.
 
 `run` exports host-process `FETCHCORE_*` settings, not container DNS or MCP-specific
 configuration. Use the emitted values explicitly for MCP-specific settings, or

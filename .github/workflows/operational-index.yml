@@ -1,4 +1,4 @@
-name: FetchCore operational index
+name: FetchCore operational Solr index
 
 on:
   workflow_run:
