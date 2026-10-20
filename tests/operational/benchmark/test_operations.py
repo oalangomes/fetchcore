@@ -136,3 +136,57 @@ def test_infra_rejects_foreign_stopped_container(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(infra, "_docker", docker)
     with pytest.raises(ops.BundleError, match="foreign container"):
         infra.verify_owned("fetchcore-bench-abcdef123456")
+
+
+
+def test_native_resource_binding_blocks_wrong_fleet(tmp_path: Path) -> None:
+    plan = infra.make_plan("baseline-v1", "performance", "abcdef123456", {
+        "solr": 49183, "opensearch": 49200, "opensearch_metrics": 49600,
+        "qdrant": 46333, "qdrant_grpc": 46334,
+    })
+    file = tmp_path / "run-config.json"
+    config = {
+        "infrastructure_project": plan["compose_project"],
+        "endpoints": {**plan["endpoints"], "ollama": "http://wsl-provider:11434"},
+        "resources": {"solr": plan["resources"]["solr"],
+                      "opensearch": plan["resources"]["opensearch"],
+                      "qdrant-vector": plan["resources"]["qdrant"]},
+    }
+    ops.save(file, config)
+    infra.validate_runner_binding("baseline-v1", ["--run-config", str(file)], plan)
+    config["endpoints"]["solr"] = "http://127.0.0.1:18983/solr"
+    ops.save(file, config)
+    with pytest.raises(ops.BundleError, match="does not bind"):
+        infra.validate_runner_binding("baseline-v1", ["--run-config", str(file)], plan)
+
+
+def test_pairing_requires_both_valid_native_measurements(tmp_path: Path) -> None:
+    run = sample_run(tmp_path)
+    ops.review(Namespace(run=run, decision="accepted", note="Reviewed pair"))
+    assert ops.validate(run, publish=True)["status"] == "completed"
+    payload = ops.load(run / "native" / "legacy.json")
+    payload["status"] = "failed"
+    ops.save(run / "native" / "legacy.json", payload)
+    manifest = ops.load(run / "bundle.json")
+    manifest["artifacts"] = ops.capture(run)
+    ops.save(run / "bundle.json", manifest)
+    with pytest.raises(ops.BundleError, match="incomplete"):
+        ops.validate(run, publish=True)
+
+
+def test_search_intent_routing_is_opt_in_and_preserves_frozen_manifest() -> None:
+    plan = infra.make_plan("search-intent-v2", "functional", None, infra.FUNCTIONAL_PORTS)
+    original = {
+        "environment": {"profile_id": "frozen",
+                        "service_endpoints": {"solr": "http://localhost:8983/solr"}},
+        "backend_settings": {
+            "solr": {"collection": "legacy"},
+            "opensearch": {"index": "legacy"},
+            "qdrant-vector": {"collection": "legacy"},
+        },
+    }
+    routed = infra.apply_search_intent_plan(original, plan)
+    assert original["backend_settings"]["solr"]["collection"] == "legacy"
+    assert routed["backend_settings"]["solr"]["collection"] == "fc-bench-search-intent-v2"
+    assert routed["environment"]["service_endpoints"]["solr"] == "http://127.0.0.1:28983/solr"
+    assert routed["environment"]["profile_id"] != "frozen"
