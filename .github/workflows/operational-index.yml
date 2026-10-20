@@ -7,6 +7,13 @@ on:
     branches:
       - master
   workflow_dispatch:
+    inputs:
+      retrieval_mode:
+        description: "Retrieval profile for this OPERATIONAL run"
+        type: choice
+        required: true
+        default: hybrid
+        options: [hybrid, dense]
 
 permissions:
   contents: read
@@ -33,5 +40,9 @@ jobs:
       require_existing_snapshot: true
       index_lifecycle: sync
       evaluate: false
-      evaluation_modes_json: '["lexical"]'
+      evaluation_modes_json: ${{ format('["{0}"]', inputs.retrieval_mode || vars.FETCHCORE_OPERATIONAL_RETRIEVAL_MODE || 'hybrid') }}
+      embedding_provider: ollama
+      embedding_model: embeddinggemma
+      embedding_dimensions: 768
+      ollama_url: ${{ vars.FETCHCORE_OPERATIONAL_OLLAMA_URL }}
       artifact_retention_days: 30
