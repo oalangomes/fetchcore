@@ -163,10 +163,17 @@ def run(args: argparse.Namespace) -> int:
     source, shape, protocol = SUITES[args.suite]
     source_path = ROOT / "benchmarks" / source
     config_hashes: dict[str, str] = {}
-    for index, item in enumerate(native[:-1]):
-        if item in {"--run-config", "--config", "--ground-truth"}:
-            candidate = Path(native[index + 1])
-            config_hashes[item[2:]] = digest(candidate.read_bytes())
+    for index, item in enumerate(native):
+        for flag in ("--run-config", "--config", "--ground-truth"):
+            if item == flag:
+                if index + 1 >= len(native):
+                    raise BundleError(f"missing value for {flag}")
+                selected = native[index + 1]
+            elif item.startswith(flag + "="):
+                selected = item[len(flag) + 1:]
+            else:
+                continue
+            config_hashes[flag[2:]] = digest(Path(selected).read_bytes())
     plan_sha: str | None = None
     if args.infra_plan is not None:
         from benchmark_infra import validate_runner_binding, verified_plan
@@ -231,6 +238,16 @@ def run(args: argparse.Namespace) -> int:
         else:
             command = [sys.executable, str(source_path), *native, "--output", str(output)]
             result_code = subprocess.run(command, cwd=ROOT, check=False).returncode
+        if args.suite == "baseline-v1" and args.kind == "full" and result_code == 0:
+            versions = list((run_dir / "native").glob("V0.*"))
+            if len(versions) != 1:
+                raise BundleError("baseline measurement output has no unique version")
+            derived = subprocess.run([
+                sys.executable, str(ROOT / "benchmarks/baseline-v1/context_yield.py"),
+                "--artifacts", str(versions[0])
+            ], cwd=ROOT, check=False)
+            if derived.returncode != 0:
+                raise BundleError("baseline ContextYield post-processing failed")
         payload = _native_result(args.suite, run_dir)
         manifest["native_status"] = payload.get("status")
         manifest["status"] = _native_status(args.suite, payload, args.kind)
