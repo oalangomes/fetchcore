@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import subprocess
 import sys
 import tempfile
@@ -339,8 +340,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     config = json.loads(args.config.read_text(encoding="utf-8"))
     if config.get("cleanup_policy") != "retain":
         raise RuntimeError("only retain-and-review resource lifecycle is supported")
-    if config["authorization"].get("resource_prefix") != "fc-typed-":
-        raise RuntimeError("authorization does not cover generated typed resource names")
+    prefix = config["authorization"].get("resource_prefix")
+    if prefix not in {"fc-typed-", "fc-bench-typed-knowledge"}:
+        raise RuntimeError("authorization does not cover typed BENCH resource names")
+    explicit_name = config["authorization"].get("resource_name")
+    if explicit_name is not None and (
+        not isinstance(explicit_name, str)
+        or not re.fullmatch(r"fc-bench-typed-knowledge(?:-[a-z0-9]{12})?", explicit_name)
+        or not explicit_name.startswith(prefix)
+    ):
+        raise RuntimeError("authorized typed BENCH resource name is incompatible")
     if config["authorization"].get("embedding_endpoint") != config["endpoints"]["ollama"]:
         raise RuntimeError("embedding endpoint differs from authorization")
     arms = config["arms"]
@@ -359,7 +368,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     record["service_identity"] = _verify_ownership(config)
     endpoints = {key: value.rstrip("/") for key, value in config["endpoints"].items()}
     before = _inventory(endpoints)
-    resource = "fc-typed-" + uuid.uuid4().hex[:12]
+    resource = explicit_name or "fc-typed-" + uuid.uuid4().hex[:12]
     if any(name == resource or name.startswith(resource + "-")
            for names in before.values() for name in names):
         raise RuntimeError("new resource namespace collides with existing snapshot")
