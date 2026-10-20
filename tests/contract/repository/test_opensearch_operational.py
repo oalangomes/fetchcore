@@ -10,14 +10,18 @@ from pathlib import Path
 import pytest
 
 from fetchcore.adapters.retrieval.opensearch.backend import (
+    OpenSearchBackend,
     OpenSearchIndexStore,
     OpenSearchKnowledgeIndex,
     OpenSearchSettings,
 )
+from fetchcore.adapters.retrieval.opensearch.backend import _prepare_dense_query
 from fetchcore.application import indexing
 from fetchcore.application.repositories import RepositoryApplicationService
 from fetchcore.repository.indexing import RepositoryIndexConfig, RepositoryIndexer
 from fetchcore.retrieval.contracts import KnowledgeSearchError
+from fetchcore.retrieval.contracts import SearchIntent
+from fetchcore.retrieval.config import RetrievalConfig
 
 
 class MemoryOpenSearch:
@@ -327,6 +331,28 @@ def test_rebuild_refuses_foreign_alias_owner(tmp_path: Path) -> None:
         persistence.full_rebuild(indexer("rev-2").index(tmp_path))
     assert error.value.category == "ownership_unverified"
     assert transport.aliases[next(iter(transport.aliases))] == old_index
+
+
+def test_dense_query_rejects_configured_dimensions_before_embedding() -> None:
+    class Provider:
+        provider_id = "ollama"
+        model_id = "embeddinggemma"
+
+        def embed(self, texts: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
+            pytest.fail("dimension mismatch must fail before embedding")
+
+    backend = OpenSearchBackend(embedding_factory=lambda config: Provider())
+    retrieval = RetrievalConfig.from_mapping({
+        "dense": {"enabled": True, "embedding": {"dimensions": 8}},
+    })
+    with pytest.raises(KnowledgeSearchError) as error:
+        _prepare_dense_query(
+            backend=backend, intent=SearchIntent(canonical_query="widget"),
+            snapshot=object(), retrieval=retrieval,  # type: ignore[arg-type]
+        )
+    assert error.value.category == "schema_mismatch"
+    assert error.value.metadata["expected_dimensions"] == 768
+    assert error.value.metadata["actual_dimensions"] == 8
 
 
 def test_dense_mapping_and_embedding_identity(tmp_path: Path) -> None:
