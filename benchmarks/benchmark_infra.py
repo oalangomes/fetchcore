@@ -92,6 +92,73 @@ def make_plan(suite: str, mode: str, run_id: str | None,
     }
 
 
+def _flag_value(arguments: list[str], flag: str) -> str | None:
+    for index, item in enumerate(arguments):
+        if item == flag:
+            if index + 1 >= len(arguments):
+                raise BundleError(f"missing value for {flag}")
+            return arguments[index + 1]
+        if item.startswith(flag + "="):
+            return item[len(flag) + 1:]
+    return None
+
+
+def validate_runner_binding(suite: str, arguments: list[str],
+                            plan: dict[str, object]) -> None:
+    """Fail closed if a performance run would target another Docker fleet."""
+    if plan["suite"] != suite:
+        raise BundleError("benchmark suite does not match BENCH infrastructure plan")
+    endpoints = plan["endpoints"]
+    resources = plan["resources"]
+    assert isinstance(endpoints, dict) and isinstance(resources, dict)
+    if suite == "search-intent-v2":
+        selected = _flag_value(arguments, "--benchmark-infra-plan")
+        if not selected or verified_plan(Path(selected)) != plan:
+            raise BundleError("search-intent requires its exact routing plan")
+        return
+    if suite == "targeted-exact":
+        raise BundleError("targeted-exact has no remote benchmark arms")
+    flag = "--run-config" if suite == "baseline-v1" else "--config"
+    config_file = _flag_value(arguments, flag)
+    if not config_file:
+        raise BundleError(f"missing {flag} for infrastructure binding")
+    config = load(Path(config_file))
+    if suite == "baseline-v1":
+        if (config.get("infrastructure_project") != plan["compose_project"]
+                or config.get("resources") != {
+                    "solr": resources["solr"], "opensearch": resources["opensearch"],
+                    "qdrant-vector": resources["qdrant"],
+                } or any(config.get("endpoints", {}).get(k) != value
+                         for k, value in endpoints.items())):
+            raise BundleError("baseline configuration does not bind the planned BENCH resources")
+    else:
+        approval = config.get("authorization", {})
+        if (approval.get("compose_project") != plan["compose_project"]
+                or approval.get("resource_name") != resources["solr"]
+                or any(config.get("endpoints", {}).get(k) != value
+                       for k, value in endpoints.items())):
+            raise BundleError("typed configuration does not bind the planned BENCH resources")
+
+
+def apply_search_intent_plan(manifest: dict[str, object],
+                             plan: dict[str, object]) -> dict[str, object]:
+    """Prepare an opt-in measurement manifest without editing the frozen source."""
+    from copy import deepcopy
+
+    if plan["suite"] != "search-intent-v2":
+        raise BundleError("only search-intent can apply this manifest routing")
+    result = deepcopy(manifest)
+    environment = result["environment"]
+    settings = result["backend_settings"]
+    for backend, endpoint in plan["endpoints"].items():
+        environment["service_endpoints"][backend] = endpoint
+    environment["profile_id"] = "bench-" + str(plan["compose_project"])
+    settings["solr"]["collection"] = plan["resources"]["solr"]
+    settings["opensearch"]["index"] = plan["resources"]["opensearch"]
+    settings["qdrant-vector"]["collection"] = plan["resources"]["qdrant"]
+    return result
+
+
 def environment(plan: dict[str, object]) -> dict[str, str]:
     p = plan["ports"]
     assert isinstance(p, dict)
