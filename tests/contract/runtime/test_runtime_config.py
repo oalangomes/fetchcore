@@ -231,6 +231,48 @@ def test_mcp_bootstrap_uses_application_loader(
     assert service_from_environment().repositories == ("owner/repo",)
 
 
+def test_registered_index_uses_operator_backend_unless_explicitly_overridden(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from click.testing import CliRunner
+    from fetchcore import cli
+
+    config = tmp_path / "runtime.yaml"
+    config.write_text(
+        "version: 1\nruntime:\n  backend: opensearch\n"
+        "backends:\n  opensearch:\n    url: http://127.0.0.1:29200\n"
+        "    index: owned-index\n",
+        encoding="utf-8",
+    )
+    observed: list[tuple[str, dict[str, object]]] = []
+
+    class StubIndexService:
+        def __init__(self, repositories: object, *, backend: str,
+                     backend_settings: dict[str, object], **kwargs: object) -> None:
+            observed.append((backend, backend_settings))
+
+        def run(self, operation: str, reference: str) -> dict[str, object]:
+            return {"operation": operation, "repository": reference}
+
+    monkeypatch.setattr(cli, "RepositoryIndexApplicationService", StubIndexService)
+    runner = CliRunner()
+    default = runner.invoke(cli.main, [
+        "index", "--config", str(config), "plan", "owner/repo", "--json",
+    ])
+    assert default.exit_code == 0, default.output
+    assert observed[-1] == (
+        "opensearch", {"url": "http://127.0.0.1:29200", "index": "owned-index"},
+    )
+    explicit = runner.invoke(cli.main, [
+        "index", "--config", str(config), "--backend", "solr",
+        "--backend-settings", '{"collection":"owned-core"}',
+        "plan", "owner/repo", "--json",
+    ])
+    assert explicit.exit_code == 0, explicit.output
+    assert observed[-1][0] == "solr"
+    assert observed[-1][1]["collection"] == "owned-core"
+
+
 def test_canonical_empty_retrieval_fails() -> None:
     with pytest.raises(ValueError, match="FETCHCORE_RETRIEVAL"):
         load_runtime_config(environ={"FETCHCORE_RETRIEVAL": ""})

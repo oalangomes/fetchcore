@@ -170,7 +170,8 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
             UrllibOpenSearchTransport, OPENSEARCH_VECTOR_DIMENSIONS,
         )
         from fetchcore.adapters.retrieval.qdrant.backend import (
-            QdrantVectorIndexStore, QdrantVectorSettings, UrllibQdrantTransport,
+            QdrantVectorIndexStore, QdrantVectorSettings, QdrantVectorSnapshot,
+            UrllibQdrantTransport,
         )
         provider = None
         if mode in {"dense", "hybrid"}:
@@ -292,6 +293,10 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
                 revision=config.revision,
             )
             observation = OpenSearchOperationalIndex(os_store, runtime).observe()
+            checks["schema"] = (
+                ReadinessFact("ready") if observation.schema_compatible
+                else ReadinessFact("incompatible", "schema_mismatch")
+            )
             fingerprints["indexing"] = os_snapshot.indexing_fingerprint
             fingerprints["expected_indexing"] = runtime.fingerprint
             checks["indexing_fingerprint"] = (
@@ -316,17 +321,51 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
                         else ReadinessFact("incompatible", "vector_dimensions_mismatch")
                     )
         else:
-            # Operational indexing contract for these adapters is #123.
-            # A compatible snapshot doesn't independently prove source/indexing
-            # fingerprint or working tree currentness.
-            checks["indexing_fingerprint"] = ReadinessFact("unknown", "indexing_contract_unavailable")
-            checks["currentness"] = (
-                ReadinessFact("stale", "snapshot_revision_mismatch")
-                if config.revision is not None and indexed_revision != config.revision
-                else ReadinessFact("unknown", "source_currentness_unverified")
+            from fetchcore.application.index_operations import prepare_repository_index_runtime
+            from fetchcore.adapters.retrieval.qdrant.operational import QdrantOperationalIndex
+            from fetchcore.retrieval.embedding import validate_vector_dimensions
+            q_store = cast(QdrantVectorIndexStore, store)
+            q_snapshot = cast(QdrantVectorSnapshot, snapshot)
+            runtime = prepare_repository_index_runtime(
+                config.workspace, repository=config.repository, branch=None,
+                revision=config.revision,
             )
-            if mode in {"dense", "hybrid"} and provider is not None:
-                checks["embedding"] = ReadinessFact("unknown", "vector_readiness_unverified")
+            q_observation = QdrantOperationalIndex(q_store, runtime).observe()
+            checks["schema"] = (
+                ReadinessFact("ready") if q_observation.schema_compatible
+                else ReadinessFact("incompatible", "schema_mismatch")
+            )
+            fingerprints["indexing"] = q_snapshot.indexing_fingerprint
+            fingerprints["expected_indexing"] = runtime.fingerprint
+            checks["indexing_fingerprint"] = (
+                ReadinessFact("ready")
+                if q_snapshot.indexing_fingerprint == runtime.fingerprint
+                else ReadinessFact("incompatible", "indexing_contract_changed")
+            )
+            checks["currentness"] = ReadinessFact(
+                "ready" if q_observation.currentness == "current"
+                else cast(ReadinessState, q_observation.currentness),
+                None if q_observation.currentness == "current" else q_observation.reason,
+            )
+            if mode in {"dense", "hybrid"}:
+                if selected.dimensions not in {None, q_snapshot.vector_dimensions}:
+                    checks["embedding"] = ReadinessFact(
+                        "incompatible", "vector_dimensions_mismatch",
+                    )
+                elif not q_store.embedding_snapshot_matches(q_snapshot):
+                    checks["embedding"] = ReadinessFact(
+                        "incompatible", "embedding_identity_changed",
+                    )
+                elif provider is None:
+                    checks["embedding"] = ReadinessFact(
+                        "unavailable", "embedding_provider_missing",
+                    )
+                else:
+                    dimensions = validate_vector_dimensions(provider.embed(("fetchcore readiness",)))
+                    checks["embedding"] = (
+                        ReadinessFact("ready") if dimensions == q_snapshot.vector_dimensions
+                        else ReadinessFact("incompatible", "vector_dimensions_mismatch")
+                    )
         checks["snapshot"] = ReadinessFact("ready")
     except (KnowledgeSearchError, OSError, ValueError) as exc:
         category = _category(exc)

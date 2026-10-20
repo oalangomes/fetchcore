@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<schema name="fetchcore-knowledge" version="1.6">
+  <uniqueKey>id</uniqueKey>
+
+  <fieldType name="string" class="solr.StrField" sortMissingLast="true"/>
+  <fieldType name="pint" class="solr.IntPointField" docValues="true"/>
+  <fieldType name="plong" class="solr.LongPointField" docValues="true"/>
+  <fieldType name="identifier_ci" class="solr.TextField">
+    <analyzer type="index">
+      <tokenizer class="solr.KeywordTokenizerFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+    <analyzer type="query">
+      <tokenizer class="solr.KeywordTokenizerFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+  </fieldType>
+  <fieldType name="knn_vector_768" class="solr.DenseVectorField"
+             vectorDimension="768" similarityFunction="cosine"
+             knnAlgorithm="hnsw" vectorEncoding="FLOAT32"/>
+  <fieldType name="text_general" class="solr.TextField" positionIncrementGap="100">
+    <analyzer type="index">
+      <tokenizer class="solr.StandardTokenizerFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+    <analyzer type="query">
+      <tokenizer class="solr.StandardTokenizerFactory"/>
+      <filter class="solr.LowerCaseFilterFactory"/>
+    </analyzer>
+  </fieldType>
+
+  <field name="id" type="string" indexed="true" stored="true" required="true"/>
+  <field name="record_kind" type="string" indexed="true" stored="true" required="true"/>
+  <field name="source_type" type="string" indexed="true" stored="true"/>
+  <field name="source_ref" type="string" indexed="true" stored="true"/>
+  <field name="chunk_ref" type="string" indexed="true" stored="true"/>
+  <field name="repository" type="string" indexed="true" stored="true"/>
+  <field name="branch" type="string" indexed="true" stored="true"/>
+  <field name="document_revision" type="string" indexed="true" stored="true"/>
+  <field name="path" type="string" indexed="true" stored="true"/>
+  <field name="filename" type="string" indexed="true" stored="true"/>
+  <field name="language" type="string" indexed="true" stored="true"/>
+  <field name="knowledge_type" type="string" indexed="true" stored="true"/>
+  <field name="technical_role" type="identifier_ci" indexed="true" stored="true"/>
+  <field name="symbols" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="symbol_types" type="string" indexed="true" stored="true" multiValued="true"/>
+  <field name="symbol_tokens" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="content" type="text_general" indexed="true" stored="true"/>
+  <field name="line_start" type="pint" indexed="true" stored="true"/>
+  <field name="line_end" type="pint" indexed="true" stored="true"/>
+  <field name="checksum" type="string" indexed="true" stored="true"/>
+  <field name="source_checksum" type="string" indexed="true" stored="true"/>
+
+  <field name="identifiers_exact" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="content_identifiers_exact" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="filename_exact" type="identifier_ci" indexed="true" stored="true"/>
+  <field name="path_text" type="text_general" indexed="true" stored="true"/>
+  <field name="path_segments" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="route_methods" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="route_paths" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="route_mechanisms" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="import_targets" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="dependency_targets" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="relation_types" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="relation_targets" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="relation_tokens" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="documentation_text" type="text_general" indexed="true" stored="true" multiValued="true"/>
+  <field name="structural_tokens" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
+  <field name="canonical_payload" type="string" indexed="false" stored="true"/>
+  <field name="embedding_vector" type="knn_vector_768" indexed="true" stored="true"/>
+  <field name="embedding_provider" type="string" indexed="true" stored="true"/>
+  <field name="embedding_model" type="string" indexed="true" stored="true"/>
+  <field name="vector_dimensions" type="pint" indexed="true" stored="true"/>
+  <field name="embedding_serializer_mode" type="string" indexed="true" stored="true"/>
+  <field name="embedding_serializer_version" type="string" indexed="true" stored="true"/>
+  <field name="embedding_serializer_fingerprint" type="string" indexed="true" stored="true"/>
+  <field name="projection_fingerprint" type="string" indexed="true" stored="true"/>
+  <field name="projection_version" type="string" indexed="true" stored="true"/>
+
+  <field name="snapshot_revision" type="string" indexed="true" stored="true"/>
+  <field name="corpus_checksum" type="string" indexed="true" stored="true"/>
+  <field name="document_count" type="pint" indexed="true" stored="true"/>
+  <field name="snapshot_indexed_at" type="string" indexed="true" stored="true"/>
+  <field name="snapshot_status" type="string" indexed="true" stored="true"/>
+
+  <field name="_version_" type="plong" indexed="false" stored="false"/>
+
+  <similarity class="solr.BM25SimilarityFactory">
+    <float name="k1">1.2</float>
+    <float name="b">0.75</float>
+  </similarity>
+</schema>

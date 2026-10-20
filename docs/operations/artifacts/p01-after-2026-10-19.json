@@ -1,0 +1,78 @@
+{
+  "all_step_exit_codes_zero": true,
+  "artifact": "P0.1 installed changed-wheel acceptance",
+  "backend": {
+    "endpoint": "http://127.0.0.1:18984/solr",
+    "image_digest": "sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb",
+    "project": "fetchcore-p01-codex",
+    "resource": "fetchcore-p01-codex-after"
+  },
+  "backend_restart": {
+    "readiness_ready": true,
+    "search_revision": "31c26315f41baef983149dcf3582063254360612",
+    "search_source_ref": "repository://acme/fetchcore-p01-fixture/src/widgets.py",
+    "source_content_matched": true
+  },
+  "evidence": {
+    "checksum": "sha256:5b6d1517924cac82c276006266c7b272d7cc9c6595a54989f3d38d35394208ed",
+    "cli_source_matched": true,
+    "mcp_source_matched": true,
+    "revision": "b602933a3ceeeb3dfeff5499f53122e51f55aa22",
+    "source_ref": "repository://acme/fetchcore-p01-fixture/src/widgets.py",
+    "source_span": "1-2"
+  },
+  "indexing": {
+    "incremental_sync": {
+      "added": 1,
+      "deleted": 1,
+      "updated": 1
+    },
+    "noop_sync": {
+      "backend_deletes": 0,
+      "backend_writes": 0,
+      "embedding_requests": 0
+    },
+    "rebuild": {
+      "backend_writes": 2,
+      "documents": 2,
+      "embedding_requests": 0
+    }
+  },
+  "indexing_fingerprint": "sha256:05b062d902618c1017a6548124dd606bedf2635ec903a4ac0019655a18f9d885",
+  "initial_corpus_checksum": "c22b4e4c7319534a61b9f869e34e5e06e971fc0a954b61a82e9cc582196bbeec",
+  "initial_revision": "b602933a3ceeeb3dfeff5499f53122e51f55aa22",
+  "metrics": {
+    "commands_to_first_evidence": 8,
+    "mcp_first_search_ms": 965.548,
+    "mcp_first_startup_ms": 515.252,
+    "mcp_second_search_ms": 1006.252,
+    "mcp_second_startup_ms": 495.953,
+    "search_to_source_ms": 202.607,
+    "search_wall_ms": 1145.614,
+    "time_to_first_evidence_ms": 28242.111
+  },
+  "projection_fingerprint": "sha256:80d19b9400141cd7bb73f7ba7f64de414cd5a896b87c2dc1713959804696cef2",
+  "raw_sha256": "a1a45cb63f358ece92e2213ba98647c62e8ca00ebdaa7993e92f7f294dfcece6",
+  "repository": "acme/fetchcore-p01-fixture",
+  "scope": "Controlled Git fixture; installed wheel with MCP extra; isolated standalone Solr; lexical retrieval. Timers exclude installation and backend provisioning.",
+  "source_commit": "608bc0c7d027c4833d11edab0865da0bf8efaae6",
+  "status": "passed",
+  "step_wall_ms": {
+    "config": 200.598,
+    "delta_plan": 5351.8,
+    "doctor_before": 2210.88,
+    "initial_plan": 3278.879,
+    "noop_sync": 3950.76,
+    "readiness": 4199.376,
+    "rebuild": 13696.058,
+    "register": 217.827,
+    "search": 1145.614,
+    "search_after_restart": 1151.179,
+    "source": 202.607,
+    "status": 3292.492,
+    "sync": 13482.946
+  },
+  "updated_corpus_checksum": "c019f26219f5111e5aaf25bcc9a75d7ce36780f2900a9b36f0ecf997390f9288",
+  "updated_revision": "31c26315f41baef983149dcf3582063254360612",
+  "wheel_sha256": "8f7caccdbd1c289eaf6633d1e6e0348eff1b53e912776c1b245d5fe5a72b5d83"
+}

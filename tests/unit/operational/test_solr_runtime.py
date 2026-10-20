@@ -177,6 +177,28 @@ def test_provision_if_missing_uses_free_owned_port_and_exact_cleanup(tmp_path: P
     assert docker.calls[-1] == ("rm", "-f", "fetchcore-solr-123-1")
 
 
+def test_owned_provisioning_defaults_to_bundled_configset(tmp_path: Path) -> None:
+    source_configset = Path(__file__).parents[3] / "infra" / "solr" / "configset" / "conf"
+    bundled = Path(solr_runtime.__file__).parent / "configset" / "conf"
+    for filename in ("schema.xml", "solrconfig.xml"):
+        assert (bundled / filename).read_bytes() == (source_configset / filename).read_bytes()
+
+    docker = FakeDocker()
+    prepare_solr_runtime(
+        config(
+            tmp_path,
+            configset_dir=None,
+            provision_mode=ProvisionMode.PROVISION_IF_MISSING,
+            create_if_missing=True,
+        ),
+        client=FakeSolr(resources={"fetchcore-self-dogfood"}, unavailable_calls=1),
+        docker=docker,
+        choose_port=lambda: 49124,
+        sleep=lambda _: None,
+    )
+    assert f"{bundled.parent}:/fetchcore-configset:ro" in docker.calls[0]
+
+
 def test_cleanup_never_touches_reused_or_mismatched_resources() -> None:
     docker = FakeDocker()
     assert cleanup_solr_runtime({"instance": "reused"}, docker=docker) is False

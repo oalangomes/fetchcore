@@ -77,6 +77,119 @@ def test_healthy_but_unindexed_is_not_ready(monkeypatch: pytest.MonkeyPatch, tmp
     assert not report.ready
 
 
+@pytest.mark.parametrize("compatible", [True, False])
+def test_opensearch_observation_sets_schema_fact(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, compatible: bool,
+) -> None:
+    from fetchcore.adapters.retrieval.opensearch import backend, operational
+    from fetchcore.application import index_operations, runtime_inspection
+
+    monkeypatch.setattr(
+        runtime_inspection.RuntimeInspectionService, "doctor",
+        lambda self: _doctor(schema_compatibility=("not_checked", None)),
+    )
+    monkeypatch.setattr(backend, "OpenSearchIndexStore", lambda *a, **kw: FakeStore())
+    monkeypatch.setattr(
+        index_operations, "prepare_repository_index_runtime",
+        lambda *a, **kw: SimpleNamespace(fingerprint="fp1"),
+    )
+
+    class StubOperationalIndex:
+        def __init__(self, store: object, runtime: object) -> None:
+            pass
+
+        def observe(self) -> operational.OpenSearchObservation:
+            return operational.OpenSearchObservation(
+                "noop" if compatible else "rebuild_required",
+                "current" if compatible else "incompatible",
+                "snapshot_current" if compatible else "schema_mismatch",
+                schema_compatible=compatible,
+            )
+
+    monkeypatch.setattr(operational, "OpenSearchOperationalIndex", StubOperationalIndex)
+    report = inspect_readiness(RuntimeInspectionService(FetchCoreRuntimeConfig(
+        backend="opensearch", workspace=tmp_path,
+        repository="demo/repo", revision="abc",
+    )))
+    assert report.checks["schema"].state == ("ready" if compatible else "incompatible")
+    assert report.ready is compatible
+
+
+@pytest.mark.parametrize(
+    ("compatible", "configured_dimensions"),
+    [(True, None), (False, None), (True, 8)],
+)
+def test_qdrant_observation_and_live_embedding_set_readiness(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    compatible: bool, configured_dimensions: int | None,
+) -> None:
+    from fetchcore.adapters.retrieval.qdrant import backend, operational
+    from fetchcore.application import index_operations, runtime_inspection
+    from fetchcore.application.composition import EmbeddingProviderRegistry
+
+    class StubProvider:
+        provider_id = "ollama"
+        model_id = "embeddinggemma"
+
+        def embed(self, texts: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
+            assert texts == ("fetchcore readiness",)
+            return (tuple(0.1 for _ in range(768)),)
+
+    class StubStore:
+        def load_snapshot(self, repository: str) -> SimpleNamespace:
+            assert repository == "demo/repo"
+            return SimpleNamespace(
+                revision="abc", projection_fingerprint="projection",
+                serializer_fingerprint="serializer", indexing_fingerprint="fp1",
+                vector_dimensions=768,
+            )
+
+        def embedding_snapshot_matches(self, snapshot: object) -> bool:
+            return True
+
+    class StubOperationalIndex:
+        def __init__(self, store: object, runtime: object) -> None:
+            pass
+
+        def observe(self) -> operational.QdrantObservation:
+            return operational.QdrantObservation(
+                "noop" if compatible else "rebuild_required",
+                "current" if compatible else "incompatible",
+                "up_to_date" if compatible else "schema_mismatch",
+                schema_compatible=compatible,
+            )
+
+    monkeypatch.setattr(
+        runtime_inspection.RuntimeInspectionService, "doctor",
+        lambda self: _doctor(
+            schema_compatibility=("not_checked", None),
+            embedding_provider=("ok", None),
+        ),
+    )
+    monkeypatch.setattr(EmbeddingProviderRegistry, "create", lambda *a, **kw: StubProvider())
+    monkeypatch.setattr(backend, "QdrantVectorIndexStore", lambda *a, **kw: StubStore())
+    monkeypatch.setattr(operational, "QdrantOperationalIndex", StubOperationalIndex)
+    monkeypatch.setattr(
+        index_operations, "prepare_repository_index_runtime",
+        lambda *a, **kw: SimpleNamespace(fingerprint="fp1"),
+    )
+    report = inspect_readiness(RuntimeInspectionService(FetchCoreRuntimeConfig(
+        backend="qdrant-vector", workspace=tmp_path,
+        repository="demo/repo", revision="abc",
+        retrieval=RetrievalConfig.from_mapping({"dense": {
+            "enabled": True, "embedding": {"dimensions": configured_dimensions},
+        }}),
+    )))
+    assert report.checks["schema"].state == ("ready" if compatible else "incompatible")
+    assert report.checks["indexing_fingerprint"].state == "ready"
+    assert report.checks["embedding"].state == (
+        "incompatible" if configured_dimensions == 8 else "ready"
+    )
+    if configured_dimensions == 8:
+        assert report.checks["embedding"].category == "vector_dimensions_mismatch"
+    assert report.ready is (compatible and configured_dimensions != 8)
+
+
 @dataclass(frozen=True)
 class Snapshot:
     repository: str = "demo/repo"
