@@ -523,14 +523,22 @@ def _dispatch_index(ctx: click.Context, operation: str, reference: str | None,
                         "Registered targets cannot be combined with explicit workspace/identity options",
                     )
             try:
-                settings = _json_object(options["backend_settings"])
-                runtime = load_runtime_config(
-                    path=options["config_path"],
-                    overrides={
-                        "runtime": {"backend": options["backend"]},
-                        "backends": {options["backend"]: settings},
-                    },
-                )
+                runtime = load_runtime_config(path=options["config_path"])
+                overrides: dict[str, object] = {}
+                backend = runtime.backend
+                if (parent.get_parameter_source("backend") != click.core.ParameterSource.DEFAULT
+                        or "runtime.backend" not in runtime.sources):
+                    backend = options["backend"]
+                    overrides["runtime"] = {"backend": backend}
+                if (parent.get_parameter_source("backend_settings")
+                        != click.core.ParameterSource.DEFAULT):
+                    overrides["backends"] = {
+                        backend: _json_object(options["backend_settings"]),
+                    }
+                if overrides:
+                    runtime = load_runtime_config(
+                        path=options["config_path"], overrides=overrides,
+                    )
                 providers = EmbeddingProviderRegistry(
                     settings={"ollama": runtime.ollama.to_mapping()}
                 )
