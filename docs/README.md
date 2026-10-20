@@ -23,6 +23,7 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Review consumer migration starting state | [Shared infrastructure consumer audit](operations/shared-infra-consumer-audit.md) |
 | Review consumer migration validation | [Shared infrastructure consumer validation](operations/shared-infra-consumer-validation.md) |
 | Review Qdrant OPERATIONAL preflight | [Qdrant preflight 2026-10-17](operations/qdrant-operational-preflight-2026-10-17.md) |
+| Review current backend acceptance preflight | [P0.2 read-only preflight](operations/p02-operational-preflight-2026-10-19.md) |
 | Review Qdrant OPERATIONAL acceptance | [Qdrant lifecycle gate 2026-10-18](benchmarks/results/qdrant-operational-acceptance-2026-10-18.md) |
 | Understand CI triggers, runners and container reliability | [CI workflows](guides/ci-workflows.md) |
 | Register or inspect a repository source | [Repository registry](guides/repository-registry.md) |
