@@ -256,6 +256,46 @@ def run(args: argparse.Namespace) -> int:
     return 0 if manifest["status"] == "completed" else 2
 
 
+
+def validate_full_protocol(suite: str, run_dir: Path, result: dict[str, object]) -> None:
+    """Apply native completeness rules; the generic bundle alone grants no PASS."""
+    if suite == "baseline-v1":
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "fetchcore_baseline_publisher",
+            ROOT / "benchmarks/baseline-v1/publish_run.py"
+        )
+        assert spec is not None and spec.loader is not None
+        publisher = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(publisher)
+        versions = list((run_dir / "native").glob("V0.*"))
+        if len(versions) != 1:
+            raise BundleError("baseline full run requires exactly one native version")
+        try:
+            publisher.validate(versions[0])
+        except ValueError as exc:
+            raise BundleError(f"native baseline publication gate: {exc}") from exc
+    elif suite == "search-intent-v2":
+        if result.get("full_protocol") is not True:
+            raise BundleError("paired SearchIntent benchmark is not full protocol")
+    elif suite == "targeted-exact":
+        for representation in ("canonical", "legacy"):
+            payload = load(run_dir / "native" / f"{representation}.json")
+            if (payload.get("representation") != representation
+                    or payload.get("status") != "complete"
+                    or payload.get("repetitions") != result.get("repetitions")
+                    or payload.get("warmups") != result.get("warmups")):
+                raise BundleError("targeted native paired measurements are incomplete")
+    else:
+        expected = load(ROOT / "benchmarks/typed-knowledge-retrieval/run-config.example.json")
+        if (result.get("status") != "MEASURED"
+                or not isinstance(result.get("retrieval"), dict)
+                or set(result["retrieval"]) != {arm["id"] for arm in expected["arms"]}
+                or not isinstance(result.get("snapshot_attestation"), dict)):
+            raise BundleError("typed benchmark lacks full native retrieval attestations")
+
+
 def validate(run_dir: Path, *, publish: bool = False) -> dict[str, object]:
     if run_dir.is_symlink() or not run_dir.is_dir():
         raise BundleError("run must be an ordinary directory")
@@ -303,6 +343,7 @@ def validate(run_dir: Path, *, publish: bool = False) -> dict[str, object]:
         result = _native_result(str(suite), run_dir)
         if _native_status(str(suite), result, "full") != "completed":
             raise BundleError("native result is not a full completed measurement")
+        validate_full_protocol(str(suite), run_dir, result)
     return bundle
 
 
