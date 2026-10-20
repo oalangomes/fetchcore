@@ -15,7 +15,7 @@ issue numbers in suite, resource or run identities.
 | --- | --- | --- |
 | baseline-v1 | baseline-v1/run_bench.py | Solr, OpenSearch, Qdrant, local |
 | search-intent-v2 | search-intent-v2/evidence.py | Solr, OpenSearch, Qdrant, local |
-| targeted-exact | targeted-exact/run.py | local only in current benchmark |
+| targeted-exact | targeted-exact/run.py (two paired representations for full runs) | local only in current benchmark |
 | typed-knowledge-retrieval | typed-knowledge-retrieval/run.py | Solr, OpenSearch, Qdrant |
 
 Two infrastructure modes serve different purposes:
@@ -33,9 +33,11 @@ Two infrastructure modes serve different purposes:
 Functional resource names: fc-bench-baseline-v1, fc-bench-search-intent-v2,
 fc-bench-targeted-exact (reserved; remote targeted measurement is not currently
 supported), fc-bench-typed-knowledge. The same logical name in different
-backends identifies different physical resources. The typed suite currently
-uses fresh resource namespaces for authorized writes and cannot silently
-reuse a fixed existing snapshot; the plan is not an implicit index migration.
+backends identifies different physical resources. The typed suite defaults to fresh resource namespaces for authorized writes.
+For the new BENCH plan, the operator can explicitly authorize the planned
+resource using authorization.resource_name and
+authorization.resource_prefix=fc-bench-typed-knowledge; it cannot silently
+reuse an existing snapshot. The plan is not an implicit index migration.
 
 The persistent BENCH instance continues to be operated by
 [scripts/shared_infra.py](../guides/shared-development-infrastructure.md).
@@ -56,6 +58,10 @@ run directory outside Git:
   bundle.json           # schema, identity, status, native hashes, review
   native/               # native runner outputs, unmodified
 ~~~
+
+For the baseline suite, the operational wrapper derives ContextYield offline
+from the native returned spans after a completed full run. Publication still
+invokes the baseline's own strict native promotion validator.
 
 The sidecar bundle uses execution kind (preflight/smoke/diagnostic/full),
 execution status (running/completed/blocked/failed), and independent review
@@ -121,9 +127,18 @@ volumes and unknown ownership rather than adopting them. No DEV/OPERATIONAL
 resources are modified.
 
 Bind the native benchmark configuration to the plan's endpoint/project and
-fresh resource scope explicitly. In particular, typed-knowledge-retrieval
-must still receive a separately approved config with its expected Compose
-project, labels, embeddings, and retain-only lifecycle.
+fresh resource scope explicitly. The operational wrapper checks the effective
+native binding and rejects mismatched endpoints before running:
+- baseline-v1: --run-config with matching project, endpoints, and logical resources;
+- search-intent-v2: --benchmark-infra-plan set to the exact plan, which routes
+  the in-memory manifest without changing the frozen file;
+- typed-knowledge-retrieval: --config with matching endpoints, Compose project
+  and explicit authorization.resource_name, plus the native authorization
+  checks for labels, embeddings and retain-only lifecycle.
+
+A functional full remote run similarly requires an explicit functional
+routing plan. Other functional diagnostics can use legacy native settings
+without falsely claiming standardized resource binding.
 
 ~~~bash
 python benchmarks/benchmark_ops.py run \
