@@ -1,46 +1,40 @@
 # P0.1 Developer Local acceptance — 2026-10-19
 
-## Identification and current result
+## Decision and identity
 
-Phase: P0.1. Base SHA: `96f6146b9bcf22f208d84ea2fd511d85e3081c58` (P0.0 PR #209). Branch: `codex/p01-developer-local`; draft [PR #210](https://github.com/oalangomes/fetchcore/pull/210) is stacked on P0.0. Issues: #200, #99, #98. Environment: Linux host, isolated CPython 3.13.15 wheel venv, Docker Desktop 29.8.2. **Gate: BLOCKED pending an explicitly authorized, isolated Solr test resource.** No shared resource has been written, and no installed-artifact first-evidence result is claimed.
+**Local gate: PASS for the isolated lexical Developer Local profile.** Base SHA `96f6146b9bcf22f208d84ea2fd511d85e3081c58` (P0.0 PR #209); P0.1 is draft [PR #210](https://github.com/oalangomes/fetchcore/pull/210), stacked on P0.0. Issues: #200, #99, #98. Product change SHA `608bc0c7d027c4833d11edab0865da0bf8efaae6`. The measured run used its wheel with the MCP extra, installed in a separate venv and executed from `/tmp`. This gate covers one operator, one controlled Git repository and an isolated standalone Solr 9.10.1 resource. It does not claim vector, hybrid, public package, remote MCP or shared backend readiness.
 
-## Existing capability and baseline state
+The operator explicitly authorized one temporary Docker project, `fetchcore-p01-codex`, with a private volume and loopback port 18984. Existing `fetchcore-shared`, `fetchcore-operational` and `fetchcore-lab` projects were neither changed nor used. The pinned image digest was `sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb`. The baseline core was `fetchcore-p01-codex-baseline`; the changed wheel used `fetchcore-p01-codex-after`; an empty core was used only for a missing-snapshot failure check.
 
-The P0.0 wheel was built from the current FetchCore sources and installed with the MCP extra outside the checkout. `fetchcore --help`, package import and both scripts passed. The current installed CLI has registry, explicit `plan/rebuild/sync`, `search/source`, `doctor/readiness` and YAML v1 loading. The wheel does not contain `infra/solr/configset`, so provisioning a fresh compatible Solr resource without a checkout remains a measured first-use gap. The shared DEV, BENCH and OPERATIONAL resources already running on the host belong to another worktree/execution and are excluded.
+The baseline was run **before** the product change and frozen as [sanitized JSON](artifacts/p01-baseline-2026-10-19.json). Its private raw JSON SHA-256 is `046d422decd096524e943862c121cc66526967cc8ca08ff14fd3c8620c6a6542`. The [after artifact](artifacts/p01-after-2026-10-19.json) records the changed wheel SHA-256 `8f7caccdbd1c289eaf6633d1e6e0348eff1b53e912776c1b245d5fe5a72b5d83`; its private raw JSON SHA-256 is `a1a45cb63f358ece92e2213ba98647c62e8ca00ebdaa7993e92f7f294dfcece6`. Only whitelisted, non-private fields are published.
 
-The [installed-artifact harness](../../scripts/developer_local_acceptance.py) was prepared **before any product UX change**. It uses a controlled local Git fixture, a new private registry, an operator YAML, an empty isolated Solr collection, CLI search/source, MCP stdio search/get_source, process restart, a committed add/update/delete delta, and repeated sync. It records wall-clock command timings and backend-provided telemetry separately. It refuses to run without `--ack-owned-resource`, an exclusive `fetchcore-p01-codex-` collection name, loopback URL and a new work directory. It never creates or deletes a backend resource. A blocked preflight returned exit 1 and produced `{"status":"blocked"}` before creating the work directory; its two safety unit tests passed.
+## Change and scorecard
 
-Read-only preflight found the pinned Solr image digest `sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb` locally. Ports 18984–18986 were not listening. The configset files have SHA-256 `587b917e53e5a54602d0271c841c44c558ace87d035d003a8d5e17b5ebab0576` (`schema.xml`) and `ab372d1659506f59976801089b70f6db708875c8fb05c798187506adc3e6de27` (`solrconfig.xml`). Host inventory showed running `fetchcore-shared`, `fetchcore-operational` and `fetchcore-lab` projects. This preflight proves availability of some ingredients, not permission or an accepted backend.
+The baseline wheel omitted `infra/solr/configset`, requiring a source checkout or separately installed Solr configset for fresh owned provisioning. The changed wheel bundles the same Projection v3 XML files. The existing `solr_runtime prepare` selects this bundled directory only when `provision_if_missing` explicitly creates an owned service and no `--configset-dir` override is supplied. The default `reuse_only` policy, explicit creation flag, backend adapter and retrieval contracts are unchanged. A unit test checks that the bundled files match the original files byte for byte and that owned provisioning passes their installed location to Docker. Wheel inspection confirmed both XML files. The changed wheel was not used to launch an additional live Solr container; the live E2E used the authorized pre-provisioned service.
 
-On commit `9450abc0fce9846ddff1f96d087291f20e1f56d5`, the PR's observed GitHub CI workflows concluded successfully through `runnerctl ci watch . --pr 210 --json` (exit 0). This is a code/packaging gate, not a live backend acceptance result.
+| Metric | Baseline installed P0.0 | Changed installed P0.1 | Interpretation |
+| --- | ---: | ---: | --- |
+| CLI commands to first evidence | 8 | 8 | Includes config and doctor checks; no reduction claimed. |
+| Operator YAML values | 6 | 6 | Backend, workspace, repository, revision, Solr URL and core. `version` is fixed. |
+| Extra checkout configset path for owned provisioning | Required | Not required by installed wheel | Verified by wheel contents and provisioning unit test; live provisioning used the existing service. |
+| Harness start to first evidence | 30,651.150 ms | 28,242.111 ms | Excludes installation and backend provisioning. Single nonexclusive-host runs; no causal speed claim. |
+| CLI search wall time | 1,281.991 ms | 1,145.614 ms | One query; no retrieval algorithm change. |
+| Search-to-source command wall time | 218.061 ms | 202.607 ms | Source content matched the fixture. |
+| First MCP startup / search | 1,077.902 / 1,129.751 ms | 515.252 / 965.548 ms | Process startup and tool call measured separately. |
+| Second MCP startup / search | 569.509 / 1,034.149 ms | 495.953 / 1,006.252 ms | No causality inferred from a single run. |
+| Solr idle CPU/RAM sample | 0.22% / 685.9 MiB | 0.28% / 678.7 MiB | Nonexclusive host, point samples; not steady-state capacity measurements. |
+| Solr per-core disk after runs | 136 KiB | 136 KiB | `du -sh` includes core files; shared service overhead excluded. |
 
-## Baseline and before/after scorecard
+The controlled fixture `acme/fetchcore-p01-fixture` produced the same initial corpus checksum `c22b4e4c7319534a61b9f869e34e5e06e971fc0a954b61a82e9cc582196bbeec` and updated checksum `c019f26219f5111e5aaf25bcc9a75d7ce36780f2900a9b36f0ecf997390f9288` in both runs. Its commits differ because each run creates a fresh Git fixture. The indexing fingerprint was `sha256:05b062d902618c1017a6548124dd606bedf2635ec903a4ac0019655a18f9d885`; projection fingerprint was `sha256:80d19b9400141cd7bb73f7ba7f64de414cd5a896b87c2dc1713959804696cef2`. The queried evidence was `repository://acme/fetchcore-p01-fixture/src/widgets.py`, lines 1–2, checksum `sha256:5b6d1517924cac82c276006266c7b272d7cc9c6595a54989f3d38d35394208ed`, with matching CLI source and MCP `get_source` content. These observations prove equivalence for this fixture, not general ranking equivalence.
 
-| Metric | Before | After | Difference |
-| --- | --- | --- | --- |
-| Commands to first evidence | NOT_MEASURED | NOT_MEASURED | NOT_MEASURED |
-| Manual settings | NOT_MEASURED | NOT_MEASURED | NOT_MEASURED |
-| Time to first evidence | NOT_MEASURED | NOT_MEASURED | NOT_MEASURED |
-| Time from search to source | NOT_MEASURED | NOT_MEASURED | NOT_MEASURED |
-| CLI/MCP startup | NOT_MEASURED | NOT_MEASURED | NOT_MEASURED |
-| Idle CPU/RAM/storage | NOT_MEASURED | NOT_MEASURED | NOT_MEASURED |
-| Failure recovery | NOT_MEASURED | NOT_MEASURED | NOT_MEASURED |
+Both rebuilds wrote two lexical documents and requested zero embeddings. Each committed delta added one, updated one and deleted one document. Repeating `sync` without changes did zero backend writes, zero deletes and zero embedding requests. The harness restarted CLI and MCP processes and retrieved the same initial evidence. The owned Solr service was also restarted with its dedicated volume retained: the baseline core still returned the updated revision; after the changed-wheel run, readiness was `ready`, search returned its updated revision `31c26315f41baef983149dcf3582063254360612`, and source returned `updated widget evidence`.
 
-Run the baseline with the installed P0.0 artifact and a dedicated, empty resource **before** modifying first-use UX. Freeze its JSON output. Repeat with a different owned resource and changed artifact. The harness does not estimate missing measurements. Example invocation after explicit resource authorization and provisioning:
+## Failure and recovery evidence
 
-```bash
-python scripts/developer_local_acceptance.py \
-  --cli /absolute/venv/bin/fetchcore \
-  --mcp /absolute/venv/bin/fetchcore-mcp \
-  --work-dir /absolute/new/private/fixture-run \
-  --output /absolute/private/baseline.json \
-  --solr-url http://127.0.0.1:18984/solr \
-  --collection fetchcore-p01-codex-baseline \
-  --ack-owned-resource
-```
+The installed wheel returned nonzero exits with typed categories: malformed YAML `invalid_runtime_configuration`; unauthorized allowed root `unsafe_source`; unknown repository `repository_not_found`; absent source `source_missing`; wrong requested revision `source_revision_mismatch`. With an unreachable loopback endpoint, `readiness` returned nonzero and `service: unavailable (connection_failure)`; with the isolated empty core, it returned nonzero and `snapshot/currentness: absent (snapshot_missing)`. `index sync` against that empty core failed with `snapshot_missing` and instructed an explicit rebuild. After restoring the valid endpoint/configuration, readiness, search and source succeeded. The failed attempt to create a second core with a configset missing from Solr's server-side directory returned `configset_unavailable`; the owned empty directory was removed, the isolated service restarted, and its CLI created that core from the mounted configset. This exposed a documentation gap: reusing a running standalone Solr service requires a server-side configset for new core creation.
 
-The harness output includes local absolute paths and is a private raw artifact. Publish a sanitized summary with the source SHA, fixture revision, Solr resource identity, fingerprint observations, executed commands/exits, timings and test results. Verify a returned `source_ref` against the controlled source before claiming first evidence.
+## Reproduction and checks
 
-## Gate and next phase
+The [acceptance harness](../../scripts/developer_local_acceptance.py) requires `--ack-owned-resource`, a `fetchcore-p01-codex-` core name, loopback Solr and a new work directory. It does not provision or clean up a backend. Its private raw output includes absolute local paths, so publish only a sanitized artifact. The commands used the installed `fetchcore` and `fetchcore-mcp` scripts, private YAML/cache and a fresh controlled fixture. `python -m pytest tests/unit -q` passed 347 tests; Ruff and mypy passed for the changed Python files; `scripts/check_docs.py` checked 71 Markdown files. Wheel inspection found both bundled XML files. CI for the latest PR head is reported separately after the push.
 
-No code path was changed to compensate for a missing operational resource. The harness is preparatory work, not evidence of a passed golden path. P0.1 remains **BLOCKED** until the installed baseline, implementation, real CLI/MCP journey, persistence, incremental/no-op, failure matrix and after measurements pass. **P0.2 acceptance: STOP**; only independent read-only capability/resource preflight may proceed. If the isolated resource is authorized, run the baseline first and update this report with actual evidence and a new gate decision.
+The pass is limited to the lexical path and controlled fixture. Provisioning from an installed wheel was verified at the package and command boundary but not by creating a second live service. The timing table is a before/after observation, not a performance improvement claim. P0.2 vector acceptance remains gated on isolated vector services and an authorized embedding provider; this P0.1 gate does not authorize writes to those resources.
