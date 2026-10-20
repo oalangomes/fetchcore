@@ -759,6 +759,8 @@ def main():
     group.add_argument("--representation", choices=REPRESENTATIONS)
     group.add_argument("--compare-representations", action="store_true")
     parser.add_argument("--prepare-index", action="store_true")
+    parser.add_argument("--benchmark-infra-plan", type=Path,
+                        help="Opt-in BENCH project/collection binding without editing frozen manifest")
     parser.add_argument("--resume", type=Path)
     parser.add_argument("--arm-retries", type=int, default=1)
     parser.add_argument("--retry-backoff-seconds", type=float, default=5.0)
@@ -774,6 +776,13 @@ def main():
         parser.error("--resume cannot be combined with --prepare-index")
     suite, queries, query_fingerprint = load_inputs()
     manifest = setup._load_json(setup.MANIFEST_PATH)
+    if args.benchmark_infra_plan is not None:
+        sys.path.insert(0, str(ROOT.parent))
+        from benchmark_infra import apply_search_intent_plan, verified_plan
+
+        manifest = apply_search_intent_plan(
+            manifest, verified_plan(args.benchmark_infra_plan)
+        )
     workspace = args.workspace.resolve(strict=True)
     setup._validate_workspace(workspace, suite.corpus["revision"])
     suite.validate_workspace_regions(workspace)
