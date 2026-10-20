@@ -10,8 +10,8 @@ import pytest
 
 BENCHMARKS = Path(__file__).resolve().parents[3] / "benchmarks"
 sys.path.insert(0, str(BENCHMARKS))
-import benchmark_ops as ops  # noqa: E402
-import benchmark_infra as infra  # noqa: E402
+import benchmark_ops as ops
+import benchmark_infra as infra
 
 
 def sample_run(tmp_path: Path, *, kind: str = "full") -> Path:
