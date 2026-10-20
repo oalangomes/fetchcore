@@ -7,6 +7,13 @@ on:
     branches:
       - master
   workflow_dispatch:
+    inputs:
+      retrieval_mode:
+        description: "Retrieval profile for this OPERATIONAL run"
+        type: choice
+        required: true
+        default: hybrid
+        options: [hybrid, dense]
 
 permissions:
   contents: read
@@ -30,11 +37,38 @@ jobs:
       FC_TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
       FC_OLLAMA_URL: ${{ vars.FETCHCORE_OPERATIONAL_OLLAMA_URL }}
       FETCHCORE_OLLAMA_TIMEOUT_SECONDS: "180"
-      FETCHCORE_RETRIEVAL: '{"dense":{"enabled":true,"embedding":{"provider":"ollama","model":"embeddinggemma","dimensions":768,"timeout_seconds":180}},"hybrid":{"enabled":true}}'
+      FC_RETRIEVAL_MODE: ${{ inputs.retrieval_mode || vars.FETCHCORE_OPERATIONAL_RETRIEVAL_MODE || 'hybrid' }}
       FETCHCORE_WORKSPACE: ${{ github.workspace }}
       FETCHCORE_REPOSITORY: oalangomes/fetchcore
       FETCHCORE_REVISION: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
+      - name: Resolve explicit retrieval profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$FC_RETRIEVAL_MODE" in
+            hybrid|dense) ;;
+            *) echo "Invalid OPERATIONAL retrieval_mode: expected hybrid or dense" >&2; exit 2 ;;
+          esac
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          import os
+          mode = os.environ["FC_RETRIEVAL_MODE"]
+          retrieval = {
+              "dense": {
+                  "enabled": True,
+                  "embedding": {
+                      "provider": "ollama",
+                      "model": "embeddinggemma",
+                      "dimensions": 768,
+                      "timeout_seconds": 180,
+                  },
+              },
+              "hybrid": {"enabled": mode == "hybrid"},
+          }
+          print("FETCHCORE_RETRIEVAL=" + json.dumps(retrieval, separators=(",", ":")))
+          PY
+
       - name: Configure isolated registry and run artifact paths
         shell: bash
         run: |
