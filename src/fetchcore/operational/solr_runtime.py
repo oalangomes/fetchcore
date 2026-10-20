@@ -333,10 +333,12 @@ def _provision_runtime(
         )
     if not _PINNED_IMAGE_PATTERN.fullmatch(config.solr_image):
         raise SolrRuntimeError("invalid_configuration", "Solr image must be pinned by sha256")
-    if config.configset_dir is None:
-        raise SolrRuntimeError("invalid_configuration", "Provisioning requires a configset directory")
+    # The bundled Projection v3 configset keeps explicit owned provisioning
+    # available to users who installed a wheel outside the source checkout.
+    bundled_configset = Path(__file__).parent / "configset"
+    selected_configset = config.configset_dir or bundled_configset
     try:
-        configset_dir = config.configset_dir.expanduser().resolve(strict=True)
+        configset_dir = selected_configset.expanduser().resolve(strict=True)
     except OSError as exc:
         raise SolrRuntimeError("invalid_configuration", "Solr configset directory is unavailable") from exc
     if not configset_dir.is_dir():
