@@ -16,7 +16,7 @@ python -m venv /tmp/fetchcore-local-venv
 test -x /tmp/fetchcore-local-venv/bin/fetchcore-mcp
 ```
 
-The wheel filename is an example for the current development version; use the artifact actually built. `fetchcore-mcp` is a stdio process, so its useful smoke is a client handshake, not a help page. A published package can be installed as `fetchcore[mcp]` once a release exists. The backend configset currently lives under `infra/solr/configset` in the source tree; it is **not** included in the wheel. An installed user therefore needs an operator-provisioned compatible resource. P0.1 must close or explicitly retain that packaging gap before claiming a checkout-free first use.
+The wheel filename is an example for the current development version; use the artifact actually built. `fetchcore-mcp` is a stdio process, so its useful smoke is a client handshake, not a help page. A published package can be installed as `fetchcore[mcp]` once a release exists. The wheel includes the Projection v3 Solr configset used by the explicit owned provisioning command below.
 
 ## Operator values and persistent data
 
@@ -34,7 +34,20 @@ The config loader precedence is built-in defaults < operator YAML < environment 
 
 ## Operational sequence
 
-Provision a **dedicated** Solr service/resource with the FetchCore Projection v3 configset by an explicitly authorized operator action. The existing `python -m fetchcore.operational.solr_runtime prepare` supports `reuse_only` preflight and an explicit `provision_if_missing` mode; [self-hosted indexing](self-hosted-indexing.md) gives its exact options. Creation requires a known configset directory or a server-side configset and resource ownership. `docker compose up` may start a service, but does not register or index a repository. Never point this sequence at a shared collection or BENCH resource.
+Provision a **dedicated** Solr service/resource with the FetchCore Projection v3 configset by an explicitly authorized operator action. The installed wheel's `python -m fetchcore.operational.solr_runtime prepare` reuses by default. To create an owned Docker service when the configured loopback endpoint is unavailable, pass both `--provision-mode provision_if_missing` and `--create-if-missing`, an owner token, a pinned Solr image, and output paths:
+
+```bash
+/absolute/venv/bin/python -m fetchcore.operational.solr_runtime prepare \
+  --solr-url http://127.0.0.1:18984/solr \
+  --resource my-dedicated-core --repository owner/project \
+  --provision-mode provision_if_missing --create-if-missing \
+  --owner-token my-local-run \
+  --solr-image 'solr:9.10.1@sha256:<verified-64-hex-digest>' \
+  --output-json /absolute/private/solr-state.json \
+  --output-env /absolute/private/solr-state.env
+```
+
+Replace the example digest with a verified image digest. The returned `endpoint` may use a different free loopback port; put that exact endpoint and the returned resource into the private YAML. When reusing an existing standalone Solr service, creating a missing core requires its configset to be installed **server-side** under Solr's configset directory; `--create-if-missing` does not upload one. An explicit `--configset-dir` may override the bundled files for owned provisioning. `docker compose up` may start a service, but does not register or index a repository. Never point this sequence at a shared collection or BENCH resource. [Self-hosted indexing](self-hosted-indexing.md) documents the existing automation surface.
 
 For an already provisioned local resource and a local Git workspace under `/absolute/allowed-root`, substitute the canonical identity returned by `repo add`:
 
