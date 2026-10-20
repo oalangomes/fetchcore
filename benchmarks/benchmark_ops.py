@@ -326,6 +326,26 @@ def validate(run_dir: Path, *, publish: bool = False) -> dict[str, object]:
         raise BundleError("unknown schema or run identity mismatch")
     if bundle.get("status") not in STATES or bundle.get("kind") not in KINDS:
         raise BundleError("unknown status or run kind")
+    identity = bundle.get("identity")
+    if not isinstance(identity, dict):
+        raise BundleError("missing measured source identity")
+    revision = identity.get("product_revision")
+    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise BundleError("invalid product revision")
+    for key in ("runner_sha256", "arguments_sha256"):
+        value = identity.get(key)
+        if not isinstance(value, str) or not SHA.fullmatch(value):
+            raise BundleError(f"invalid {key}")
+    configs = identity.get("config_hashes")
+    if not isinstance(configs, dict) or any(
+        not isinstance(value, str) or not SHA.fullmatch(value) for value in configs.values()
+    ):
+        raise BundleError("invalid configuration hashes")
+    plan_hash = identity.get("infrastructure_plan_sha256")
+    if plan_hash is not None and (
+        not isinstance(plan_hash, str) or not SHA.fullmatch(plan_hash)
+    ):
+        raise BundleError("invalid infrastructure plan fingerprint")
     entries = bundle.get("artifacts")
     if not isinstance(entries, list):
         raise BundleError("invalid artifact manifest")
@@ -382,6 +402,8 @@ def publish(args: argparse.Namespace) -> int:
     bundle = validate(source, publish=True)
     catalog = output_root(args.catalog)
     destination = catalog / str(bundle["suite"]) / str(bundle["run_id"])
+    if _inside(catalog, source) or _inside(source, catalog):
+        raise BundleError("publication catalog must be separate from source run")
     if destination.exists() or destination.is_symlink():
         raise BundleError("published execution already exists")
     if not args.write:
