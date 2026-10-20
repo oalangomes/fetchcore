@@ -16,9 +16,13 @@ Solr snapshot + repository knowledge
 
 The workflow is transport and scheduling only. It does not reimplement Git delta discovery, fingerprint compatibility, canonical indexing, or persistence rules.
 
-## Why Solr is the first operational backend
+## Operational automatic indexing by backend
 
-FetchCore currently has proven targeted incremental persistence for Solr. OpenSearch and Qdrant still prefer safe full rebuilds in their current `sync()` paths. The workflow therefore uses Solr rather than calling a full rebuild "incremental".
+The reusable `.github/workflows/repository-index.yml` remains Solr-specific for existing callers. The `.github/workflows/operational-index.yml` runs the existing Solr job and also provides **OpenSearch and Qdrant** repository-targeted sync, using the already-supported backend-neutral FetchCore CLI plus `scripts/shared_infra.py` routing. The three jobs target the same reviewed `master` revision after a successful CI run, while maintaining distinct OPERATIONAL resources.
+
+For the OpenSearch/Qdrant jobs, set the repository variable `FETCHCORE_OPERATIONAL_OLLAMA_URL` to the verified, credential-free Ollama URL **reachable from the self-hosted runner**. The runtime requires `embeddinggemma` at 768 dimensions. Only existing services, aliases and compatible snapshots are accepted; `ready` and `prepare` run without creating resources. The workflow requires an existing compatible snapshot before `plan/sync`, never calls `rebuild` or pulls a model, and keeps Qdrant lexical/targeted explicitly unsupported. An absent, stale/incompatible schema/fingerprint or unavailable provider stops indexing with a visible failure. Initial rebuild or schema migration remains a separate, explicit operator action after read-only assessment.
+
+The indexed repository is `oalangomes/fetchcore`; matrix writes are serialized, and runs publish only bounded JSON command evidence. These OPERATIONAL jobs are not BENCH runs, retrieval relevance certification or an authorization to modify unrelated DEV/BENCH namespaces.
 
 ## Operational CLI
 
