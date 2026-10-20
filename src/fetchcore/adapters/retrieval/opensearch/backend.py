@@ -1730,6 +1730,16 @@ def _prepare_dense_query(
 ]:
     embedder = backend.embedding_factory(retrieval)
     requested = retrieval.dense.embedding
+    if requested.dimensions is not None and requested.dimensions != OPENSEARCH_VECTOR_DIMENSIONS:
+        raise KnowledgeSearchError(
+            "configured embedding dimensions do not match the frozen OpenSearch vector schema",
+            category="schema_mismatch",
+            metadata={
+                "expected_dimensions": OPENSEARCH_VECTOR_DIMENSIONS,
+                "actual_dimensions": requested.dimensions,
+                "rebuild_required": True,
+            },
+        )
     if embedder.provider_id != requested.provider:
         raise KnowledgeSearchError(
             "configured embedding provider is not supported by OpenSearch dense retrieval",
