@@ -129,6 +129,7 @@ Backend indexes are rebuildable projections, not semantic authorities. **retriev
 ## Explore the project
 
 - [Getting started](docs/guides/getting-started.md) — install, configure and run the supported development paths.
+- [Developer Local installation contract](docs/guides/developer-local.md) — isolated installation, explicit indexing and first evidence sequence.
 - [Architecture](docs/architecture/overview.md) — canonical knowledge, projections and component boundaries.
 - [Contracts and capabilities](docs/reference/contracts.md) — the typed API surface and backend negotiation model.
 - [MCP integration](docs/guides/mcp.md) — connect a consumer and retrieve bounded source evidence.
