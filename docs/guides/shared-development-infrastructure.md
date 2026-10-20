@@ -231,3 +231,7 @@ shared-host timings are functional observations, not a performance baseline.
 The [consumer migration validation](../operations/shared-infra-consumer-validation.md)
 records the later full suite, live BENCH benchmark, cross-surface search and
 restart checks for PR #183.
+
+## Benchmark lifecycle standard
+
+The existing functional BENCH instances remain managed here. New performance measurements can opt into run-scoped, owned Compose projects, with immutable run bundles and explicit retention/cleanup as described in the [BENCH infrastructure standard](../benchmarks/infrastructure.md). Separate collections in one container do not isolate host performance; separate containers still share host/embedding-provider capacity. No automatic BENCH provisioning is part of the runtime.

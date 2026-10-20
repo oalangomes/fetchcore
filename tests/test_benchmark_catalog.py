@@ -15,7 +15,7 @@ def test_benchmark_catalog_has_only_declared_measurement_suites() -> None:
     assert catalog["schema_version"] == 1
     declared = catalog["benchmarks"]
     names = [item["id"] for item in declared]
-    actual = {item.name for item in root.iterdir() if item.is_dir()}
+    actual = {item.name for item in root.iterdir() if item.is_dir() and item.name != "__pycache__"}
     assert len(names) == len(set(names))
     assert set(names) == actual
     assert all(item["classification"] in {"official_frozen", "controlled_experiment"} for item in declared)
