@@ -18,11 +18,17 @@ The workflow is transport and scheduling only. It does not reimplement Git delta
 
 ## Operational automatic indexing by backend
 
-The reusable `.github/workflows/repository-index.yml` remains Solr-specific for existing callers. The `.github/workflows/operational-index.yml` runs the existing Solr job and also provides **OpenSearch and Qdrant** repository-targeted sync, using the already-supported backend-neutral FetchCore CLI plus `scripts/shared_infra.py` routing. The three jobs target the same reviewed `master` revision after a successful CI run, while maintaining distinct OPERATIONAL resources.
+The reusable `.github/workflows/repository-index.yml` remains Solr-specific for existing callers. Each OPERATIONAL backend now has an **independent GitHub Actions workflow**, with separate manual dispatch, status, concurrency and evidence artifacts:
 
-For the OpenSearch/Qdrant jobs, set the repository variable `FETCHCORE_OPERATIONAL_OLLAMA_URL` to the verified, credential-free Ollama URL **reachable from the self-hosted runner**. The runtime requires `embeddinggemma` at 768 dimensions. Only existing services, aliases and compatible snapshots are accepted; `ready` and `prepare` run without creating resources. The workflow requires an existing compatible snapshot before `plan/sync`, never calls `rebuild` or pulls a model, and keeps Qdrant lexical/targeted explicitly unsupported. An absent, stale/incompatible schema/fingerprint or unavailable provider stops indexing with a visible failure. Initial rebuild or schema migration remains a separate, explicit operator action after read-only assessment.
+- `.github/workflows/operational-index.yml` — **Solr**, preserving the existing job and reuse-only policy;
+- `.github/workflows/operational-opensearch.yml` — **OpenSearch**;
+- `.github/workflows/operational-qdrant.yml` — **Qdrant**.
 
-The indexed repository is `oalangomes/fetchcore`; matrix writes are serialized, and runs publish only bounded JSON command evidence. These OPERATIONAL jobs are not BENCH runs, retrieval relevance certification or an authorization to modify unrelated DEV/BENCH namespaces.
+All three use the same CI-success-on-`master` trigger. OpenSearch and Qdrant reuse the existing backend-neutral indexing lifecycle through `scripts/shared_infra.py`; each runs only against its own OPERATIONAL resource. Running one workflow manually does not start the other two.
+
+For the OpenSearch/Qdrant workflows, set the repository variable `FETCHCORE_OPERATIONAL_OLLAMA_URL` to the verified, credential-free Ollama URL **reachable from the self-hosted runner**. The runtime requires `embeddinggemma` at 768 dimensions. Only existing services, aliases and compatible snapshots are accepted; `ready` and `prepare` run without creating resources. Each vector workflow requires an existing compatible snapshot before `plan/sync`, never calls `rebuild` or pulls a model, and keeps Qdrant lexical/targeted explicitly unsupported. An absent, stale/incompatible schema/fingerprint or unavailable provider stops indexing with a visible failure. Initial rebuild or schema migration remains a separate, explicit operator action after read-only assessment.
+
+The indexed repository is `oalangomes/fetchcore`; writers are serialized per backend, and each workflow publishes bounded JSON command evidence separately. These OPERATIONAL workflows are not BENCH runs, retrieval relevance certification or an authorization to modify unrelated DEV/BENCH namespaces.
 
 ## Operational CLI
 
