@@ -33,6 +33,13 @@ def sample_run(tmp_path: Path, *, kind: str = "full") -> Path:
         "protocol": "fetchcore.targeted-exact-v2",
         "run_id": run_dir.name, "kind": kind, "status": "completed",
         "review": {"status": "unreviewed", "note": None},
+        "identity": {
+            "product_revision": "a" * 40,
+            "runner_sha256": "b" * 64,
+            "arguments_sha256": "c" * 64,
+            "config_hashes": {},
+            "infrastructure_plan_sha256": None,
+        },
         "artifacts": ops.capture(run_dir),
     })
     return run_dir
@@ -190,3 +197,13 @@ def test_search_intent_routing_is_opt_in_and_preserves_frozen_manifest() -> None
     assert routed["backend_settings"]["solr"]["collection"] == "fc-bench-search-intent-v2"
     assert routed["environment"]["service_endpoints"]["solr"] == "http://127.0.0.1:28983/solr"
     assert routed["environment"]["profile_id"] != "frozen"
+
+
+
+def test_publication_requires_measured_source_identity(tmp_path: Path) -> None:
+    run = sample_run(tmp_path)
+    manifest = ops.load(run / "bundle.json")
+    manifest["identity"]["runner_sha256"] = "unverified"
+    ops.save(run / "bundle.json", manifest)
+    with pytest.raises(ops.BundleError, match="runner_sha256"):
+        ops.validate(run)
