@@ -98,6 +98,8 @@ def capture(run_dir: Path) -> list[dict[str, object]]:
 
 
 def _native_result(suite: str, run_dir: Path) -> dict[str, object]:
+    if suite == "targeted-exact" and (run_dir / "native" / "run.json").is_file():
+        return load(run_dir / "native" / "run.json")
     if SUITES[suite][1] == "file":
         return load(run_dir / "native" / "measurement.json")
     runs = list((run_dir / "native").glob("V0.*/run.json"))
@@ -114,6 +116,10 @@ def _native_status(suite: str, payload: dict[str, object], kind: str) -> str:
         return "failed"
     if kind == "full":
         if payload.get("full_protocol") is False:
+            return "failed"
+        if suite == "targeted-exact" and payload.get("representations") != [
+            "canonical", "legacy"
+        ]:
             return "failed"
         if suite == "targeted-exact" and (
             payload.get("repetitions") != 20 or payload.get("warmups") != 1
@@ -142,6 +148,10 @@ def run(args: argparse.Namespace) -> int:
     _safe_arguments(native, args.authorize_writes)
     if args.kind == "preflight" and args.authorize_writes:
         raise BundleError("preflight may not authorize backend writes")
+    if args.suite == "targeted-exact" and args.kind == "full" and any(
+        item.split("=", 1)[0] == "--representation" for item in native
+    ):
+        raise BundleError("full targeted measurement requires both representations")
     root = output_root(args.output_root)
     run_id = args.run_id or uuid.uuid4().hex
     if not RUN_ID.fullmatch(run_id):
@@ -192,8 +202,32 @@ def run(args: argparse.Namespace) -> int:
     result_code = 1
     try:
         output = run_dir / "native" / ("measurement.json" if shape == "file" else "")
-        command = [sys.executable, str(source_path), *native, "--output", str(output)]
-        result_code = subprocess.run(command, cwd=ROOT, check=False).returncode
+        if args.suite == "targeted-exact" and args.kind == "full":
+            measured: dict[str, dict[str, object]] = {}
+            for representation in ("canonical", "legacy"):
+                target = run_dir / "native" / f"{representation}.json"
+                command = [sys.executable, str(source_path), *native,
+                           "--representation", representation, "--output", str(target)]
+                result_code = subprocess.run(command, cwd=ROOT, check=False).returncode
+                if result_code != 0:
+                    break
+                measured[representation] = load(target)
+            if len(measured) == 2:
+                canonical, legacy = measured["canonical"], measured["legacy"]
+                keys = ("corpus", "ground_truth_fingerprint", "query_set_sha256",
+                        "runtime_source_sha256", "repetitions", "warmups", "k")
+                if any(canonical.get(key) != legacy.get(key) for key in keys):
+                    raise BundleError("paired targeted runs have incompatible identities")
+                save(run_dir / "native" / "run.json", {
+                    "status": "complete", "protocol": SUITES[args.suite][2],
+                    "representations": ["canonical", "legacy"],
+                    "repetitions": canonical["repetitions"],
+                    "warmups": canonical["warmups"],
+                    "ground_truth_fingerprint": canonical["ground_truth_fingerprint"],
+                })
+        else:
+            command = [sys.executable, str(source_path), *native, "--output", str(output)]
+            result_code = subprocess.run(command, cwd=ROOT, check=False).returncode
         payload = _native_result(args.suite, run_dir)
         manifest["native_status"] = payload.get("status")
         manifest["status"] = _native_status(args.suite, payload, args.kind)
