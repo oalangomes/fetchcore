@@ -147,9 +147,6 @@ def run(args: argparse.Namespace) -> int:
     if not RUN_ID.fullmatch(run_id):
         raise BundleError("invalid run identifier")
     run_dir = root / args.suite / run_id
-    run_dir.parent.mkdir(parents=True, exist_ok=True)
-    run_dir.mkdir()  # must not adopt/overwrite an existing run
-    (run_dir / "native").mkdir()
     source, shape, protocol = SUITES[args.suite]
     source_path = ROOT / "benchmarks" / source
     config_hashes: dict[str, str] = {}
@@ -159,13 +156,23 @@ def run(args: argparse.Namespace) -> int:
             config_hashes[item[2:]] = digest(candidate.read_bytes())
     plan_sha: str | None = None
     if args.infra_plan is not None:
-        plan = load(args.infra_plan)
+        from benchmark_infra import validate_runner_binding, verified_plan
+
+        plan = verified_plan(args.infra_plan)
         if (plan.get("suite") != args.suite or plan.get("run_id") != run_id
-                or plan.get("mode") != "performance"):
-            raise BundleError("infrastructure plan does not match suite and run identity")
+                or plan.get("mode") != args.mode):
+            raise BundleError("infrastructure plan does not match suite, mode and run identity")
+        if args.kind == "full":
+            validate_runner_binding(args.suite, native, plan)
         plan_sha = digest(args.infra_plan.read_bytes())
     elif args.mode == "performance":
         raise BundleError("performance run requires an explicit ephemeral infrastructure plan")
+    if args.mode == "functional" and args.kind == "full" and args.suite != "targeted-exact":
+        if args.infra_plan is None:
+            raise BundleError("full remote BENCH requires a functional routing plan")
+    run_dir.parent.mkdir(parents=True, exist_ok=True)
+    run_dir.mkdir()  # never adopt or overwrite a previous run
+    (run_dir / "native").mkdir()
     manifest: dict[str, object] = {
         "schema_version": SCHEMA_VERSION, "suite": args.suite, "protocol": protocol,
         "run_id": run_id, "kind": args.kind, "mode": args.mode,
