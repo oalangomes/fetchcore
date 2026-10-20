@@ -27,3 +27,9 @@ slice), explicit hypothesis, corpus/revision, controlled variable, Ground
 Truth, runner/environment identity, metrics, limitations, raw evidence and
 comparability statement. One change at a time; no implicit backend rebuild.
 See [experiment conventions](../docs/benchmarks/protocol.md).
+
+## Operational standard
+
+All **new** runs may use the shared [BENCH lifecycle and infrastructure standard](../docs/benchmarks/infrastructure.md). `benchmark_ops.py` creates a sidecar `bundle.json` with the native runner's output, verifies hashes and status, and enforces explicit review before immutable publication. `benchmark_infra.py` plans existing functional BENCH resources or run-scoped ephemeral performance Compose projects; neither runner nor ordinary CI creates Docker resources implicitly.
+
+The four native protocols retain their own scoring, Ground Truth and run semantics. The official baseline V0.1–V0.4 is not rewritten. A completed smoke or a successful offline preflight is not a promoted benchmark result.
