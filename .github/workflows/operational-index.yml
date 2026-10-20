@@ -122,7 +122,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          fetchcore repo --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" add . --provider local-workspace --json > "$FC_EVIDENCE/registration.json"
+          fetchcore repo --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" add . --provider local-workspace --json > /dev/null
           fc() {
             python scripts/shared_infra.py run --environment operational --repository oalangomes/fetchcore --backend "$FC_BACKEND" --ollama-url "$FC_OLLAMA_URL" -- fetchcore "$@"
           }
