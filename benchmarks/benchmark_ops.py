@@ -85,8 +85,12 @@ def output_root(path: Path) -> Path:
 
 def capture(run_dir: Path) -> list[dict[str, object]]:
     artifacts: list[dict[str, object]] = []
-    for path in sorted((run_dir / "native").rglob("*")):
-        if path.is_symlink():
+    native = run_dir / "native"
+    if native.is_symlink() or not native.is_dir():
+        raise BundleError("native artifact directory must not be a symlink")
+    for path in sorted(native.rglob("*")):
+        if path.is_symlink() or any(parent.is_symlink() for parent in path.parents
+                                   if parent != run_dir and run_dir in parent.parents):
             raise BundleError(f"symlink in measurements: {path}")
         if not path.is_file():
             continue
