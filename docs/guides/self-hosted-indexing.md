@@ -40,7 +40,7 @@ fetchcore index ... sync
 
 Every successful command emits JSON. `bootstrap` validates the active Solr
 resource against the FetchCore Projection v3 schema. Explicit owned provisioning
-uses `infra/solr/configset`, which preserves the behavior-proven analyzers, BM25
+uses the bundled copy of `infra/solr/configset` from an installed wheel by default, which preserves the behavior-proven analyzers, BM25
 parameters and vector field contract extracted from AgentsOrchNext. The CLI never
 silently rewrites an incompatible schema. `dry-run` performs no persistent writes.
 With explicit dense/hybrid retrieval configuration, bootstrap also requires the
