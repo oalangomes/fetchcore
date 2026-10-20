@@ -1,0 +1,696 @@
+{
+  "backends": {
+    "opensearch": {
+      "lexical": {
+        "noop": {
+          "added": 0,
+          "backend_deletes": 0,
+          "backend_writes": 0,
+          "deleted": 0,
+          "duration_ms": 0,
+          "embedding_vectors": 0,
+          "mode": "incremental",
+          "noop": true
+        },
+        "rebuild": {
+          "added": 2,
+          "backend_deletes": 0,
+          "backend_writes": 2,
+          "deleted": 0,
+          "duration_ms": 444,
+          "embedding_vectors": 0,
+          "mode": "full_rebuild",
+          "noop": null
+        },
+        "sync": {
+          "added": 1,
+          "backend_deletes": 1,
+          "backend_writes": 6,
+          "deleted": 1,
+          "duration_ms": 1072,
+          "embedding_vectors": 0,
+          "mode": "incremental",
+          "noop": false
+        }
+      },
+      "quality_fixture_smoke": {
+        "dense": {
+          "evidence_recall_at_5": 1.0,
+          "ground_truth_rank": [
+            1,
+            1
+          ],
+          "mrr": 1.0,
+          "queries": 2,
+          "single_search_duration_ms": [
+            148,
+            123
+          ]
+        },
+        "hybrid": {
+          "evidence_recall_at_5": 1.0,
+          "ground_truth_rank": [
+            1,
+            1
+          ],
+          "mrr": 1.0,
+          "queries": 2,
+          "single_search_duration_ms": [
+            139,
+            123
+          ]
+        }
+      },
+      "vector": {
+        "noop": {
+          "alias_promotions": null,
+          "backend_deletes": 0,
+          "backend_writes": 0,
+          "document_count": 2,
+          "duration_ms": 0,
+          "embedding_requests": 0,
+          "embedding_vectors": 0,
+          "mode": "incremental"
+        },
+        "rebuild": {
+          "alias_promotions": null,
+          "backend_deletes": 0,
+          "backend_writes": 2,
+          "document_count": 2,
+          "duration_ms": 1488,
+          "embedding_requests": 1,
+          "embedding_vectors": 2,
+          "mode": "full_rebuild"
+        },
+        "sync": {
+          "alias_promotions": null,
+          "backend_deletes": 1,
+          "backend_writes": 6,
+          "document_count": 2,
+          "duration_ms": 1539,
+          "embedding_requests": 1,
+          "embedding_vectors": 2,
+          "mode": "incremental"
+        }
+      }
+    },
+    "qdrant": {
+      "quality_fixture_smoke": {
+        "dense": {
+          "evidence_recall_at_5": 1.0,
+          "ground_truth_rank": [
+            1,
+            1
+          ],
+          "mrr": 1.0,
+          "queries": 2,
+          "single_search_duration_ms": [
+            121,
+            128
+          ]
+        },
+        "hybrid": {
+          "evidence_recall_at_5": 1.0,
+          "ground_truth_rank": [
+            1,
+            1
+          ],
+          "mrr": 1.0,
+          "queries": 2,
+          "single_search_duration_ms": [
+            123,
+            110
+          ]
+        }
+      },
+      "vector": {
+        "noop": {
+          "alias_promotions": 0,
+          "backend_deletes": 0,
+          "backend_writes": 0,
+          "document_count": 2,
+          "duration_ms": 0,
+          "embedding_requests": 0,
+          "embedding_vectors": 0,
+          "mode": "noop"
+        },
+        "rebuild": {
+          "alias_promotions": 1,
+          "backend_deletes": 0,
+          "backend_writes": 3,
+          "document_count": 2,
+          "duration_ms": 1712,
+          "embedding_requests": 1,
+          "embedding_vectors": 2,
+          "mode": "full_rebuild"
+        },
+        "sync": {
+          "alias_promotions": 1,
+          "backend_deletes": 1,
+          "backend_writes": 4,
+          "document_count": 2,
+          "duration_ms": 1198,
+          "embedding_requests": 1,
+          "embedding_vectors": 2,
+          "mode": "incremental"
+        }
+      }
+    },
+    "solr": {
+      "lexical": {
+        "noop": {
+          "added": 0,
+          "backend_deletes": 0,
+          "backend_writes": 0,
+          "deleted": 0,
+          "duration_ms": 0,
+          "embedding_vectors": 0,
+          "mode": "incremental",
+          "noop": true
+        },
+        "rebuild": {
+          "added": 2,
+          "backend_deletes": 2,
+          "backend_writes": 2,
+          "deleted": 0,
+          "duration_ms": 11399,
+          "embedding_vectors": 0,
+          "mode": "full_rebuild",
+          "noop": null
+        },
+        "sync": {
+          "added": 1,
+          "backend_deletes": null,
+          "backend_writes": null,
+          "deleted": 1,
+          "duration_ms": 11850,
+          "embedding_vectors": null,
+          "mode": "incremental",
+          "noop": false
+        }
+      },
+      "quality_fixture_smoke": {
+        "dense": {
+          "evidence_recall_at_5": 1.0,
+          "ground_truth_rank": [
+            1,
+            1
+          ],
+          "mrr": 1.0,
+          "queries": 2,
+          "single_search_duration_ms": [
+            1082,
+            1162
+          ]
+        },
+        "hybrid": {
+          "evidence_recall_at_5": 1.0,
+          "ground_truth_rank": [
+            1,
+            1
+          ],
+          "mrr": 1.0,
+          "queries": 2,
+          "single_search_duration_ms": [
+            1090,
+            1137
+          ]
+        }
+      },
+      "vector": {
+        "noop": {
+          "alias_promotions": null,
+          "backend_deletes": 0,
+          "backend_writes": 0,
+          "document_count": 2,
+          "duration_ms": 0,
+          "embedding_requests": 0,
+          "embedding_vectors": 0,
+          "mode": "incremental"
+        },
+        "rebuild": {
+          "alias_promotions": null,
+          "backend_deletes": 0,
+          "backend_writes": 2,
+          "document_count": 2,
+          "duration_ms": 10996,
+          "embedding_requests": 1,
+          "embedding_vectors": 2,
+          "mode": "full_rebuild"
+        },
+        "sync": {
+          "alias_promotions": null,
+          "backend_deletes": 1,
+          "backend_writes": 2,
+          "document_count": 2,
+          "duration_ms": 9836,
+          "embedding_requests": 1,
+          "embedding_vectors": 2,
+          "mode": "incremental"
+        }
+      }
+    }
+  },
+  "date": "2026-10-19",
+  "embedding": {
+    "dimensions": 768,
+    "model": "embeddinggemma:latest",
+    "model_digest": "85462619ee721b466c5927d109d4cb765861907d5417b9109caebc4e614679f1",
+    "provider": "ollama"
+  },
+  "environment": {
+    "compose_project": "fetchcore-p02-codex",
+    "images": {
+      "ollama": "ollama/ollama:0.13.5@sha256:2c9595c555fd70a28363489ac03bd5bf9e7c5bdf2890373c3a830ffd7252ce6d",
+      "opensearch": "opensearchproject/opensearch:3.8.0@sha256:fafe3fc3587088674669235575aa166228c48bdb940294a8cdbbc1da75236a40",
+      "qdrant": "qdrant/qdrant:v1.19.0@sha256:057ee3a8da769fe7310dd3537b4dc7583bf87a95ce8ac43c0af5a46bc580d1fc",
+      "solr": "solr:9.10.1@sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb"
+    },
+    "loopback_ports": {
+      "ollama": 21434,
+      "opensearch": 29200,
+      "qdrant": 26333,
+      "solr": 28983
+    },
+    "owner_label": "codex-p02-20261019"
+  },
+  "fingerprints": {
+    "embedding_serializer": "sha256:5f859289b8b3a594e924545edb1c3ae6178b77ea22cf3ff224d43c5ec7aeb43a",
+    "indexing": "sha256:05b062d902618c1017a6548124dd606bedf2635ec903a4ac0019655a18f9d885",
+    "projection": "sha256:80d19b9400141cd7bb73f7ba7f64de414cd5a896b87c2dc1713959804696cef2"
+  },
+  "implementation_commit": "9dfa85a63daa5196e0773f294908f0506902788d",
+  "kind": "fetchcore.p02-operational-acceptance",
+  "negative": {
+    "opensearch/dimension_mismatch": {
+      "readiness_exit": 1,
+      "ready": false,
+      "search_error": "schema_mismatch",
+      "search_exit": 1
+    },
+    "opensearch/model_mismatch": {
+      "readiness_exit": 1,
+      "ready": false,
+      "search_error": "index_stale",
+      "search_exit": 1
+    },
+    "opensearch/projection_mismatch": {
+      "readiness_exit": 1,
+      "ready": false,
+      "search_error": "schema_mismatch",
+      "search_exit": 1
+    },
+    "opensearch/provider_unavailable": {
+      "readiness_exit": 1,
+      "ready": false,
+      "search_error": "unavailable",
+      "search_exit": 1
+    },
+    "qdrant/dimension_mismatch": {
+      "readiness_exit": 1,
+      "ready": false,
+      "search_error": "schema_mismatch",
+      "search_exit": 1
+    },
+    "qdrant/model_mismatch": {
+      "readiness_exit": 1,
+      "ready": false,
+      "search_error": "schema_mismatch",
+      "search_exit": 1
+    },
+    "qdrant/projection_mismatch": {
+      "readiness_exit": 1,
+      "ready": false,
+      "search_error": "schema_mismatch",
+      "search_exit": 1
+    },
+    "qdrant/provider_unavailable": {
+      "readiness_exit": 1,
+      "ready": false,
+      "search_error": "unavailable",
+      "search_exit": 1
+    },
+    "solr/dimension_mismatch": {
+      "readiness_exit": 1,
+      "ready": false,
+      "search_error": "schema_mismatch",
+      "search_exit": 1
+    },
+    "solr/model_mismatch": {
+      "readiness_exit": 1,
+      "ready": false,
+      "search_error": "index_stale",
+      "search_exit": 1
+    },
+    "solr/projection_mismatch": {
+      "readiness_exit": 1,
+      "ready": false,
+      "search_error": "schema_mismatch",
+      "search_exit": 1
+    },
+    "solr/provider_unavailable": {
+      "readiness_exit": 1,
+      "ready": false,
+      "search_error": "unavailable",
+      "search_exit": 1
+    }
+  },
+  "post_restart": {
+    "opensearch/dense": {
+      "checksum": "sha256:ebfbbe5b108b4e8c5344bb78e391d363ef22e641b85c60010067d434997009be",
+      "readiness_exit": 0,
+      "ready": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "search_exit": 0,
+      "source_exit": 0,
+      "source_matched": true,
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "opensearch/hybrid": {
+      "checksum": "sha256:ebfbbe5b108b4e8c5344bb78e391d363ef22e641b85c60010067d434997009be",
+      "readiness_exit": 0,
+      "ready": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "search_exit": 0,
+      "source_exit": 0,
+      "source_matched": true,
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "opensearch/lexical": {
+      "checksum": "sha256:76e713fc8cef48492a7c4b297b743700593c92d007731a61113d17db66afaeec",
+      "readiness_exit": 0,
+      "ready": true,
+      "revision": "30286fc5f14c0b7f73b044d3dc0b979c3ddf79cc",
+      "search_exit": 0,
+      "source_exit": 0,
+      "source_matched": true,
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "qdrant/dense": {
+      "checksum": "sha256:ebfbbe5b108b4e8c5344bb78e391d363ef22e641b85c60010067d434997009be",
+      "readiness_exit": 0,
+      "ready": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "search_exit": 0,
+      "source_exit": 0,
+      "source_matched": true,
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "qdrant/hybrid": {
+      "checksum": "sha256:ebfbbe5b108b4e8c5344bb78e391d363ef22e641b85c60010067d434997009be",
+      "readiness_exit": 0,
+      "ready": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "search_exit": 0,
+      "source_exit": 0,
+      "source_matched": true,
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "solr/dense": {
+      "checksum": "sha256:ebfbbe5b108b4e8c5344bb78e391d363ef22e641b85c60010067d434997009be",
+      "readiness_exit": 0,
+      "ready": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "search_exit": 0,
+      "source_exit": 0,
+      "source_matched": true,
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "solr/hybrid": {
+      "checksum": "sha256:ebfbbe5b108b4e8c5344bb78e391d363ef22e641b85c60010067d434997009be",
+      "readiness_exit": 0,
+      "ready": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "search_exit": 0,
+      "source_exit": 0,
+      "source_matched": true,
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "solr/lexical": {
+      "checksum": "sha256:76e713fc8cef48492a7c4b297b743700593c92d007731a61113d17db66afaeec",
+      "readiness_exit": 0,
+      "ready": true,
+      "revision": "8d0b3422f0dc7a78d70c3786970972ff2e2b1cf0",
+      "search_exit": 0,
+      "source_exit": 0,
+      "source_matched": true,
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    }
+  },
+  "raw_evidence": [
+    {
+      "name": "fetchcore-p02-codex-compose.yaml",
+      "sha256": "53ba16d09feda49eb1c2e1c4cca6892e1dce8d2a51cc43dadd829afc0b368cd1"
+    },
+    {
+      "name": "fetchcore-p02-codex-ollama.yaml",
+      "sha256": "30381e0481e5b07546c02d0f6af63c24e1e0cec8919f2293af5a94080db1bb46"
+    },
+    {
+      "name": "fetchcore-p02-negative-installed.json",
+      "sha256": "d21bae10c853ee65fd341b7366cb4a4f16d14b7fc514e1c2a427dd3d88923a8f"
+    },
+    {
+      "name": "fetchcore-p02-os-noop.json",
+      "sha256": "83cb0a74f432767d4aa145f11133ce86150bad4e4a67fd3e1f9ce76e3731a18b"
+    },
+    {
+      "name": "fetchcore-p02-os-rebuild.json",
+      "sha256": "c9565a6b46c8e853ce7126be61555653728a831243f7cac63b9162e3a2a01415"
+    },
+    {
+      "name": "fetchcore-p02-os-search.json",
+      "sha256": "050d45d592e8e3087e32ede6802d9f104c948f1ea93399d43dd1dcfd9cfa1a89"
+    },
+    {
+      "name": "fetchcore-p02-os-sync.json",
+      "sha256": "47cf33cb24502fb1850f9c92dc748aed452ecc85fd5904da62e91b3a8b02476c"
+    },
+    {
+      "name": "fetchcore-p02-post-restart.json",
+      "sha256": "13678b227f1f02288b900192571c90dc74e007349be24d070e841afd2a4791e4"
+    },
+    {
+      "name": "fetchcore-p02-pytest-targeted.log",
+      "sha256": "e5975bf89a17fe38d3ab6c6fd303230742e9deb39c2bf5f2c2a7a55e0529b90d"
+    },
+    {
+      "name": "fetchcore-p02-serving-installed.json",
+      "sha256": "19e44e8847c8d83a12c3658e164ef07894df9748892a687fcd934fb813c19259"
+    },
+    {
+      "name": "fetchcore-p02-solr-noop.json",
+      "sha256": "a4700fe68d8dabbbb048bfa3fcb72dea600edc486dc1c1aec26f8120bc3eb796"
+    },
+    {
+      "name": "fetchcore-p02-solr-rebuild-recovery.json",
+      "sha256": "16d1680550b842bdc74fb87325400e0ecacd5f6e2fbadd88a07b7f48edc0e1af"
+    },
+    {
+      "name": "fetchcore-p02-solr-rebuild.json",
+      "sha256": "614ae0a4cbb2f74cb462c7e0450bc4b56d0baa62bec5bfdd22f3cb4de26e39e1"
+    },
+    {
+      "name": "fetchcore-p02-solr-search.json",
+      "sha256": "78116eec7e8e10641b4f44632fe473316fb900d6585ed167b17db159d931ac28"
+    },
+    {
+      "name": "fetchcore-p02-solr-sync.json",
+      "sha256": "9cc0fd9b381bab100e2265133ea463ad303f1e4c89acc675ece9ceb2e1e0fd6f"
+    },
+    {
+      "name": "noop.json",
+      "sha256": "627354e8f9b3d882a8e5d0fb85e1619abfdf50384d4986912fea50370259751d"
+    },
+    {
+      "name": "noop.json",
+      "sha256": "d6880c5849d59e507d84e045841baa25d908177598fe3b11c66c195e80a36e7d"
+    },
+    {
+      "name": "noop.json",
+      "sha256": "619df61570f3979b3fdfd296f1bfb72577ea2267910dd91982ed23d693bba588"
+    },
+    {
+      "name": "rebuild.json",
+      "sha256": "48bacf92146a37e493287407f9a4ac0e69f62b3d68115c97154b5b82c6316a72"
+    },
+    {
+      "name": "rebuild.json",
+      "sha256": "9f3aa300350c827401ebdc2be65efa92e8a95e96aad8a05cdccab83e05c488b1"
+    },
+    {
+      "name": "rebuild.json",
+      "sha256": "9febb07674c27d7516dbc746e9ed1330b833ca917c320a9ff1f395448cf43d8d"
+    },
+    {
+      "name": "search-dense.json",
+      "sha256": "c6be58310ddf6bff127e24938a16bfdae7e72490b7cfbf091c0907f74c7e7d22"
+    },
+    {
+      "name": "search-dense.json",
+      "sha256": "010f79655bf4358f29bbcb1b3df3434be74a88b50216835cc436a2431361f80e"
+    },
+    {
+      "name": "search-fetchcore_widget_blueprint-dense.json",
+      "sha256": "e64de612dff8c87aa722891303943e34ab0124f408a55a827829fefcb0669bcd"
+    },
+    {
+      "name": "search-fetchcore_widget_blueprint-hybrid.json",
+      "sha256": "5708945d51811a9452ac762a0b1924e7af0971caf9608af5f7812f8adb90bf57"
+    },
+    {
+      "name": "search-hybrid.json",
+      "sha256": "ab79a088d74edf49824145adfc17eb61229aeb4aba8397e3e64026ed8a41a24b"
+    },
+    {
+      "name": "search-hybrid.json",
+      "sha256": "29e878ef21a8ccba3fa32285eb6068a7af45f76e1d696b123c818a7d25ae67e9"
+    },
+    {
+      "name": "search-new-dense.json",
+      "sha256": "4d77b8df3b4f4ab61b66f44cd929796becc3d0388772e1532862925e893a4e0f"
+    },
+    {
+      "name": "search-new-dense.json",
+      "sha256": "5cca22ba3d02de05b3dea8b062ca23fbda80972d4fdbf62cdce467cfe093989f"
+    },
+    {
+      "name": "search-new-hybrid.json",
+      "sha256": "13a792f9593e4a7dfcae0eebe3770633d626640321199c57a6d2781de0e71786"
+    },
+    {
+      "name": "search-new-hybrid.json",
+      "sha256": "6e96677829d673a2b405c58e2d7502c00c869703644a3e7c8f87e2476c78b090"
+    },
+    {
+      "name": "search-newly_added_widget-dense.json",
+      "sha256": "588a48b94bff6c3a3d27c31dfc2f45260a5eeaf437b7585d0a8c95b4cf0db91b"
+    },
+    {
+      "name": "search-newly_added_widget-hybrid.json",
+      "sha256": "605b82cb6b50134fd317d06ce8fb207c2b43eaa026de268ec2012669cf0ee867"
+    },
+    {
+      "name": "sync.json",
+      "sha256": "b9e74d4a388bb27790fdcb2216c5de915fc432de88977535daec203ac8468cf4"
+    },
+    {
+      "name": "sync.json",
+      "sha256": "0b9e64f10f62f35831203c84206e55a481e8e5282dbbc618c245c6bf319d4558"
+    },
+    {
+      "name": "sync.json",
+      "sha256": "df22b4d01c8f4b4230243715e7da3ea5c1a3ff064322eea38d709d0c99d0b731"
+    }
+  ],
+  "repository": "acme/fetchcore-p02-fixture",
+  "revisions": {
+    "initial": "31c26315f41baef983149dcf3582063254360612",
+    "opensearch_lexical_delta": "30286fc5f14c0b7f73b044d3dc0b979c3ddf79cc",
+    "solr_lexical_delta": "8d0b3422f0dc7a78d70c3786970972ff2e2b1cf0",
+    "vector_delta": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c"
+  },
+  "schema_version": 1,
+  "serving": {
+    "opensearch/dense/mcp": {
+      "backend": "opensearch",
+      "content_matches": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "opensearch/dense/sdk": {
+      "backend": "opensearch",
+      "content_matches": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "opensearch/hybrid/mcp": {
+      "backend": "opensearch",
+      "content_matches": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "opensearch/hybrid/sdk": {
+      "backend": "opensearch",
+      "content_matches": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "opensearch/lexical/mcp": {
+      "backend": "opensearch",
+      "content_matches": true,
+      "revision": "30286fc5f14c0b7f73b044d3dc0b979c3ddf79cc",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "opensearch/lexical/sdk": {
+      "backend": "opensearch",
+      "content_matches": true,
+      "revision": "30286fc5f14c0b7f73b044d3dc0b979c3ddf79cc",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "qdrant/dense/mcp": {
+      "backend": "qdrant-vector",
+      "content_matches": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "qdrant/dense/sdk": {
+      "backend": "qdrant-vector",
+      "content_matches": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "qdrant/hybrid/mcp": {
+      "backend": "qdrant-vector",
+      "content_matches": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "qdrant/hybrid/sdk": {
+      "backend": "qdrant-vector",
+      "content_matches": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "solr/dense/mcp": {
+      "backend": "solr",
+      "content_matches": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "solr/dense/sdk": {
+      "backend": "solr",
+      "content_matches": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "solr/hybrid/mcp": {
+      "backend": "solr",
+      "content_matches": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "solr/hybrid/sdk": {
+      "backend": "solr",
+      "content_matches": true,
+      "revision": "4278af4fc62d1fa0e6aac75b1e5f77fd2a5d0e0c",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "solr/lexical/mcp": {
+      "backend": "solr",
+      "content_matches": true,
+      "revision": "8d0b3422f0dc7a78d70c3786970972ff2e2b1cf0",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    },
+    "solr/lexical/sdk": {
+      "backend": "solr",
+      "content_matches": true,
+      "revision": "8d0b3422f0dc7a78d70c3786970972ff2e2b1cf0",
+      "source_ref": "repository://acme/fetchcore-p02-fixture/src/widgets.py"
+    }
+  },
+  "wheel": {
+    "filename": "fetchcore-0.1.0.dev0-py3-none-any.whl",
+    "sha256": "a482254e8f75b85ca6688033598da83920ea65e8717a00d5b276c70a546d749e"
+  }
+}

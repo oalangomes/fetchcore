@@ -1,5 +1,7 @@
 # P0.2 backend operational preflight — 2026-10-19
 
+This document records the initial read-only state before authorization. The user subsequently authorized isolated resources; the current execution and gate are in [P0.2 operational acceptance](p02-operational-acceptance-2026-10-19.md).
+
 ## Identification and boundary
 
 Phase: P0.2 read-only preparation. Base SHA: `2acf643ad99d36d8b4d19d352c4607bc646ab4a5` (P0.1 PR #210, stacked on P0.0 PR #209). Branch: `codex/p02-operational-preflight-stacked`. Issues: [Solr #130](https://github.com/oalangomes/fetchcore/issues/130), [OpenSearch #202](https://github.com/oalangomes/fetchcore/issues/202), [Qdrant #203](https://github.com/oalangomes/fetchcore/issues/203). All three remained open on 2026-10-19. #181 was closed with its own scoped functional acceptance; this preflight neither reopens nor reuses its measurements as current proof.
