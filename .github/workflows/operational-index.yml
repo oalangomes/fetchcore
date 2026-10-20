@@ -65,6 +65,7 @@ jobs:
       FETCHCORE_REPOSITORY: oalangomes/fetchcore
       FETCHCORE_REVISION: ${{ github.event.workflow_run.head_sha || github.sha }}
       FC_CACHE: ${{ runner.temp }}/fetchcore-operational-${{ matrix.backend }}-${{ github.run_id }}-cache
+      FETCHCORE_REPOSITORY_CACHE: ${{ runner.temp }}/fetchcore-operational-${{ matrix.backend }}-${{ github.run_id }}-cache
       FC_EVIDENCE: ${{ runner.temp }}/fetchcore-operational-${{ matrix.backend }}-${{ github.run_id }}/evidence
 
     steps:
