@@ -161,23 +161,39 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     assert "github.event.workflow_run.head_sha || github.sha" in operational_inputs["target_ref"]
     assert "github.event.workflow_run.head_sha || github.sha" in operational_inputs["fetchcore_ref"]
 
-    vector = operational_jobs["operational-vector-index"]
-    assert vector["strategy"]["matrix"]["backend"] == ["opensearch", "qdrant"]
-    assert vector["strategy"]["max-parallel"] == 1
-    assert vector["concurrency"]["cancel-in-progress"] is False
-    assert "FETCHCORE_OPERATIONAL_OLLAMA_URL" in vector["env"]["FC_OLLAMA_URL"]
-    assert "embeddinggemma" in vector["env"]["FETCHCORE_RETRIEVAL"]
-    assert '"dimensions":768' in vector["env"]["FETCHCORE_RETRIEVAL"]
-    vector_steps = "\n".join(
-        step.get("run", "") for step in vector["steps"] if isinstance(step, dict)
-    )
-    assert "--create-if-missing" not in vector_steps
-    assert "prepare --environment operational" in vector_steps
-    assert "status-before.json" in vector_steps
-    assert "plan oalangomes/fetchcore --json" in vector_steps
-    assert "sync oalangomes/fetchcore --json" in vector_steps
-    assert "status-after.json" in vector_steps
-    assert "readiness --json" in vector_steps
+    assert list(operational_jobs) == ["operational-index"]  # Solr unchanged
+
+    for backend in ("opensearch", "qdrant"):
+        path = workflow_dir / f"operational-{backend}.yml"
+        backend_workflow = path.read_text(encoding="utf-8")
+        assert "workflow_run:" in backend_workflow
+        assert "workflow_dispatch:" in backend_workflow
+        assert "github.event.workflow_run.conclusion == 'success'" in backend_workflow
+        assert "github.event.workflow_run.event == 'push'" in backend_workflow
+        assert "head_repository.full_name == github.repository" in backend_workflow
+        backend_jobs = yaml.safe_load(backend_workflow)["jobs"]
+        vector = backend_jobs[f"operational-{backend}-index"]
+        assert len(backend_jobs) == 1
+        assert vector["env"]["FC_BACKEND"] == backend
+        assert vector["concurrency"]["group"] == f"fetchcore-operational-{backend}"
+        assert vector["concurrency"]["cancel-in-progress"] is False
+        assert "FETCHCORE_OPERATIONAL_OLLAMA_URL" in vector["env"]["FC_OLLAMA_URL"]
+        assert "embeddinggemma" in vector["env"]["FETCHCORE_RETRIEVAL"]
+        assert '"dimensions":768' in vector["env"]["FETCHCORE_RETRIEVAL"]
+        assert "github.event.workflow_run.head_sha || github.sha" in vector["env"]["FC_TARGET_SHA"]
+        vector_steps = "\n".join(
+            step.get("run", "") for step in vector["steps"] if isinstance(step, dict)
+        )
+        assert "--create-if-missing" not in vector_steps
+        assert f"--backend {backend}" in vector_steps
+        assert "prepare --environment operational" in vector_steps
+        if backend == "qdrant":
+            assert "--vector-dimensions 768" in vector_steps
+        assert "status-before.json" in vector_steps
+        assert "plan oalangomes/fetchcore --json" in vector_steps
+        assert "sync oalangomes/fetchcore --json" in vector_steps
+        assert "status-after.json" in vector_steps
+        assert "readiness --json" in vector_steps
 
     assert "FETCHCORE_DOCS_LOCALIZATION_ENABLED == 'true'" in localization
     assert "Validate localization configuration" in localization
