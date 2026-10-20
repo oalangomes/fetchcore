@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Operational envelope for FetchCore's existing benchmark runners.
 
 This module does not evaluate retrieval, change measurements, or provision backends.
