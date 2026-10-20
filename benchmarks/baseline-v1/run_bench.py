@@ -13,6 +13,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
@@ -78,14 +79,18 @@ def load_run_config(path: Path, corpus: dict[str, object]) -> dict[str, object]:
     for field in ("performance_comparable", "dedicated", "exclusive_host"):
         if not isinstance(config[field], bool):
             raise frozen.BaselineConfigurationError(f"BENCH {field} must be a boolean")
+    project = config["infrastructure_project"]
+    isolated = isinstance(project, str) and bool(
+        re.fullmatch(r"fetchcore-bench-[a-z0-9]{12}", project)
+    )
+    dedicated_project = project == "fetchcore-bench-dedicated" or isolated
     if config["performance_comparable"] and not (
-        config["dedicated"] and config["exclusive_host"]
-        and config["infrastructure_project"] == "fetchcore-bench-dedicated"
+        config["dedicated"] and config["exclusive_host"] and dedicated_project
     ):
         raise frozen.BaselineConfigurationError("comparable performance requires dedicated BENCH and exclusive host")
-    if config["infrastructure_project"] not in {"fetchcore-shared", "fetchcore-bench-dedicated"}:
+    if project not in {"fetchcore-shared", "fetchcore-bench-dedicated"} and not isolated:
         raise frozen.BaselineConfigurationError("BENCH infrastructure project is invalid")
-    if bool(config["dedicated"]) != (config["infrastructure_project"] == "fetchcore-bench-dedicated"):
+    if bool(config["dedicated"]) != dedicated_project:
         raise frozen.BaselineConfigurationError("BENCH dedicated flag and project must agree")
     endpoints = frozen._object(config, "endpoints")
     resources = frozen._object(config, "resources")
