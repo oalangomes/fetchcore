@@ -6,7 +6,7 @@ Every native runner retains its own protocol and safety checks.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import hashlib
 import json
 import os
@@ -39,7 +39,7 @@ class BundleError(ValueError):
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def digest(data: bytes) -> str:
@@ -176,9 +176,9 @@ def run(args: argparse.Namespace) -> int:
         plan_sha = digest(args.infra_plan.read_bytes())
     elif args.mode == "performance":
         raise BundleError("performance run requires an explicit ephemeral infrastructure plan")
-    if args.mode == "functional" and args.kind == "full" and args.suite != "targeted-exact":
-        if args.infra_plan is None:
-            raise BundleError("full remote BENCH requires a functional routing plan")
+    if (args.mode == "functional" and args.kind == "full"
+            and args.suite != "targeted-exact" and args.infra_plan is None):
+        raise BundleError("full remote BENCH requires a functional routing plan")
     run_dir.parent.mkdir(parents=True, exist_ok=True)
     run_dir.mkdir()  # never adopt or overwrite a previous run
     (run_dir / "native").mkdir()
