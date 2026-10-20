@@ -22,25 +22,29 @@ master push
     ↓
 CI on GitHub-hosted runners
     ↓ successful master run only
-FetchCore operational index on the FetchCore-labeled self-hosted runner
+independent Solr, OpenSearch and Qdrant OPERATIONAL workflows
     ↓
-reuse persistent Solr
+reuse each backend's persistent OPERATIONAL resource
     ↓
-fetchcore
-    ↓
-plan → incremental sync | noop
+plan → incremental sync | noop → readiness
 ```
 
-Pull requests never write to the persistent operational `fetchcore` resource.
+Pull requests never write to persistent OPERATIONAL resources.
 `.github/workflows/self-dogfood.yml` runs the candidate revision against an
 owned ephemeral Solr runtime and explicitly rebuilds the disposable
 `fetchcore-self-dogfood` resource. The run cleans up only resources it owns.
 
-`.github/workflows/operational-index.yml` accepts only a successful `push` CI
-run for `master` from the FetchCore repository, consumes that immutable
-`head_sha`, and updates only the persistent `fetchcore` resource. It uses
-`reuse_only`, `create_if_missing: false`, and `sync`; missing or incompatible
-operational state fails closed rather than creating or rebuilding implicitly.
+The [Solr](../../.github/workflows/operational-index.yml),
+[OpenSearch](../../.github/workflows/operational-opensearch.yml) and
+[Qdrant](../../.github/workflows/operational-qdrant.yml) workflows accept only a
+successful `push` CI run for `master` from the FetchCore repository, or an
+explicit manual dispatch. Each uses the immutable `head_sha` for post-CI runs
+and only its own persistent OPERATIONAL resource. They require existing compatible
+snapshots, perform `sync` and verify readiness; missing or incompatible
+schema/fingerprints fail closed without an implicit rebuild. All default to
+hybrid retrieval, allow explicit dense selection, and use Ollama
+`embeddinggemma` at 768 dimensions. See the
+[operational acceptance](self-hosted-indexing.md#operational-acceptance-2026-10-20).
 
 The repository does not choose the self-hosted runner boot policy. The default
 operational labels include `fetchcore`; override
@@ -67,8 +71,8 @@ Operator-owned settings remain:
 
 - self-hosted runner registration, availability, and boot policy;
 - `FETCHCORE_INDEX_RUNNER_LABELS_JSON`;
-- initial explicit bootstrap/rebuild of the persistent `fetchcore` resource
-  when no compatible operational snapshot exists;
+- explicit rebuild of an OPERATIONAL resource if a future contract change makes
+  its snapshot incompatible;
 - localization secrets/configuration;
 - optional digest-pinned CI image overrides;
 - branch protection and required-check configuration.

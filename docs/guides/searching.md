@@ -12,7 +12,7 @@ fetchcore repo add . --json
 fetchcore repo list --json
 ```
 
-These commands only register a source. Follow [self-hosted indexing](self-hosted-indexing.md) to provision a compatible Solr resource and [indexing lifecycle](repository-indexing.md) to plan and explicitly rebuild its first snapshot. Once that snapshot and the [operator runtime](runtime-configuration.md) are configured:
+These commands only register a source. Follow [self-hosted indexing](self-hosted-indexing.md) to use a compatible backend resource and [indexing lifecycle](repository-indexing.md) to plan and explicitly rebuild its first snapshot when needed. Once that snapshot and the [operator runtime](runtime-configuration.md) are configured:
 
 ```bash
 fetchcore search "RepositoryIndexer" --repo fetchcore --limit 5 --json

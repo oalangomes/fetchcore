@@ -1,7 +1,7 @@
 # Shared development infrastructure and resource lifecycle
 
-Status: shared DEV/BENCH/OPERATIONAL local infrastructure. Retrieval contracts, Projection v3,
-serializer/embedding fingerprints and frozen benchmark artifacts are unchanged.
+Status: shared DEV/BENCH/OPERATIONAL local infrastructure. Solr, OpenSearch and
+Qdrant have operational acceptance on their separate OPERATIONAL resources.
 
 ## Audit and scope
 
@@ -15,8 +15,9 @@ instances can be selected explicitly and are never adopted as owned Compose proj
 service/resource provisioning, validates repository-resource binding, and emits
 run evidence. Self-dogfood explicitly provisions disposable Solr on hosted runners;
 that hermetic CI path remains unchanged. Operational indexing is reuse-only and
-now defaults to the isolated operational endpoint/resource below. Backend-neutral
-operational indexing parity is tracked separately in issue #123.
+uses the isolated operational endpoints/resources below. See
+[self-hosted indexing](self-hosted-indexing.md) for the three independent workflows
+and their acceptance evidence.
 
 Benchmark `search-intent-v2/run.py` accepts routed environment defaults while
 retaining explicit CLI arguments. Frozen baseline-v1 and paired `evidence.py`
@@ -152,24 +153,28 @@ checks use `--provision-mode reuse_only`. Then explicitly run `fetchcore index b
 plan and sync using the routed environment. Bootstrap remains Projection v3.
 OpenSearch/Qdrant infrastructure preparation creates only empty schemas and aliases;
 it does not create an indexed snapshot. Their indexing lifecycle is operationally
-supported (#123/#202/#203), but source registration, initial rebuild, and migration
-remain explicit. The OPERATIONAL workflow performs only incremental `sync` on
-pre-existing compatible snapshots after CI succeeds; missing/incompatible snapshots
-require a separate, authorized operator action rather than automatic reconstruction.
+supported. Resource creation and an initial or compatibility rebuild remain
+explicit operator actions. The independent OPERATIONAL workflows perform only
+incremental `sync` on pre-existing compatible snapshots after CI succeeds;
+missing/incompatible snapshots require a separate, authorized operator action
+rather than automatic reconstruction.
 
 `run` exports host-process `FETCHCORE_*` settings, not container DNS or MCP-specific
 configuration. Use the emitted values explicitly for MCP-specific settings, or
 `--solr-url`/`--collection` in dogfood. Existing explicit CLI settings take precedence;
 review them before any mutation. It is not a sandbox for arbitrary commands.
 
-## Operational migration
+## Operational lifecycle
 
-Before merging/enabling the new workflow default, explicitly provision the
-operational service, create the emitted operational resource, register the same
-repository and bootstrap/sync it. Verify readiness and revision/fingerprints before
-switching consumers. The old `fetchcore` core and volumes are retained. There is no
-automatic copy, adoption, rebuild or deletion. Until preparation finishes the
-workflow fails closed instead of indexing development.
+The operator confirms that the explicit compatibility rebuild after the Projection
+contract fingerprint change was completed for Solr, OpenSearch and Qdrant, and
+that `readiness` returned `ready: true` for all three. Successful independent
+GitHub Actions runs and their checked readiness steps are recorded in
+[operational acceptance](self-hosted-indexing.md#operational-acceptance-2026-10-20).
+The current cycle is **explicit rebuild when needed → automatic incremental sync
+→ readiness**. A workflow never creates or repairs an incompatible snapshot;
+it fails closed. OPERATIONAL resources stay separate from DEV and BENCH, and
+the old `fetchcore` core and volumes remain outside this lifecycle.
 
 `FETCHCORE_OPERATIONAL_SOLR_URL` and `FETCHCORE_OPERATIONAL_SOLR_COLLECTION` repository
 variables override the workflow defaults for an operator-managed isolated service.
@@ -210,9 +215,9 @@ adoption refusal, ownership mismatch, safe cleanup and resource isolation. Compo
 can be rendered without starting services. No retrieval tuning or schema migration
 is introduced. `ready` checks actual HTTP health; for Qdrant this is an external
 readiness probe because the upstream image has no in-container HTTP client.
-Run live service/resource preparation and readiness on an explicitly allocated host
-before operational migration; use existing shared indexes read-only for retrieval
-validation and never overwrite them as a smoke-test target.
+Use an explicitly allocated host for any later live service/resource preparation;
+use existing shared indexes read-only for retrieval validation and never overwrite
+them as a smoke-test target.
 
 Initial P0 validation on 2026-10-16: Python 3.11 suite **828 passed, 7 skipped**;
 Ruff, mypy (171 source files), wheel/sdist build, Markdown links and legacy/new
