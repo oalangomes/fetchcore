@@ -41,11 +41,29 @@ unknown descendants and bytes. Never traverse dependencies/caches just to count
 them. Without Git, use a bounded metadata traversal and report tracking/ignore
 facts as unknown. A failed Git inventory is a failure, not an empty repository.
 
+The helper also observes `git --no-optional-locks status --porcelain=v1 -z`
+without content diffs. It preserves index/workspace status columns, additions,
+deletions and rename source/destination paths, including whitespace/newlines.
+`revision` always refers to committed HEAD. `working_tree_dirty` is null when
+status is unavailable, not false; unborn HEAD cannot represent the workspace.
+Status records do not fingerprint already-dirty file contents and are observed
+separately from file metadata, not as an atomic snapshot.
+
 Record at most 10000 paths by default. The helper time-bounds each Git command to
 10 seconds and rejects metadata output larger than 8 MB. Git may enumerate more
 paths before truncation, but the helper bounds the metadata pipe; this is
 not a hard time budget for the entire repository. Plain directory traversal
 prunes dependency directories and caps directory visits. Report limitations.
+
+`observation` declares completeness, scope and reason codes. A path budget,
+collapsed ignored directory, pruned/unreadable directory or unresolved source
+metadata prevents a complete observation. `enumeration_complete` is separate
+from metadata availability; source contents are never sampled by this helper.
+`unvisited_entries` counts known enumerated entries omitted by a Git path budget;
+it does not count unknown descendants of collapsed directories. Non-Git traversal
+stops/pruning use null for that count. Never turn unknown descendants into zero
+files/bytes. REVIEW copies these limitations into `impact.complete/scope/reasons`;
+all distributions remain measurements over observed paths, before indexing.
 
 Before sampling check all parent components for symlinks and check filename-based
 sensitivity (including `.env*`, credential names, keys and `local.properties`).

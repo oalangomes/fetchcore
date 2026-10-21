@@ -312,3 +312,264 @@ def test_worked_example_is_a_valid_preserving_canonical_policy() -> None:
     assert current.config.max_files == proposed.config.max_files
     assert len(example["impact"]["removed_eligible_paths"]) == 21
     assert example["applied"] is False
+
+
+@pytest.mark.parametrize("text", [
+    'version: 1\nsecret: [SENSITIVE_SENTINEL\n',
+    'version: 1\nunsupported: SENSITIVE_SENTINEL\n',
+    'version: 1\nSENSITIVE_SENTINEL: unsupported\n',
+])
+def test_invalid_policy_values_never_leave_discover_or_cli(repo: Path, text: str) -> None:
+    write(repo, ".fetchcore/indexing.yaml", text)
+    before = snapshot(repo)
+    report = inventory.discover(repo)
+    assert report["policy"]["validation"] == "invalid"
+    assert report["policy"]["yaml"] is None
+    assert report["policy"]["yaml_status"] == "withheld_invalid"
+    assert report["policy"]["sha256"] == hashlib.sha256(text.encode()).hexdigest()
+    assert report["policy"]["error_category"] == "policy_validation_failed"
+    assert report["policy"]["error_type"]
+    assert "SENSITIVE_SENTINEL" not in json.dumps(report)
+    result = subprocess.run([sys.executable, "-B", str(SCRIPT), "discover", str(repo)],
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["policy"]["validation"] == "invalid"
+    assert "SENSITIVE_SENTINEL" not in result.stdout + result.stderr
+    assert snapshot(repo) == before
+
+
+def test_valid_policy_text_is_available_without_changing_original_yaml(repo: Path) -> None:
+    text = "# Retain technical docs\nversion: 1\nselection:\n  include: ['*.adoc']\n"
+    write(repo, ".fetchcore/indexing.yaml", text)
+    report = inventory.discover(repo)
+    assert report["policy"]["validation"] == "valid"
+    assert report["policy"]["yaml"] == text
+    assert report["policy"]["yaml_status"] == "visible"
+    assert report["effective_selection"]
+
+
+@pytest.mark.parametrize("where", ["current", "proposal", "both"])
+def test_sensitive_valid_yaml_is_withheld_from_every_policy_surface(
+    repo: Path, tmp_path: Path, where: str,
+) -> None:
+    # Even schema-valid strings or comments can contain credentials.
+    text = "version: 1\nselection:\n  exclude: ['private/password=SENSITIVE_SENTINEL']\n"
+    if where in {"current", "both"}:
+        write(repo, ".fetchcore/indexing.yaml", text)
+    proposal = write(tmp_path, "external.yaml", text if where in {"proposal", "both"} else "version: 1\n")
+    report = inventory.review(repo, proposal)
+    assert report["policy"]["validation"] == "valid"
+    assert report["policy_diff"] is None
+    assert report["policy_diff_status"] == "withheld_potentially_sensitive"
+    assert report["existing_exclusions_removed"] is None
+    assert report["existing_includes_removed"] is None
+    if where != "proposal":
+        assert report["policy"]["yaml"] is None
+        assert "resolved" not in report["policy"]
+        assert report["effective_selection"] is None
+    if where != "current":
+        assert report["proposal_yaml"] is None
+    assert "SENSITIVE_SENTINEL" not in json.dumps(report)
+    assert report["impact"]["removed_eligible_paths"] == []
+
+
+def test_policy_comment_credentials_and_unvalidated_yaml_are_not_rendered(repo: Path) -> None:
+    write(repo, ".fetchcore/indexing.yaml", "version: 1\n# api_key=SENSITIVE_SENTINEL\n")
+    report = inventory.discover(repo)
+    assert report["policy"]["yaml"] is None
+    assert "SENSITIVE_SENTINEL" not in json.dumps(report)
+    result = subprocess.run([sys.executable, "-I", "-S", "-B", str(SCRIPT), "discover", str(repo)],
+                            capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout)["policy"]["yaml_status"] == "withheld_unavailable"
+    assert "SENSITIVE_SENTINEL" not in result.stdout + result.stderr
+
+
+def test_invalid_external_proposal_does_not_leak_error_values(repo: Path, tmp_path: Path) -> None:
+    proposal = write(tmp_path, "external.yaml", "version: SENSITIVE_SENTINEL\n")
+    with pytest.raises(ValueError) as error:
+        inventory.review(repo, proposal)
+    assert "SENSITIVE_SENTINEL" not in str(error.value)
+    result = subprocess.run([sys.executable, "-B", str(SCRIPT), "review", str(repo), "--proposal", str(proposal)],
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 2
+    assert "SENSITIVE_SENTINEL" not in result.stdout + result.stderr
+
+
+def test_clean_git_working_tree_distinguishes_head_from_workspace(repo: Path) -> None:
+    report = inventory.discover(repo)
+    assert report["working_tree_dirty"] is False
+    assert report["working_tree"]["available"] is True
+    assert report["working_tree"]["complete"] is True
+    assert report["working_tree"]["head_represents_workspace"] is True
+    assert report["working_tree"]["tracked_changes"] == []
+
+
+@pytest.mark.parametrize("staged", [False, True])
+def test_same_size_tracked_edit_changes_dirty_observation_without_touching_index(repo: Path, staged: bool) -> None:
+    clean = inventory.discover(repo)
+    original = (repo / "src/main.py").read_text()
+    write(repo, "src/main.py", original.replace("return 1", "return 2"))
+    if staged:
+        git(repo, "add", "src/main.py")
+    before = snapshot(repo)
+    report = inventory.discover(repo)
+    assert snapshot(repo) == before
+    assert report != clean
+    assert rows(report)["src/main.py"]["bytes"] == rows(clean)["src/main.py"]["bytes"]
+    assert report["revision"] == clean["revision"]
+    assert report["working_tree_dirty"] is True
+    assert report["working_tree"]["head_represents_workspace"] is False
+    change = report["working_tree"]["tracked_changes"][0]
+    assert change == {"path": "src/main.py", "index_status": "M" if staged else " ",
+                      "workspace_status": " " if staged else "M"}
+    assert report["working_tree"]["staged_paths"] == (["src/main.py"] if staged else [])
+    assert report["working_tree"]["unstaged_paths"] == ([] if staged else ["src/main.py"])
+
+
+def test_combined_staged_and_unstaged_changes_are_both_reported(repo: Path) -> None:
+    write(repo, "src/main.py", "# staged\n")
+    git(repo, "add", "src/main.py")
+    write(repo, "src/main.py", "# staged plus unstaged\n")
+    report = inventory.discover(repo)
+    assert report["working_tree"]["staged_paths"] == ["src/main.py"]
+    assert report["working_tree"]["unstaged_paths"] == ["src/main.py"]
+
+
+def test_added_removed_renamed_paths_and_nul_status_parsing(repo: Path) -> None:
+    renamed = "src/new name\n$(do-not-run).py"
+    git(repo, "mv", "src/main.py", renamed)
+    write(repo, "added source.py", "# new\n")
+    git(repo, "add", "added source.py")
+    (repo / "docs/architecture.md").unlink()
+    before = snapshot(repo)
+    report = inventory.discover(repo)
+    assert snapshot(repo) == before
+    changes = {change["path"]: change for change in report["working_tree"]["tracked_changes"]}
+    assert changes[renamed]["original_path"] == "src/main.py"
+    assert changes[renamed]["index_status"] == "R"
+    assert changes["added source.py"]["index_status"] == "A"
+    assert changes["docs/architecture.md"]["workspace_status"] == "D"
+    assert report["working_tree_dirty"] is True
+
+
+def test_unborn_head_has_status_but_never_claims_workspace_equals_head(tmp_path: Path) -> None:
+    git(tmp_path, "init", "-q")
+    write(tmp_path, "new.py", "# new\n")
+    git(tmp_path, "add", "new.py")
+    report = inventory.discover(tmp_path)
+    assert report["revision"] is None
+    assert report["working_tree_dirty"] is True
+    assert report["working_tree"]["head_represents_workspace"] is False
+    assert report["working_tree"]["staged_paths"] == ["new.py"]
+
+
+def test_git_status_failure_is_unknown_not_clean(repo: Path, monkeypatch) -> None:
+    original = inventory.git
+
+    def unavailable(root, command, *args, **kwargs):
+        if command == "status":
+            raise ValueError("unavailable")
+        return original(root, command, *args, **kwargs)
+
+    monkeypatch.setattr(inventory, "git", unavailable)
+    report = inventory.discover(repo)
+    assert report["working_tree_dirty"] is None
+    assert report["working_tree"]["complete"] is False
+    assert report["working_tree"]["incompleteness_reasons"] == ["git_status_unavailable"]
+    assert report["working_tree"]["head_represents_workspace"] is False
+
+
+def test_complete_and_partial_review_have_structured_observation_scope(repo: Path, tmp_path: Path) -> None:
+    proposal = write(tmp_path, "external.yaml", "version: 1\nselection:\n  exclude: ['docs/**']\n")
+    full = inventory.review(repo, proposal)
+    assert full["observation"]["complete"] is True
+    assert full["observation"]["unvisited_entries"] == 0
+    assert full["impact"]["complete"] is True
+    assert full["impact"]["scope"] == "repository_paths"
+    assert full["impact"]["incompleteness_reasons"] == []
+    partial = inventory.review(repo, proposal, max_paths=1)
+    assert partial["observation"]["complete"] is False
+    assert partial["observation"]["unvisited_entries"] == 4
+    assert partial["impact"]["complete"] is False
+    assert partial["impact"]["scope"] == "observed_paths"
+    assert partial["impact"]["incompleteness_reasons"] == ["inventory_limit_reached"]
+    assert partial["summary"]["scope"] == "observed_paths"
+    assert partial["impact"]["removed_eligible_paths"] == ["docs/architecture.md"]
+    assert any("observed paths only" in item for item in partial["limitations"])
+
+
+def test_ignored_directories_remain_unknown_not_invented_file_totals(repo: Path, tmp_path: Path) -> None:
+    write(repo, ".gitignore", "cache/\n")
+    write(repo, "cache/deep/hidden.json", "{}\n")
+    proposal = write(tmp_path, "external.yaml", "version: 1\n")
+    report = inventory.review(repo, proposal)
+    assert report["observation"]["complete"] is False
+    assert report["observation"]["collapsed_ignored_directories"] == ["cache"]
+    assert "ignored_directories_collapsed" in report["impact"]["incompleteness_reasons"]
+    assert report["impact"]["complete"] is False
+    assert rows(report)["cache"]["bytes"] is None
+    assert "cache/deep/hidden.json" not in rows(report)
+    assert report["working_tree"]["head_represents_workspace"] is False
+
+
+@pytest.mark.parametrize("by_directories", [False, True])
+def test_non_git_traversal_limits_have_unknown_unvisited_counts(tmp_path: Path, by_directories: bool) -> None:
+    root = tmp_path / "plain"
+    if by_directories:
+        (root / "a").mkdir(parents=True)
+        (root / "b").mkdir()
+    else:
+        write(root, "a.py")
+        write(root, "b.py")
+    report = inventory.discover(root, max_paths=1)
+    reason = "directory_limit_reached" if by_directories else "inventory_limit_reached"
+    assert report["observation"]["complete"] is False
+    assert report["observation"]["unvisited_entries"] is None
+    assert report["observation"]["enumerated_entries"] is None
+    assert reason in report["observation"]["incompleteness_reasons"]
+    assert report["working_tree_dirty"] is None
+    assert report["working_tree"]["head_represents_workspace"] is False
+
+
+def test_metadata_read_limitations_are_distinct_from_enumeration(repo: Path) -> None:
+    unreadable = write(repo, "src/noaccess.py")
+    unreadable.chmod(0)
+    try:
+        report = inventory.discover(repo)
+    finally:
+        unreadable.chmod(0o644)
+    assert report["observation"]["enumeration_complete"] is True
+    assert report["observation"]["complete"] is False
+    assert report["observation"]["metadata_unavailable_paths"] == ["src/noaccess.py"]
+    assert report["observation"]["content_inspection"] == "not_performed"
+
+
+def test_real_dirty_invalid_policy_command_is_read_only_and_fail_closed(repo: Path) -> None:
+    write(repo, ".fetchcore/indexing.yaml", "version: 1\nunsupported: SENSITIVE_SENTINEL\n")
+    write(repo, "src/main.py", "def main():\n    return 2\n")
+    before = snapshot(repo)
+    result = subprocess.run([sys.executable, "-B", str(SCRIPT), "discover", str(repo)],
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 2
+    report = json.loads(result.stdout)
+    assert report["working_tree_dirty"] is True
+    assert report["working_tree"]["unstaged_paths"] == ["src/main.py"]
+    assert report["working_tree"]["head_represents_workspace"] is False
+    assert report["policy"]["validation"] == "invalid"
+    assert "SENSITIVE_SENTINEL" not in result.stdout + result.stderr
+    assert snapshot(repo) == before
+
+
+def test_non_git_complete_and_pruned_observations_use_distinct_scopes(tmp_path: Path) -> None:
+    root = tmp_path / "plain"
+    write(root, "docs/technical.md")
+    complete = inventory.discover(root)
+    assert complete["observation"]["complete"] is True
+    assert complete["observation"]["enumerated_entries"] == 1
+    assert complete["observation"]["unvisited_entries"] == 0
+    write(root, ".venv/dependency.py")
+    partial = inventory.discover(root)
+    assert partial["observation"]["complete"] is False
+    assert partial["observation"]["unvisited_entries"] is None
+    assert partial["observation"]["untraversed_directories"] == [".venv"]
+    assert partial["observation"]["incompleteness_reasons"] == ["directory_pruned"]

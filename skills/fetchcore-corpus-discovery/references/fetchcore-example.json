@@ -2,15 +2,27 @@
   "mode": "REVIEW",
   "repository": "oalangomes/fetchcore",
   "revision": "e0a9a72adb2f8c7e056c5e9993fb5fa34e00e8f1",
-  "working_tree": "clean detached clone; tracked files only",
+  "working_tree": {
+    "available": true,
+    "complete": true,
+    "dirty": false,
+    "head_represents_workspace": true,
+    "tracked_changes": [],
+    "staged_paths": [],
+    "unstaged_paths": [],
+    "untracked_paths": [],
+    "incompleteness_reasons": []
+  },
   "observations": {
     "policy": {
       "source": ".fetchcore/indexing.yaml",
       "yaml": "version: 1\n\nselection:\n  exclude:\n    - \"benchmarks/baseline-v1/artifacts/**\"\n    - \".fetchcore-dogfood/**\"\n    - \"dogfood/scenarios/**\"\n\nlimits:\n  max_files: 2500\n  max_file_bytes: 1000000\n  max_total_bytes: 64000000\n\nchunking:\n  max_lines: 160\n  overlap_lines: 20\n\nclassification:\n  rules:\n    - pattern: \"dogfood/**\"\n      knowledge_type: tests\n",
       "sha256": "607a02cfe741d3d2734c390c5a1b962d77ce4c624c7fcb236bf8369b350fcc4a",
-      "validation": "valid"
+      "validation": "valid",
+      "yaml_status": "visible"
     },
     "summary": {
+      "scope": "observed_paths",
       "observed_entries": 715,
       "observed_regular_file_bytes": 139754846,
       "by_admission": {
@@ -214,7 +226,19 @@
           "protocol"
         ]
       }
-    ]
+    ],
+    "observation": {
+      "complete": true,
+      "enumeration_complete": true,
+      "scope": "repository_paths",
+      "incompleteness_reasons": [],
+      "enumerated_entries": 715,
+      "unvisited_entries": 0,
+      "collapsed_ignored_directories": [],
+      "untraversed_directories": [],
+      "metadata_unavailable_paths": [],
+      "content_inspection": "not_performed"
+    }
   },
   "recommendations": [
     {
@@ -252,6 +276,9 @@
   "proposal_sha256": "5140dd1ba5a37a680aac526c884ef125259dc778a42626d3a464575a0fba224c",
   "policy_diff": "--- .fetchcore/indexing.yaml\n+++ proposed/.fetchcore/indexing.yaml\n@@ -5,6 +5,7 @@\n     - \"benchmarks/baseline-v1/artifacts/**\"\n     - \".fetchcore-dogfood/**\"\n     - \"dogfood/scenarios/**\"\n+    - \"studies/repository-learning/.artifacts/**/*.json\"\n \n limits:\n   max_files: 2500\n",
   "impact": {
+    "complete": true,
+    "scope": "repository_paths",
+    "incompleteness_reasons": [],
     "removed_eligible_paths": [
       "studies/repository-learning/.artifacts/repository-learning/codex-20261008-001/plan/plan.json",
       "studies/repository-learning/.artifacts/repository-learning/codex-20261008-001/run/direct.json",
@@ -324,5 +351,8 @@
     "All 21 affected JSON files have not been semantically inspected.",
     "Backend/indexing fingerprints and snapshot compatibility unmeasured.",
     "No improvement in retrieval, tokens, chunks, cost or latency claimed."
-  ]
+  ],
+  "working_tree_dirty": false,
+  "proposal_yaml_status": "visible",
+  "policy_diff_status": "visible"
 }

@@ -53,6 +53,19 @@ both paths together are ambiguous and fail closed. Unknown keys, unsupported
 versions, invalid values and YAML errors block proposals. Never rewrite a malformed
 policy to defaults. Preserve comments and user order with a minimal textual diff.
 
+The helper keeps validation inputs separate from public output. Invalid or
+unvalidated YAML is never rendered: only source path, checksum, validation result
+and safe error category/type are exposed. Valid non-sensitive YAML keeps its exact
+text/comments for useful diffs. A conservative guard withholds the entire YAML,
+resolved configured values and diff when credential labels/token/private-key
+markers are recognized, including comments. It does not modify validation or
+selection semantics. Impact paths remain visible as metadata observations.
+Withheld text is null with an explicit visibility status, never a replacement
+configuration; inspect the original privately for a separate human review.
+The guard is not a general secret scanner and cannot prove arbitrary unlabeled
+values or repository filenames non-sensitive. Do not print raw policy/parser
+errors as a fallback or claim the guard detects every possible secret.
+
 ## KnowledgePacks
 
 Use installed pack detection/configuration rather than new framework heuristics.
@@ -76,6 +89,9 @@ directory, reuses canonical pack precedence/matching, then
 lists before/after metadata admission and bytes. It neither runs RepositoryIndexer
 nor contacts a backend. Its eligibility precedes binary/API quarantine, decoding,
 max_files and max_total_bytes. Inventory truncation means impact is partial.
+`observation` and `impact` expose `complete`, `scope` and
+`incompleteness_reasons`. A complete metadata observation is not evidence of
+complete content inspection or of the number of documents actually indexed.
 
 The helper needs an installed compatible FetchCore for canonical validation; this
 is optional tooling, not a runtime dependency of the skill instructions. On a

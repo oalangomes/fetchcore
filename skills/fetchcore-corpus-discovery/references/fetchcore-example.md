@@ -22,6 +22,10 @@ No ignored untracked files existed in this clean clone. A separate fixture prove
 that already-tracked ignore matches stay eligible and ignored untracked paths do
 not. These counts measure file metadata, before text/API safety, aggregate limits
 and extraction; they are not files/chunks actually indexed.
+The structured report records `working_tree_dirty: false`, a complete
+`repository_paths` observation and `impact.complete: true` for this metadata
+comparison. Truncated inventories or collapsed ignored directories would instead
+report partial observed-path scope with explicit reasons and unknown descendants.
 
 Python is evidenced by `pyproject.toml` and `.py` paths; the explorer has a
 JavaScript/TypeScript manifest and React dependencies at

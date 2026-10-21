@@ -20,8 +20,57 @@ earlier design-only gate does not override that authorization.
 - `tests/skills/test_corpus_discovery.py`: deterministic boundary tests.
 
 No runtime/core/CLI/MCP/indexer/backend/KnowledgePack interface changed. The actual
-`.fetchcore/indexing.yaml` remains byte-identical. No PR, merge, issue closure,
-reindexing or full retrieval benchmark was performed.
+`.fetchcore/indexing.yaml` remains byte-identical. The initial checkpoint below
+preceded PR #219. No merge, issue closure, reindexing or full retrieval benchmark
+was performed.
+
+## PR #219 review remediation
+
+The existing skill was corrected in place from `5d056a6`, without changing
+runtime contracts or agent integrations. Its developer-report JSON deliberately
+adds visibility, Git-state and completeness fields. `policy.yaml` can now be null
+when invalid, unvalidated or potentially sensitive; consumers must inspect its
+explicit `yaml_status` rather than treating withheld text as an empty policy.
+
+| Finding | Correction | Regression evidence | Status |
+| --- | --- | --- | --- |
+| P1: sensitive invalid YAML | Keep validation inputs private; withhold invalid/unvalidated text and suspicious valid text, resolved values and diffs; retain path/hash and safe errors | Invalid syntax/keys/values, comments, current/proposed/both policies, missing validator, safe unchanged valid YAML, real CLI stdout/stderr | Fixed |
+| P2: dirty working tree | NUL-delimited Git porcelain with separate staged/unstaged status and rename origins; HEAD remains a committed revision, unavailable status is unknown | Clean, same-size edit, staged, unstaged, combined, added/deleted/renamed unusual paths, unborn HEAD and status failure; index/files unchanged | Fixed |
+| P2: partial impact | Structured observation/impact completeness, scope and reasons; distinguish known omitted entries from unknown descendants and metadata issues | Complete/limited Git and plain directories, ignored/pruned directories, unresolved metadata, complete/partial REVIEW | Fixed |
+
+Remediation validation: **49 skill tests passed**, followed by Ruff on changed
+Python files (including executable checks), mypy over 181 runtime source files,
+and **568 contract/repository boundary tests passed**. The complete suite in an
+external clean checkout with this patch passed: **1191 passed, nine skipped in
+35.13 seconds**, **59.99%** runtime coverage. The original untracked V0.2
+`.run-state.json` was preserved. Documentation checks and the sdist/wheel build
+passed. Localization still reports the pre-existing 40 missing/two stale/two valid
+projections without a failing exit code. The real dirty-workspace/invalid-policy
+CLI regression exits 2, emits no sentinel value and leaves all files/Git metadata
+byte-identical. Existing legacy-policy, ignore, KnowledgePack and study tests pass.
+
+The frozen worked example was regenerated with structured observations; its
+affected paths, counts and bytes are unchanged. No selection/ranking/indexing
+algorithm changed and no new retrieval benchmark was run.
+
+The previous self-dogfood failure was investigated separately:
+[run 39605872713](https://github.com/oalangomes/fetchcore/actions/runs/39605872713),
+job `self-index / index`, attempt 1, failed at `Discover and prepare Solr resource`.
+At 2026-10-21 13:12:32 UTC the runner's preflight reported HTTP 503,
+`stage=solr_preflight`, `category=service_error`; schema bootstrap, indexing and
+evaluation were skipped. This is evidence of service unavailability at that
+preflight, not a helper failure. The endpoint was runner-local and the cleanup
+step completed; this workspace cannot probe that historical ephemeral instance
+or recover its internal service state from the available diagnostic. Its deeper
+cause remains unconfirmed. No backend, workflow, readiness check or fallback was
+modified to hide the failure. New checks must be assessed separately after push.
+
+Residual limits: the presentation guard is deliberately conservative, may hide
+benign policy text and is not a complete secret scanner. Git status does not hash
+already-dirty contents for report identity; metadata/status observations are not
+atomic. Metadata completeness never means full content inspection or actual
+indexing. Copilot execution remains unvalidated because of the earlier account
+quota; installation/invocation instructions are unchanged.
 
 ## Deterministic checks
 

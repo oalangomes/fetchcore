@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import sys
@@ -131,6 +132,24 @@ def read_policy(root: Path) -> tuple[str | None, str]:
     return found[0] if found else (None, "")
 
 
+def public_policy_text(text: str, validation: str) -> tuple[str | None, str]:
+    """Only render validated policy text without recognizable sensitive material.
+
+    Suppress the whole value rather than guessing where a multiline secret ends.
+    This conservative presentation guard is not a general-purpose secret scanner.
+    """
+    if validation != "valid":
+        return None, f"withheld_{validation}"
+    if re.search(
+        r"\b(?:passwords?|passwd|secrets?|tokens?|credentials?|authorization|"
+        r"api[_ -]?keys?|private[_ -]?keys?)\b|-----BEGIN [^-]*PRIVATE KEY|"
+        r"\b(?:gh[pousr]_|sk-)[A-Za-z0-9]|\bBearer\s+\S+|://[^/\s]+:[^/\s]+@",
+        text, re.IGNORECASE,
+    ):
+        return None, "withheld_potentially_sensitive"
+    return text, "visible"
+
+
 def resolve_policy(text: str, explicit: bool, packs: tuple, *, workspace: Path | None = None):
     """Use the installed canonical parser and pack precedence, in an external sandbox."""
     from fetchcore.repository.index_policy import load_repository_index_policy
@@ -165,8 +184,67 @@ def active_packs(root: Path) -> tuple:
     return select_repository_knowledge_packs(root, default_repository_knowledge_packs())
 
 
-def inventory_paths(root: Path, limit: int) -> tuple[list[tuple[str, str, bool]], list[str], str | None]:
+def mark_incomplete(observation: dict, reason: str, *, enumeration: bool = True) -> None:
+    observation["complete"] = False
+    observation["scope"] = "observed_paths"
+    if enumeration:
+        observation["enumeration_complete"] = False
+    if reason not in observation["incompleteness_reasons"]:
+        observation["incompleteness_reasons"].append(reason)
+
+
+def working_tree(root: Path, revision: str | None) -> dict:
+    """Observe Git status without content diffs, index refresh writes or checkout."""
+    observed = {"available": False, "complete": False, "dirty": None,
+                "head_represents_workspace": False, "tracked_changes": [],
+                "staged_paths": [], "unstaged_paths": [], "untracked_paths": [],
+                "incompleteness_reasons": []}
+    if not (root / ".git").exists():
+        observed["incompleteness_reasons"] = ["not_git_repository"]
+        return observed
+    try:
+        records = iter(git(root, "status", "--porcelain=v1", "-z",
+                           "--untracked-files=normal", "--ignore-submodules=none").split(b"\0"))
+        changes, untracked = [], []
+        for record in records:
+            if not record:
+                continue
+            if len(record) < 4 or record[2:3] != b" ":
+                raise ValueError("invalid Git status record")
+            index, workspace = chr(record[0]), chr(record[1])
+            path = os.fsdecode(record[3:])
+            if record[:2] == b"??":
+                untracked.append(path)
+                continue
+            change = {"path": path, "index_status": index, "workspace_status": workspace}
+            if index in "RC" or workspace in "RC":
+                original = next(records)
+                if not original:
+                    raise ValueError("missing Git rename source")
+                change["original_path"] = os.fsdecode(original)
+            changes.append(change)
+    except (OSError, ValueError, StopIteration, subprocess.SubprocessError):
+        observed["incompleteness_reasons"] = ["git_status_unavailable"]
+        return observed
+    observed.update({
+        "available": True, "complete": True, "dirty": bool(changes or untracked),
+        "head_represents_workspace": revision is not None and not (changes or untracked),
+        "tracked_changes": sorted(changes, key=lambda item: item["path"]),
+        "staged_paths": sorted(c["path"] for c in changes if c["index_status"] != " "),
+        "unstaged_paths": sorted(c["path"] for c in changes if c["workspace_status"] != " "),
+        "untracked_paths": sorted(untracked),
+    })
+    return observed
+
+
+def inventory_paths(root: Path, limit: int) -> tuple[
+    list[tuple[str, str, bool]], list[str], str | None, dict,
+]:
     limitations = []
+    observation = {"complete": True, "enumeration_complete": True, "scope": "repository_paths",
+                   "incompleteness_reasons": [], "enumerated_entries": None, "unvisited_entries": 0,
+                   "collapsed_ignored_directories": [], "untraversed_directories": [],
+                   "metadata_unavailable_paths": [], "content_inspection": "not_performed"}
     if (root / ".git").exists():
         # Do not silently inspect a parent repository when the requested root is not its root.
         top = Path(os.fsdecode(git(root, "rev-parse", "--show-toplevel")).strip()).resolve()
@@ -179,7 +257,14 @@ def inventory_paths(root: Path, limit: int) -> tuple[list[tuple[str, str, bool]]
             root, "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory",
         ).split(b"\0") if p}
         paths = sorted(tracked | untracked | ignored)
+        observation["enumerated_entries"] = len(paths)
+        observation["collapsed_ignored_directories"] = sorted(p.rstrip("/") for p in ignored
+                                                             if p.endswith("/"))
+        if observation["collapsed_ignored_directories"]:
+            mark_incomplete(observation, "ignored_directories_collapsed")
         if len(paths) > limit:
+            observation["unvisited_entries"] = len(paths) - limit
+            mark_incomplete(observation, "inventory_limit_reached")
             limitations.append(f"inventory truncated to {limit} of {len(paths)} Git entries")
             paths = paths[:limit]
         checked = b"".join(os.fsencode(p) + b"\0" for p in paths if p in tracked)
@@ -193,13 +278,19 @@ def inventory_paths(root: Path, limit: int) -> tuple[list[tuple[str, str, bool]]
         except ValueError:
             revision = None
             limitations.append("Git repository has no observed HEAD revision")
-        return rows, limitations, revision
+        return rows, limitations, revision, observation
 
     # Git metadata unavailable for plain directories. Pruning is disclosed, never a policy claim.
     limitations.append("non-Git directory: ignore/tracking/revision unknown; dependency directories pruned")
     rows = []
     visited = 0
-    for parent, dirs, files in os.walk(root, followlinks=False):
+
+    def unreadable(error: OSError) -> None:
+        mark_incomplete(observation, "directory_unreadable")
+        observation["unvisited_entries"] = None
+        observation["untraversed_directories"].append(os.path.relpath(error.filename, root))
+
+    for parent, dirs, files in os.walk(root, followlinks=False, onerror=unreadable):
         dirs.sort()
         files.sort()
         kept = []
@@ -208,6 +299,9 @@ def inventory_paths(root: Path, limit: int) -> tuple[list[tuple[str, str, bool]]
             relative = (Path(parent) / name).relative_to(root).as_posix()
             if name in PRUNED or (Path(parent) / name).is_symlink():
                 limitations.append(f"directory not traversed: {relative}")
+                mark_incomplete(observation, "directory_pruned")
+                observation["unvisited_entries"] = None
+                observation["untraversed_directories"].append(relative)
             else:
                 kept.append(name)
         dirs[:] = kept
@@ -215,11 +309,17 @@ def inventory_paths(root: Path, limit: int) -> tuple[list[tuple[str, str, bool]]
             rows.append(((Path(parent) / name).relative_to(root).as_posix(), "unknown", False))
             if len(rows) >= limit:
                 limitations.append(f"inventory stopped at {limit} files")
-                return sorted(rows), limitations, None
+                mark_incomplete(observation, "inventory_limit_reached")
+                observation["unvisited_entries"] = None
+                return sorted(rows), limitations, None, observation
         if visited >= limit:
             limitations.append(f"directory traversal stopped at {limit} entries")
+            mark_incomplete(observation, "directory_limit_reached")
+            observation["unvisited_entries"] = None
             break
-    return sorted(rows), limitations, None
+    if observation["complete"]:
+        observation["enumerated_entries"] = len(rows)
+    return sorted(rows), limitations, None, observation
 
 
 def admission(row: dict, config) -> str:
@@ -252,17 +352,19 @@ def discover(root: Path, *, max_paths: int = 10_000) -> dict:
     root = root.resolve(strict=True)
     if not root.is_dir():
         raise ValueError("repository root must be a directory")
-    paths, limitations, revision = inventory_paths(root, max_paths)
+    paths, limitations, revision, observation = inventory_paths(root, max_paths)
+    tree = working_tree(root, revision)
+    if not tree["complete"]:
+        limitations.append("Git working-tree observation unavailable; dirty state is unknown.")
     source, text = read_policy(root)
     config = None
     packs = ()
-    policy = {"source": source, "yaml": text,
+    policy = {"source": source,
               "sha256": hashlib.sha256(text.encode()).hexdigest() if source else None}
     try:
         packs = active_packs(root)
         resolved, config = resolve_policy(text, source is not None, packs, workspace=root)
-        policy.update({"validation": "valid", "resolved": resolved.to_mapping()})
-        policy["resolved"]["source"] = source
+        policy["validation"] = "valid"
     except ImportError:
         policy["validation"] = "unavailable"
         limitations.append("FetchCore not installed: canonical admission/schema/pack validation unavailable")
@@ -270,7 +372,14 @@ def discover(root: Path, *, max_paths: int = 10_000) -> dict:
         policy["validation"] = "invalid"
         # Parser messages may contain configured values; do not echo arbitrary secret-bearing YAML.
         policy["error_type"] = type(exc).__name__
+        policy["error_category"] = "policy_validation_failed"
         limitations.append("invalid policy or unsafe pack marker: proposal blocked; review locally")
+    policy["yaml"], policy["yaml_status"] = public_policy_text(text, policy["validation"])
+    if policy["yaml_status"] == "visible":
+        policy["resolved"] = resolved.to_mapping()
+        policy["resolved"]["source"] = source
+    else:
+        limitations.append("Policy YAML and configured values withheld: " + policy["yaml_status"])
 
     rows = []
     for path, git_state, ignored in paths:
@@ -290,17 +399,30 @@ def discover(root: Path, *, max_paths: int = 10_000) -> dict:
             row["file_state"] = "unsafe_or_unreadable"
         row["admission"] = admission(row, config) if config is not None else "unknown"
         rows.append(row)
+    observation["metadata_unavailable_paths"] = [
+        r["path"] for r in rows if r["file_state"] in {"unreadable", "unsafe_or_unreadable"}
+        or (r["file_state"] == "directory_or_special" and r["git_state"] != "ignored")
+    ]
+    if observation["metadata_unavailable_paths"]:
+        mark_incomplete(observation, "source_metadata_unresolved", enumeration=False)
+    if not observation["complete"]:
+        limitations.append("Inventory and impact cover observed paths only: "
+                           + ", ".join(observation["incompleteness_reasons"]))
+    if not observation["complete"] or any(r["git_state"] != "tracked" for r in rows):
+        tree["head_represents_workspace"] = False
     technologies = [{"technology": technology, "path": row["path"], "basis": "filename_marker"}
                     for row in rows for marker, technology in MARKERS.items()
                     if fnmatch.fnmatch(Path(row["path"]).name, marker)]
     return {
         "mode": "DISCOVER", "repository_root": str(root), "revision": revision,
+        "working_tree_dirty": tree["dirty"], "working_tree": tree,
+        "observation": observation,
         "policy": policy, "technologies": technologies,
         "knowledge_packs": [{"id": p.pack_id, "version": p.version,
                              "defaults_applied": source is None} for p in packs],
-        "effective_selection": None if config is None else {
+        "effective_selection": None if config is None or policy["yaml_status"] != "visible" else {
             "include": list(config.include_patterns), "exclude": list(config.exclude_patterns)},
-        "summary": {"observed_entries": len(rows),
+        "summary": {"scope": "observed_paths", "observed_entries": len(rows),
                     "observed_regular_file_bytes": sum(r["bytes"] or 0 for r in rows
                                                        if r["file_state"] == "regular"),
                     "by_admission": summarize(rows, "admission"),
@@ -313,7 +435,8 @@ def discover(root: Path, *, max_paths: int = 10_000) -> dict:
             "Eligibility is metadata-only, before API quarantine, decoding and aggregate read limits.",
             "No source content sampled; heuristics need bounded inspection by the coder.",
             "Only policy and pack manifest (at most 1 MB) content read; no remote/backend access.",
-            "Working tree metadata observed; HEAD alone does not identify uncommitted contents.",
+            "HEAD identifies the committed revision; Git status does not fingerprint uncommitted contents.",
+            "Git status and file metadata are separate observations, not an atomic repository snapshot.",
             "No chunks, tokens, duplicates, retrieval gains or snapshot compatibility measured.",
         ],
     }
@@ -332,10 +455,20 @@ def review(root: Path, proposal: Path, *, max_paths: int = 10_000) -> dict:
         raise ValueError("canonical current policy validation required; review blocked")
     proposed_text = proposal.read_text(encoding="utf-8")
     packs = active_packs(root)
-    resolved, proposed = resolve_policy(proposed_text, True, packs)
+    try:
+        resolved, proposed = resolve_policy(proposed_text, True, packs)
+    except ValueError:
+        raise ValueError("proposal schema validation failed; raw values withheld") from None
+    source, current_text = read_policy(root)
+    if source != report["policy"]["source"] or (
+        source and hashlib.sha256(current_text.encode()).hexdigest() != report["policy"]["sha256"]
+    ):
+        raise ValueError("current policy changed during review")
     current_policy, current = resolve_policy(
-        report["policy"]["yaml"], report["policy"]["source"] is not None, packs,
+        current_text, source is not None, packs,
     )
+    public_proposal, proposal_status = public_policy_text(proposed_text, "valid")
+    values_visible = report["policy"]["yaml_status"] == "visible" and proposal_status == "visible"
     removed, added = [], []
     for row in report["paths"]:
         row["proposed_admission"] = admission(row, proposed)
@@ -344,18 +477,24 @@ def review(root: Path, proposal: Path, *, max_paths: int = 10_000) -> dict:
         if row["proposed_admission"] == "eligible_by_metadata" and row["admission"] != row["proposed_admission"]:
             added.append(row["path"])
     report.update({
-        "mode": "REVIEW", "proposal_yaml": proposed_text,
+        "mode": "REVIEW", "proposal_yaml": public_proposal, "proposal_yaml_status": proposal_status,
         "proposal_sha256": hashlib.sha256(proposed_text.encode()).hexdigest(),
         "policy_diff": "".join(difflib.unified_diff(
-            report["policy"]["yaml"].splitlines(keepends=True), proposed_text.splitlines(keepends=True),
+            current_text.splitlines(keepends=True), proposed_text.splitlines(keepends=True),
             fromfile=report["policy"]["source"] or "/dev/null", tofile="proposed/.fetchcore/indexing.yaml",
-        )),
-        "impact": {"removed_eligible_paths": removed, "added_eligible_paths": added,
+        )) if values_visible else None,
+        "policy_diff_status": "visible" if values_visible else "withheld_potentially_sensitive",
+        "impact": {"complete": report["observation"]["complete"],
+                   "scope": report["observation"]["scope"],
+                   "incompleteness_reasons": list(report["observation"]["incompleteness_reasons"]),
+                   "removed_eligible_paths": removed, "added_eligible_paths": added,
                    "removed_observed_bytes": sum(r["bytes"] for r in report["paths"] if r["path"] in removed),
                    "current": summarize(report["paths"], "admission"),
                    "proposed": summarize(report["paths"], "proposed_admission")},
-        "existing_exclusions_removed": sorted(set(current.exclude_patterns) - set(proposed.exclude_patterns)),
-        "existing_includes_removed": sorted(set(current.include_patterns) - set(proposed.include_patterns)),
+        "existing_exclusions_removed": sorted(set(current.exclude_patterns) - set(proposed.exclude_patterns))
+        if values_visible else None,
+        "existing_includes_removed": sorted(set(current.include_patterns) - set(proposed.include_patterns))
+        if values_visible else None,
         "changed_config_fields": [f.name for f in fields(current)
                                   if getattr(current, f.name) != getattr(proposed, f.name)],
         "effective_contract_changed": current != proposed or (
