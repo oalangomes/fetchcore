@@ -9,7 +9,10 @@ from typing import cast
 import pytest
 
 from fetchcore.application import indexing
-from fetchcore.application.composition import EmbeddingProviderRegistry
+from fetchcore.application.composition import BackendRegistry, EmbeddingProviderRegistry
+from fetchcore.application.service import (
+    RepositoryBinding, RetrievalApplicationService, SearchRequest, SourceReadRequest,
+)
 from fetchcore.application.repositories import RepositoryApplicationService
 from fetchcore.adapters.retrieval.solr.backend import (
     SOLR_VECTOR_DIMENSIONS,
@@ -483,6 +486,55 @@ def test_dense_and_hybrid_serving_use_query_embedding_without_fallback(
         if hybrid:
             assert response.metadata["fusion_strategy"] == "rrf"
             assert response.metadata["lexical_fallback"] is False
+
+
+def test_operational_hybrid_revision_rebinding_preserves_search_and_source_provenance(
+    workspace: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = VectorLifecycleTransport()
+    provider = CountingEmbeddingProvider()
+    service, repository = _service(
+        workspace, tmp_path, transport, retrieval=_retrieval(hybrid=True),
+        provider=provider, monkeypatch=monkeypatch,
+    )
+    revision_a = _git(workspace, "rev-parse", "HEAD")
+    service.run("rebuild", repository)
+    (workspace / "a.py").write_text("def first():\n    return 3\n", encoding="utf-8")
+    revision_b = _commit(workspace, "update first")
+    service.run("sync", repository)
+    backend = SolrBackend(
+        transport_factory=lambda settings: transport,
+        embedding_factory=lambda retrieval: provider,
+    )
+    registry = BackendRegistry({"solr": lambda: backend})
+
+    def serving(revision: str) -> RetrievalApplicationService:
+        binding = RepositoryBinding(
+            repository, workspace, "solr", revision=revision,
+            retrieval=_retrieval(hybrid=True),
+        )
+        return RetrievalApplicationService({repository: binding}, backends=registry)
+
+    with pytest.raises(KnowledgeSearchError) as mismatch:
+        serving(revision_a).search(SearchRequest(query="first function"))
+    assert mismatch.value.category == "snapshot_revision_mismatch"
+
+    rebound = serving(revision_b)
+    response = rebound.search(SearchRequest(query="first function"))
+    assert response.results
+    assert response.telemetry.mode == "hybrid"
+    assert all(hit.revision == revision_b for hit in response.results)
+    source = rebound.get_source(SourceReadRequest(
+        source_ref=f"repository://{repository}/a.py", revision=revision_b,
+        line_start=1, line_end=2,
+    ))
+    assert source.revision == revision_b
+    assert "return 3" in source.content
+    with pytest.raises(KnowledgeSearchError) as stale_source:
+        rebound.get_source(SourceReadRequest(
+            source_ref=f"repository://{repository}/a.py", revision=revision_a,
+        ))
+    assert stale_source.value.category == "source_revision_mismatch"
 
 
 def test_provider_failure_never_downgrades_dense_or_hybrid_to_lexical(

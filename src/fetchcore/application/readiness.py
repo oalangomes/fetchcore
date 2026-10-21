@@ -6,7 +6,7 @@ This module does not write, index, migrate, or implicitly repair projections.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, TYPE_CHECKING, cast
 
 from fetchcore.retrieval.contracts import KnowledgeSearchError
@@ -45,6 +45,7 @@ class ReadinessReport:
     mode: str
     checks: dict[str, ReadinessFact]
     fingerprints: dict[str, str | None]
+    observations: dict[str, object] = field(default_factory=dict)
 
     @property
     def ready(self) -> bool:
@@ -65,6 +66,7 @@ class ReadinessReport:
             "mode": self.mode,
             "checks": {key: value.to_mapping() for key, value in sorted(self.checks.items())},
             "fingerprints": dict(sorted(self.fingerprints.items())),
+            "observations": self.observations,
         }
 
 
@@ -80,7 +82,8 @@ def _failed(category: str) -> ReadinessFact:
         return ReadinessFact("absent", category)
     if category in {"index_stale", "snapshot_revision_mismatch"}:
         return ReadinessFact("stale", category)
-    if category in {"schema_mismatch", "rebuild_required", "indexing_contract_changed"}:
+    if category in {"schema_mismatch", "rebuild_required", "indexing_contract_changed",
+                    "repository_binding_mismatch"}:
         return ReadinessFact("incompatible", category)
     if category in {"unavailable", "timeout", "connection_failure", "embedding_failed"}:
         return ReadinessFact("unavailable", category)
@@ -131,6 +134,7 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
     }
     fingerprints: dict[str, str | None] = {}
     indexed_revision: str | None = None
+    observations: dict[str, object] = {}
 
     if config.repository is None:
         checks["snapshot"] = ReadinessFact("unknown", "repository_unbound")
@@ -239,6 +243,11 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
                 mode, checks, fingerprints,
             )
         snapshot = store.load_snapshot(config.repository)
+        if config.backend == "solr" and snapshot.repository != config.repository:
+            raise KnowledgeSearchError(
+                "persisted snapshot repository does not match serving binding",
+                category="repository_binding_mismatch",
+            )
         indexed_revision = snapshot.revision
         fingerprints["projection"] = snapshot.projection_fingerprint
         fingerprints["embedding_serializer"] = snapshot.embedding_serializer_fingerprint if hasattr(
@@ -249,6 +258,18 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
             solr_store = cast(SolrIndexStore, store)
             solr_snapshot = cast(SolrIndexSnapshot, snapshot)
             status = repository_index_status(solr_store, index.runtime)
+            discovery = status.get("discovery")
+            observed_currentness: dict[str, object] = {}
+            if isinstance(discovery, dict):
+                observed_currentness = {
+                    key: discovery[key] for key in (
+                        "mode", "reason", "changed_paths", "removed_paths",
+                        "targeted_paths", "changed_path_values", "removed_path_values",
+                        "path_sample_limit", "path_samples_truncated",
+                    ) if key in discovery
+                }
+            observed_currentness["status_reason"] = status.get("reason")
+            observations["currentness"] = observed_currentness
             expected = index.runtime.fingerprint
             actual = snapshot_indexing_fingerprint(solr_snapshot)
             fingerprints["indexing"] = actual
@@ -261,10 +282,10 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
                 checks["indexing_fingerprint"] = ReadinessFact(
                     "incompatible", str(status.get("reason", "rebuild_required")),
                 )
-            if status["state"] == "ready" and config.revision is not None:
-                checks["currentness"] = ReadinessFact("ready")
-            elif config.revision is not None and snapshot.revision != config.revision:
+            if config.revision is not None and snapshot.revision != config.revision:
                 checks["currentness"] = ReadinessFact("stale", "snapshot_revision_mismatch")
+            elif status["state"] == "ready" and config.revision is not None:
+                checks["currentness"] = ReadinessFact("ready")
             elif status["state"] == "changes_pending":
                 checks["currentness"] = ReadinessFact("stale", "changes_pending")
             else:
@@ -382,5 +403,5 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
 
     return ReadinessReport(
         config.backend, config.repository, config.revision, indexed_revision,
-        mode, checks, fingerprints,
+        mode, checks, fingerprints, observations,
     )

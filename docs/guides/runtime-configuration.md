@@ -132,6 +132,12 @@ report `service`, `schema`, `snapshot`, `currentness`,
 `indexing_fingerprint`, `embedding` and `retrieval`. A repository can have
 a healthy process with an absent, stale or incompatible snapshot. `unknown`
 is never treated as `ready`, including an unbound revision/source identity.
+For Solr, `requested_revision` and `indexed_revision` identify a serving
+binding mismatch even when fingerprints match. `observations.currentness`
+contains the status reason and, when Git can enumerate changes, bounded path
+samples and total counts. Sensitive path names are redacted. A same-revision
+dirty worktree remains stale because path-pattern exclusion alone cannot prove
+that policy and other indexing inputs were unaffected.
 
 ```bash
 FETCHCORE_BACKEND=solr FETCHCORE_REPOSITORY=oalangomes/fetchcore \\

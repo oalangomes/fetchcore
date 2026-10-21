@@ -348,6 +348,7 @@ class IndexObservation:
     indexed_revision: str | None = None
     schema_compatible: bool = True
     projection_compatible: bool | None = None
+    discovery: dict[str, object] | None = None
 
 
 def _observe(context: IndexContext) -> IndexObservation:
@@ -385,6 +386,7 @@ def _observe(context: IndexContext) -> IndexObservation:
     return IndexObservation(
         "noop" if status["state"] == "ready" else "incremental",
         currentness, str(status["reason"]), snapshot.revision, projection_compatible=True,
+        discovery=cast(dict[str, object] | None, status.get("discovery")),
     )
 
 
@@ -462,6 +464,8 @@ class RepositoryIndexApplicationService:
                 "retrieval_mode": self.retrieval.mode if self.retrieval else "lexical",
             }
             if operation == "status":
+                if observation.discovery is not None:
+                    result["discovery"] = observation.discovery
                 return result
             if operation == "plan":
                 if observation.mode != "rebuild_required":

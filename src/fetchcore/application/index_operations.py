@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
+import re
 import time
 from pathlib import Path
 
@@ -63,6 +64,10 @@ from fetchcore.telemetry import IndexStageTelemetry, elapsed_ms
 
 _REBUILDABLE_SNAPSHOT_ERRORS = frozenset(
     {"snapshot_missing", "schema_mismatch", "response_parsing_failure"}
+)
+_PATH_SAMPLE_LIMIT = 12
+_SENSITIVE_PATH_PART = re.compile(
+    r"(?i)(secret|token|credential|password|private|\.env|\.pem$|\.key$)"
 )
 
 
@@ -180,6 +185,8 @@ def repository_index_status(
     bound = bind_indexing_contract_store(store, runtime.indexer)
     snapshot, snapshot_error = _load_snapshot_optional(bound, runtime.repository)
     payload = runtime.to_mapping()
+    payload["requested_revision"] = runtime.revision
+    payload["indexed_revision"] = None if snapshot is None else snapshot.revision
     payload["projection"] = (
         bound.inspect_projection(runtime.repository)
         if snapshot is None
@@ -238,9 +245,13 @@ def repository_index_status(
     payload.update(
         {
             "state": "ready" if clean else "changes_pending",
-            "reason": "up_to_date" if clean else plan.reason,
+            "reason": "up_to_date" if clean else (
+                "snapshot_revision_mismatch" if snapshot.revision != runtime.revision
+                else "worktree_changes" if plan.mode == "git-delta" and plan.targeted_paths
+                else plan.reason
+            ),
             "sync_mode": "incremental",
-            "discovery": _discovery_mapping(plan),
+            "discovery": _discovery_mapping(plan, bounded=True),
         }
     )
     return payload
@@ -497,11 +508,35 @@ def _is_clean_same_snapshot(
     )
 
 
-def _discovery_mapping(plan: GitDeltaPlan) -> dict[str, object]:
+def _discovery_mapping(plan: GitDeltaPlan, *, bounded: bool = False) -> dict[str, object]:
     payload = plan.to_mapping()
-    payload["changed_path_values"] = list(plan.changed_paths)
-    payload["removed_path_values"] = list(plan.removed_paths)
+    if not bounded:
+        payload["changed_path_values"] = list(plan.changed_paths)
+        payload["removed_path_values"] = list(plan.removed_paths)
+        return payload
+    payload["changed_path_values"] = [
+        _diagnostic_path(path) for path in plan.changed_paths[:_PATH_SAMPLE_LIMIT]
+    ]
+    payload["removed_path_values"] = [
+        _diagnostic_path(path) for path in plan.removed_paths[:_PATH_SAMPLE_LIMIT]
+    ]
+    payload["path_sample_limit"] = _PATH_SAMPLE_LIMIT
+    payload["path_samples_truncated"] = (
+        len(plan.changed_paths) > _PATH_SAMPLE_LIMIT
+        or len(plan.removed_paths) > _PATH_SAMPLE_LIMIT
+    )
     return payload
+
+
+def _diagnostic_path(path: str) -> str:
+    """Expose only ordinary relative names in read-only operational diagnostics."""
+    if (
+        len(path) > 160 or not path.isascii()
+        or any(ord(char) < 32 or ord(char) > 126 for char in path)
+        or any(_SENSITIVE_PATH_PART.search(part) for part in Path(path).parts)
+    ):
+        return "<redacted>"
+    return path
 
 
 def _full_scan_mapping(

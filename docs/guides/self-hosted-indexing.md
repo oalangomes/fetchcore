@@ -414,6 +414,16 @@ sync. A new revision can be incrementally synchronized; an absent or
 incompatible snapshot fails before writing. Hosted self-dogfood leaves this
 gate off because its per-run Solr container is intentionally empty.
 
+The indexing workflow does not change an already-running MCP/API process's
+revision binding. After a successful OPERATIONAL update, run the explicit
+[serving reconciliation](mcp.md#reconcile-after-an-operational-index-update)
+from the operator host. It validates the persisted snapshot against the
+authorized workspace HEAD and only then updates the operator-owned serving
+runtime and recreates the two serving containers. Index data and Solr are left
+running. `readiness` and `index status` expose bounded worktree path/count
+evidence when the same revision has pending changes; unknown coverage remains
+not ready. Path samples are limited and sensitive names are redacted.
+
 ## What this dogfood proves
 
 It can expose regressions in:

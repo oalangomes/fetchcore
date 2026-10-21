@@ -308,7 +308,11 @@ def test_commit_failure_restores_indexed_revision(workspace, tmp_path, backend, 
     backend.fail_next_commit = True
     assert invoke("sync", success=False)["error"]["category"] == "index_update_failure"
     assert backend.documents == previous
-    assert invoke("status")["result"]["currentness"] == "stale"
+    status = invoke("status")["result"]
+    assert status["currentness"] == "stale"
+    assert status["reason"] == "snapshot_revision_mismatch"
+    assert status["indexed_revision"] != status["target_revision"]
+    assert status["discovery"]["changed_path_values"] == ["a.py"]
 
 
 def test_strict_synchronizer_blocks_late_rebuild(workspace, tmp_path, backend, invoke, monkeypatch):
@@ -333,7 +337,10 @@ def test_dirty_workspace_same_head_is_not_noop(workspace, tmp_path, backend, inv
     (workspace / "a.py").write_text("def first():\n    return 999\n")
     plan = invoke("plan")["result"]
     assert plan["mode"] == "incremental"
-    assert invoke("status")["result"]["currentness"] == "unknown"
+    status = invoke("status")["result"]
+    assert status["currentness"] == "unknown"
+    assert status["reason"] == "worktree_changes"
+    assert status["discovery"]["changed_path_values"] == ["a.py"]
     assert plan["currentness"] == "stale"
     assert plan["planned_mutations"]["updated"] == 1
     assert backend.post_calls == []
