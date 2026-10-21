@@ -23,6 +23,39 @@ machine-emitted payloads. A broad exclusion can discard useful reproducibility
 evidence. Use producer statements with source spans and bounded samples to justify
 generated classification; preserve uncertain files pending review.
 
+## Reconcile and triage an unfamiliar layout
+
+Start with claims in root/module READMEs, CONTRIBUTING, architecture documents,
+ADRs, manifests, workspace/build composition, CI and deployment configuration.
+Record a bounded path/line span for each claim. Then compare those claims with
+observed Git paths and the helper's `area_summary`. A manifest boundary is only
+a grouping clue; a README mention is only a claim. Mark an area `matches`,
+`undocumented`, `absent`, `conflicting` or `unknown`, and distinguish facts
+observed in files from roles inferred by the coder. A missing README should lead
+to manifest/build/CI investigation, not a fabricated declared map.
+
+Use a short triage queue, with current metadata eligibility, observed files/bytes,
+technical role, documentation coverage and uncertainty visible together. Spend
+samples on likely valuable eligible areas and coverage risks, including small
+interfaces/contracts and unexplained roots. If only a partial inventory is
+available, never infer that a skipped area is empty. Explain why a consequential
+area was not investigated instead of silently omitting it.
+
+For each investigated group, seek grounded answers about purpose, documented
+role, producer, consumer, unique or reproducible evidence, need for understanding
+the software, available FetchCore extraction and current admission. Bounded local
+searches and exact source spans can support these claims. Filenames alone support
+only an investigation hypothesis. A generated API client consumed by source code
+may be essential; a fixture may encode a contract; a historical run may be
+replayable. If a source cannot be parsed by existing extractors, report that
+constraint without silently treating it as disposable. Ambiguous cases remain
+`needs_review`; a no-change policy is a legitimate recommendation.
+
+Compare v1 and v1.1 investigations using the same repository revision and
+inventory budget. Record important areas covered, unexplained omissions,
+valuable evidence retained, source sample count/bytes and model context size.
+Do not infer retrieval improvement from this comparison.
+
 ## Manual inventory fallback
 
 When the helper cannot run, enumerate with NUL-delimited Git output and parse paths

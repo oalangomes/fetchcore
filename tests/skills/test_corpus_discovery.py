@@ -260,6 +260,85 @@ def test_inventory_runs_without_fetchcore_or_third_party_packages(repo: Path) ->
     assert report["policy"]["validation"] == "unavailable"
     assert rows(report)["src/main.py"]["admission"] == "unknown"
     assert rows(report)["src/main.py"]["bytes"] > 0
+    environment = report["policy"]["validator_environment"]
+    assert environment["python_executable"] == sys.executable
+    assert environment["python_version"]
+    assert environment["fetchcore_module_visible"] is False
+    assert environment["cause_category"] == "fetchcore_not_visible_to_interpreter"
+
+
+@pytest.mark.parametrize("fixture_files,expected_areas", [
+    ({"README.md": "# Library\nThe core API is in src/library/core.py.\n",
+      "pyproject.toml": "[project]\nname = 'library'\n",
+      "src/library/core.py": "def public_api(): pass\n",
+      "src/library/plugin.py": "def extension(): pass\n",
+      "tests/test_plugin.py": "def test_extension(): pass\n",
+      "docs/architecture.md": "# Extension contract\n"},
+     {"src", "tests", "docs"}),
+    ({"README.md": "# Workspace\nSee apps/web.\n",
+      "package.json": '{"workspaces":["apps/*","packages/*"]}\n',
+      "apps/web/package.json": '{"name":"web"}\n',
+      "apps/web/src/index.ts": "export const page = 1;\n",
+      "packages/contracts/package.json": '{"name":"contracts"}\n',
+      "packages/contracts/schema.ts": "export interface Item {}\n",
+      "packages/contracts/fixtures/item.json": "{}\n",
+      "packages/contracts/generated/client.ts": "export const client = 1;\n",
+      "packages/contracts/outputs/old.jsonl": "{}\n"},
+     {"apps/web", "packages/contracts"}),
+    ({"README.md": "# Maven build\nmodule-a is the API.\n",
+      "pom.xml": "<project><modules><module>module-a</module><module>module-b</module></modules></project>\n",
+      "module-a/pom.xml": "<project/>\n",
+      "module-a/src/main/java/example/Api.java": "interface Api {}\n",
+      "module-b/pom.xml": "<project/>\n",
+      "module-b/src/main/java/example/Worker.java": "class Worker {}\n",
+      "module-b/src/test/java/example/WorkerTest.java": "class WorkerTest {}\n"},
+     {"module-a", "module-b"}),
+    ({"docs/README.md": "# Operations\n",
+      "docs/runbook.md": "# Recovery\n",
+      "infra/main.tf": "resource \"null_resource\" \"example\" {}\n",
+      "deploy/Dockerfile": "FROM scratch\n",
+      "deploy/outputs/old.log": "historical\n",
+      "contracts/service.yaml": "openapi: 3.0.0\n",
+      "config/credentials.json": "DO_NOT_READ_SENSITIVE\n",
+      "misc/opaque.data": "ambiguous\n"},
+     {"docs", "infra", "deploy", "contracts", "misc"}),
+])
+def test_unfamiliar_layouts_have_bounded_area_navigation_without_content_parsing(
+    tmp_path: Path, fixture_files: dict[str, str], expected_areas: set[str], monkeypatch,
+) -> None:
+    root = tmp_path / "unknown-repository"
+    for relative, content in fixture_files.items():
+        write(root, relative, content)
+    read_text = Path.read_text
+
+    def guarded_read(path: Path, *args, **kwargs):
+        assert path.name != "credentials.json"
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", guarded_read)
+    report = inventory.discover(root)
+    areas = {area["path"]: area for area in report["area_summary"]}
+    assert expected_areas <= areas.keys()
+    assert sum(area["observed_entries"] for area in areas.values()) == len(report["paths"])
+    assert sum(area["observed_regular_file_bytes"] for area in areas.values()) == report["summary"][
+        "observed_regular_file_bytes"]
+    assert all(sum(bucket["entries"] for bucket in area["by_admission"].values()) ==
+               area["observed_entries"] for area in areas.values())
+    assert "DO_NOT_READ_SENSITIVE" not in json.dumps(report)
+    assert report["observation"]["content_inspection"] == "not_performed"
+    assert report == inventory.discover(root)
+
+
+def test_area_summary_preserves_effective_admission_for_mixed_outputs(repo: Path) -> None:
+    write(repo, "src/generated/client.py", "# consumed generated API\n")
+    write(repo, "src/fixtures/example.json", "{}\n")
+    write(repo, "src/outputs/historical.jsonl", "{}\n")
+    report = inventory.discover(repo)
+    source = next(area for area in report["area_summary"] if area["path"] == "src")
+    assert source["by_admission"]["eligible_by_metadata"]["entries"] >= 2
+    assert source["by_admission"]["excluded"]["entries"] >= 1
+    assert rows(report)["src/generated/client.py"]["classification"]["status"] == "needs_review"
+    assert rows(report)["src/generated/client.py"]["admission"] == "excluded"
 
 
 def test_nul_delimited_git_paths_preserve_whitespace_and_shell_characters(repo: Path) -> None:

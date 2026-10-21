@@ -13,6 +13,7 @@ from dataclasses import fields
 import difflib
 import fnmatch
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -348,6 +349,50 @@ def summarize(rows: list[dict], field: str) -> dict:
             for value in values}
 
 
+def summarize_areas(rows: list[dict]) -> list[dict]:
+    """Group observed metadata by manifest boundary, otherwise top-level path.
+
+    This is a navigation aid, not a module detector or a semantic classification.
+    The coder reconciles these groups with bounded repository evidence.
+    """
+    manifests = {"pyproject.toml", "package.json", "pom.xml", "build.gradle",
+                 "build.gradle.kts", "Cargo.toml", "go.mod"}
+    boundaries = {str(Path(row["path"]).parent) for row in rows
+                  if row["file_state"] == "regular" and Path(row["path"]).name in manifests
+                  and Path(row["path"]).parent != Path(".")}
+    groups: dict[str, list[dict]] = {}
+    for row in rows:
+        path = Path(row["path"])
+        ancestors = [str(parent) for parent in path.parents if str(parent) in boundaries]
+        area = max(ancestors, key=lambda parent: len(Path(parent).parts)) if ancestors else (
+            path.parts[0] if len(path.parts) > 1 else ".")
+        groups.setdefault(area, []).append(row)
+    return [{"path": area, "grouping_basis": "manifest_boundary" if area in boundaries else "top_level",
+             "observed_entries": len(group),
+             "observed_regular_files": sum(row["file_state"] == "regular" for row in group),
+             "observed_regular_file_bytes": sum(row["bytes"] or 0 for row in group
+                                                if row["file_state"] == "regular"),
+             "by_admission": summarize(group, "admission"),
+             "by_category": dict(sorted(Counter(row["classification"]["category"]
+                                               for row in group).items())),
+             "manifest_paths": sorted(row["path"] for row in group
+                                      if Path(row["path"]).name in manifests)}
+            for area, group in sorted(groups.items())]
+
+
+def validator_environment() -> dict:
+    """Report safe interpreter/import facts without rendering exception text."""
+    try:
+        visible = importlib.util.find_spec("fetchcore") is not None
+    except (ImportError, ValueError):
+        visible = None
+    return {"python_executable": sys.executable, "python_version": sys.version.split()[0],
+            "fetchcore_module_visible": visible,
+            "cause_category": "canonical_import_dependency_unavailable" if visible else
+                              "fetchcore_not_visible_to_interpreter" if visible is False else
+                              "import_visibility_unknown"}
+
+
 def discover(root: Path, *, max_paths: int = 10_000) -> dict:
     root = root.resolve(strict=True)
     if not root.is_dir():
@@ -367,7 +412,8 @@ def discover(root: Path, *, max_paths: int = 10_000) -> dict:
         policy["validation"] = "valid"
     except ImportError:
         policy["validation"] = "unavailable"
-        limitations.append("FetchCore not installed: canonical admission/schema/pack validation unavailable")
+        policy["validator_environment"] = validator_environment()
+        limitations.append("canonical admission/schema/pack validation unavailable in selected Python interpreter")
     except (ValueError, OSError, UnicodeError) as exc:
         policy["validation"] = "invalid"
         # Parser messages may contain configured values; do not echo arbitrary secret-bearing YAML.
@@ -429,6 +475,7 @@ def discover(root: Path, *, max_paths: int = 10_000) -> dict:
                     "by_source_kind": summarize(rows, "source_kind"),
                     "by_category": dict(sorted(Counter(r["classification"]["category"]
                                                        for r in rows).items()))},
+        "area_summary": summarize_areas(rows),
         "paths": rows,
         "limitations": limitations + [
             "Ignored directories are collapsed; their files and bytes are not measured.",
