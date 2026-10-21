@@ -1,6 +1,6 @@
 # Self-hosted repository indexing
 
-FetchCore can index a repository from GitHub Actions on a self-hosted runner while keeping indexing semantics inside FetchCore.
+FetchCore can index a repository from GitHub Actions on a self-hosted runner while keeping indexing semantics inside FetchCore. The path below describes the Solr-specific reusable workflow; the three OPERATIONAL workflows are listed below.
 
 ```text
 GitHub Actions
@@ -20,9 +20,9 @@ The workflow is transport and scheduling only. It does not reimplement Git delta
 
 The reusable `.github/workflows/repository-index.yml` remains Solr-specific for existing callers. Each OPERATIONAL backend now has an **independent GitHub Actions workflow**, with separate manual dispatch, status, concurrency and evidence artifacts:
 
-- `.github/workflows/operational-index.yml` — **Solr**, preserving the existing job and reuse-only policy;
-- `.github/workflows/operational-opensearch.yml` — **OpenSearch**;
-- `.github/workflows/operational-qdrant.yml` — **Qdrant**.
+- [Solr](../../.github/workflows/operational-index.yml), preserving the existing job and reuse-only policy;
+- [OpenSearch](../../.github/workflows/operational-opensearch.yml);
+- [Qdrant](../../.github/workflows/operational-qdrant.yml).
 
 All three use the same CI-success-on-`master` trigger. OpenSearch and Qdrant reuse the existing backend-neutral indexing lifecycle through `scripts/shared_infra.py`; each runs only against its own OPERATIONAL resource. Running one workflow manually does not start the other two.
 
@@ -30,7 +30,34 @@ All three use the same CI-success-on-`master` trigger. OpenSearch and Qdrant reu
 
 This selection configures the **indexing workflow's** retrieval readiness and embedding requirements, not every long-running CLI/MCP/API consumer automatically. Configure the corresponding consumer runtime with the same `retrieval.dense.enabled` and `retrieval.hybrid.enabled` policy through the existing `FETCHCORE_CONFIG` / `FETCHCORE_RETRIEVAL` contract. Switching from a compatible hybrid vector snapshot to dense should not require re-embedding solely because of the search mode. A Solr/OpenSearch snapshot that is lexical-only cannot be promoted by `sync`; use an authorized, explicit vector `rebuild` if needed and verify fingerprints/readiness before enabling the workflow.
 
-For the OpenSearch/Qdrant workflows, set the repository variable `FETCHCORE_OPERATIONAL_OLLAMA_URL` to the verified, credential-free Ollama URL **reachable from the self-hosted runner**. The runtime requires `embeddinggemma` at 768 dimensions. Only existing services, aliases and compatible snapshots are accepted; `ready` and `prepare` run without creating resources. Each vector workflow requires an existing compatible snapshot before `plan/sync`, never calls `rebuild` or pulls a model, and keeps Qdrant lexical/targeted explicitly unsupported. An absent, stale/incompatible schema/fingerprint or unavailable provider stops indexing with a visible failure. Initial rebuild or schema migration remains a separate, explicit operator action after read-only assessment.
+For the OpenSearch/Qdrant workflows, set the repository variable `FETCHCORE_OPERATIONAL_OLLAMA_URL` to the verified, credential-free Ollama URL **reachable from the self-hosted runner**. The runtime requires `embeddinggemma` at 768 dimensions. Only existing services, aliases and compatible snapshots are accepted; `ready` and `prepare` run without creating resources. Each vector workflow requires an existing compatible snapshot before `plan/sync`, never calls `rebuild` or pulls a model, and keeps Qdrant lexical/targeted explicitly unsupported. An absent, stale/incompatible schema/fingerprint or unavailable provider stops indexing with a visible failure. Any future rebuild or schema migration remains a separate, explicit operator action after read-only assessment.
+
+### Operational acceptance (2026-10-20)
+
+At the accepted `master` revision
+[`0d7c856a1d6083b6bfb27804e15283a94c448e43`](https://github.com/oalangomes/fetchcore/commit/0d7c856a1d6083b6bfb27804e15283a94c448e43),
+GitHub Actions reports successful, independent post-CI runs for all three backends:
+
+| Backend | Successful run | Directly verified |
+| --- | --- | --- |
+| Solr | [39483667899](https://github.com/oalangomes/fetchcore/actions/runs/39483667899) | Existing-snapshot gate, sync, and retrieval-readiness steps succeeded. |
+| OpenSearch | [39483667532](https://github.com/oalangomes/fetchcore/actions/runs/39483667532) | Existing-snapshot gate and sync/readiness verification steps succeeded. |
+| Qdrant | [39483667568](https://github.com/oalangomes/fetchcore/actions/runs/39483667568) | Existing-snapshot gate and sync/readiness verification steps succeeded. |
+
+The operator separately confirmed a completed **manual explicit rebuild** of all
+three incompatible OPERATIONAL snapshots and `readiness` returning `ready: true`
+for each backend. The linked runs verify the subsequent workflow path; they do
+not themselves document the earlier manual rebuild. In the code,
+`PROJECTION_VERSION` remains `"3"` while the internal
+`_PROJECTION_CONTRACT_REVISION` changed to `"4"`; this changed the Projection
+contract fingerprint and required the explicit rebuild. See the
+[Projection contract](../architecture/projection.md). This is not a public
+Projection schema version bump.
+
+The accepted operating cycle is **explicit rebuild when needed → automatic
+incremental sync → readiness**. OPERATIONAL resources remain isolated from DEV
+and BENCH. These runs establish operational function, not equivalence of
+retrieval quality, recall, latency or cost between backends.
 
 The indexed repository is `oalangomes/fetchcore`; writers are serialized per backend, and each workflow publishes bounded JSON command evidence separately. These OPERATIONAL workflows are not BENCH runs, retrieval relevance certification or an authorization to modify unrelated DEV/BENCH namespaces.
 
@@ -358,7 +385,7 @@ Ollama. To opt in to vectors: make the model available externally, set
 `fetchcore index ... rebuild`, verify `fetchcore readiness`, then execute dense
 or hybrid search. Compose never pulls the model or rebuilds automatically.
 
-## FetchCore operational index
+## FetchCore operational Solr index
 
 `.github/workflows/operational-index.yml` runs only after a successful `CI`
 workflow for a `master` push from this repository, or by explicit manual

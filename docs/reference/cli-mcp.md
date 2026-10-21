@@ -58,8 +58,8 @@ operational checks; Click usage errors retain exit code 2.
 
 Capabilities are read from the selected adapter's declarations and the
 operational `IndexingCapabilities` boundary. Retrieval support does not imply
-operational indexing support: only the currently proven Solr indexing
-composition advertises incremental and rebuild capabilities. `config show`
+operational indexing support: Solr, OpenSearch and Qdrant currently advertise
+incremental and rebuild capabilities for registered repositories. `config show`
 uses the #65 runtime loader's final resolved values and source tracking; it
 masks credentials and does not inspect repository-owned `.fetchcore/*` policy.
 
