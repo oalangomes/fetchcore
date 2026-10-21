@@ -16,7 +16,7 @@ services:
       PYTHONUNBUFFERED: "1"
     volumes:
       - ../../:/workspace:ro
-      - ./operational-mcp.runtime.yml:/etc/fetchcore/operational-mcp.yml:ro
+      - ${FETCHCORE_OPERATIONAL_RUNTIME_CONFIG:-./operational-mcp.runtime.yml}:/etc/fetchcore/operational-mcp.yml:ro
     expose:
       - "8765"
     networks:
@@ -80,7 +80,7 @@ services:
       PYTHONUNBUFFERED: "1"
     volumes:
       - ../../:/workspace:ro
-      - ./operational-mcp.runtime.yml:/etc/fetchcore/operational-mcp.yml:ro
+      - ${FETCHCORE_OPERATIONAL_RUNTIME_CONFIG:-./operational-mcp.runtime.yml}:/etc/fetchcore/operational-mcp.yml:ro
     ports:
       - 127.0.0.1:38766:8766
     networks:

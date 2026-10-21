@@ -127,6 +127,35 @@ for Lab startup failures. Stop the stack with
 starting, verify that the workspace HEAD matches `runtime.revision` and that
 the configured collection snapshot is ready at the same revision.
 
+### Reconcile after an OPERATIONAL index update
+
+After the index workflow succeeds, run explicit operator reconciliation on the
+host that owns the materialized workspace and Compose deployment. It reads the
+active Solr snapshot and verifies the workspace HEAD, schema, projection,
+indexing and embedding identities, and worktree currentness. A failed check
+leaves the serving binding unchanged. Host URLs below are used for validation;
+the generated serving config retains the container URLs.
+
+```bash
+export FETCHCORE_OPERATIONAL_RUNTIME_CONFIG="$HOME/.config/fetchcore/operational-mcp.runtime.yml"
+mkdir -p "$(dirname "$FETCHCORE_OPERATIONAL_RUNTIME_CONFIG")"
+PYTHONPATH=src python -m fetchcore.operational.reconcile \
+  --config infra/compose/operational-mcp.runtime.yml \
+  --workspace "$PWD" \
+  --solr-url http://127.0.0.1:38983/solr \
+  --ollama-url http://127.0.0.1:11434 \
+  --output "$FETCHCORE_OPERATIONAL_RUNTIME_CONFIG" \
+  --activate
+```
+
+Omit `--activate` for a read-only compatibility check. Keep
+`FETCHCORE_OPERATIONAL_RUNTIME_CONFIG` in the operator's Compose environment
+for later `docker compose up` commands. The command replaces only the
+operator-owned runtime file and force-recreates `mcp` and `api` with
+`--no-deps`, refreshing Docker Desktop/WSL file bind mounts. It does not
+recreate Solr, snapshots or the Lab web container. A dirty worktree or unknown
+change coverage blocks activation. No fetch, checkout or reindex is performed.
+
 ## Historical environment contract
 
 - `FETCHCORE_MCP_WORKSPACE`

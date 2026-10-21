@@ -217,6 +217,7 @@ class FakeStore:
     [
         ("abc", "fp1", "ready", "ready", "ready"),
         ("older", "fp1", "changes_pending", "stale", "ready"),
+        ("older", "fp1", "ready", "stale", "ready"),
         ("abc", "incompatible", "rebuild_required", "unknown", "incompatible"),
         ("abc", "fp1", "changes_pending", "stale", "ready"),
     ],
@@ -238,15 +239,28 @@ def test_snapshot_currentness_and_fingerprints(
     monkeypatch.setattr(contract, "bind_indexing_contract_store", lambda store, indexer: store)
     monkeypatch.setattr(
         operations, "repository_index_status",
-        lambda store, runtime: {"state": state, "reason": "indexing_contract_changed" if state == "rebuild_required" else "changes_pending"},
+        lambda store, runtime: {
+            "state": state,
+            "reason": "indexing_contract_changed" if state == "rebuild_required" else "changes_pending",
+            "discovery": {"mode": "git-delta", "changed_paths": 1,
+                          "changed_path_values": ["src/changed.py"],
+                          "path_samples_truncated": False},
+        },
     )
     report = inspect_readiness(RuntimeInspectionService(FetchCoreRuntimeConfig(
         backend="solr", workspace=tmp_path, repository="demo/repo", revision="abc",
     )))
     assert report.checks["currentness"].state == wanted_currentness
     assert report.checks["indexing_fingerprint"].state == wanted_fingerprint
-    assert report.ready == (state == "ready" and persisted_fp == "fp1")
+    assert report.ready == (
+        state == "ready" and persisted_fp == "fp1" and snapshot_revision == "abc"
+    )
+    if snapshot_revision != "abc":
+        assert report.checks["currentness"].category == "snapshot_revision_mismatch"
     assert report.fingerprints["expected_indexing"] == "fp1"
+    assert report.to_mapping()["observations"]["currentness"]["changed_path_values"] == [
+        "src/changed.py"
+    ]
 
 
 def test_unknown_revision_is_not_proved_current(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -264,6 +278,28 @@ def test_unknown_revision_is_not_proved_current(monkeypatch: pytest.MonkeyPatch,
         backend="solr", workspace=tmp_path, repository="demo/repo",
     )))
     assert report.checks["currentness"].state == "unknown"
+    assert not report.ready
+
+
+def test_snapshot_repository_binding_mismatch_is_incompatible(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    import fetchcore.adapters.retrieval.solr.index_contract as contract
+    from fetchcore.application import indexing
+    import fetchcore.application.runtime_inspection as inspection
+    monkeypatch.setattr(inspection.RuntimeInspectionService, "doctor", lambda self: _doctor())
+    store = FakeStore(Snapshot(repository="other/repo"))
+    runtime = SimpleNamespace(indexer=object(), fingerprint="fp1")
+    monkeypatch.setattr(indexing, "build_index_context", lambda **kw: SimpleNamespace(store=store, runtime=runtime))
+    monkeypatch.setattr(contract, "bind_indexing_contract_store", lambda store, indexer: store)
+
+    report = inspect_readiness(RuntimeInspectionService(FetchCoreRuntimeConfig(
+        backend="solr", workspace=tmp_path, repository="demo/repo", revision="abc",
+    )))
+
+    assert report.checks["snapshot"] == ReadinessFact(
+        "incompatible", "repository_binding_mismatch",
+    )
     assert not report.ready
 
 
