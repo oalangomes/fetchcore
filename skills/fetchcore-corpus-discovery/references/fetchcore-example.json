@@ -1,0 +1,358 @@
+{
+  "mode": "REVIEW",
+  "repository": "oalangomes/fetchcore",
+  "revision": "e0a9a72adb2f8c7e056c5e9993fb5fa34e00e8f1",
+  "working_tree": {
+    "available": true,
+    "complete": true,
+    "dirty": false,
+    "head_represents_workspace": true,
+    "tracked_changes": [],
+    "staged_paths": [],
+    "unstaged_paths": [],
+    "untracked_paths": [],
+    "incompleteness_reasons": []
+  },
+  "observations": {
+    "policy": {
+      "source": ".fetchcore/indexing.yaml",
+      "yaml": "version: 1\n\nselection:\n  exclude:\n    - \"benchmarks/baseline-v1/artifacts/**\"\n    - \".fetchcore-dogfood/**\"\n    - \"dogfood/scenarios/**\"\n\nlimits:\n  max_files: 2500\n  max_file_bytes: 1000000\n  max_total_bytes: 64000000\n\nchunking:\n  max_lines: 160\n  overlap_lines: 20\n\nclassification:\n  rules:\n    - pattern: \"dogfood/**\"\n      knowledge_type: tests\n",
+      "sha256": "607a02cfe741d3d2734c390c5a1b962d77ce4c624c7fcb236bf8369b350fcc4a",
+      "validation": "valid",
+      "yaml_status": "visible"
+    },
+    "summary": {
+      "scope": "observed_paths",
+      "observed_entries": 715,
+      "observed_regular_file_bytes": 139754846,
+      "by_admission": {
+        "eligible_by_metadata": {
+          "entries": 585,
+          "regular_file_bytes": 6682736
+        },
+        "excluded": {
+          "entries": 60,
+          "regular_file_bytes": 114342538
+        },
+        "not_included": {
+          "entries": 70,
+          "regular_file_bytes": 18729572
+        }
+      },
+      "by_source_kind": {
+        ".conf": {
+          "entries": 1,
+          "regular_file_bytes": 366
+        },
+        ".css": {
+          "entries": 1,
+          "regular_file_bytes": 6715
+        },
+        ".dockerignore": {
+          "entries": 1,
+          "regular_file_bytes": 363
+        },
+        ".example": {
+          "entries": 2,
+          "regular_file_bytes": 3304
+        },
+        ".gitignore": {
+          "entries": 2,
+          "regular_file_bytes": 205
+        },
+        ".gz": {
+          "entries": 46,
+          "regular_file_bytes": 7077992
+        },
+        ".html": {
+          "entries": 1,
+          "regular_file_bytes": 646
+        },
+        ".js": {
+          "entries": 2,
+          "regular_file_bytes": 508
+        },
+        ".json": {
+          "entries": 130,
+          "regular_file_bytes": 116649705
+        },
+        ".lock": {
+          "entries": 1,
+          "regular_file_bytes": 365
+        },
+        ".md": {
+          "entries": 132,
+          "regular_file_bytes": 736491
+        },
+        ".png": {
+          "entries": 10,
+          "regular_file_bytes": 11632096
+        },
+        ".py": {
+          "entries": 307,
+          "regular_file_bytes": 3278641
+        },
+        ".sh": {
+          "entries": 2,
+          "regular_file_bytes": 2513
+        },
+        ".svg": {
+          "entries": 8,
+          "regular_file_bytes": 7655
+        },
+        ".toml": {
+          "entries": 1,
+          "regular_file_bytes": 1445
+        },
+        ".ts": {
+          "entries": 19,
+          "regular_file_bytes": 99807
+        },
+        ".tsx": {
+          "entries": 10,
+          "regular_file_bytes": 136356
+        },
+        ".txt": {
+          "entries": 1,
+          "regular_file_bytes": 50
+        },
+        ".xml": {
+          "entries": 4,
+          "regular_file_bytes": 15516
+        },
+        ".yaml": {
+          "entries": 10,
+          "regular_file_bytes": 11646
+        },
+        ".yml": {
+          "entries": 20,
+          "regular_file_bytes": 86816
+        },
+        "Dockerfile": {
+          "entries": 2,
+          "regular_file_bytes": 1757
+        },
+        "LICENSE": {
+          "entries": 1,
+          "regular_file_bytes": 1079
+        },
+        "Makefile": {
+          "entries": 1,
+          "regular_file_bytes": 2809
+        }
+      },
+      "by_category": {
+        "configuration_or_contract": 75,
+        "derived_candidate": 160,
+        "implementation": 244,
+        "sensitive": 2,
+        "technical_document_candidate": 113,
+        "tests": 96,
+        "unknown": 25
+      }
+    },
+    "technology_markers": [
+      {
+        "technology": "container build",
+        "path": "Dockerfile",
+        "basis": "filename_marker"
+      },
+      {
+        "technology": "Python project",
+        "path": "pyproject.toml",
+        "basis": "filename_marker"
+      },
+      {
+        "technology": "container build",
+        "path": "tools/explorer/docker/Dockerfile",
+        "basis": "filename_marker"
+      },
+      {
+        "technology": "JavaScript/TypeScript project",
+        "path": "tools/explorer/web/package.json",
+        "basis": "filename_marker"
+      }
+    ],
+    "knowledge_packs": [],
+    "bounded_prefix_samples": [
+      {
+        "path": "pyproject.toml",
+        "byte_start": 0,
+        "bytes_read": 1445,
+        "line_start": 1,
+        "line_end": 72,
+        "truncated": false,
+        "sample_sha256": "e1c59b5811505992665a722873d56a2babb04d8bb0b8ced493323fa46d6ab146"
+      },
+      {
+        "path": "tools/explorer/web/package.json",
+        "byte_start": 0,
+        "bytes_read": 1134,
+        "line_start": 1,
+        "line_end": 41,
+        "truncated": false,
+        "sample_sha256": "e46b76756703f4156eb645fe727750e6003aaaa0a6d03ed52ed2db3dd96c1704",
+        "framework_dependency_names": [
+          "react",
+          "react-dom"
+        ]
+      },
+      {
+        "path": "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002/run/run.json",
+        "byte_start": 0,
+        "bytes_read": 4096,
+        "line_start": 1,
+        "line_end": 44,
+        "truncated": true,
+        "sample_sha256": "a18b8209125750615f1d131319adc0d6c9248fcd61c031131efa1487ea91dd25",
+        "observed_key_names": [
+          "ai_memory",
+          "arms",
+          "body",
+          "budget",
+          "direct",
+          "evaluate",
+          "fetchcore_revision",
+          "fresh_server_required",
+          "harness",
+          "id",
+          "identity",
+          "memory_pages",
+          "memory_scope",
+          "model",
+          "name",
+          "path",
+          "project",
+          "protocol"
+        ]
+      }
+    ],
+    "observation": {
+      "complete": true,
+      "enumeration_complete": true,
+      "scope": "repository_paths",
+      "incompleteness_reasons": [],
+      "enumerated_entries": 715,
+      "unvisited_entries": 0,
+      "collapsed_ignored_directories": [],
+      "untraversed_directories": [],
+      "metadata_unavailable_paths": [],
+      "content_inspection": "not_performed"
+    }
+  },
+  "recommendations": [
+    {
+      "pattern": "studies/repository-learning/.artifacts/**/*.json",
+      "recommendation": "candidate exclusion of historical generated JSON; human review pending",
+      "confidence": "medium (heuristic)",
+      "evidence": [
+        {
+          "path": "studies/repository-learning/run.py",
+          "lines": [
+            406,
+            440
+          ],
+          "observation": "writes per-arm JSON, aggregate run.json and generated README"
+        },
+        {
+          "path": "studies/repository-learning/README.md",
+          "lines": [
+            191,
+            198
+          ],
+          "observation": "documents output contract and curated artifact index"
+        }
+      ],
+      "risk": "historical payloads contain legitimate reproducibility evidence; unique knowledge not fully reviewed",
+      "preserve": [
+        "studies/repository-learning/*.py",
+        "studies/repository-learning/*.md",
+        "studies/repository-learning/wrappers/**",
+        "studies/repository-learning/.artifacts/**/*.md"
+      ]
+    }
+  ],
+  "proposal_yaml": "version: 1\n\nselection:\n  exclude:\n    - \"benchmarks/baseline-v1/artifacts/**\"\n    - \".fetchcore-dogfood/**\"\n    - \"dogfood/scenarios/**\"\n    - \"studies/repository-learning/.artifacts/**/*.json\"\n\nlimits:\n  max_files: 2500\n  max_file_bytes: 1000000\n  max_total_bytes: 64000000\n\nchunking:\n  max_lines: 160\n  overlap_lines: 20\n\nclassification:\n  rules:\n    - pattern: \"dogfood/**\"\n      knowledge_type: tests\n",
+  "proposal_sha256": "5140dd1ba5a37a680aac526c884ef125259dc778a42626d3a464575a0fba224c",
+  "policy_diff": "--- .fetchcore/indexing.yaml\n+++ proposed/.fetchcore/indexing.yaml\n@@ -5,6 +5,7 @@\n     - \"benchmarks/baseline-v1/artifacts/**\"\n     - \".fetchcore-dogfood/**\"\n     - \"dogfood/scenarios/**\"\n+    - \"studies/repository-learning/.artifacts/**/*.json\"\n \n limits:\n   max_files: 2500\n",
+  "impact": {
+    "complete": true,
+    "scope": "repository_paths",
+    "incompleteness_reasons": [],
+    "removed_eligible_paths": [
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-001/plan/plan.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-001/run/direct.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-001/run/fetchcore.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002-v2-repro/run/direct.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002-v2-repro/run/fetchcore.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002-v2-repro/run/fetchcore_bounded.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002-v2-repro/run/run.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002-v2-scorer-audit/run/run.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002-v2/run/direct.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002-v2/run/fetchcore.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002-v2/run/fetchcore_bounded.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002-v2/run/run.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002/plan/plan.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002/run/direct.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002/run/fetchcore.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002/run/fetchcore_bounded.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261008-002/run/run.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261009-003-v2-fresh/run/direct.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261009-003-v2-fresh/run/fetchcore.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261009-003-v2-fresh/run/fetchcore_bounded.json",
+      "studies/repository-learning/.artifacts/repository-learning/codex-20261009-003-v2-fresh/run/run.json"
+    ],
+    "added_eligible_paths": [],
+    "removed_observed_bytes": 1503534,
+    "current": {
+      "eligible_by_metadata": {
+        "entries": 585,
+        "regular_file_bytes": 6682736
+      },
+      "excluded": {
+        "entries": 60,
+        "regular_file_bytes": 114342538
+      },
+      "not_included": {
+        "entries": 70,
+        "regular_file_bytes": 18729572
+      }
+    },
+    "proposed": {
+      "eligible_by_metadata": {
+        "entries": 564,
+        "regular_file_bytes": 5179202
+      },
+      "excluded": {
+        "entries": 81,
+        "regular_file_bytes": 115846072
+      },
+      "not_included": {
+        "entries": 70,
+        "regular_file_bytes": 18729572
+      }
+    }
+  },
+  "changed_config_fields": [
+    "exclude_patterns"
+  ],
+  "existing_exclusions_removed": [],
+  "existing_includes_removed": [],
+  "review_status": "needs_human_review",
+  "applied": false,
+  "limitations": [
+    "Ignored directories are collapsed; their files and bytes are not measured.",
+    "Eligibility is metadata-only, before API quarantine, decoding and aggregate read limits.",
+    "The deterministic helper sampled no source content; coder prefix samples are recorded separately above.",
+    "Only policy and pack manifest (at most 1 MB) content read; no remote/backend access.",
+    "Working tree metadata observed; HEAD alone does not identify uncommitted contents.",
+    "No chunks, tokens, duplicates, retrieval gains or snapshot compatibility measured.",
+    "Three bounded prefix samples total 6675 bytes; additional focused producer/doc excerpts inspected during implementation preflight.",
+    "All 21 affected JSON files have not been semantically inspected.",
+    "Backend/indexing fingerprints and snapshot compatibility unmeasured.",
+    "No improvement in retrieval, tokens, chunks, cost or latency claimed."
+  ],
+  "working_tree_dirty": false,
+  "proposal_yaml_status": "visible",
+  "policy_diff_status": "visible"
+}
