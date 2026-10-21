@@ -63,10 +63,20 @@ def test_external_proposal_is_validated_and_compared_without_applying(tmp_path: 
 def test_deep_uses_canonical_coverage_and_duplication_diagnostics(tmp_path: Path) -> None:
     for name in ("first.py", "second.py"):
         (tmp_path / name).write_text("def run():\n    return 1\n", encoding="utf-8")
+    (tmp_path / "__init__.py").write_text("", encoding="utf-8")
     report = _invoke(tmp_path, "--deep")
     assert report["mode"] == "deep"
-    assert report["telemetry"]["source_coverage"]["files_read"] == 2
+    coverage = report["telemetry"]["source_coverage"]
+    assert coverage["files_read"] == 3
+    assert coverage["files_without_documents"] == 1
+    assert coverage["files_without_documents_by_source_kind"] == {".py": 1}
     assert report["corpus_diagnostics"]["duplicate_group_count"] == 1
+    assert report["corpus_diagnostics"]["duplicate_groups"][0]["paths"] == [
+        "first.py", "second.py",
+    ]
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "__init__.py", "first.py", "second.py",
+    ]
 
 
 def test_invalid_proposal_fails_closed_without_showing_contents(tmp_path: Path) -> None:
