@@ -151,6 +151,7 @@ def load_repository_index_policy(
     workspace: Path,
     *,
     base_config: RepositoryIndexConfig | None = None,
+    policy_override: Path | None = None,
 ) -> RepositoryIndexPolicy:
     """Load FetchCore indexing policy with an explicit legacy compatibility path."""
 
@@ -160,18 +161,21 @@ def load_repository_index_policy(
             f"repository workspace is not a directory: {workspace}"
         )
     config = base_config or RepositoryIndexConfig()
-    policy_path = root / INDEXING_POLICY_PATH
-    legacy_policy_path = root / LEGACY_INDEXING_POLICY_PATH
-    if policy_path.is_file() and legacy_policy_path.is_file():
-        raise RepositoryIndexPolicyError(
-            "both FetchCore and legacy indexing policies are present; "
-            "remove one to avoid ambiguous configuration"
-        )
-    if not policy_path.is_file():
-        if legacy_policy_path.is_file():
-            policy_path = legacy_policy_path
-        else:
-            return RepositoryIndexPolicy(config=config)
+    if policy_override is not None:
+        policy_path = policy_override.resolve(strict=True)
+    else:
+        policy_path = root / INDEXING_POLICY_PATH
+        legacy_policy_path = root / LEGACY_INDEXING_POLICY_PATH
+        if policy_path.is_file() and legacy_policy_path.is_file():
+            raise RepositoryIndexPolicyError(
+                "both FetchCore and legacy indexing policies are present; "
+                "remove one to avoid ambiguous configuration"
+            )
+        if not policy_path.is_file():
+            if legacy_policy_path.is_file():
+                policy_path = legacy_policy_path
+            else:
+                return RepositoryIndexPolicy(config=config)
 
     payload = _read_policy(policy_path)
     _reject_unknown_keys(payload, _ALLOWED_TOP_LEVEL_KEYS, context="indexing policy")

@@ -8,6 +8,7 @@
 | `fetchcore repo add <source>` | Materialize and persist a canonical repository registration; repeated add does not refresh. |
 | `fetchcore repo list` | Read known registrations in canonical identity order. |
 | `fetchcore repo inspect <repo>` | Resolve a canonical identity or unique leaf name and inspect registration facts. |
+| `fetchcore index --workspace <path> corpus` | Inspect local canonical safe-scan coverage without registration or a backend. |
 | `fetchcore index plan <repo>` | Read-only registered-source planning. |
 | `fetchcore index status <repo>` | Observe registered, materialized and indexed revision/currentness. |
 | `fetchcore index sync <repo>` | Incremental synchronization or no-op; never implicit rebuild. |
@@ -70,3 +71,15 @@ Registered targets use the same `--cache-root` / `--allowed-root` options as
 without a target, legacy CI commands still always emit their original JSON envelope.
 See [repository indexing](../guides/repository-indexing.md) for initial indexing,
 compatibility, output, and the distinction between the two sync contracts.
+
+`index corpus --json` reports the effective repository policy, KnowledgePacks,
+extractor capabilities, fingerprint, bounded scan audit and source-kind coverage.
+`--path <relative-path>` tests one path's admission with the same scanner.
+`--proposal <external-yaml>` validates a policy through the canonical loader and
+compares observed paths read before and after; it does not edit repository policy.
+Path impact is incomplete if either scan truncates. `--deep` runs canonical
+extraction in memory to report document/source coverage and exact-source
+duplication diagnostics; it can cost substantially more than a scan and cannot
+be combined with `--path` or `--proposal`. None of these modes registers a
+repository, writes an index, embeds, or contacts a backend. A safe scan's
+eligible/read counts do not prove document extraction or retrieval quality.
