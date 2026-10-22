@@ -1,6 +1,6 @@
 # Frozen comparative assessment plan (set before critic response)
 Date: 2026-10-21. Product: FetchCore corpus advisor skill. Baseline A: the existing one-invocation exercise in skills/fetchcore-corpus-advisor/references/validation.md (recorded before this change). Experiment B: same two Git revisions and canonical CLI, one native independent critic, parent reconciliation, external proposal validation. No policy/index writes.
-Repositories: oalangomes/RunnerOps@5a72fa122d5664e217299e16420fcd7d48b67a92; oalangomes/fetchcore@600651415055e625b2d98c57321263a68846455d. CLI: /home/alangomes/projetos/GitHub/fetchcore/.venv/bin/fetchcore. Raw B observations: /tmp/fetchcore-eval-{runnerops,fetchcore}-{scan,deep}.json. Baseline observations and decisions: pre-existing validation.md.
+Repositories: oalangomes/RunnerOps@5a72fa122d5664e217299e16420fcd7d48b67a92; oalangomes/fetchcore@600651415055e625b2d98c57321263a68846455d. CLI: /home/operator/projetos/GitHub/fetchcore/.venv/bin/fetchcore. Raw B observations: /tmp/fetchcore-eval-{runnerops,fetchcore}-{scan,deep}.json. Baseline observations and decisions: pre-existing validation.md.
 
 Criteria, fixed before review:
 1. Supported inclusion requires a concrete engineering question answered by knowledge that selected sources do not adequately supply, traceable source lines, and no unmitigated sensitive-data concern. A consumer or extension alone does not suffice.

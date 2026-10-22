@@ -64,7 +64,7 @@ separate semantic audit of these new texts.
 ```bash
 python benchmarks/repository-learning/run.py \
   --scenario benchmarks/repository-learning/scenarios/fetchcore-self.yaml \
-  --workspace /home/alangomes/projetos/GitHub/fetchcore-rlb-subject \
+  --workspace /home/operator/projetos/GitHub/fetchcore-rlb-subject \
   --output /tmp/codex-20261009-003-v2-fresh \
   --run-id codex-20261009-003-v2-fresh \
   --harness-id codex-cli-0.153.2 \
@@ -72,9 +72,9 @@ python benchmarks/repository-learning/run.py \
   --model-id gpt-5.6-sol \
   --memory-server-url http://127.0.0.1:49376 \
   --timeout-seconds 1800 \
-  --study-command 'direct=python /home/alangomes/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py direct --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001' \
-  --study-command 'fetchcore=python /home/alangomes/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py fetchcore --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001' \
-  --study-command 'fetchcore_bounded=python /home/alangomes/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py fetchcore-bounded --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001' \
-  --evaluate-command 'python /home/alangomes/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py evaluate --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001'
+  --study-command 'direct=python /home/operator/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py direct --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001' \
+  --study-command 'fetchcore=python /home/operator/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py fetchcore --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001' \
+  --study-command 'fetchcore_bounded=python /home/operator/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py fetchcore-bounded --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001' \
+  --evaluate-command 'python /home/operator/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py evaluate --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001'
 ```
 

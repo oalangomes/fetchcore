@@ -8,7 +8,7 @@ request drove SCAN → DEEP → INVESTIGATE → DRAFT POLICY → CRITIC → RECO
 
 The real target was a clean, detached temporary clone of
 `oalangomes/fetchcore@63537a35ab198dd4e7b1e452bd5a66f87dda19f7`. The CLI was
-`/home/alangomes/projetos/GitHub/fetchcore/.venv/bin/fetchcore`, using the
+`/home/operator/projetos/GitHub/fetchcore/.venv/bin/fetchcore`, using the
 stabilized source in this PR. Target source content stayed frozen while the
 Advisor instructions and CLI regression fix were edited in the working copy.
 No historical policy recommendation was treated as a current approval.
@@ -208,7 +208,7 @@ not repeated because neither target workspace nor current policy changed.
 The final comparison ran after the additional reconciliation:
 
 ```bash
-/home/alangomes/projetos/GitHub/fetchcore/.venv/bin/fetchcore index \
+/home/operator/projetos/GitHub/fetchcore/.venv/bin/fetchcore index \
   --workspace /tmp/fetchcore-advisor-final-dywv5yvt/repo corpus \
   --proposal /tmp/fetchcore-advisor-final-dywv5yvt/proposal.yaml --json
 ```

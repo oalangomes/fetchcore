@@ -33,6 +33,7 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Configure or add a backend | [Runtime configuration](guides/runtime-configuration.md), [configuration reference](reference/configuration.md), and [adding a backend](guides/adding-a-backend.md) |
 | Maintain PT-BR documentation | [Documentation localization](guides/documentation-localization.md) |
 | Understand release gates, labels and the initial version | [Release policy](release-policy.md) and [v0.0.1 technical overview](releases/initial-release.md) |
+| Review the launch exposure audit and remaining gate | [Public exposure review 2026-10-22](operations/public-exposure-review-2026-10-22.md) |
 | Inspect the frozen operational indexing checkpoint | [Operational indexing freeze 2026-10-18](benchmarks/operational-indexing-freeze-2026-10-18.md) |
 | Review typed knowledge canonical validation | [Typed knowledge canonical result](benchmarks/results/typed-knowledge-canonical.md) |
 | Review typed knowledge retrieval validation | [Typed knowledge retrieval result](benchmarks/results/typed-knowledge-retrieval.md) |
