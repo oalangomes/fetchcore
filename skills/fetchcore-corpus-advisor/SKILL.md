@@ -99,13 +99,26 @@ to resolve an anomaly already found.
 
 ## 4. DRAFT POLICY: make a provisional decision
 
-Record preliminary `include`, `exclude`, `preserve`, `no_change` or
-`needs_review` decisions with paths/spans. For each proposed admission or
-exclusion, identify the concrete engineering questions it could answer, what
-knowledge is unique relative to already selected sources, likely redundancy,
-provenance and security concerns. A repository consumer proves use, not
-retrieval value. Do not change a policy simply because a path is unselected,
-imported, duplicated or has an unusual extension.
+Use one rubric for **every** candidate, including sources already selected or
+excluded: (1) concrete technical knowledge and questions it makes retrievable;
+(2) contribution unique relative to selected sources; (3) redundancy and its
+likely retrieval cost; (4) safety or knowledge-loss risk; (5) repository,
+revision, path and source provenance; (6) verifiable evidence, with paths/spans
+and an alternative-source check. State unknowns rather than inventing metrics.
+A dependency, import, extension, checksum duplicate or consumer alone proves
+neither inclusion nor exclusion.
+Recommend `include` only for evidenced retrievable knowledge with a meaningful
+unique contribution and manageable risk. Recommend `exclude` only when the
+evidenced noise or risk outweighs an explicitly acceptable loss of technical
+knowledge. If neither case is established, retain the observed selection;
+mark a material unresolved choice `needs_review`.
+
+Record a preliminary decision and justification for each candidate:
+`include` or `exclude` changes its search selection; `preserve` keeps an
+examined existing selection or exclusion; `no_change` leaves policy unchanged
+after evaluating the candidate; `needs_review` marks a material unresolved
+choice. Apply the same meanings to the final decisions. Distinguish retaining
+an artifact in the repository from admitting it to search.
 
 ## 5. CRITIC: seek an independent challenge
 
@@ -120,6 +133,7 @@ an agent framework, subprocess supervisor or FetchCore runtime component.
 Give the critic repository identity and purpose, fixed revision/tree state,
 current policy, effective indexer capabilities, relevant SCAN/DEEP diagnostics,
 candidate paths and bounded code evidence, objectives and investigation limits.
+Give it the same six-part rubric and decision meanings from DRAFT POLICY.
 **First ask for the critic's own assessment from this evidence without the
 parent's proposed decisions.** Then share the provisional decisions and ask
 the same critic to challenge each one. Wait for both responses before
@@ -142,14 +156,24 @@ objections, additional evidence if needed, final decision, and why each
 substantiated objection was accepted or rejected. Investigate resolvable
 objections within the normal INVESTIGATE budget. Do not force consensus:
 use `needs_review` when the available evidence cannot resolve a material
-conflict. Agent agreement alone does not establish retrieval quality. The
-parent owns the final recommendation, which may differ from the draft.
+conflict or the choice depends on human preference. Agent agreement alone does
+not establish retrieval quality. The parent owns the final recommendation,
+which may differ from the draft. Keep every `needs_review` item out of the
+candidate policy change and preserve its current selection by default. If a
+material trade-off cannot be resolved technically, prepare the evidence and
+safe candidate first, then ask the user once with all pending choices and
+their concrete consequences. Do not ask for routine technical adjudication or
+silently treat an unanswered question as approval.
 
 ## 7. VALIDATE: compare only the final candidate
 
-Always end a completed review with explicit decisions and supporting
-paths/spans. `no_change` requires a reasoned decision, including any
-important anomaly that triggered critique.
+Always provide either a candidate `indexing.yaml` or a reasoned `no_change`,
+with explicit decisions and supporting paths/spans. `no_change` includes any
+important anomaly that triggered critique. A candidate contains only resolved
+`include` and `exclude` changes; pending and rejected changes remain outside
+it. If an explicit policy would alter a pending path through defaults or a
+broad pattern, revise the candidate to preserve its current selection or
+return `no_change` until that impact is resolved.
 
 When a change is justified, preserve existing fields, order and comments;
 show the full candidate `indexing.yaml` and a minimal unified diff. Put the
@@ -176,6 +200,15 @@ file, state `policy: absent` and the effective configuration; do not create
 an artificial YAML file or claim that an explicit file is equivalent to absent
 policy. A first explicit policy may disable conditional pack defaults.
 
+Use this delivery order for every review: **recommended changes** (or
+`no_change`), **pending decisions**, **rejected changes**, then the candidate
+YAML or current-policy/absent-policy statement, minimal diff, canonical path
+impact, before/after fingerprints and limits. Give each candidate exactly one
+final decision from DRAFT POLICY and its six-part evidence-based justification;
+briefly state why each pending or rejected change is absent from the candidate.
+For `no_change`, the diff is empty and the before/after fingerprint is the
+same observed value; do not fabricate a candidate fingerprint.
+
 ## 8. REVIEW: completion gate
 
 Before concluding, check that DEEP succeeded; major anomalies were explained
@@ -186,8 +219,13 @@ applicable; required independent critique and reconciliation occurred or
 their absence is disclosed; and residual limits are stated. If a consequential
 item is still investigable within budget, return to INVESTIGATE. Otherwise return
 `investigation_incomplete` or `needs_review` for the affected decision,
-without implying the review is complete. Never equate fewer bytes with better
-retrieval or infer retrieval quality from corpus counts.
+without implying the review is completely resolved while a material approval
+is pending. For the same revision, policy and frozen evidence, keep the rubric
+and output format fixed. If repeated assessments differ, trace the difference
+to evidence, interpretation or an unresolved preference and record it; do not
+accept model variation as a reason or claim absolute LLM determinism. Never
+equate fewer bytes with better retrieval or infer retrieval quality from corpus
+counts.
 
 For installation and migration, see [installation.md](references/installation.md).
 For a bounded, two-repository behavioral exercise, see

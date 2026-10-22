@@ -142,3 +142,66 @@ while preserving them for reproduction. The small two-repository sample
 cannot establish general improvement; it does show that independent challenge
 changed technically consequential decisions without changing FetchCore core
 or applying a policy.
+
+## Consistency replay with the decision rubric
+
+The earlier A and B assessments were separate reviews of the same RunnerOps
+revision and absent policy. They were **not** equivalent model trials: B had
+the critic and later human decisions, while A did not. The FetchCore case also
+had an in-progress Advisor edit during A. Reapplying the current six criteria
+to the frozen source evidence above explains the consequential differences:
+
+| Earlier divergence | Evidence-based cause, independent of filename |
+| --- | --- |
+| A admitted the RunnerOps registry template; B did not | The selected README already supplies its schema and example. A relied too heavily on a consumer and exact-file provenance. |
+| A omitted both CSS sources; B admitted them | The source spans contain accessibility, responsive, focus and selection behavior absent from selected alternatives. Their imports alone establish use, not this contribution. |
+| A admitted the nested Explorer environment template; B did not | Its inspected keys/defaults duplicate the root template; the first proposal also exposed basename matching that admitted it unintentionally. |
+| A retained four run-query copies in search; B excluded them | The checksum group and comparison with the selected query source establish duplicate question text. Run files remain in Git for reproduction, with run identity in selected metadata; the recorded human decision approved search exclusion only. |
+
+Two separate read-only SCAN → DEEP → proposal-validation executions were then
+run for **each** clean detached revision and policy in the frozen-input table.
+Both used the same installed CLI and the archived candidate YAMLs above. The
+candidate sets and six-criterion reasons were checked twice against the same
+frozen source spans; the compact comparison is below. `no_change` means no
+admission change for an unselected candidate; `preserve` keeps an existing
+exclusion. The four query copies form one evidence-equivalent group but each
+receives the same `exclude` decision in the candidate.
+
+| Candidate | Pass 1 / pass 2 | Decisive evidence and alternative-source check |
+| --- | --- | --- |
+| RunnerOps public CLI | `include` / `include` | Dispatch and safeguards in `runnerctl:21-97,402-439,1614-1681` exceed the selected README command list. |
+| RunnerOps registry template | `no_change` / `no_change` | `README.md:720-738` already states the six-field contract found at `runners.conf.example:7-8`. |
+| RunnerOps machine template | `include` / `include` | `.env.example:1-22` collects XDG roots and boot/absence defaults; the inspected selected sources do not provide that compact operator contract. |
+| RunnerOps privileged control | `include` / `include` | `scripts/systemd/runnerops-systemctl:9-35` contains an action allowlist and unit check absent from the installation reference. |
+| RunnerOps site behavior | `include` / `include` | `site/styles.css:75-89,772-878` supplies specific accessibility and responsive rules; `site/index.html:18` only confirms use. |
+| FetchCore image pins | `include` / `include` | `infra/images.lock:1-4` centralizes pin/update inputs consumed by CI; individual Compose digests do not state that contract. |
+| FetchCore root environment template | `include` / `include` | `.env.example:1-62` collects current and legacy settings with blank/commented credential placeholders. Live secrets remain a separate risk. |
+| FetchCore nested environment template | `no_change` / `no_change` | Its seven keys/defaults duplicate root `.env.example:7-12`; no unique contract was established. |
+| FetchCore Explorer proxy | `include` / `include` | `tools/explorer/docker/nginx.conf:1-18` defines proxy timeouts and SPA fallback; the selected Dockerfile only copies it. |
+| FetchCore Explorer interaction style | `include` / `include` | `tools/explorer/web/src/style.css:69-109` defines focus and selection behavior missing from TSX. |
+| FetchCore four run-query copies | `exclude` / `exclude` | DEEP checksum and query-ID/text comparison show duplicate retrieval content; `run.json` preserves run identity and the copies remain in Git for resume. This is the historically approved search-only choice. |
+| FetchCore evaluation scenarios | `preserve` / `preserve` | Expected-path labels are unique, but benchmark consumers use them as evaluation truth; their existing exclusion avoids inferred fixture leakage. No measured retrieval effect is claimed. |
+
+Both passes therefore had the same candidate list, decisions, evidence-based
+reasons and **no pending material choice under the recorded human decisions**.
+Rejected changes were admission of the two redundant templates and the
+evaluation scenarios. The complete final YAML and minimal diffs remain the
+linked archived proposals; no policy was applied. A fresh review without the
+recorded human choices must reassess any unresolved trade-off and keep its
+current selection while marking `needs_review`.
+
+SCAN JSON and proposal-validation JSON matched byte for byte between the two
+executions for each target. DEEP JSON differed only in `duration_ms` and
+`indexing_throughput_chunks_per_second`; all content, coverage and diagnostic
+fields matched. Candidate YAML SHA-256 stayed
+`0f0d2aab18927912a93f53b8e4c1e3a5c0abd564c1647128133cee92758f5fbc`
+for RunnerOps and
+`00ca7aa43031394580c78b281715201f2da8008a1c192455d343f76fcf4cb673`
+for FetchCore. Both validations reproduced the path impacts and before/after
+fingerprints in the table above, with `applied: false` and no truncation.
+
+These were separate canonical executions and sequential rubric checks by the
+same coding agent. The archived YAMLs were validated twice, not independently
+generated by two isolated model sessions. The observed agreement therefore
+supports the CLI and this evidence-based reconciliation, but does not prove
+that future LLM reviews will always choose the same candidate or wording.
