@@ -1,0 +1,527 @@
+{
+  "operation": "corpus",
+  "result": {
+    "coverage": {
+      "discovered_by_source_kind": {
+        ".css": 1,
+        ".example": 2,
+        ".gitignore": 1,
+        ".html": 1,
+        ".jpg": 3,
+        ".js": 1,
+        ".json": 4,
+        ".md": 28,
+        ".nojekyll": 1,
+        ".py": 52,
+        ".sh": 29,
+        ".svg": 1,
+        ".yml": 7,
+        "<no-extension>": 3
+      },
+      "eligible_by_source_kind": {
+        ".example": 1,
+        ".gitignore": 1,
+        ".html": 1,
+        ".js": 1,
+        ".json": 4,
+        ".md": 28,
+        ".py": 52,
+        ".sh": 29,
+        ".yml": 7,
+        "<no-extension>": 2
+      },
+      "read_by_source_kind": {
+        ".example": 1,
+        ".gitignore": 1,
+        ".html": 1,
+        ".js": 1,
+        ".json": 4,
+        ".md": 28,
+        ".py": 52,
+        ".sh": 29,
+        ".yml": 7,
+        "<no-extension>": 2
+      },
+      "skipped_by_reason_and_source_kind": {
+        "not_included": {
+          ".css": 1,
+          ".example": 1,
+          ".jpg": 3,
+          ".nojekyll": 1,
+          ".svg": 1,
+          "<no-extension>": 1
+        }
+      },
+      "unvisited_by_source_kind": {}
+    },
+    "document_policy": {
+      "enabled": false,
+      "formats": [
+        "pdf",
+        "xlsx"
+      ],
+      "include_patterns": [
+        "*.pdf",
+        "*.xlsx"
+      ],
+      "max_file_bytes": 20000000,
+      "max_files": 200,
+      "max_total_bytes": 64000000,
+      "source": null,
+      "version": 1
+    },
+    "impact": {
+      "added_read_paths": [
+        ".env.example",
+        "runnerctl",
+        "scripts/systemd/runnerops-systemctl"
+      ],
+      "after_fingerprint": "sha256:c7375a4873297746ec438d4447289af40522053688b14eff64ce56828e21e9ed",
+      "after_truncated": false,
+      "applied": false,
+      "before_fingerprint": "sha256:05b062d902618c1017a6548124dd606bedf2635ec903a4ac0019655a18f9d885",
+      "before_truncated": false,
+      "removed_read_paths": []
+    },
+    "indexing": {
+      "document_extractors": [],
+      "extractors": [
+        "dart",
+        "groovy",
+        "html",
+        "java",
+        "javascript",
+        "python",
+        "shell",
+        "typescript"
+      ],
+      "fingerprint": "sha256:c7375a4873297746ec438d4447289af40522053688b14eff64ce56828e21e9ed",
+      "semantic": {
+        "corpus_resolvers": [],
+        "enrichers": [],
+        "source_interpreters": []
+      }
+    },
+    "knowledge_packs": [],
+    "mode": "scan",
+    "policy": {
+      "chunking": {
+        "markdown_max_chars": 48000,
+        "max_lines": 160,
+        "overlap_lines": 20
+      },
+      "classification_rules": [
+        {
+          "knowledge_type": "tests",
+          "pattern": "tests/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "test/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "**/tests/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "**/test/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "__tests__/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "**/__tests__/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "test_*.*"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*_test.*"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*.test.*"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*.spec.*"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*Test.java"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*Tests.cs"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "docs/**"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "doc/**"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "README*"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "CHANGELOG*"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "requirements*.txt"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "constraints*.txt"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": ".*ignore"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": ".editorconfig"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "*.md"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "*.rst"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "*.txt"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "Dockerfile"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "Makefile"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.json"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.yaml"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.yml"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.toml"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.xml"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.properties"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.ini"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.cfg"
+        }
+      ],
+      "corpus": {
+        "default_origin": "unknown",
+        "default_purpose": "unknown",
+        "origin": [],
+        "purpose": []
+      },
+      "enabled_extractors": null,
+      "exclude_patterns": [
+        ".git",
+        ".fetchcore",
+        ".agentsorch",
+        ".venv",
+        "venv",
+        "node_modules",
+        "vendor",
+        "build",
+        "dist",
+        "target",
+        "coverage",
+        "generated",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache"
+      ],
+      "include_patterns": [
+        "*.py",
+        "*.pyi",
+        "*.js",
+        "*.jsx",
+        "*.mjs",
+        "*.cjs",
+        "*.ts",
+        "*.tsx",
+        "*.mts",
+        "*.cts",
+        "*.java",
+        "*.kt",
+        "*.kts",
+        "*.go",
+        "*.rs",
+        "*.cs",
+        "*.rb",
+        "*.php",
+        "*.swift",
+        "*.scala",
+        "*.groovy",
+        "*.dart",
+        "*.sh",
+        "*.html",
+        "*.htm",
+        "*.md",
+        "*.rst",
+        "*.txt",
+        "*.json",
+        "*.yaml",
+        "*.yml",
+        "*.toml",
+        "*.xml",
+        "*.properties",
+        "*.ini",
+        "*.cfg",
+        ".*ignore",
+        ".editorconfig",
+        "Dockerfile",
+        "Makefile",
+        "runnerctl",
+        ".env.example",
+        "scripts/systemd/runnerops-systemctl"
+      ],
+      "limits": {
+        "max_file_bytes": 1000000,
+        "max_files": 1000,
+        "max_total_bytes": 32000000
+      },
+      "source": "/tmp/fetchcore-eval-runnerops-proposal.yaml",
+      "technical_role_rules": [
+        {
+          "role": "controller",
+          "token": "Controller"
+        },
+        {
+          "role": "service",
+          "token": "Service"
+        },
+        {
+          "role": "facade",
+          "token": "Facade"
+        },
+        {
+          "role": "repository",
+          "token": "Repository"
+        },
+        {
+          "role": "dao",
+          "token": "Dao"
+        },
+        {
+          "role": "client",
+          "token": "Client"
+        },
+        {
+          "role": "gateway",
+          "token": "Gateway"
+        },
+        {
+          "role": "adapter",
+          "token": "Adapter"
+        },
+        {
+          "role": "mapper",
+          "token": "Mapper"
+        },
+        {
+          "role": "converter",
+          "token": "Converter"
+        },
+        {
+          "role": "populator",
+          "token": "Populator"
+        },
+        {
+          "role": "configuration",
+          "token": "Configuration"
+        },
+        {
+          "role": "configuration",
+          "token": "Config"
+        },
+        {
+          "role": "model",
+          "token": "Model"
+        },
+        {
+          "role": "entity",
+          "token": "Entity"
+        },
+        {
+          "role": "dto",
+          "token": "Dto"
+        },
+        {
+          "role": "event",
+          "token": "Event"
+        },
+        {
+          "role": "listener",
+          "token": "Listener"
+        },
+        {
+          "role": "handler",
+          "token": "Handler"
+        },
+        {
+          "role": "command",
+          "token": "Command"
+        },
+        {
+          "role": "job",
+          "token": "Job"
+        },
+        {
+          "role": "cron",
+          "token": "Cron"
+        },
+        {
+          "role": "process",
+          "token": "Process"
+        },
+        {
+          "role": "workflow",
+          "token": "Workflow"
+        },
+        {
+          "role": "interceptor",
+          "token": "Interceptor"
+        },
+        {
+          "role": "validator",
+          "token": "Validator"
+        },
+        {
+          "role": "strategy",
+          "token": "Strategy"
+        },
+        {
+          "role": "factory",
+          "token": "Factory"
+        },
+        {
+          "role": "provider",
+          "token": "Provider"
+        },
+        {
+          "role": "fixture",
+          "token": "Fixture"
+        },
+        {
+          "role": "migration",
+          "token": "Migration"
+        },
+        {
+          "role": "script",
+          "token": "Script"
+        }
+      ],
+      "version": 1
+    },
+    "repository": {
+      "branch": null,
+      "id": "local/corpus-inspection",
+      "revision": null,
+      "workspace": "/tmp/fetchcore-corpus-eval-runnerops"
+    },
+    "scan": {
+      "bytes_read": 1353324,
+      "discovered_files": 134,
+      "eligible_files": 126,
+      "files_read": 126,
+      "skipped": {
+        "not_included": 8
+      },
+      "truncated": false,
+      "truncation_reasons": []
+    },
+    "source_paths": [
+      ".env.example",
+      ".github/copilot-instructions.md",
+      ".github/scripts/release-version.py",
+      ".github/scripts/resolve-runner-identity.py",
+      ".github/workflows/pages.yml",
+      ".github/workflows/release.yml",
+      ".github/workflows/validate.yml",
+      ".gitignore",
+      "AGENTS.md",
+      "CHANGELOG.md",
+      "README.md",
+      "agents/runnerops-operator/AGENT.md",
+      "docs/autoscale-audit-store.md",
+      "docs/autoscale-controller.md",
+      "docs/autoscale-planner.md",
+      "docs/autoscale-pressure-evidence.md",
+      "docs/autoscale-scheduler.md",
+      "docs/capacity-collector.md",
+      "docs/capacity-snapshot.md",
+      "docs/dogfood-v0.3.md",
+      "docs/ephemeral-lifecycle.md",
+      "docs/evidence/issue-120-adversarial-hardening.json",
+      "docs/evidence/issue-120-final-real-host-qualification.json",
+      "docs/evidence/issue-120-real-host-qualification.json",
+      "docs/issue-120-adversarial-hardening-report.md",
+      "docs/issue-120-final-real-host-qualification.md",
+      "docs/issue-120-real-host-qualification.md",
+      "docs/issue-138-real-host-qualification.md",
+      "docs/notebook-central-blueprint.md",
+      "docs/operational-evidence.md",
+      "docs/operational-review.md",
+      "docs/release-notes.md",
+      "docs/releasing.md",
+      "docs/systemd-cockpit-migration.md",
+      "install.sh",
+      "runnerctl",
+      "scripts/cache/cache.sh",
+      "scripts/cache/env.sh",
+      "scripts/cache/prewarm-actions.sh",
+      "scripts/cache/prewarm-cache.sh",
+      "scripts/ci/watch.sh",
+      "scripts/runner/configure.sh",
+      "scripts/runner/ephemeral.sh",
+      "scripts/runner/lifecycle.sh",
+      "scripts/runner/package.sh",
+      "scripts/runner/runtime-env.sh",
+      "scripts/runner/services.sh",
+      "scripts/setup/authorize-runtime.sh",
+      "scripts/setup/init-machine-config.sh",
+      "scripts/setup/install-agent-skills.sh"
+    ],
+    "source_paths_truncated": true
+  },
+  "status": "succeeded"
+}

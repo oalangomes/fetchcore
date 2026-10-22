@@ -1,14 +1,15 @@
 ---
 name: fetchcore-corpus-advisor
-description: Advise on a software repository's FetchCore corpus through a complete read-only scan, canonical extraction, targeted investigation, and reviewed policy recommendation. Use for onboarding, coverage gaps, policy proposals, or corpus noise reviews.
+description: Advise on a software repository's FetchCore corpus through canonical scan and extraction, targeted investigation, independent policy critique, and a validated recommendation. Use for onboarding, coverage gaps, policy proposals, or corpus noise reviews.
 ---
 
 # FetchCore Corpus Advisor
 
-Complete one review in one invocation: **SCAN → DEEP → INVESTIGATE → PROPOSE
-→ REVIEW**. FetchCore produces canonical observations; the coding agent
-investigates their meaning and recommends policy; the user decides whether to
-apply it. Source kind, path names and retrieval signals confer no authority.
+Complete one review in one invocation: **SCAN → DEEP → INVESTIGATE → DRAFT POLICY
+→ CRITIC → RECONCILE → VALIDATE → REVIEW**. FetchCore produces canonical
+observations; the coding agent investigates their meaning and recommends
+policy; the user decides whether to apply it. Source kind, path names,
+imports and retrieval signals confer no authority.
 The target repository may use any language and need not contain FetchCore.
 
 ## Boundaries and setup
@@ -96,15 +97,64 @@ continue investigating now. At the ceiling, mark the affected decision
 prevents a responsible policy recommendation. Do not request a second prompt
 to resolve an anomaly already found.
 
-## 4. PROPOSE: make the policy decision explicit
+## 4. DRAFT POLICY: make a provisional decision
 
-Always end a completed review with `include`, `exclude`, `preserve`,
-`no_change` or `needs_review` decisions and supporting paths/spans.
-`no_change` requires the same investigation and review as a changed policy.
+Record preliminary `include`, `exclude`, `preserve`, `no_change` or
+`needs_review` decisions with paths/spans. For each proposed admission or
+exclusion, identify the concrete engineering questions it could answer, what
+knowledge is unique relative to already selected sources, likely redundancy,
+provenance and security concerns. A repository consumer proves use, not
+retrieval value. Do not change a policy simply because a path is unselected,
+imported, duplicated or has an unusual extension.
+
+## 5. CRITIC: seek an independent challenge
+
+Delegate exactly one **Corpus Policy Critic** through the coding environment's
+native subagent mechanism when an `indexing.yaml` change is proposed or an
+exclusion decision could lose technical evidence. Also delegate for
+`no_change` when significant anomalies or controversial decisions remain; do
+not delegate a trivial `no_change` solely to repeat the parent analysis.
+The skill itself explicitly requests this bounded delegation. Do not create
+an agent framework, subprocess supervisor or FetchCore runtime component.
+
+Give the critic repository identity and purpose, fixed revision/tree state,
+current policy, effective indexer capabilities, relevant SCAN/DEEP diagnostics,
+candidate paths and bounded code evidence, objectives and investigation limits.
+**First ask for the critic's own assessment from this evidence without the
+parent's proposed decisions.** Then share the provisional decisions and ask
+the same critic to challenge each one. Wait for both responses before
+reconciling or validating the candidate. A separate subagent session and its
+actual response are required for a claim of independence; a self-review is
+not independent. The critic may make focused local reads, but must not repeat
+SCAN/DEEP, modify files, apply policy, embed content or access backends.
+Ask it not to spawn further agents. Follow
+[critic-review.md](references/critic-review.md) for the decision rubric and
+response contract.
+
+If native delegation is unavailable, continue the review without pretending
+it occurred. State `independent_review: unavailable`, why, and which
+decisions remain provisional. Do not install tools or simulate a second agent.
+
+## 6. RECONCILE: decide with evidence
+
+For each candidate, record preliminary decision, critic verdict and
+objections, additional evidence if needed, final decision, and why each
+substantiated objection was accepted or rejected. Investigate resolvable
+objections within the normal INVESTIGATE budget. Do not force consensus:
+use `needs_review` when the available evidence cannot resolve a material
+conflict. Agent agreement alone does not establish retrieval quality. The
+parent owns the final recommendation, which may differ from the draft.
+
+## 7. VALIDATE: compare only the final candidate
+
+Always end a completed review with explicit decisions and supporting
+paths/spans. `no_change` requires a reasoned decision, including any
+important anomaly that triggered critique.
 
 When a change is justified, preserve existing fields, order and comments;
 show the full candidate `indexing.yaml` and a minimal unified diff. Put the
-candidate in an external temporary file, then validate and compare it:
+reconciled candidate in an external temporary file, then validate and compare
+it with the canonical CLI:
 
 ```bash
 fetchcore index --workspace "$PWD" corpus \
@@ -115,6 +165,9 @@ Report paths newly read and no longer read, before/after fingerprints,
 truncation, knowledge-loss risks, and rules preserved. The CLI compares safe
 scan selection, not extracted documents or retrieval quality. An invalid
 candidate fails closed; do not replace it with defaults.
+Check the full path diff against intended paths: a filename pattern can match
+the same basename in nested directories. Revise and revalidate an unintended
+admission or loss.
 
 If the existing policy is adequate, show its complete YAML, an empty diff,
 the rules preserved and the evidence for `no_change`. If no policy exists,
@@ -123,14 +176,15 @@ file, state `policy: absent` and the effective configuration; do not create
 an artificial YAML file or claim that an explicit file is equivalent to absent
 policy. A first explicit policy may disable conditional pack defaults.
 
-## 5. REVIEW: completion gate
+## 8. REVIEW: completion gate
 
 Before concluding, check that DEEP succeeded; major anomalies were explained
 or explicitly bounded; public interfaces and likely omitted technical sources
 were evaluated; selection, extraction and duplication claims are separated;
 each decision has evidence; proposal impact and fingerprint are reported when
-applicable; and residual limits are stated. If a consequential item is still
-investigable within budget, return to INVESTIGATE. Otherwise return
+applicable; required independent critique and reconciliation occurred or
+their absence is disclosed; and residual limits are stated. If a consequential
+item is still investigable within budget, return to INVESTIGATE. Otherwise return
 `investigation_incomplete` or `needs_review` for the affected decision,
 without implying the review is complete. Never equate fewer bytes with better
 retrieval or infer retrieval quality from corpus counts.
@@ -138,3 +192,5 @@ retrieval or infer retrieval quality from corpus counts.
 For installation and migration, see [installation.md](references/installation.md).
 For a bounded, two-repository behavioral exercise, see
 [validation.md](references/validation.md).
+For the independent-critic comparison, see
+[comparative-evaluation.md](references/comparative-evaluation.md).

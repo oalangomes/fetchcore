@@ -1,0 +1,632 @@
+{
+  "operation": "corpus",
+  "result": {
+    "corpus_diagnostics": {
+      "cross_origin_duplicate_group_count": 0,
+      "cross_purpose_duplicate_group_count": 0,
+      "duplicate_group_count": 0,
+      "duplicate_groups": [],
+      "duplicate_groups_truncated": false,
+      "duplicate_source_files": 0,
+      "inconsistent_source_metadata_paths": [],
+      "indexed_generated_sources": 0,
+      "indexed_mirrored_sources": 0,
+      "indexed_runtime_sources": 0,
+      "path_signal_counts": {
+        "cache_like": 4,
+        "runtime_like": 1
+      },
+      "path_signal_samples": {
+        "cache_like": [
+          "scripts/cache/cache.sh",
+          "scripts/cache/env.sh",
+          "scripts/cache/prewarm-actions.sh",
+          "scripts/cache/prewarm-cache.sh"
+        ],
+        "runtime_like": [
+          "skills/runnerops-pr-validation/SKILL.md"
+        ]
+      },
+      "redundant_source_bytes": 0,
+      "redundant_source_files": 0,
+      "sources_by_origin": {
+        "unknown": 123
+      },
+      "sources_by_purpose": {
+        "unknown": 123
+      },
+      "sources_observed": 123
+    },
+    "document_policy": {
+      "enabled": false,
+      "formats": [
+        "pdf",
+        "xlsx"
+      ],
+      "include_patterns": [
+        "*.pdf",
+        "*.xlsx"
+      ],
+      "max_file_bytes": 20000000,
+      "max_files": 200,
+      "max_total_bytes": 64000000,
+      "source": null,
+      "version": 1
+    },
+    "indexing": {
+      "document_extractors": [],
+      "extractors": [
+        "dart",
+        "groovy",
+        "html",
+        "java",
+        "javascript",
+        "python",
+        "shell",
+        "typescript"
+      ],
+      "fingerprint": "sha256:05b062d902618c1017a6548124dd606bedf2635ec903a4ac0019655a18f9d885",
+      "semantic": {
+        "corpus_resolvers": [],
+        "enrichers": [],
+        "source_interpreters": []
+      }
+    },
+    "knowledge_packs": [],
+    "mode": "deep",
+    "policy": {
+      "chunking": {
+        "markdown_max_chars": 48000,
+        "max_lines": 160,
+        "overlap_lines": 20
+      },
+      "classification_rules": [
+        {
+          "knowledge_type": "tests",
+          "pattern": "tests/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "test/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "**/tests/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "**/test/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "__tests__/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "**/__tests__/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "test_*.*"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*_test.*"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*.test.*"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*.spec.*"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*Test.java"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*Tests.cs"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "docs/**"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "doc/**"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "README*"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "CHANGELOG*"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "requirements*.txt"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "constraints*.txt"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": ".*ignore"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": ".editorconfig"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "*.md"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "*.rst"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "*.txt"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "Dockerfile"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "Makefile"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.json"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.yaml"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.yml"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.toml"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.xml"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.properties"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.ini"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.cfg"
+        }
+      ],
+      "corpus": {
+        "default_origin": "unknown",
+        "default_purpose": "unknown",
+        "origin": [],
+        "purpose": []
+      },
+      "enabled_extractors": null,
+      "exclude_patterns": [
+        ".git",
+        ".fetchcore",
+        ".agentsorch",
+        ".venv",
+        "venv",
+        "node_modules",
+        "vendor",
+        "build",
+        "dist",
+        "target",
+        "coverage",
+        "generated",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache"
+      ],
+      "include_patterns": [
+        "*.py",
+        "*.pyi",
+        "*.js",
+        "*.jsx",
+        "*.mjs",
+        "*.cjs",
+        "*.ts",
+        "*.tsx",
+        "*.mts",
+        "*.cts",
+        "*.java",
+        "*.kt",
+        "*.kts",
+        "*.go",
+        "*.rs",
+        "*.cs",
+        "*.rb",
+        "*.php",
+        "*.swift",
+        "*.scala",
+        "*.groovy",
+        "*.dart",
+        "*.sh",
+        "*.html",
+        "*.htm",
+        "*.md",
+        "*.rst",
+        "*.txt",
+        "*.json",
+        "*.yaml",
+        "*.yml",
+        "*.toml",
+        "*.xml",
+        "*.properties",
+        "*.ini",
+        "*.cfg",
+        ".*ignore",
+        ".editorconfig",
+        "Dockerfile",
+        "Makefile"
+      ],
+      "limits": {
+        "max_file_bytes": 1000000,
+        "max_files": 1000,
+        "max_total_bytes": 32000000
+      },
+      "source": null,
+      "technical_role_rules": [
+        {
+          "role": "controller",
+          "token": "Controller"
+        },
+        {
+          "role": "service",
+          "token": "Service"
+        },
+        {
+          "role": "facade",
+          "token": "Facade"
+        },
+        {
+          "role": "repository",
+          "token": "Repository"
+        },
+        {
+          "role": "dao",
+          "token": "Dao"
+        },
+        {
+          "role": "client",
+          "token": "Client"
+        },
+        {
+          "role": "gateway",
+          "token": "Gateway"
+        },
+        {
+          "role": "adapter",
+          "token": "Adapter"
+        },
+        {
+          "role": "mapper",
+          "token": "Mapper"
+        },
+        {
+          "role": "converter",
+          "token": "Converter"
+        },
+        {
+          "role": "populator",
+          "token": "Populator"
+        },
+        {
+          "role": "configuration",
+          "token": "Configuration"
+        },
+        {
+          "role": "configuration",
+          "token": "Config"
+        },
+        {
+          "role": "model",
+          "token": "Model"
+        },
+        {
+          "role": "entity",
+          "token": "Entity"
+        },
+        {
+          "role": "dto",
+          "token": "Dto"
+        },
+        {
+          "role": "event",
+          "token": "Event"
+        },
+        {
+          "role": "listener",
+          "token": "Listener"
+        },
+        {
+          "role": "handler",
+          "token": "Handler"
+        },
+        {
+          "role": "command",
+          "token": "Command"
+        },
+        {
+          "role": "job",
+          "token": "Job"
+        },
+        {
+          "role": "cron",
+          "token": "Cron"
+        },
+        {
+          "role": "process",
+          "token": "Process"
+        },
+        {
+          "role": "workflow",
+          "token": "Workflow"
+        },
+        {
+          "role": "interceptor",
+          "token": "Interceptor"
+        },
+        {
+          "role": "validator",
+          "token": "Validator"
+        },
+        {
+          "role": "strategy",
+          "token": "Strategy"
+        },
+        {
+          "role": "factory",
+          "token": "Factory"
+        },
+        {
+          "role": "provider",
+          "token": "Provider"
+        },
+        {
+          "role": "fixture",
+          "token": "Fixture"
+        },
+        {
+          "role": "migration",
+          "token": "Migration"
+        },
+        {
+          "role": "script",
+          "token": "Script"
+        }
+      ],
+      "version": 1
+    },
+    "repository": {
+      "branch": null,
+      "id": "local/corpus-inspection",
+      "revision": null,
+      "workspace": "/tmp/fetchcore-corpus-eval-runnerops"
+    },
+    "telemetry": {
+      "added": 1788,
+      "chunks_changed": 1788,
+      "chunks_total": 1788,
+      "document_sources": {
+        "bytes_read": 0,
+        "complete": true,
+        "documents_by_format": {},
+        "documents_produced": 0,
+        "extraction_failures": {},
+        "files_discovered": 134,
+        "files_eligible": 0,
+        "files_evaluated": 134,
+        "files_extracted": 0,
+        "files_read": 0,
+        "files_with_documents": 0,
+        "skipped": {
+          "not_included": 134
+        },
+        "truncated": false,
+        "truncation_reasons": []
+      },
+      "documents_by_knowledge_type": {
+        "code": 1027,
+        "configuration": 40,
+        "documentation": 329,
+        "tests": 392
+      },
+      "documents_by_technical_role": {
+        "command": 3,
+        "configuration": 60,
+        "controller": 59,
+        "entity": 16,
+        "job": 1,
+        "migration": 11,
+        "model": 2,
+        "repository": 2,
+        "script": 646,
+        "service": 1,
+        "test": 392,
+        "unknown": 591,
+        "workflow": 4
+      },
+      "documents_produced": 1788,
+      "duration_ms": 3734,
+      "files_changed": 123,
+      "files_discovered": 134,
+      "files_eligible": 123,
+      "files_evaluated": 134,
+      "files_indexed": 123,
+      "files_read": 123,
+      "files_scanned": 134,
+      "files_skipped": 11,
+      "files_unvisited_due_to_truncation": 0,
+      "indexing_throughput_chunks_per_second": 478.843,
+      "removal_detection_blockers": [],
+      "removal_detection_complete": true,
+      "removed": 0,
+      "repository": "local/corpus-inspection",
+      "revision": "5a72fa122d5664e217299e16420fcd7d48b67a92",
+      "scan_traversal_complete": true,
+      "scan_truncated": false,
+      "skip_reasons": {
+        "not_included": 11
+      },
+      "source_coverage": {
+        "by_language": {
+          "html": {
+            "documents": 4,
+            "files_indexed": 1,
+            "files_read": 1,
+            "files_with_symbol_chunks": 1,
+            "implementation_files": 1,
+            "structural_capability_files": 1,
+            "textual_only_implementation_files": 0
+          },
+          "javascript": {
+            "documents": 7,
+            "files_indexed": 1,
+            "files_read": 1,
+            "files_with_symbol_chunks": 1,
+            "implementation_files": 1,
+            "structural_capability_files": 1,
+            "textual_only_implementation_files": 0
+          },
+          "json": {
+            "documents": 5,
+            "files_indexed": 4,
+            "files_read": 4,
+            "files_with_symbol_chunks": 0,
+            "implementation_files": 1,
+            "structural_capability_files": 0,
+            "textual_only_implementation_files": 1
+          },
+          "markdown": {
+            "documents": 325,
+            "files_indexed": 28,
+            "files_read": 28,
+            "files_with_symbol_chunks": 0,
+            "implementation_files": 0,
+            "structural_capability_files": 0,
+            "textual_only_implementation_files": 0
+          },
+          "python": {
+            "documents": 476,
+            "files_indexed": 52,
+            "files_read": 52,
+            "files_with_symbol_chunks": 48,
+            "implementation_files": 52,
+            "structural_capability_files": 52,
+            "textual_only_implementation_files": 0
+          },
+          "shell": {
+            "documents": 931,
+            "files_indexed": 29,
+            "files_read": 29,
+            "files_with_symbol_chunks": 29,
+            "implementation_files": 29,
+            "structural_capability_files": 29,
+            "textual_only_implementation_files": 0
+          },
+          "unknown": {
+            "documents": 1,
+            "files_indexed": 1,
+            "files_read": 1,
+            "files_with_symbol_chunks": 0,
+            "implementation_files": 0,
+            "structural_capability_files": 0,
+            "textual_only_implementation_files": 0
+          },
+          "yaml": {
+            "documents": 39,
+            "files_indexed": 7,
+            "files_read": 7,
+            "files_with_symbol_chunks": 0,
+            "implementation_files": 0,
+            "structural_capability_files": 0,
+            "textual_only_implementation_files": 0
+          }
+        },
+        "discovered_by_source_kind": {
+          ".css": 1,
+          ".example": 2,
+          ".gitignore": 1,
+          ".html": 1,
+          ".jpg": 3,
+          ".js": 1,
+          ".json": 4,
+          ".md": 28,
+          ".nojekyll": 1,
+          ".py": 52,
+          ".sh": 29,
+          ".svg": 1,
+          ".yml": 7,
+          "<no-extension>": 3
+        },
+        "eligible_by_source_kind": {
+          ".gitignore": 1,
+          ".html": 1,
+          ".js": 1,
+          ".json": 4,
+          ".md": 28,
+          ".py": 52,
+          ".sh": 29,
+          ".yml": 7
+        },
+        "excluded_by_source_kind": {},
+        "files_indexed": 123,
+        "files_read": 123,
+        "files_without_documents": 0,
+        "files_without_documents_by_source_kind": {},
+        "implementation_files_indexed": 84,
+        "implementation_files_read": 84,
+        "implementation_files_structural_capability": 83,
+        "implementation_files_textual_only": 1,
+        "implementation_files_with_symbol_chunks": 79,
+        "knowledge_files_read": 39,
+        "not_included_by_source_kind": {
+          ".css": 1,
+          ".example": 2,
+          ".jpg": 3,
+          ".nojekyll": 1,
+          ".svg": 1,
+          "<no-extension>": 3
+        },
+        "read_by_source_kind": {
+          ".gitignore": 1,
+          ".html": 1,
+          ".js": 1,
+          ".json": 4,
+          ".md": 28,
+          ".py": 52,
+          ".sh": 29,
+          ".yml": 7
+        },
+        "unvisited_by_source_kind": {}
+      },
+      "truncated_files": 0,
+      "truncation_reasons": [],
+      "unchanged": 0,
+      "updated": 0
+    }
+  },
+  "status": "succeeded"
+}

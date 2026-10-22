@@ -1,0 +1,573 @@
+{
+  "operation": "corpus",
+  "result": {
+    "coverage": {
+      "api_artifact_status_counts": {
+        "invalid": 1,
+        "quarantined_by_filename": 4,
+        "supported": 1
+      },
+      "discovered_by_source_kind": {
+        ".conf": 1,
+        ".css": 1,
+        ".dockerignore": 1,
+        ".example": 2,
+        ".gitignore": 2,
+        ".gz": 46,
+        ".html": 1,
+        ".js": 2,
+        ".json": 130,
+        ".lock": 1,
+        ".md": 135,
+        ".png": 10,
+        ".py": 310,
+        ".sh": 2,
+        ".svg": 8,
+        ".toml": 1,
+        ".ts": 19,
+        ".tsx": 10,
+        ".txt": 1,
+        ".xml": 4,
+        ".yaml": 10,
+        ".yml": 22,
+        "<no-extension>": 1,
+        "Dockerfile": 2,
+        "Makefile": 1
+      },
+      "eligible_by_source_kind": {
+        ".dockerignore": 1,
+        ".gitignore": 1,
+        ".html": 1,
+        ".js": 2,
+        ".json": 83,
+        ".md": 126,
+        ".py": 310,
+        ".sh": 2,
+        ".toml": 1,
+        ".ts": 19,
+        ".tsx": 10,
+        ".txt": 1,
+        ".xml": 4,
+        ".yaml": 7,
+        ".yml": 22,
+        "Dockerfile": 2,
+        "Makefile": 1
+      },
+      "read_by_source_kind": {
+        ".dockerignore": 1,
+        ".gitignore": 1,
+        ".html": 1,
+        ".js": 2,
+        ".json": 78,
+        ".md": 126,
+        ".py": 310,
+        ".sh": 2,
+        ".toml": 1,
+        ".ts": 19,
+        ".tsx": 10,
+        ".txt": 1,
+        ".xml": 4,
+        ".yaml": 6,
+        ".yml": 22,
+        "Dockerfile": 2,
+        "Makefile": 1
+      },
+      "skipped_by_reason_and_source_kind": {
+        "api_artifact_blocked_openapi": {
+          ".json": 3
+        },
+        "api_artifact_blocked_postman_collection": {
+          ".json": 1
+        },
+        "api_artifact_blocked_postman_environment": {
+          ".json": 1
+        },
+        "api_artifact_blocked_swagger": {
+          ".yaml": 1
+        },
+        "excluded": {
+          ".gitignore": 1,
+          ".json": 47,
+          ".md": 9,
+          ".yaml": 3
+        },
+        "not_included": {
+          ".conf": 1,
+          ".css": 1,
+          ".example": 2,
+          ".gz": 46,
+          ".lock": 1,
+          ".png": 10,
+          ".svg": 8,
+          "<no-extension>": 1
+        }
+      },
+      "unvisited_by_source_kind": {}
+    },
+    "document_policy": {
+      "enabled": false,
+      "formats": [
+        "pdf",
+        "xlsx"
+      ],
+      "include_patterns": [
+        "*.pdf",
+        "*.xlsx"
+      ],
+      "max_file_bytes": 20000000,
+      "max_files": 200,
+      "max_total_bytes": 64000000,
+      "source": null,
+      "version": 1
+    },
+    "indexing": {
+      "document_extractors": [],
+      "extractors": [
+        "dart",
+        "groovy",
+        "html",
+        "java",
+        "javascript",
+        "python",
+        "shell",
+        "typescript"
+      ],
+      "fingerprint": "sha256:3dd558e6c73848fa2b5e38738a50f48981a226f27e39b3dc27c2bc364bb57747",
+      "semantic": {
+        "corpus_resolvers": [],
+        "enrichers": [],
+        "source_interpreters": []
+      }
+    },
+    "knowledge_packs": [],
+    "mode": "scan",
+    "policy": {
+      "chunking": {
+        "markdown_max_chars": 48000,
+        "max_lines": 160,
+        "overlap_lines": 20
+      },
+      "classification_rules": [
+        {
+          "knowledge_type": "tests",
+          "pattern": "dogfood/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "tests/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "test/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "**/tests/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "**/test/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "__tests__/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "**/__tests__/**"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "test_*.*"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*_test.*"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*.test.*"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*.spec.*"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*Test.java"
+        },
+        {
+          "knowledge_type": "tests",
+          "pattern": "*Tests.cs"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "docs/**"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "doc/**"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "README*"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "CHANGELOG*"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "requirements*.txt"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "constraints*.txt"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": ".*ignore"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": ".editorconfig"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "*.md"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "*.rst"
+        },
+        {
+          "knowledge_type": "documentation",
+          "pattern": "*.txt"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "Dockerfile"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "Makefile"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.json"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.yaml"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.yml"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.toml"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.xml"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.properties"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.ini"
+        },
+        {
+          "knowledge_type": "configuration",
+          "pattern": "*.cfg"
+        }
+      ],
+      "corpus": {
+        "default_origin": "unknown",
+        "default_purpose": "unknown",
+        "origin": [],
+        "purpose": []
+      },
+      "enabled_extractors": null,
+      "exclude_patterns": [
+        ".git",
+        ".fetchcore",
+        ".agentsorch",
+        ".venv",
+        "venv",
+        "node_modules",
+        "vendor",
+        "build",
+        "dist",
+        "target",
+        "coverage",
+        "generated",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "benchmarks/baseline-v1/artifacts/**",
+        ".fetchcore-dogfood/**",
+        "dogfood/scenarios/**"
+      ],
+      "include_patterns": [
+        "*.py",
+        "*.pyi",
+        "*.js",
+        "*.jsx",
+        "*.mjs",
+        "*.cjs",
+        "*.ts",
+        "*.tsx",
+        "*.mts",
+        "*.cts",
+        "*.java",
+        "*.kt",
+        "*.kts",
+        "*.go",
+        "*.rs",
+        "*.cs",
+        "*.rb",
+        "*.php",
+        "*.swift",
+        "*.scala",
+        "*.groovy",
+        "*.dart",
+        "*.sh",
+        "*.html",
+        "*.htm",
+        "*.md",
+        "*.rst",
+        "*.txt",
+        "*.json",
+        "*.yaml",
+        "*.yml",
+        "*.toml",
+        "*.xml",
+        "*.properties",
+        "*.ini",
+        "*.cfg",
+        ".*ignore",
+        ".editorconfig",
+        "Dockerfile",
+        "Makefile"
+      ],
+      "limits": {
+        "max_file_bytes": 1000000,
+        "max_files": 2500,
+        "max_total_bytes": 64000000
+      },
+      "source": "/tmp/fetchcore-corpus-eval-fetchcore/.fetchcore/indexing.yaml",
+      "technical_role_rules": [
+        {
+          "role": "controller",
+          "token": "Controller"
+        },
+        {
+          "role": "service",
+          "token": "Service"
+        },
+        {
+          "role": "facade",
+          "token": "Facade"
+        },
+        {
+          "role": "repository",
+          "token": "Repository"
+        },
+        {
+          "role": "dao",
+          "token": "Dao"
+        },
+        {
+          "role": "client",
+          "token": "Client"
+        },
+        {
+          "role": "gateway",
+          "token": "Gateway"
+        },
+        {
+          "role": "adapter",
+          "token": "Adapter"
+        },
+        {
+          "role": "mapper",
+          "token": "Mapper"
+        },
+        {
+          "role": "converter",
+          "token": "Converter"
+        },
+        {
+          "role": "populator",
+          "token": "Populator"
+        },
+        {
+          "role": "configuration",
+          "token": "Configuration"
+        },
+        {
+          "role": "configuration",
+          "token": "Config"
+        },
+        {
+          "role": "model",
+          "token": "Model"
+        },
+        {
+          "role": "entity",
+          "token": "Entity"
+        },
+        {
+          "role": "dto",
+          "token": "Dto"
+        },
+        {
+          "role": "event",
+          "token": "Event"
+        },
+        {
+          "role": "listener",
+          "token": "Listener"
+        },
+        {
+          "role": "handler",
+          "token": "Handler"
+        },
+        {
+          "role": "command",
+          "token": "Command"
+        },
+        {
+          "role": "job",
+          "token": "Job"
+        },
+        {
+          "role": "cron",
+          "token": "Cron"
+        },
+        {
+          "role": "process",
+          "token": "Process"
+        },
+        {
+          "role": "workflow",
+          "token": "Workflow"
+        },
+        {
+          "role": "interceptor",
+          "token": "Interceptor"
+        },
+        {
+          "role": "validator",
+          "token": "Validator"
+        },
+        {
+          "role": "strategy",
+          "token": "Strategy"
+        },
+        {
+          "role": "factory",
+          "token": "Factory"
+        },
+        {
+          "role": "provider",
+          "token": "Provider"
+        },
+        {
+          "role": "fixture",
+          "token": "Fixture"
+        },
+        {
+          "role": "migration",
+          "token": "Migration"
+        },
+        {
+          "role": "script",
+          "token": "Script"
+        }
+      ],
+      "version": 1
+    },
+    "repository": {
+      "branch": null,
+      "id": "local/corpus-inspection",
+      "revision": null,
+      "workspace": "/tmp/fetchcore-corpus-eval-fetchcore"
+    },
+    "scan": {
+      "bytes_read": 6736893,
+      "discovered_files": 723,
+      "eligible_files": 593,
+      "files_read": 587,
+      "skipped": {
+        "api_artifact_blocked_openapi": 3,
+        "api_artifact_blocked_postman_collection": 1,
+        "api_artifact_blocked_postman_environment": 1,
+        "api_artifact_blocked_swagger": 1,
+        "excluded": 60,
+        "not_included": 70
+      },
+      "truncated": false,
+      "truncation_reasons": []
+    },
+    "source_paths": [
+      ".dockerignore",
+      ".github/PULL_REQUEST_TEMPLATE.md",
+      ".github/release.yml",
+      ".github/workflows/acquisition-acceptance.yml",
+      ".github/workflows/ci.yml",
+      ".github/workflows/docs-localization.yml",
+      ".github/workflows/explorer.yml",
+      ".github/workflows/operational-index.yml",
+      ".github/workflows/operational-opensearch.yml",
+      ".github/workflows/operational-qdrant.yml",
+      ".github/workflows/release.yml",
+      ".github/workflows/repository-index.yml",
+      ".github/workflows/self-dogfood.yml",
+      ".gitignore",
+      "AGENTS.md",
+      "CONTRIBUTING.md",
+      "Dockerfile",
+      "Makefile",
+      "README.md",
+      "README.pt-BR.md",
+      "SECURITY.md",
+      "assets/brand/README.md",
+      "assets/launch/README.md",
+      "assets/launch/github/README.md",
+      "assets/launch/manifest.json",
+      "benchmarks/README.md",
+      "benchmarks/baseline-v1/BENCH_RUNBOOK.md",
+      "benchmarks/baseline-v1/README.md",
+      "benchmarks/baseline-v1/capture_solr_ann_candidates.py",
+      "benchmarks/baseline-v1/compare_rankings.py",
+      "benchmarks/baseline-v1/compare_runs.py",
+      "benchmarks/baseline-v1/context_yield.py",
+      "benchmarks/baseline-v1/ground-truth.json",
+      "benchmarks/baseline-v1/manifest.json",
+      "benchmarks/baseline-v1/publish_run.py",
+      "benchmarks/baseline-v1/run-config.example.json",
+      "benchmarks/baseline-v1/run.py",
+      "benchmarks/baseline-v1/run_bench.py",
+      "benchmarks/benchmark_infra.py",
+      "benchmarks/benchmark_ops.py",
+      "benchmarks/catalog.json",
+      "benchmarks/search-intent-v2/README.md",
+      "benchmarks/search-intent-v2/artifacts/evidence-smoke/V0.1/indexing.json",
+      "benchmarks/search-intent-v2/artifacts/evidence-smoke/V0.1/queries.json",
+      "benchmarks/search-intent-v2/artifacts/evidence-smoke/V0.1/run.json",
+      "benchmarks/search-intent-v2/artifacts/evidence-smoke/V0.2/README.md",
+      "benchmarks/search-intent-v2/artifacts/evidence-smoke/V0.2/comparison.json",
+      "benchmarks/search-intent-v2/artifacts/evidence-smoke/V0.2/queries.json",
+      "benchmarks/search-intent-v2/artifacts/evidence-smoke/V0.2/run.json",
+      "benchmarks/search-intent-v2/artifacts/evidence/V0.1/README.md"
+    ],
+    "source_paths_truncated": true
+  },
+  "status": "succeeded"
+}
