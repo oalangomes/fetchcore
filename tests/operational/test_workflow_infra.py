@@ -18,8 +18,8 @@ def test_operational_reuses_existing_snapshot_before_sync() -> None:
     caller = _workflow("operational-index.yml")["jobs"]["operational-index"]["with"]
     assert caller["solr_provision_mode"] == "reuse_only"
     assert caller["create_if_missing"] is False
-    assert caller["require_existing_snapshot"] is True
-    assert caller["index_lifecycle"] == "sync"
+    assert "== 'sync'" in caller["require_existing_snapshot"]
+    assert "inputs.index_lifecycle || 'sync'" in caller["index_lifecycle"]
     assert "38983/solr" in caller["solr_url"]
     reusable = _workflow("repository-index.yml")["jobs"]["index"]["steps"]
     names = [step.get("name") for step in reusable]

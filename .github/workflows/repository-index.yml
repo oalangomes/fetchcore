@@ -563,6 +563,33 @@ jobs:
             status "$REPOSITORY" --json \
             | tee "$FETCHCORE_DOGFOOD_OUTPUT/status-after.json"
 
+      - name: Verify persisted index identity
+        if: ${{ inputs.index_lifecycle != 'plan' }}
+        env:
+          EXPECTED_REPOSITORY: ${{ steps.identity.outputs.repository }}
+          EXPECTED_REVISION: ${{ steps.identity.outputs.revision }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          evidence = Path(os.environ["FETCHCORE_DOGFOOD_OUTPUT"])
+          status = json.loads((evidence / "status-after.json").read_text())
+          observed = status.get("result")
+          if (status.get("status") != "succeeded" or not isinstance(observed, dict)
+              or observed.get("repository") != os.environ["EXPECTED_REPOSITORY"]
+              or observed.get("indexed_revision") != os.environ["EXPECTED_REVISION"]
+              or observed.get("currentness") != "current"
+              or observed.get("schema_compatible") is not True
+              or observed.get("projection_compatible") is not True
+              or not observed.get("snapshot_indexing_fingerprint")
+              or observed.get("snapshot_indexing_fingerprint") != observed.get("indexing_fingerprint")
+              or not observed.get("snapshot_projection_fingerprint")
+              or observed.get("snapshot_projection_fingerprint") != observed.get("projection_fingerprint")):
+              raise SystemExit("Persisted snapshot identity is not current and compatible")
+          PY
+
       - name: Inspect requested Solr retrieval readiness
         if: ${{ inputs.index_lifecycle != 'plan' }}
         run: |

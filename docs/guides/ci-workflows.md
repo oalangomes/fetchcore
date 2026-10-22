@@ -39,9 +39,14 @@ The [Solr](../../.github/workflows/operational-index.yml),
 [Qdrant](../../.github/workflows/operational-qdrant.yml) workflows accept only a
 successful `push` CI run for `master` from the FetchCore repository, or an
 explicit manual dispatch. Each uses the immutable `head_sha` for post-CI runs
-and only its own persistent OPERATIONAL resource. They require existing compatible
-snapshots, perform `sync` and verify readiness; missing or incompatible
-schema/fingerprints fail closed without an implicit rebuild. All default to
+and only its own persistent OPERATIONAL resource. Automatic runs require existing
+compatible snapshots, perform `sync` and verify readiness; missing or incompatible
+schema/fingerprints fail closed without an implicit rebuild. Manual dispatch from
+`master` offers `index_lifecycle: plan | sync | rebuild` with `sync` as the default.
+Inspect a plan run before explicitly authorizing a separate rebuild run; schema
+and ownership checks remain mandatory. See
+[manual operational recovery](self-hosted-indexing.md#manual-operational-recovery).
+All default to
 hybrid retrieval, allow explicit dense selection, and use Ollama
 `embeddinggemma` at 768 dimensions. See the
 [operational acceptance](self-hosted-indexing.md#operational-acceptance-2026-10-20).

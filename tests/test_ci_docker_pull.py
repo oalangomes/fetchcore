@@ -156,7 +156,8 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     assert "http://127.0.0.1:38983/solr" in operational_inputs["solr_url"]
     assert operational_inputs["create_if_missing"] is False
     assert operational_inputs["solr_provision_mode"] == "reuse_only"
-    assert operational_inputs["index_lifecycle"] == "sync"
+    assert "github.event_name == 'workflow_dispatch'" in operational_inputs["index_lifecycle"]
+    assert "inputs.index_lifecycle || 'sync'" in operational_inputs["index_lifecycle"]
     assert operational_inputs["evaluate"] is False
     assert "github.event.workflow_run.head_sha || github.sha" in operational_inputs["target_ref"]
     assert "github.event.workflow_run.head_sha || github.sha" in operational_inputs["fetchcore_ref"]
