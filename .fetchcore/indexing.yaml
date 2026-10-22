@@ -1,10 +1,18 @@
 version: 1
 
 selection:
+  include:
+    - "tools/explorer/web/src/style.css"
+    - "tools/explorer/docker/nginx.conf"
+    - ".env.example"
+    - "infra/images.lock"
   exclude:
     - "benchmarks/baseline-v1/artifacts/**"
+    # Keep generated benchmark runs for reproduction, outside search.
+    - "benchmarks/**/artifacts/**"
     - ".fetchcore-dogfood/**"
     - "dogfood/scenarios/**"
+    - "**/.env.example"
 
 limits:
   max_files: 2500
