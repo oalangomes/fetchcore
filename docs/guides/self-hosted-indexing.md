@@ -279,6 +279,13 @@ repurposed.
 
 ## Explicit index lifecycle
 
+For missing, incompatible, invalid or ambiguous snapshots, follow the
+[snapshot recovery runbook](repository-indexing.md#missing-or-incompatible-snapshot-runbook):
+inspect `status`/`plan`, decide with verified resource binding and schema,
+authorize any rebuild separately, then verify persisted currentness and
+fingerprints. Existing-snapshot OPERATIONAL jobs stop on failure; they never
+turn that failure into rebuild or schema repair authorization.
+
 The reusable input `index_lifecycle` is one of `plan`, `sync`, or `rebuild`. The
 workflow always runs:
 

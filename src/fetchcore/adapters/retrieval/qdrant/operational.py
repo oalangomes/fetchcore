@@ -32,6 +32,7 @@ class QdrantObservation:
     schema_compatible: bool = True
     projection_compatible: bool | None = None
     snapshot_load_ms: int | None = None
+    snapshot_projection_fingerprint: str | None = None
 
 
 class QdrantOperationalIndex:
@@ -77,11 +78,18 @@ class QdrantOperationalIndex:
                 "index_stale",
                 "response_parsing_failure",
             }:
+                actual = exc.metadata.get("actual")
+                actual_fingerprint = (
+                    actual.get("projection_fingerprint") if isinstance(actual, dict) else None
+                )
                 return QdrantObservation(
                     "rebuild_required",
                     "incompatible",
                     exc.category,
                     projection_compatible=False if exc.category == "schema_mismatch" else None,
+                    snapshot_projection_fingerprint=(
+                        actual_fingerprint if isinstance(actual_fingerprint, str) else None
+                    ),
                 )
             raise
 
@@ -145,6 +153,13 @@ class QdrantOperationalIndex:
             "incremental_possible": observation.mode in {"incremental", "noop"},
             "indexing_fingerprint": self.runtime.fingerprint,
             "projection_fingerprint": self.store.projection_fingerprint,
+            "snapshot_indexing_fingerprint": (
+                None if snapshot is None else snapshot.indexing_fingerprint
+            ),
+            "snapshot_projection_fingerprint": (
+                observation.snapshot_projection_fingerprint
+                if snapshot is None else snapshot.projection_fingerprint
+            ),
             "snapshot": None if snapshot is None else _snapshot_identity(snapshot),
             "fingerprints": _fingerprints(snapshot, self.runtime.fingerprint),
         }
@@ -259,6 +274,11 @@ class QdrantOperationalIndex:
             result["previous_currentness"] = result.pop("currentness")
             return result
 
+        if not observation.schema_compatible:
+            raise KnowledgeSearchError(
+                "Correct and validate the schema before explicit rebuild",
+                category="schema_mismatch",
+            )
         started = self.timer()
         indexed = self.runtime.indexer.index(self.runtime.workspace)
         stage_timings_ms["canonical_full_index_ms"] = elapsed_ms(started, self.timer())

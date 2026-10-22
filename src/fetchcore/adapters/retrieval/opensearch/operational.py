@@ -32,6 +32,7 @@ class OpenSearchObservation:
     schema_compatible: bool = True
     projection_compatible: bool | None = None
     snapshot_load_ms: int | None = None
+    snapshot_projection_fingerprint: str | None = None
 
 
 class OpenSearchOperationalIndex:
@@ -74,11 +75,15 @@ class OpenSearchOperationalIndex:
                 "index_stale",
                 "response_parsing_failure",
             }:
+                actual_fingerprint = exc.metadata.get("actual_projection_fingerprint")
                 return OpenSearchObservation(
                     "rebuild_required",
                     "incompatible",
                     exc.category,
                     projection_compatible=False if exc.category == "schema_mismatch" else None,
+                    snapshot_projection_fingerprint=(
+                        actual_fingerprint if isinstance(actual_fingerprint, str) else None
+                    ),
                 )
             raise
         if snapshot.indexing_fingerprint != self.runtime.fingerprint:
@@ -138,6 +143,13 @@ class OpenSearchOperationalIndex:
             "incremental_possible": observation.mode in {"incremental", "noop"},
             "indexing_fingerprint": self.runtime.fingerprint,
             "projection_fingerprint": self.store.projection_fingerprint,
+            "snapshot_indexing_fingerprint": (
+                None if snapshot is None else snapshot.indexing_fingerprint
+            ),
+            "snapshot_projection_fingerprint": (
+                observation.snapshot_projection_fingerprint
+                if snapshot is None else snapshot.projection_fingerprint
+            ),
         }
         if operation == "status":
             return result
@@ -258,7 +270,12 @@ class OpenSearchOperationalIndex:
             result["previous_currentness"] = result.pop("currentness")
             return result
         if operation == "rebuild":
-            # Explicitly requested generation creation permits a mapping change.
+            # Rebuild authorization does not authorize repairing a live schema.
+            if not observation.schema_compatible:
+                raise KnowledgeSearchError(
+                    "Correct and validate the schema before explicit rebuild",
+                    category="schema_mismatch",
+                )
             started = self.timer()
             indexed = self.runtime.indexer.index(self.runtime.workspace)
             stage_timings_ms["canonical_full_index_ms"] = elapsed_ms(started, self.timer())

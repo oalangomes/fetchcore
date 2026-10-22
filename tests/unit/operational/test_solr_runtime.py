@@ -324,6 +324,7 @@ def test_repository_resource_collision_fails_closed(tmp_path: Path) -> None:
     with pytest.raises(SolrRuntimeError) as failure:
         prepare_solr_runtime(config(tmp_path), client=solr, docker=FakeDocker(forbidden=True))
     assert failure.value.category == "repository_resource_collision"
+    assert all(method == "GET" for method, *_ in solr.calls)
 
 
 def test_unbound_documents_cannot_be_silently_repurposed(tmp_path: Path) -> None:
@@ -335,6 +336,7 @@ def test_unbound_documents_cannot_be_silently_repurposed(tmp_path: Path) -> None
     with pytest.raises(SolrRuntimeError) as failure:
         prepare_solr_runtime(config(tmp_path), client=solr, docker=FakeDocker(forbidden=True))
     assert failure.value.category == "repository_resource_collision"
+    assert all(method == "GET" for method, *_ in solr.calls)
 
 
 def test_unknown_repository_binding_fails_closed(tmp_path: Path) -> None:
@@ -344,13 +346,15 @@ def test_unknown_repository_binding_fails_closed(tmp_path: Path) -> None:
                 return {"response": {"numFound": 1, "numFoundExact": False}}
             return super().request(method, url, **kwargs)
 
+    solr = UnknownBinding(resources={"fetchcore-self-dogfood"})
     with pytest.raises(SolrRuntimeError) as failure:
         prepare_solr_runtime(
             config(tmp_path),
-            client=UnknownBinding(resources={"fetchcore-self-dogfood"}),
+            client=solr,
             docker=FakeDocker(forbidden=True),
         )
     assert failure.value.category == "repository_binding_unknown"
+    assert all(method == "GET" for method, *_ in solr.calls)
 
 
 @pytest.mark.parametrize(
