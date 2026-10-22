@@ -101,11 +101,13 @@ def load_repository_document_index_policy(workspace: Path) -> RepositoryDocument
             return RepositoryDocumentIndexPolicy()
 
     try:
-        raw = yaml.safe_load(policy_path.read_text(encoding="utf-8")) or {}
+        raw = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, yaml.YAMLError) as exc:
         raise RepositoryDocumentPolicyError(
             f"unable to read repository document indexing policy: {policy_path}"
         ) from exc
+    if raw is None:
+        raw = {}
     if not isinstance(raw, dict):
         raise RepositoryDocumentPolicyError(
             "repository document indexing policy must be a mapping"

@@ -58,6 +58,7 @@ from fetchcore.repository.knowledge_pack import (
 from fetchcore.repository.semantic_indexing import (
     SemanticDocumentRepositoryIndexer,
 )
+from fetchcore.repository.safe_scan import SafeScanResult, scan_repository_text
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 from fetchcore.telemetry import IndexStageTelemetry, elapsed_ms
 
@@ -120,11 +121,14 @@ def prepare_repository_index_runtime(
     revision: str | None,
     knowledge_packs: Iterable[RepositoryKnowledgePack] | None = None,
     base_config: RepositoryIndexConfig | None = None,
+    policy_override: Path | None = None,
 ) -> RepositoryIndexRuntime:
     """Resolve repository policy, active knowledge packs and canonical indexer."""
 
     root = workspace.resolve(strict=True)
-    policy = load_repository_index_policy(root, base_config=base_config)
+    policy = load_repository_index_policy(
+        root, base_config=base_config, policy_override=policy_override,
+    )
     document_policy = load_repository_document_index_policy(root)
     registry = default_repository_extractors()
     extractors = policy.select_extractors(registry)
@@ -170,6 +174,97 @@ def prepare_repository_index_runtime(
         fingerprint=indexing_contract_fingerprint(indexer),
         active_knowledge_packs=tuple(
             (pack.pack_id.strip(), pack.version.strip()) for pack in packs
+        ),
+    )
+
+
+def inspect_local_corpus(
+    workspace: Path,
+    *,
+    path: str | None = None,
+    deep: bool = False,
+    proposal: Path | None = None,
+) -> dict[str, object]:
+    """Observe canonical local corpus behavior without registration or a backend.
+
+    The default runs only the indexer's safe scan. Deep mode performs canonical
+    extraction in memory to expose document coverage and duplication diagnostics.
+    Neither mode persists an index or computes embeddings.
+    """
+    if deep and path is not None:
+        raise ValueError("--deep cannot be combined with --path")
+    if deep and proposal is not None:
+        raise ValueError("--deep cannot be combined with --proposal")
+    root = workspace.resolve(strict=True)
+    runtime = prepare_repository_index_runtime(
+        root, repository="local/corpus-inspection", branch=None, revision=None,
+        policy_override=proposal,
+    )
+    payload = runtime.to_mapping()
+    payload["mode"] = "deep" if deep else "scan"
+    if deep:
+        result = runtime.indexer.index(root)
+        telemetry = result.telemetry.to_mapping()
+        # Per-source chunk counts can be large and are not needed for a corpus view.
+        telemetry.pop("documents_per_source", None)
+        payload["telemetry"] = telemetry
+        payload["corpus_diagnostics"] = analyze_corpus_duplication(
+            result.documents
+        ).to_mapping()
+        return payload
+
+    scan = _scan_local_corpus(runtime, path=path)
+    payload["scan"] = scan.audit_mapping()
+    payload["coverage"] = scan.coverage.to_mapping()
+    payload["source_paths"] = [source.relative for source in scan.sources[:50]]
+    payload["source_paths_truncated"] = len(scan.sources) > 50
+    if path is not None:
+        payload["path"] = path
+        payload["path_status"] = (
+            "read" if scan.sources else next(iter(scan.skipped), "unvisited")
+        )
+    if proposal is not None:
+        if path is not None:
+            current = inspect_local_corpus(root, path=path)
+            payload["impact"] = {
+                "before": current["path_status"],
+                "after": payload["path_status"],
+                "applied": False,
+            }
+        else:
+            current_runtime = prepare_repository_index_runtime(
+                root, repository="local/corpus-inspection", branch=None, revision=None,
+            )
+            current_scan = _scan_local_corpus(current_runtime)
+            before = {source.relative for source in current_scan.sources}
+            after = {source.relative for source in scan.sources}
+            payload["impact"] = {
+                "added_read_paths": sorted(after - before),
+                "removed_read_paths": sorted(before - after),
+                "before_fingerprint": current_runtime.fingerprint,
+                "after_fingerprint": runtime.fingerprint,
+                "before_truncated": current_scan.truncated,
+                "after_truncated": scan.truncated,
+                "applied": False,
+            }
+    return payload
+
+
+def _scan_local_corpus(
+    runtime: RepositoryIndexRuntime, *, path: str | None = None,
+) -> SafeScanResult:
+    config = runtime.indexer.config
+    return scan_repository_text(
+        runtime.workspace,
+        include_patterns=config.include_patterns,
+        exclude_patterns=config.exclude_patterns,
+        max_files=config.max_files,
+        max_file_bytes=config.max_file_bytes,
+        max_total_bytes=config.max_total_bytes,
+        selected_paths=(path,) if path is not None else None,
+        api_sanitizer=getattr(runtime.indexer, "_api_sanitizer", None),
+        api_sanitizer_kinds=getattr(
+            runtime.indexer, "_api_sanitizer_kinds", frozenset({"openapi", "swagger"}),
         ),
     )
 
