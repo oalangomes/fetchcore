@@ -44,7 +44,7 @@ Reproduce with:
 
 ```bash
 .venv/bin/python benchmarks/baseline-v1/compare_rankings.py \
-  --workspace /home/alangomes/projetos/GitHub/NeuroTrack_MS
+  --workspace /home/operator/projetos/GitHub/NeuroTrack_MS
 ```
 
 This is a ranking/evidence equivalence check. It is not a new 20-repetition

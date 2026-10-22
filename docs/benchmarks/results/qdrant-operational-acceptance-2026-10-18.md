@@ -26,7 +26,7 @@ was separate from the PR worktree and the main repository.
 ## Preflight and effective configuration
 
 The existing worktree was
-`/home/alangomes/projetos/GitHub/fetchcore.worktrees/operational-qdrant`.
+`/home/operator/projetos/GitHub/fetchcore.worktrees/operational-qdrant`.
 Its two pre-existing, uncommitted files contained merge markers and were saved
 as a named Git stash before a fast-forward to the remote PR HEAD. They were
 not discarded or included in this PR. The PR's backup branches were retained.
@@ -206,8 +206,8 @@ export FETCHCORE_QDRANT_VECTOR_DIMENSIONS=768
 export FETCHCORE_OLLAMA_URL="http://$FC_GATEWAY:11434"
 export FETCHCORE_OLLAMA_TIMEOUT_SECONDS=180
 export FETCHCORE_RETRIEVAL='{"dense":{"enabled":true,"embedding":{"provider":"ollama","model":"embeddinggemma","dimensions":768}},"hybrid":{"enabled":true}}'
-FC_REGISTRY=/home/alangomes/.local/state/fetchcore/shared-infra-p0-20261016/operational-registry
-FC_SOURCE=/home/alangomes/.local/state/fetchcore/shared-infra-p0-20261016/corpus
+FC_REGISTRY=/home/operator/.local/state/fetchcore/shared-infra-p0-20261016/operational-registry
+FC_SOURCE=/home/operator/.local/state/fetchcore/shared-infra-p0-20261016/corpus
 FC_SETTINGS='{"url":"http://127.0.0.1:36333","collection":"fc-operational-fetchcore-635ab7352c2850f2","vector_dimensions":768}'
 .venv/bin/fetchcore index --backend qdrant-vector --backend-settings "$FC_SETTINGS" --cache-root "$FC_REGISTRY" --allowed-root "$FC_SOURCE" status oalangomes/fetchcore --json
 .venv/bin/fetchcore index --backend qdrant-vector --backend-settings "$FC_SETTINGS" --cache-root "$FC_REGISTRY" --allowed-root "$FC_SOURCE" plan oalangomes/fetchcore --json
@@ -219,7 +219,7 @@ FC_SETTINGS='{"url":"http://127.0.0.1:36333","collection":"fc-operational-fetchc
 
 The controlled fixture files and raw JSON/time output remain in local operator
 state at
-`/home/alangomes/.local/state/fetchcore/pr192-qdrant-acceptance-20261018`.
+`/home/operator/.local/state/fetchcore/pr192-qdrant-acceptance-20261018`.
 The versioned measurements here are transcribed from those raw CLI and Qdrant
 responses. Exact fixture Git SHAs depend on local commit metadata if recreated.
 No DEV/BENCH, OpenSearch, or Solr resource was sent a write request in this run.

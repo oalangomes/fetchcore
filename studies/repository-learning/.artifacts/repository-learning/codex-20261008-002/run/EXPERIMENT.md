@@ -130,12 +130,12 @@ failures to retrieval backlog items such as #35, #39, #84, #27, or #86.
 
 ```bash
 git worktree add --detach \
-  /home/alangomes/projetos/GitHub/fetchcore-rlb-subject \
+  /home/operator/projetos/GitHub/fetchcore-rlb-subject \
   e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c
 
 python benchmarks/repository-learning/run.py \
   --scenario benchmarks/repository-learning/scenarios/fetchcore-self.yaml \
-  --workspace /home/alangomes/projetos/GitHub/fetchcore-rlb-subject \
+  --workspace /home/operator/projetos/GitHub/fetchcore-rlb-subject \
   --output .artifacts/repository-learning/codex-20261008-002/plan \
   --run-id codex-20261008-002 \
   --harness-id codex-cli-0.153.2 \
@@ -151,7 +151,7 @@ docker exec fetchcore-solr-1 solr create \
   -c fetchcore-rlb-e0145894-20261008-001 -d fetchcore
 
 PYTHONPATH=src python -m fetchcore.cli index \
-  --workspace /home/alangomes/projetos/GitHub/fetchcore-rlb-subject \
+  --workspace /home/operator/projetos/GitHub/fetchcore-rlb-subject \
   --repository oalangomes/fetchcore --branch master \
   --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c \
   --backend solr \
@@ -163,16 +163,16 @@ PYTHONPATH=src python -m fetchcore.cli index \
 AI_MEMORY_SERVER_URL=http://127.0.0.1:49375 \
 python benchmarks/repository-learning/run.py \
   --scenario benchmarks/repository-learning/scenarios/fetchcore-self.yaml \
-  --workspace /home/alangomes/projetos/GitHub/fetchcore-rlb-subject \
+  --workspace /home/operator/projetos/GitHub/fetchcore-rlb-subject \
   --output .artifacts/repository-learning/codex-20261008-002/run \
   --run-id codex-20261008-002 \
   --harness-id codex-cli-0.153.2 \
   --provider-id openai-chatgpt \
   --model-id gpt-5.6-sol \
-  --study-command 'direct=python /home/alangomes/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py direct --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001' \
-  --study-command 'fetchcore=python /home/alangomes/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py fetchcore --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001' \
-  --study-command 'fetchcore_bounded=python /home/alangomes/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py fetchcore-bounded --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001' \
-  --evaluate-command 'python /home/alangomes/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py evaluate --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001'
+  --study-command 'direct=python /home/operator/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py direct --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001' \
+  --study-command 'fetchcore=python /home/operator/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py fetchcore --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001' \
+  --study-command 'fetchcore_bounded=python /home/operator/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py fetchcore-bounded --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001' \
+  --evaluate-command 'python /home/operator/projetos/GitHub/fetchcore/benchmarks/repository-learning/wrappers/codex_harness.py evaluate --model gpt-5.6-sol --revision e0145894d5b1c0f74c3ba8c9b228556ea7d6d81c --solr-collection fetchcore-rlb-e0145894-20261008-001'
 
 .venv/bin/python -m ruff check .
 .venv/bin/python -m mypy src
