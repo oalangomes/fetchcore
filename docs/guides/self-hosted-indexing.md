@@ -78,6 +78,16 @@ Subsequent automatic runs continue to use strict `sync` and never recover by
 rebuilding implicitly. Schema migration and serving revision reconciliation
 remain separate operator actions.
 
+A successful embedding preflight tests one short input; it does not prove that
+all corpus batches can be embedded. If execution fails with `embedding_failed`,
+inspect the failure envelope in `execution.json` and the step log. All three
+workflows print that same envelope while retaining the nonzero exit code. Safe
+`error.diagnostics`, when available, distinguishes HTTP status, known provider
+error type, batch/input sizes and retry exhaustion without printing source text.
+Correlate unknown provider failures with its existing logs; do not infer a
+timeout or change batch/model/chunking policy from the generic category alone.
+Inspect persisted status before deciding on another explicit recovery attempt.
+
 ### Operational acceptance (2026-10-20)
 
 At the accepted `master` revision

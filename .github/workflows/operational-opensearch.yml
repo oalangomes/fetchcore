@@ -184,8 +184,8 @@ jobs:
             python scripts/shared_infra.py run --environment operational --repository oalangomes/fetchcore --backend "$FC_BACKEND" --ollama-url "$FC_OLLAMA_URL" -- fetchcore "$@"
           }
           case "$FC_INDEX_LIFECYCLE" in
-            sync) fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" sync oalangomes/fetchcore --json > "$FC_EVIDENCE/execution.json" ;;
-            rebuild) fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" rebuild oalangomes/fetchcore --json > "$FC_EVIDENCE/execution.json" ;;
+            sync) fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" sync oalangomes/fetchcore --json | tee "$FC_EVIDENCE/execution.json" ;;
+            rebuild) fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" rebuild oalangomes/fetchcore --json | tee "$FC_EVIDENCE/execution.json" ;;
             *) echo "Invalid OPERATIONAL execution intent" >&2; exit 2 ;;
           esac
 

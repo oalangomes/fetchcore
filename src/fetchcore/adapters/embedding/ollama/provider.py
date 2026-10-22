@@ -153,6 +153,9 @@ class OllamaEmbeddingProvider:
                 provider_error = _ollama_http_error_message(exc)
                 if provider_error is not None:
                     metadata["provider_error"] = provider_error
+                    reason = _ollama_embedding_failure_reason(provider_error)
+                    if reason is not None:
+                        metadata["provider_error_type"] = reason
                 transient_http_error = (
                     exc.code == 400
                     and _ollama_transient_embedding_error(provider_error)
@@ -246,6 +249,18 @@ def _is_transient_transport_cause(cause: object) -> bool:
         or isinstance(cause, OSError)
         and cause.errno in _TRANSIENT_CONNECTION_ERRNOS
     )
+
+
+def _ollama_embedding_failure_reason(message: str) -> str | None:
+    """Classify known provider errors without publishing their potentially private text."""
+    normalized = message.casefold()
+    if "exceeds maximum context length" in normalized or "exceeds the context window" in normalized:
+        return "context_length_exceeded"
+    if "out of memory" in normalized or "insufficient memory" in normalized:
+        return "provider_resource_exhausted"
+    if _ollama_transient_embedding_error(message):
+        return "transient_provider_failure"
+    return None
 
 
 def _ollama_transient_embedding_error(message: str | None) -> bool:

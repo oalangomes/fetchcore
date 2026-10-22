@@ -12,7 +12,24 @@ export interface IndexArtifact {
     operation: 'status' | 'plan' | 'sync' | 'rebuild'
     status: 'succeeded' | 'failed'
     result?: Record<string, unknown>
-    error?: { category: string; message: string }
+    error?: {
+      category: string
+      message: string
+      diagnostics?: {
+        http_status?: number
+        attempt?: number
+        max_attempts?: number
+        input_count?: number
+        batch_offset?: number
+        total_input_count?: number
+        max_input_chars?: number
+        total_input_chars?: number
+        cause_errno?: number
+        retries_exhausted?: boolean
+        cause_type?: string
+        provider_error_type?: 'context_length_exceeded' | 'provider_resource_exhausted' | 'transient_provider_failure'
+      }
+    }
   }
 }
 export interface ArtifactResponse {

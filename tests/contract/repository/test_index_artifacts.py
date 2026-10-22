@@ -8,6 +8,7 @@ import pytest
 
 from fetchcore.cli import main
 from fetchcore.application.index_artifacts import (
+    IndexFailureDiagnostics,
     compare_index_artifacts,
     load_index_artifact,
 )
@@ -141,6 +142,42 @@ def test_failure_and_unmeasured_embedding_identity_block_comparison():
     for name in ("failure", "initial-plan"):
         artifact = load_index_artifact(json.dumps(fixture(name)))
         assert compare_index_artifacts(artifact, artifact)["comparable"] is False
+
+
+def test_safe_failure_diagnostics_roundtrip_and_remain_failure_evidence():
+    value = fixture("failure")
+    diagnostics = {
+        "http_status": 400, "attempt": 1, "max_attempts": 3,
+        "input_count": 32, "max_input_chars": 8000,
+        "retries_exhausted": False, "cause_type": "TimeoutError", "cause_errno": -3,
+        "provider_error_type": "context_length_exceeded",
+    }
+    value["command"]["error"]["diagnostics"] = diagnostics
+    artifact = load_index_artifact(json.dumps(value))
+    assert artifact.to_mapping() == value
+    assert load_index_artifact(json.dumps(artifact.to_mapping())) == artifact
+    assert compare_index_artifacts(artifact, artifact)["comparable"] is False
+
+    assert IndexFailureDiagnostics.from_metadata({
+        **diagnostics, "provider_error": "secret text", "url": "http://secret.test",
+        "input": ["private source"], "embedding_model": "private model",
+    }).to_mapping() == diagnostics
+
+
+@pytest.mark.parametrize("diagnostics", [
+    {}, None, {"provider_error": "private source"}, {"http_status": True},
+    {"http_status": 99}, {"http_status": 600}, {"input_count": "secret"},
+    {"input_count": -1}, {"input_count": 1.5}, {"input_count": 2**64},
+    {"attempt": 0}, {"retries_exhausted": 1}, {"cause_type": "private response"},
+    {"provider_error_type": "private source response"},
+])
+def test_unsafe_or_invalid_failure_diagnostics_are_rejected(diagnostics):
+    value = fixture("failure")
+    value["command"]["error"]["diagnostics"] = diagnostics
+    with pytest.raises(ValueError):
+        load_index_artifact(json.dumps(value))
+    if isinstance(diagnostics, dict):
+        assert IndexFailureDiagnostics.from_metadata(diagnostics).to_mapping() == {}
 
 
 def test_offline_cli_wraps_json_with_configuration_identity(tmp_path):

@@ -15,6 +15,16 @@ describe('index observation transport', () => {
   it('exports all evidence without recomputing it', () => {
     expect(JSON.parse(exportArtifact(fixture as IndexArtifact))).toEqual(fixture)
   })
+  it('preserves application-validated failure diagnostics on export', () => {
+    const failure: IndexArtifact = {
+      ...fixture,
+      command: {
+        operation: 'rebuild', status: 'failed',
+        error: { category: 'embedding_failed', message: 'Indexing operation failed', diagnostics: { http_status: 400, input_count: 32 } },
+      },
+    }
+    expect(JSON.parse(exportArtifact(failure))).toEqual(failure)
+  })
   it('delegates validation to application service without executing indexing', async () => {
     const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ artifacts: [fixture], comparison: null }) })
     vi.stubGlobal('fetch', fetch)
