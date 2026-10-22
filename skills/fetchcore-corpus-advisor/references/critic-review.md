@@ -20,7 +20,8 @@ same rubric as DRAFT POLICY in [SKILL.md](../SKILL.md):
 3. **Redundancy:** duplicate evidence, likely corpus noise and context cost;
    do not invent numeric retrieval metrics.
 4. **Risk:** sensitive values, generated or runtime material and knowledge
-   loss if an existing source is excluded.
+   loss if an existing source is excluded, plus unintended admission of current
+   or future paths when selection rules change.
 5. **Provenance:** repository, revision, path and source purpose, including
    uncertainty about run-specific artifacts.
 6. **Verifiable evidence:** paths and lines where available, comparison with
@@ -36,6 +37,12 @@ return a verdict and best objection for every candidate. A reference/import,
 file extension, checksum duplicate or automatic classification cannot by
 itself prove retrieval value or irrelevance. Preserve the distinction between
 keeping an artifact for reproduction and admitting it to search.
+Separate confirmed evidence, unmeasured hypothesis, risk and decision in each
+assessment. Challenge replacement of broad exclusions with current-file lists,
+purported include-over-exclude exceptions, and basename includes whose scope
+is wider than intended. Current-path equivalence is insufficient evidence of
+future-path safety; request `needs_review` when the contract cannot safely
+express the intended exception. Account for candidates dropped from the draft.
 
 Useful challenges include an imported CSS file, an extensionless public CLI,
 duplicate benchmark query artifacts, an `.env.example`, locks and manifests.

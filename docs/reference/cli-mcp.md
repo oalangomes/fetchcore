@@ -77,7 +77,12 @@ extractor capabilities, fingerprint, bounded scan audit and source-kind coverage
 `--path <relative-path>` tests one path's admission with the same scanner.
 `--proposal <external-yaml>` validates a policy through the canonical loader and
 compares observed paths read before and after; it does not edit repository policy.
-Path impact is incomplete if either scan truncates. `--deep` runs canonical
+Path impact is incomplete if either scan truncates and says nothing about future
+paths. Exclusions take precedence over includes; basename includes also match
+nested files. Retain broad protections when proposing exceptions the current
+contract cannot express safely. Non-mapping policy values such as `false`, `0`
+and `[]` fail closed rather than becoming defaults; empty/null YAML retains its
+existing empty-policy meaning. `--deep` runs canonical
 extraction in memory to report document/source coverage and exact-source
 duplication diagnostics; it can cost substantially more than a scan and cannot
 be combined with `--path` or `--proposal`. None of these modes registers a

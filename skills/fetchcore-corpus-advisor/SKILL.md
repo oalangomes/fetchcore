@@ -107,6 +107,12 @@ revision, path and source provenance; (6) verifiable evidence, with paths/spans
 and an alternative-source check. State unknowns rather than inventing metrics.
 A dependency, import, extension, checksum duplicate or consumer alone proves
 neither inclusion nor exclusion.
+
+For every candidate, separate **confirmed evidence** (observed code, CLI or
+documents), **hypothesis** (expected searchable-knowledge benefit, unmeasured),
+**risk** (loss, redundancy, safety or unintended admission) and **decision**
+(one of the five values below). Use the six criteria to justify that decision;
+do not present a hypothesis as a confirmed retrieval improvement.
 Recommend `include` only for evidenced retrievable knowledge with a meaningful
 unique contribution and manageable risk. Recommend `exclude` only when the
 evidenced noise or risk outweighs an explicitly acceptable loss of technical
@@ -119,6 +125,27 @@ examined existing selection or exclusion; `no_change` leaves policy unchanged
 after evaluating the candidate; `needs_review` marks a material unresolved
 choice. Apply the same meanings to the final decisions. Distinguish retaining
 an artifact in the repository from admitting it to search.
+
+Before drafting selection changes, inspect the target CLI's actual policy
+precedence and matching implementation or its canonical contract tests. In
+the current contract, exclusions win over includes; includes match both the
+relative path and basename. A basename-only pattern is not root-only. Do not
+invent negation, ordered overrides, anchored-path syntax or include exceptions.
+Preserve existing broad exclusions that protect an area, including their
+protection of future paths. Never replace them with an enumeration of today's
+files or narrower exclusions merely to admit exceptions. The same current
+path set does not prove equivalent policy behavior on future files.
+If an otherwise useful exception cannot be expressed safely, mark it
+`needs_review`, retain the exclusion, and recommend an existing compatible
+alternative, such as retaining the artifact outside search or separately
+authoring its technical contract in an admitted documentation area. Do not
+create/move sources or change core matching as part of this review.
+Apply the same future-path check to includes: excluding today's nested copies
+does not make a basename include root-only for future copies. If that widening
+is unintended, investigate whether an existing broad exclusion for all nested
+occurrences safely constrains it; verify matching rather than assuming either
+that it works or that root-only admission is impossible. If no safe expression
+exists, leave the change out of the candidate.
 
 ## 5. CRITIC: seek an independent challenge
 
@@ -164,6 +191,10 @@ material trade-off cannot be resolved technically, prepare the evidence and
 safe candidate first, then ask the user once with all pending choices and
 their concrete consequences. Do not ask for routine technical adjudication or
 silently treat an unanswered question as approval.
+Account for every relevant candidate identified earlier in this invocation,
+even if it disappears from the final proposal: record rejection, new evidence,
+scope or a pending decision as the reason. Do not import historical review
+choices as current approvals or add cross-invocation decision persistence.
 
 ## 7. VALIDATE: compare only the final candidate
 
@@ -192,6 +223,10 @@ candidate fails closed; do not replace it with defaults.
 Check the full path diff against intended paths: a filename pattern can match
 the same basename in nested directories. Revise and revalidate an unintended
 admission or loss.
+Also compare the rules themselves for future-path effects: retain broad
+protections, check basename widening, and explain every changed selection
+rule. Canonical admission validates today's observed paths only; neither a
+successful CLI response nor an empty path diff proves future-path safety.
 
 If the existing policy is adequate, show its complete YAML, an empty diff,
 the rules preserved and the evidence for `no_change`. If no policy exists,
@@ -232,3 +267,5 @@ For a bounded, two-repository behavioral exercise, see
 [validation.md](references/validation.md).
 For the independent-critic comparison, see
 [comparative-evaluation.md](references/comparative-evaluation.md).
+For policy-safety regressions and the final real-repository exercise, see
+[stabilization-2026-10-22.md](references/stabilization-2026-10-22.md).

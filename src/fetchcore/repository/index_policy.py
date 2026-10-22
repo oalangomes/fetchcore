@@ -351,11 +351,13 @@ def load_repository_index_policy(
 
 def _read_policy(path: Path) -> dict[str, object]:
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, yaml.YAMLError) as exc:
         raise RepositoryIndexPolicyError(
             f"unable to read repository indexing policy: {path}"
         ) from exc
+    if raw is None:
+        raw = {}
     if not isinstance(raw, dict):
         raise RepositoryIndexPolicyError("repository indexing policy must be a mapping")
     return {str(key): value for key, value in raw.items()}
