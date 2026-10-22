@@ -349,6 +349,8 @@ class IndexObservation:
     schema_compatible: bool = True
     projection_compatible: bool | None = None
     discovery: dict[str, object] | None = None
+    snapshot_indexing_fingerprint: str | None = None
+    snapshot_projection_fingerprint: str | None = None
 
 
 def _observe(context: IndexContext) -> IndexObservation:
@@ -367,17 +369,25 @@ def _observe(context: IndexContext) -> IndexObservation:
             return IndexObservation("initial", "absent", "snapshot_missing")
         if exc.category in {"snapshot_missing", "schema_mismatch", "index_stale",
                             "response_parsing_failure"}:
+            actual_fingerprint = exc.metadata.get("actual_projection_fingerprint")
             return IndexObservation(
                 "rebuild_required", "incompatible", exc.category,
                 projection_compatible=False if exc.category == "schema_mismatch" else None,
+                snapshot_projection_fingerprint=(
+                    actual_fingerprint if isinstance(actual_fingerprint, str) else None
+                ),
             )
         raise
     if snapshot_indexing_fingerprint(snapshot) != runtime.fingerprint:
         return IndexObservation("rebuild_required", "incompatible", "indexing_contract_changed",
-                                snapshot.revision, projection_compatible=True)
+                                snapshot.revision, projection_compatible=True,
+                                snapshot_indexing_fingerprint=snapshot_indexing_fingerprint(snapshot),
+                                snapshot_projection_fingerprint=snapshot.projection_fingerprint)
     if context.require_vectors and not store.embedding_snapshot_matches(snapshot):
         return IndexObservation("rebuild_required", "incompatible", "embedding_identity_changed",
-                                snapshot.revision, projection_compatible=True)
+                                snapshot.revision, projection_compatible=True,
+                                snapshot_indexing_fingerprint=snapshot_indexing_fingerprint(snapshot),
+                                snapshot_projection_fingerprint=snapshot.projection_fingerprint)
     status = repository_index_status(store, runtime)
     currentness: Literal["current", "stale", "unknown"] = (
         "current" if status["state"] == "ready" else
@@ -387,6 +397,8 @@ def _observe(context: IndexContext) -> IndexObservation:
         "noop" if status["state"] == "ready" else "incremental",
         currentness, str(status["reason"]), snapshot.revision, projection_compatible=True,
         discovery=cast(dict[str, object] | None, status.get("discovery")),
+        snapshot_indexing_fingerprint=snapshot_indexing_fingerprint(snapshot),
+        snapshot_projection_fingerprint=snapshot.projection_fingerprint,
     )
 
 
@@ -461,6 +473,8 @@ class RepositoryIndexApplicationService:
                 "incremental_possible": observation.mode in {"incremental", "noop"},
                 "indexing_fingerprint": context.runtime.fingerprint,
                 "projection_fingerprint": store.projection_fingerprint,
+                "snapshot_indexing_fingerprint": observation.snapshot_indexing_fingerprint,
+                "snapshot_projection_fingerprint": observation.snapshot_projection_fingerprint,
                 "retrieval_mode": self.retrieval.mode if self.retrieval else "lexical",
             }
             if operation == "status":

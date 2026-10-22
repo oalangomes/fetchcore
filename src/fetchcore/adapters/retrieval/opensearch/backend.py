@@ -698,7 +698,7 @@ class OpenSearchIndexStore:
         if len(docs) != 1:
             raise KnowledgeSearchError(
                 "OpenSearch repository scope does not select exactly one snapshot",
-                category="snapshot_missing",
+                category="snapshot_missing" if not docs else "repository_resource_collision",
                 metadata={"repository": repository, "snapshot_count": len(docs)},
             )
         snapshot = OpenSearchIndexSnapshot.from_mapping(docs[0])

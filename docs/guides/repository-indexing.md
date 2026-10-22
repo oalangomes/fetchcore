@@ -22,6 +22,94 @@ repository alias only after the staged point corpus and snapshot have been
 validated. Prior generations remain available for operator rollback.
 Provision the backend service with the [runtime setup](self-hosted-indexing.md).
 
+## Missing or incompatible snapshot runbook
+
+Recovery uses the existing registered lifecycle. Keep the same authorized
+repository, materialization, backend settings and retrieval profile throughout
+inspection and execution. A reachable endpoint, an existing core/alias name, or
+`mode: rebuild_required` does not authorize replacement or provisioning.
+
+### Inspect without writing
+
+After registration, inspect the exact canonical repository identity:
+
+```bash
+fetchcore index --config /etc/fetchcore/runtime.yaml status owner/project --json
+fetchcore index --config /etc/fetchcore/runtime.yaml plan owner/project --json
+```
+
+Both commands are read-only: no backend mutations, snapshot updates, embeddings
+or provisioning. `plan` can extract canonical knowledge in memory to calculate
+`planned_mutations`. An incompatible snapshot or schema stops that preview;
+an omitted preview means unmeasured, not zero. With an absent snapshot, prior
+document and deletion counts remain unknown because orphan records may exist.
+
+Read `mode`, `currentness`, `reason`, `schema_compatible`,
+`projection_compatible`, `target_revision` and `indexed_revision` together:
+
+| Observation | Meaning and operator decision |
+| --- | --- |
+| `initial`, `absent`, `snapshot_missing` | No active snapshot. Inspect resource binding and the initial mutation preview before authorizing the first rebuild. OpenSearch/Qdrant can report `index_missing` when the repository alias/resource is absent. |
+| `rebuild_required`, `indexing_contract_changed` | The persisted indexing fingerprint differs from the current canonical indexing contract. Inspect the policy/extractor change, then decide whether to authorize replacement. |
+| `rebuild_required`, `schema_mismatch`, `schema_compatible: false` | Live schema validation failed. Stop all writes, including rebuild. Correct the schema through a separately authorized maintenance procedure, then repeat inspection and require successful validation. |
+| `rebuild_required`, `schema_mismatch`, `projection_compatible: false`, `schema_compatible: true` | The live schema validates but the persisted projection contract differs. Inspect fingerprints before deciding on an explicit rebuild. |
+| `response_parsing_failure` or `index_stale` | The snapshot is invalid or not in the recognized ready state. Investigate before authorizing recovery; rebuild can still fail closed if ownership or recovery state cannot be validated. |
+| `incremental` with `stale` or `unknown` currentness | Revision/worktree changes or insufficient freshness evidence. Inspect discovery and the delta preview; a compatible snapshot can use explicit `sync`. This alone does not require rebuild. |
+| Collision, unknown binding, or transport error | Stop. Resolve identity, ownership or access independently; do not reinterpret the failure as an absent snapshot. |
+
+`indexing_fingerprint` and `projection_fingerprint` are the **expected** current
+contracts. `snapshot_indexing_fingerprint` and `snapshot_projection_fingerprint`
+are the **observed** persisted values when available; `null` means unavailable
+or unreadable, never a match. Projection errors can expose the observed projection
+fingerprint even when the snapshot cannot be accepted. Diagnostics expose these
+selected facts rather than raw backend responses or canonical document content.
+Keep configuration credentials out of captured operator evidence.
+
+These two observed-fingerprint fields are additive diagnostics; persisted
+snapshot/projection versions and fingerprints are unchanged. For Solr/OpenSearch,
+duplicate-snapshot errors now use `repository_resource_collision` rather than
+`snapshot_missing`, so callers must stop instead of treating ambiguity as absence.
+
+### Decide and execute explicitly
+
+Before replacement, verify the configured resource's repository binding and
+operator authorization. Dedicated Solr runtime preflight uses
+`reuse_only` and `create_if_missing: false`; foreign or unbound records fail with
+`repository_resource_collision`, and uncertain counts fail with
+`repository_binding_unknown`. Solr/OpenSearch duplicate repository snapshots
+also fail with `repository_resource_collision`, including on explicit rebuild.
+OpenSearch/Qdrant retain their adapter ownership checks. Stop on ambiguity;
+neither a resource name nor connectivity proves ownership or permission.
+
+`sync` requires a compatible existing snapshot. It returns the typed error
+`snapshot_missing` for absence or `rebuild_required` for incompatibility and
+performs no writes in either case. Never catch these errors to launch rebuild
+automatically. `schema_compatible: false` also blocks explicit rebuild with
+`schema_mismatch`; rebuild is not a schema repair command.
+
+Only after inspection, schema validation and explicit operator authorization,
+execute replacement as a separate action:
+
+```bash
+fetchcore index --config /etc/fetchcore/runtime.yaml rebuild owner/project --json
+```
+
+This action uses the existing adapter replacement path; it does not bypass
+ownership, corrupt-state, completeness or compatibility guards. Provisioning or
+schema maintenance requires separate authorization. A failed rebuild is a stop
+condition to investigate, not permission to clear or repurpose a resource.
+
+### Verify the persisted result
+
+Run `status` again with the same configuration and repository. Require
+`currentness: current`, matching `target_revision` / `indexed_revision`, and
+matching expected/observed indexing and projection fingerprints. Compare these
+with `execution.snapshot` from rebuild. A matching revision alone does not prove
+currentness for a dirty workspace; investigate `unknown` or pending changes.
+Use `plan` to confirm the next action is `noop` when applicable. Retrieval-mode
+readiness and serving revision reconciliation remain separate checks in the
+[operational guide](self-hosted-indexing.md).
+
 ## Configuration and compatibility
 
 Group options precede the subcommand:

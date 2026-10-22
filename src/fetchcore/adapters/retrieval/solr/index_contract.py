@@ -111,7 +111,7 @@ class IndexContractSolrIndexStore(SolrIndexStore):
         if len(docs) != 1:
             raise KnowledgeSearchError(
                 "Solr repository scope does not select exactly one snapshot",
-                category="snapshot_missing",
+                category="repository_resource_collision",
                 metadata={"repository": repository, "snapshot_count": len(docs)},
             )
         snapshot = IndexContractSolrSnapshot.from_solr(docs[0])
