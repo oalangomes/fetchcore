@@ -94,6 +94,11 @@ execute replacement as a separate action:
 fetchcore index --config /etc/fetchcore/runtime.yaml rebuild owner/project --json
 ```
 
+The three OPERATIONAL GitHub Actions workflows expose the same explicit action
+through `index_lifecycle: rebuild` after a separate `plan` run. Follow
+[manual operational recovery](self-hosted-indexing.md#manual-operational-recovery)
+to inspect the evidence and authorize the selected backend's workflow.
+
 This action uses the existing adapter replacement path; it does not bypass
 ownership, corrupt-state, completeness or compatibility guards. Provisioning or
 schema maintenance requires separate authorization. A failed rebuild is a stop

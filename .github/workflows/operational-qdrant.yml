@@ -8,6 +8,12 @@ on:
       - master
   workflow_dispatch:
     inputs:
+      index_lifecycle:
+        description: "Explicit action: inspect with plan before authorizing rebuild"
+        type: choice
+        required: true
+        default: sync
+        options: [plan, sync, rebuild]
       retrieval_mode:
         description: "Retrieval profile for this OPERATIONAL run"
         type: choice
@@ -23,7 +29,7 @@ jobs:
   operational-qdrant-index:
     name: OPERATIONAL Qdrant
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository)
@@ -34,6 +40,7 @@ jobs:
       cancel-in-progress: false
     env:
       FC_BACKEND: qdrant
+      FC_INDEX_LIFECYCLE: ${{ github.event_name == 'workflow_dispatch' && inputs.index_lifecycle || 'sync' }}
       FC_TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
       FC_OLLAMA_URL: ${{ vars.FETCHCORE_OPERATIONAL_OLLAMA_URL }}
       FETCHCORE_OLLAMA_TIMEOUT_SECONDS: "180"
@@ -47,6 +54,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          case "$FC_INDEX_LIFECYCLE" in
+            plan|sync|rebuild) ;;
+            *) echo "Invalid OPERATIONAL index_lifecycle: expected plan, sync or rebuild" >&2; exit 2 ;;
+          esac
           case "$FC_RETRIEVAL_MODE" in
             hybrid|dense) ;;
             *) echo "Invalid OPERATIONAL retrieval_mode: expected hybrid or dense" >&2; exit 2 ;;
@@ -121,7 +132,7 @@ jobs:
               raise SystemExit("Operational embeddinggemma must return exactly one 768-dimensional vector")
           PY
 
-      - name: Register and inspect existing snapshot
+      - name: Register and inspect snapshot
         shell: bash
         run: |
           set -euo pipefail
@@ -130,6 +141,11 @@ jobs:
             python scripts/shared_infra.py run --environment operational --repository oalangomes/fetchcore --backend "$FC_BACKEND" --ollama-url "$FC_OLLAMA_URL" -- fetchcore "$@"
           }
           fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" status oalangomes/fetchcore --json > "$FC_EVIDENCE/status-before.json"
+
+      - name: Require compatible existing snapshot for sync
+        if: ${{ env.FC_INDEX_LIFECYCLE == 'sync' }}
+        shell: bash
+        run: |
           python - <<'PY'
           import json
           import os
@@ -150,16 +166,38 @@ jobs:
               or not status.get("projection_fingerprint")):
               raise SystemExit("OPERATIONAL snapshot absent/incompatible: operator must inspect; no implicit rebuild")
           PY
-          fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" plan oalangomes/fetchcore --json > "$FC_EVIDENCE/plan.json"
 
-      - name: Explicit incremental sync, then verify readiness
+      - name: Plan index lifecycle
         shell: bash
         run: |
           set -euo pipefail
           fc() {
             python scripts/shared_infra.py run --environment operational --repository oalangomes/fetchcore --backend "$FC_BACKEND" --ollama-url "$FC_OLLAMA_URL" -- fetchcore "$@"
           }
-          fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" sync oalangomes/fetchcore --json > "$FC_EVIDENCE/execution.json"
+          fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" plan oalangomes/fetchcore --json > "$FC_EVIDENCE/plan.json"
+
+      - name: Execute explicitly selected indexing action
+        if: ${{ env.FC_INDEX_LIFECYCLE != 'plan' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          fc() {
+            python scripts/shared_infra.py run --environment operational --repository oalangomes/fetchcore --backend "$FC_BACKEND" --ollama-url "$FC_OLLAMA_URL" -- fetchcore "$@"
+          }
+          case "$FC_INDEX_LIFECYCLE" in
+            sync) fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" sync oalangomes/fetchcore --json > "$FC_EVIDENCE/execution.json" ;;
+            rebuild) fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" rebuild oalangomes/fetchcore --json > "$FC_EVIDENCE/execution.json" ;;
+            *) echo "Invalid OPERATIONAL execution intent" >&2; exit 2 ;;
+          esac
+
+      - name: Verify persisted snapshot and readiness
+        if: ${{ env.FC_INDEX_LIFECYCLE != 'plan' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          fc() {
+            python scripts/shared_infra.py run --environment operational --repository oalangomes/fetchcore --backend "$FC_BACKEND" --ollama-url "$FC_OLLAMA_URL" -- fetchcore "$@"
+          }
           fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" status oalangomes/fetchcore --json > "$FC_EVIDENCE/status-after.json"
           fc readiness --json > "$FC_EVIDENCE/readiness.json"
           python - <<'PY'
@@ -171,9 +209,17 @@ jobs:
           ready = json.loads((evidence / "readiness.json").read_text())
           observed = status.get("result")
           if (status.get("status") != "succeeded" or not isinstance(observed, dict)
+              or observed.get("repository") != "oalangomes/fetchcore"
+              or observed.get("branch") != "master"
+              or observed.get("schema_compatible") is not True
+              or observed.get("projection_compatible") is not True
               or observed.get("indexed_revision") != os.environ["FC_TARGET_SHA"]
-              or observed.get("currentness") != "current"):
-              raise SystemExit("OPERATIONAL indexed revision is not current")
+              or observed.get("currentness") != "current"
+              or not observed.get("snapshot_indexing_fingerprint")
+              or observed.get("snapshot_indexing_fingerprint") != observed.get("indexing_fingerprint")
+              or not observed.get("snapshot_projection_fingerprint")
+              or observed.get("snapshot_projection_fingerprint") != observed.get("projection_fingerprint")):
+              raise SystemExit("OPERATIONAL persisted snapshot identity is not current and compatible")
           if ready.get("status") != "succeeded" or not ready.get("result", {}).get("ready"):
               raise SystemExit("OPERATIONAL retrieval readiness did not pass")
           PY
