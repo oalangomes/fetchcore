@@ -4,3 +4,4 @@ selection:
     - runnerctl
     - .env.example
     - scripts/systemd/runnerops-systemctl
+    - site/styles.css

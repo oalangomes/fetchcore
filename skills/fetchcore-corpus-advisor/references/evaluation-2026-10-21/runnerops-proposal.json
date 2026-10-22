@@ -19,6 +19,7 @@
         "<no-extension>": 3
       },
       "eligible_by_source_kind": {
+        ".css": 1,
         ".example": 1,
         ".gitignore": 1,
         ".html": 1,
@@ -31,6 +32,7 @@
         "<no-extension>": 2
       },
       "read_by_source_kind": {
+        ".css": 1,
         ".example": 1,
         ".gitignore": 1,
         ".html": 1,
@@ -44,7 +46,6 @@
       },
       "skipped_by_reason_and_source_kind": {
         "not_included": {
-          ".css": 1,
           ".example": 1,
           ".jpg": 3,
           ".nojekyll": 1,
@@ -74,9 +75,10 @@
       "added_read_paths": [
         ".env.example",
         "runnerctl",
-        "scripts/systemd/runnerops-systemctl"
+        "scripts/systemd/runnerops-systemctl",
+        "site/styles.css"
       ],
-      "after_fingerprint": "sha256:c7375a4873297746ec438d4447289af40522053688b14eff64ce56828e21e9ed",
+      "after_fingerprint": "sha256:9b4981da505a2fe9e57d5ae282b8c698bdb3d63be8c0429b6131ed11b8532087",
       "after_truncated": false,
       "applied": false,
       "before_fingerprint": "sha256:05b062d902618c1017a6548124dd606bedf2635ec903a4ac0019655a18f9d885",
@@ -95,7 +97,7 @@
         "shell",
         "typescript"
       ],
-      "fingerprint": "sha256:c7375a4873297746ec438d4447289af40522053688b14eff64ce56828e21e9ed",
+      "fingerprint": "sha256:9b4981da505a2fe9e57d5ae282b8c698bdb3d63be8c0429b6131ed11b8532087",
       "semantic": {
         "corpus_resolvers": [],
         "enrichers": [],
@@ -312,7 +314,8 @@
         "Makefile",
         "runnerctl",
         ".env.example",
-        "scripts/systemd/runnerops-systemctl"
+        "scripts/systemd/runnerops-systemctl",
+        "site/styles.css"
       ],
       "limits": {
         "max_file_bytes": 1000000,
@@ -459,12 +462,12 @@
       "workspace": "/tmp/fetchcore-corpus-eval-runnerops"
     },
     "scan": {
-      "bytes_read": 1353324,
+      "bytes_read": 1368831,
       "discovered_files": 134,
-      "eligible_files": 126,
-      "files_read": 126,
+      "eligible_files": 127,
+      "files_read": 127,
       "skipped": {
-        "not_included": 8
+        "not_included": 7
       },
       "truncated": false,
       "truncation_reasons": []

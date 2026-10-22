@@ -33,7 +33,7 @@ uncontrolled difference. Raw JSON SHA-256:
 
 | Target | SCAN | DEEP | final proposal |
 | --- | --- | --- | --- |
-| RunnerOps | `d03434d73a89e38ea6fdd01b7da4f1179756313c279b3f8139af74a6d65d939b` | `51bb0a1a2f3662c1a50813f34ba95ccbafffdea67f12e78c9ce87de5c2f53b32` | `dafd48b653edbfde1491b500951dcf0f0236e1f4750797150435f5413d705e35` |
+| RunnerOps | `d03434d73a89e38ea6fdd01b7da4f1179756313c279b3f8139af74a6d65d939b` | `51bb0a1a2f3662c1a50813f34ba95ccbafffdea67f12e78c9ce87de5c2f53b32` | `f3c23d46e8b6135e4294e3db5432f326f7fadbfe02eeb24977f0b761ff86cd44` |
 | FetchCore | `a3247f80eff089004b8c229991a29a07aae67a599adacd06a6894a794f0339a7` | `b408c0aacd2959539d12052f0d28283991429ed255d8f31e2fd529e679aae8ec` | `49966481cefaedee1c4095e3bc84f0fb87a977df8c68141ee9469a54a6c05ecc` |
 
 Criteria were written before the critic responded: inclusion needs a concrete
@@ -73,7 +73,7 @@ still stay in Git. All final decisions are recommendations only.
 | RunnerOps `runners.conf.example` | include | supported, marginal | **keep out**: `README.md:720-738` already gives the six-field schema and example. The second sample at `runners.conf.example:7-8` adds no distinct contract. The critic's exact-file argument establishes provenance, not enough marginal retrieval value. |
 | RunnerOps `.env.example` | include | supported | **include**: XDG roots, ephemeral absence timing and boot policy form a compact operator template (`.env.example:1-22`); narrow admission avoids a live `.env`. |
 | RunnerOps `scripts/systemd/runnerops-systemctl` | include | supported | **include**: privileged action allowlist and unit check at `:9-35` are otherwise missing implementation evidence. |
-| RunnerOps `site/styles.css` | keep out | rejected | **keep out, contested**: `:75-89,772-878` contain skip-link, reduced-motion and responsive behavior; the parent accepts this is unique site engineering evidence. The 15.5 KB site stylesheet is peripheral to runner-control questions, and no retrieval trace demonstrates enough value to admit it. Review if site maintenance becomes an explicit corpus purpose. |
+| RunnerOps `site/styles.css` | keep out | rejected | **include exact path** after human adjudication: `:75-89,772-878` contain skip-link, reduced-motion and responsive behavior missing from selected sources. The parent initially judged the site peripheral, but the user chose to retain this specific accessibility/layout evidence. Import by `site/index.html:18` alone was not the reason. No broad CSS rule is proposed. |
 | FetchCore `infra/images.lock` | include | supported | **include**: `:1-4` is the central pin/update contract; CI sources it at `.github/workflows/ci.yml:94`. Individual digests also appear in Compose. |
 | FetchCore root `.env.example` | include | supported | **include**: `:1-62` consolidates current and legacy runtime settings; inspected credential fields are empty or commented placeholders. This does not authorize indexing a live `.env`. |
 | FetchCore `tools/explorer/.env.example` | include | rejected | **keep out**: seven keys/defaults at `:4-9` repeat root `.env.example:7-12`; no consumer of this particular template was found. The parent accepts this objection. |
@@ -84,9 +84,13 @@ still stay in Git. All final decisions are recommendations only.
 
 The critic initially favored including both CSS files and the scenarios. It
 reversed its scenario view after tracing benchmark consumers. The parent
-accepted the Explorer CSS objection, rejected the RunnerOps site CSS objection
-with an explicit product-scope reason, and rejected the critic's marginal
-support for the registry template. There was no forced consensus.
+accepted the Explorer CSS objection, initially rejected the RunnerOps site CSS
+objection on product-scope grounds, and rejected the critic's marginal support
+for the registry template. Human adjudication then favored the RunnerOps CSS
+because its accessibility and responsive rules are specific technical
+evidence. The user also affirmed excluding the four duplicate query copies
+only from search, keeping them in Git. There was no forced consensus or
+attempt to count the user's preference as a retrieval-quality measurement.
 
 ## Canonical final-policy validation
 
@@ -98,7 +102,7 @@ an explicit exclusion and revalidated. The final exact impact was:
 
 | Target | Read before → after | Added / removed | Fingerprint before → after |
 | --- | ---: | --- | --- |
-| RunnerOps | 123 → 126 | add `.env.example`, `runnerctl`, `scripts/systemd/runnerops-systemctl`; none removed | `sha256:05b062d902618c1017a6548124dd606bedf2635ec903a4ac0019655a18f9d885` → `sha256:c7375a4873297746ec438d4447289af40522053688b14eff64ce56828e21e9ed` |
+| RunnerOps | 123 → 127 | add `.env.example`, `runnerctl`, `scripts/systemd/runnerops-systemctl`, `site/styles.css`; none removed | `sha256:05b062d902618c1017a6548124dd606bedf2635ec903a4ac0019655a18f9d885` → `sha256:9b4981da505a2fe9e57d5ae282b8c698bdb3d63be8c0429b6131ed11b8532087` |
 | FetchCore | 587 → 587 | add root `.env.example`, `infra/images.lock`, `tools/explorer/docker/nginx.conf`, `tools/explorer/web/src/style.css`; remove four specified run `queries.json` paths | `sha256:3dd558e6c73848fa2b5e38738a50f48981a226f27e39b3dc27c2bc364bb57747` → `sha256:f4912ce9b5e5ae1faf3bd2b1c16562e1b7ca75b0866bda74eb0308a2afd4a304` |
 
 Both final comparisons succeeded without truncation and reported
@@ -111,12 +115,14 @@ chunking, classification and three FetchCore exclusions remain unchanged.
 
 Using the predeclared criteria, B corrected **two likely false-positive
 inclusions** (`runners.conf.example`, nested Explorer `.env.example`), found
-**one important technical gap** (Explorer focus/selection CSS), and made
+**two important technical gaps** (RunnerOps site accessibility/responsive CSS
+and Explorer focus/selection CSS), and made
 **one evidence-backed search exclusion** (four duplicate run query copies).
 The critic raised six substantive objections: both CSS omissions, the
 Explorer template admission, duplicate query admission, scenario exclusion,
-and marginal registry-template admission. The parent accepted three,
-rejected two and retained the scenario exclusion after the critic's own
+and marginal registry-template admission. After human adjudication, four
+objections changed the final recommendation, one marginal objection was
+rejected, and the scenario exclusion was retained after the critic's own
 reversal. These are qualitative case judgments, not measured retrieval gains.
 
 Baseline A used 19 focused searches, 26 bounded source reads and 15 canonical
@@ -125,12 +131,14 @@ conditions and added the critic's nine searches and 20 bounded reads; parent
 reconciliation also performed focused reads and CLI proposal validation.
 Agent token usage and comparable end-to-end elapsed times were not exposed,
 so no numeric token/time delta is claimed. B incurred one subagent session,
-two exchanges and one additional FetchCore proposal validation after detecting
-the unintended nested inclusion. No isolated retrieval test was run, so the
+two exchanges, one additional FetchCore proposal validation after detecting
+the unintended nested inclusion, and a final RunnerOps proposal validation
+after human adjudication. No isolated retrieval test was run, so the
 direction of actual Recall@K, precision, latency or context cost is unknown.
 
-Human review remains useful for the contested RunnerOps site CSS and for the
-tradeoff between exact run-artifact lookup and duplicate search results. The
-small two-repository sample cannot establish general improvement; it does
-show that independent challenge changed technically consequential decisions
-without changing FetchCore core or applying a policy.
+Human review resolved the two explicitly contested choices: include the
+RunnerOps site CSS and exclude the four exact run-query copies from search
+while preserving them for reproduction. The small two-repository sample
+cannot establish general improvement; it does show that independent challenge
+changed technically consequential decisions without changing FetchCore core
+or applying a policy.
