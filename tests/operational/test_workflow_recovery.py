@@ -132,6 +132,12 @@ result = {}
 if config["state"] == "schema" and operation in {"bootstrap", "sync", "rebuild"}:
     print(json.dumps({"status": "failed", "error": {"category": "schema_mismatch"}}))
     sys.exit(1)
+if config["state"] == "embedding" and operation in {"sync", "rebuild"}:
+    print(json.dumps({"status": "failed", "error": {
+        "category": "embedding_failed", "message": "Indexing operation failed",
+        "diagnostics": {"http_status": 400, "input_count": 32},
+    }}))
+    sys.exit(1)
 if config["state"] == "collision" and operation == "status":
     print(json.dumps({"status": "failed", "error": {"category": "repository_resource_collision"}}))
     sys.exit(1)
@@ -242,3 +248,17 @@ def test_rebuild_verification_checks_persisted_identity(tmp_path, backend, inval
                                       after_override=invalid)
     assert "rebuild" in commands
     assert result.returncode != 0
+
+
+@pytest.mark.parametrize("backend", ["solr", "opensearch", "qdrant"])
+def test_embedding_failure_is_visible_in_log_and_artifact_without_retry(tmp_path, backend):
+    result, commands, evidence = _run_steps(tmp_path, backend, "rebuild", "embedding")
+    assert result.returncode != 0
+    assert commands.count("rebuild") == 1
+    assert "readiness" not in commands
+    assert not (tmp_path / "executed").exists()
+    failure = json.loads((evidence / "execution.json").read_text())
+    assert failure["error"]["category"] == "embedding_failed"
+    assert failure["error"]["diagnostics"]["http_status"] == 400
+    assert '"category": "embedding_failed"' in result.stdout
+    assert '"http_status": 400' in result.stdout

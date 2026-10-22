@@ -406,6 +406,41 @@ def test_backend_failure_output_redacts_raw_details(workspace, tmp_path, backend
     assert backend.post_calls == []
 
 
+def test_embedding_http_failure_retains_safe_diagnostics_without_source_content(
+    workspace, tmp_path, backend, invoke, monkeypatch,
+):
+    from io import BytesIO
+    from urllib.error import HTTPError
+    from fetchcore.adapters.embedding.ollama import provider as ollama
+
+    register(workspace, tmp_path)
+
+    def fail(*args, **kwargs):
+        raise HTTPError(
+            "http://user:secret@provider.test/private", 400, "private response", None,
+            BytesIO(b'{"error":"private source content cannot be embedded"}'),
+        )
+
+    monkeypatch.setattr(ollama, "urlopen", fail)
+    provider = ollama.OllamaEmbeddingProvider()
+
+    def rebuild(*args, **kwargs):
+        provider.embed(("secret source", "private code"))
+
+    monkeypatch.setattr(SolrIndexStore, "full_rebuild", rebuild)
+    result = invoke("rebuild", success=False)
+    assert result["error"]["category"] == "embedding_failed"
+    assert result["error"]["diagnostics"] == {
+        "http_status": 400, "attempt": 1, "max_attempts": 3,
+        "input_count": 2, "batch_offset": 0, "total_input_count": 2,
+        "max_input_chars": 13, "total_input_chars": 25, "retries_exhausted": False,
+    }
+    assert "secret" not in json.dumps(result)
+    assert "private" not in json.dumps(result)
+    assert "provider_error" not in json.dumps(result)
+    assert backend.post_calls == []
+
+
 def test_plan_reports_canonical_noop_for_already_indexed_dirty_content(workspace, tmp_path, backend, invoke):
     register(workspace, tmp_path)
     invoke("rebuild")

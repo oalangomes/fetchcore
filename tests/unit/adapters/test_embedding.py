@@ -153,6 +153,7 @@ def test_ollama_embedding_http_error_preserves_bounded_diagnostics(
     assert getattr(error, "category", None) == "embedding_failed"
     metadata = getattr(error, "metadata", {})
     assert metadata["http_status"] == 400
+    assert metadata["provider_error_type"] == "context_length_exceeded"
     assert metadata["embedding_model"] == "embeddinggemma"
     assert metadata["input_count"] == 2
     assert metadata["batch_offset"] == 0
@@ -163,6 +164,16 @@ def test_ollama_embedding_http_error_preserves_bounded_diagnostics(
         metadata["provider_error"]
         == "input exceeds maximum context length and cannot be truncated further"
     )
+
+
+@pytest.mark.parametrize("message,reason", [
+    ("input exceeds maximum context length: private source", "context_length_exceeded"),
+    ("out of memory: private path", "provider_resource_exhausted"),
+    ("do embedding request: EOF private endpoint", "transient_provider_failure"),
+    ("private source response", None),
+])
+def test_ollama_failure_reason_never_copies_provider_text(message, reason):
+    assert ollama_module._ollama_embedding_failure_reason(message) == reason
 
 
 def test_embedding_transport_controls_round_trip() -> None:

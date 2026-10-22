@@ -24,6 +24,7 @@ from fetchcore.application.indexing import (
     build_index_context as _build_index_context,
 )
 from fetchcore.application.index_operations import inspect_local_corpus
+from fetchcore.application.index_artifacts import IndexFailureDiagnostics
 from fetchcore.retrieval.contracts import KnowledgeSearchError, KnowledgeSearchResponse
 from fetchcore.repository.index_policy import RepositoryIndexPolicyError
 from fetchcore.application.repositories import RepositoryApplicationService
@@ -248,13 +249,24 @@ def _run_repo_operation(
     try:
         result = execute()
     except RepositoryRegistryError as exc:
+        diagnostics = (
+            IndexFailureDiagnostics.from_metadata(exc.__cause__.metadata).to_mapping()
+            if operation in {"status", "plan", "sync", "rebuild"}
+            and isinstance(exc.__cause__, KnowledgeSearchError) else {}
+        )
         if as_json:
+            error: dict[str, object] = {"category": exc.category, "message": str(exc)}
+            if diagnostics:
+                error["diagnostics"] = diagnostics
             click.echo(json.dumps({
                 "operation": operation, "status": "failed",
-                "error": {"category": exc.category, "message": str(exc)},
+                "error": error,
             }, sort_keys=True, indent=2))
             raise click.exceptions.Exit(1) from exc
-        raise click.ClickException(_error_message(exc)) from exc
+        message = _error_message(exc)
+        if diagnostics:
+            message += "; diagnostics=" + json.dumps(diagnostics, sort_keys=True)
+        raise click.ClickException(message) from exc
     if as_json:
         click.echo(json.dumps({"operation": operation, "status": "succeeded", "result": result},
                               sort_keys=True, indent=2))

@@ -345,4 +345,17 @@ Registry categories are reused, including `repository_not_found`,
 Indexing categories include `unsupported_backend`, `incremental_unsupported`,
 `snapshot_missing`, `rebuild_required`, `schema_mismatch`, and adapter failure
 categories such as `index_update_failure`. Raw backend error messages and settings
-are not printed. Syntax errors retain Click's usage-error exit 2.
+are not printed. When measured failure metadata is available, `error.diagnostics`
+adds selected typed observations: HTTP status, attempt/max attempts, retries
+exhausted, input count, batch offset/total input count, maximum/total input
+characters, and a recognized transport cause type/errno. Known provider messages
+can contribute `provider_error_type: context_length_exceeded |
+provider_resource_exhausted | transient_provider_failure`; this is an observation,
+not a recovery decision. Raw provider responses, URLs, input text and arbitrary
+metadata remain excluded. Missing fields mean unobserved, never zero.
+
+The optional diagnostics object round-trips through indexing artifacts; older
+failure envelopes remain valid. Strict consumers must accept and validate this
+optional field before consuming new failures. Snapshot identities, embedding
+inputs and retry policy are unchanged. Syntax errors retain Click's usage-error
+exit 2.
