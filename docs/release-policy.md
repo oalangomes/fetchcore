@@ -36,4 +36,42 @@ GitHub-generated release notes group PRs using [`.github/release.yml`](../.githu
 - Do not force-push or silently publish from an incompatible schema, ambiguous commit, failed CI or tag/version mismatch.
 - The release process never owns agent lifecycle, result satisfaction or authority.
 
+## Candidate artifacts and publication
+
+For a release commit, the publication workflow downloads `python-distributions`
+and the complete installed-artifact matrix from the successful CI run that
+triggered it. It rejects source/version/checksum mismatches, missing runtimes or
+failed console/MCP checks before publication. A successful functional self-dogfood
+run for the same SHA is also required. The version-preparation step explicitly
+dispatches both workflows because pushes made with `GITHUB_TOKEN` do not trigger
+new workflows automatically.
+
+The release container uses `Dockerfile.release`: it installs the verified wheel
+without rebuilding FetchCore from source, includes the MCP extra, carries OCI
+source/revision/version labels and runs as UID 10001. Before a registry push it
+must pass the same import/version/CLI/runtime/MCP/configset smoke as the Python
+artifacts, plus the non-root check.
+
+All three candidates are published as GitHub Release assets using the job-scoped
+`GITHUB_TOKEN`. The container is a Docker image archive
+`fetchcore-v<version>-container.tar`, tagged `fetchcore:v<version>`; consumers use
+`docker load --input <archive>`. The exported archive is loaded and smoked before
+publication. No new package registry or publication secret is required.
+The image ID (its configuration digest), archive/Python artifact SHA-256 checksums,
+runtime versions, dependency inventories and smoke observations are retained in
+`release-evidence.json`, with `SHA256SUMS`. An image ID is not a registry manifest
+digest; this pipeline does not claim or fabricate a registry digest. This evidence
+establishes traceability, not artifact trust or retrieval quality.
+
+The GitHub Release stays draft until all assets are attached. A failed validation
+or upload cannot mark it complete. Retries encountering an existing release fail
+explicitly and never overwrite immutable assets.
+A partial publication can leave an immutable Git tag or draft;
+an operator must inspect and reconcile that state before retrying. Publication
+does not deploy or modify OPERATIONAL backend resources.
+
+Source implementation and local smoke evidence do not close the operational
+acceptance of #132/#135/#136: the approved first publication still needs an actual
+successful workflow run and a GitHub Release containing the validated assets.
+
 The workflow is [`.github/workflows/release.yml`](../.github/workflows/release.yml). Initial publication is a manual product decision; releases after the bootstrap follow the rules above.

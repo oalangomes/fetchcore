@@ -4,7 +4,7 @@ FetchCore is a backend-neutral repository knowledge and retrieval engine. The qu
 
 ## Requirements
 
-- Python 3.11+
+- CPython 3.11–3.15
 - Git
 - Docker with the Compose plugin only when using the container/runtime or optional backend services
 

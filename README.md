@@ -11,7 +11,7 @@
 <p align="center">Backend-neutral repository knowledge and retrieval for developer tools, MCP clients, and coding agents.</p>
 
 <p align="center">
-  <a href="pyproject.toml"><img alt="Python 3.11+" src="https://img.shields.io/badge/Python-3.11%2B-2563EB"></a>
+  <a href="pyproject.toml"><img alt="Python 3.11–3.15" src="https://img.shields.io/badge/Python-3.11–3.15-2563EB"></a>
   <a href="docs/release-policy.md"><img alt="Technical preview" src="https://img.shields.io/badge/status-technical%20preview-F59E0B"></a>
   <a href="docs/guides/mcp.md"><img alt="MCP support" src="https://img.shields.io/badge/interface-MCP-0D9488"></a>
   <a href="docs/architecture/overview.md"><img alt="Backend neutral" src="https://img.shields.io/badge/design-backend--neutral-475569"></a>
@@ -66,7 +66,7 @@ It is **not** an agent framework, a task planner, an artifact-approval system or
 
 ## Quick start
 
-Prerequisites: **Python 3.11+** and **Git**. From a fresh checkout, the following registration commands need neither Docker nor an embedding provider:
+Prerequisites: **CPython 3.11–3.15** and **Git**. From a fresh checkout, the following registration commands need neither Docker nor an embedding provider:
 
 ```bash
 git clone https://github.com/oalangomes/fetchcore.git
