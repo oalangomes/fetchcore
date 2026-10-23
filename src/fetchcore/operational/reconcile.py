@@ -27,6 +27,26 @@ from fetchcore.retrieval.contracts import KnowledgeSearchError
 
 
 _FULL_SHA = re.compile(r"[0-9a-f]{40}\Z")
+_CONTAINER_CONFIG = "/etc/fetchcore/operational-mcp.yml"
+
+
+def _rejection_category(report: ReadinessReport, revision: str, repository: str) -> str:
+    if report.repository != repository:
+        return "repository_binding_mismatch"
+    # Prefer observed causes over checks that could not run after a probe failed.
+    for name in ("service", "schema", "snapshot", "indexing_fingerprint",
+                 "embedding", "retrieval"):
+        fact = report.checks.get(name)
+        if (fact is not None and fact.state not in {"ready", "not_required"}
+                and fact.category not in {None, "not_checked", "probe_blocked"}):
+            return fact.category
+    if report.indexed_revision is not None and report.indexed_revision != revision:
+        return "snapshot_revision_mismatch"
+    fact = report.checks.get("currentness")
+    if (fact is not None and fact.state not in {"ready", "not_required"}
+            and fact.category not in {None, "not_checked", "probe_blocked"}):
+        return fact.category
+    return "currentness_unproven"
 
 
 def materialized_head(workspace: Path) -> str:
@@ -73,12 +93,7 @@ def validate_candidate(
             name: fact.to_mapping() for name, fact in report.checks.items()
             if fact.state not in {"ready", "not_required"}
         }
-        category = (
-            "repository_binding_mismatch" if report.repository != config.repository
-            else "snapshot_revision_mismatch" if report.indexed_revision != head
-            else next((fact.category or fact.state for fact in report.checks.values()
-                       if fact.state not in {"ready", "not_required"}), "currentness_unproven")
-        )
+        category = _rejection_category(report, head, config.repository)
         raise ValueError(
             f"serving_reconciliation_rejected/{category}: "
             + json.dumps({
@@ -112,13 +127,81 @@ def write_binding(config_path: Path, output: Path, revision: str) -> None:
             os.unlink(temporary)
 
 
-def activate_serving(compose_file: Path, output: Path) -> None:
-    """Recreate only owned serving processes to refresh file bind mounts."""
+def _validate_serving_mounts(
+    model: object, *, workspace: Path, container_workspace: Path, output: Path,
+) -> None:
+    """Check normalized Compose mounts, including overlapping mounts, fail-closed."""
+    if not isinstance(model, dict) or not isinstance(model.get("services"), dict):
+        raise ValueError("serving_binding_mismatch: invalid Compose services")
+    expected = {
+        container_workspace: workspace.resolve(strict=True),
+        Path(_CONTAINER_CONFIG): output.resolve(strict=False),
+    }
+    if not container_workspace.is_absolute():
+        raise ValueError("serving_binding_mismatch: runtime workspace must be absolute")
+    for name in ("mcp", "api"):
+        service = model["services"].get(name)
+        if not isinstance(service, dict):
+            raise ValueError(f"serving_binding_mismatch: {name} service missing")
+        environment = service.get("environment", {})
+        if (not isinstance(environment, dict)
+                or environment.get("FETCHCORE_CONFIG") != _CONTAINER_CONFIG
+                or any(key.startswith("FETCHCORE_") and key not in {
+                    "FETCHCORE_CONFIG", "FETCHCORE_OLLAMA_URL",
+                } for key in environment)):
+            raise ValueError(f"serving_binding_mismatch: {name} runtime environment differs")
+        if service.get("volumes_from"):
+            raise ValueError(f"serving_binding_mismatch: {name} inherited mounts unproven")
+        tmpfs = service.get("tmpfs", [])
+        if not isinstance(tmpfs, list) or any(not isinstance(item, str) for item in tmpfs):
+            raise ValueError(f"serving_binding_mismatch: {name} tmpfs mounts invalid")
+        for item in tmpfs:
+            target = Path(item.split(":", 1)[0])
+            if any(target.is_relative_to(path) or path.is_relative_to(target)
+                   for path in expected):
+                raise ValueError(f"serving_binding_mismatch: {name} overlapping tmpfs mount")
+        volumes = service.get("volumes", [])
+        if not isinstance(volumes, list):
+            raise ValueError(f"serving_binding_mismatch: {name} mounts unavailable")
+        seen: set[Path] = set()
+        for volume in volumes:
+            if not isinstance(volume, dict) or not isinstance(volume.get("target"), str):
+                raise ValueError(f"serving_binding_mismatch: {name} mount invalid")
+            target = Path(volume["target"])
+            if target in expected:
+                source = volume.get("source")
+                if (target in seen or volume.get("type") != "bind"
+                        or volume.get("read_only") is not True
+                        or not isinstance(source, str) or not Path(source).is_absolute()
+                        or Path(source).resolve(strict=False) != expected[target]):
+                    raise ValueError(f"serving_binding_mismatch: {name} bind mount differs")
+                seen.add(target)
+            elif any(target.is_relative_to(path) or path.is_relative_to(target)
+                     for path in expected):
+                raise ValueError(f"serving_binding_mismatch: {name} overlapping mount")
+        if seen != expected.keys():
+            raise ValueError(f"serving_binding_mismatch: {name} required bind mount missing")
+
+
+def activate_serving(
+    compose_file: Path, output: Path, *, config_path: Path, workspace: Path, revision: str,
+) -> None:
+    """Validate the deployment before writing and recreating serving processes."""
     environment = dict(os.environ)
-    environment["FETCHCORE_OPERATIONAL_RUNTIME_CONFIG"] = str(output.resolve(strict=True))
+    environment["FETCHCORE_OPERATIONAL_RUNTIME_CONFIG"] = str(output.resolve(strict=False))
+    command = ["docker", "compose", "-f", str(compose_file.resolve(strict=True))]
+    resolved = subprocess.run(
+        [*command, "config", "--format", "json"], env=environment,
+        capture_output=True, text=True, check=True, timeout=30,
+    )
+    config = load_runtime_config(path=config_path, environ={})
+    _validate_serving_mounts(
+        json.loads(resolved.stdout), workspace=workspace,
+        container_workspace=config.workspace, output=output,
+    )
+    write_binding(config_path, output, revision)
     subprocess.run(
-        ["docker", "compose", "-f", str(compose_file.resolve(strict=True)),
-         "up", "-d", "--no-deps", "--force-recreate", "mcp", "api"],
+        [*command, "up", "-d", "--no-deps", "--force-recreate", "mcp", "api"],
         env=environment, check=True,
     )
 
@@ -149,8 +232,10 @@ def main(argv: list[str] | None = None) -> int:
             ollama_url=args.ollama_url,
         )
         if args.activate:
-            write_binding(args.config, output, revision)
-            activate_serving(args.compose_file, output)
+            activate_serving(
+                args.compose_file, output, config_path=args.config,
+                workspace=workspace, revision=revision,
+            )
         print(json.dumps({
             "status": "activated" if args.activate else "compatible",
             "repository": report.repository,
