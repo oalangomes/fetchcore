@@ -11,6 +11,7 @@ from dataclasses import replace
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import subprocess
 import sys
@@ -152,6 +153,30 @@ def _validate_serving_mounts(
             raise ValueError(f"serving_binding_mismatch: {name} runtime environment differs")
         if service.get("volumes_from"):
             raise ValueError(f"serving_binding_mismatch: {name} inherited mounts unproven")
+        for kind in ("configs", "secrets"):
+            file_mounts = service.get(kind, [])
+            if not isinstance(file_mounts, list):
+                raise ValueError(f"serving_binding_mismatch: {name} {kind} mounts invalid")
+            for mount in file_mounts:
+                if (not isinstance(mount, dict)
+                        or not isinstance(mount.get("source"), str) or not mount["source"]):
+                    raise ValueError(f"serving_binding_mismatch: {name} {kind} mount invalid")
+                target_value = mount.get("target", "")
+                if not isinstance(target_value, str):
+                    raise ValueError(f"serving_binding_mismatch: {name} {kind} target invalid")
+                if kind == "secrets":
+                    target_value = target_value or mount["source"]
+                    if not target_value.startswith("/"):
+                        target_value = f"/run/secrets/{target_value}"
+                else:
+                    target_value = target_value or f"/{mount['source']}"
+                if not target_value.startswith("/") or "\0" in target_value:
+                    raise ValueError(f"serving_binding_mismatch: {name} {kind} target invalid")
+                # Normalize container paths lexically, without resolving them on the host.
+                target = Path(posixpath.normpath("/" + target_value.lstrip("/")))
+                if any(target.is_relative_to(path) or path.is_relative_to(target)
+                       for path in expected):
+                    raise ValueError(f"serving_binding_mismatch: {name} overlapping {kind} mount")
         tmpfs = service.get("tmpfs", [])
         if not isinstance(tmpfs, list) or any(not isinstance(item, str) for item in tmpfs):
             raise ValueError(f"serving_binding_mismatch: {name} tmpfs mounts invalid")

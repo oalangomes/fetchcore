@@ -223,6 +223,7 @@ def test_activation_updates_only_owned_config_and_serving_containers(
 @pytest.mark.parametrize("fault", [
     "workspace", "runtime_file", "writable", "missing", "named_volume", "overlap",
     "environment", "missing_service", "tmpfs", "volumes_from",
+    "configs_workspace", "configs_runtime", "secrets_workspace", "secrets_runtime",
 ])
 def test_activation_rejects_mismatched_deployment_before_any_write(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
@@ -264,6 +265,13 @@ def test_activation_rejects_mismatched_deployment_before_any_write(
         target["tmpfs"] = ["/workspace/src:size=1m"]
     elif fault == "volumes_from":
         target["volumes_from"] = ["other"]
+    elif fault.startswith(("configs_", "secrets_")):
+        kind, destination = fault.split("_", 1)
+        target[kind] = [{
+            "source": "override",
+            "target": ("/workspace/a.py" if destination == "workspace"
+                       else "/etc/fetchcore/operational-mcp.yml"),
+        }]
     commands = []
     def run(command: list[str], **kwargs: object) -> object:
         commands.append(command)
@@ -283,6 +291,109 @@ def test_activation_rejects_mismatched_deployment_before_any_write(
     assert len(commands) == 1
     assert output.read_bytes() == b"previous serving binding\n"
     assert config.read_bytes() == original
+
+
+@pytest.mark.parametrize("kind", ["configs", "secrets"])
+@pytest.mark.parametrize("target", [
+    "/", "/workspace", "/etc/fetchcore",
+    "/etc/fetchcore/operational-mcp.yml/child",
+    "/elsewhere/../workspace/a.py", "//workspace/a.py",
+])
+def test_file_mounts_reject_overlapping_and_normalized_targets(
+    tmp_path: Path, kind: str, target: str,
+) -> None:
+    model = _compose_model(tmp_path, tmp_path / "runtime.yml")
+    model["services"]["mcp"][kind] = [{"source": "override", "target": target}]
+
+    with pytest.raises(ValueError, match="serving_binding_mismatch"):
+        reconcile._validate_serving_mounts(
+            model, workspace=tmp_path, container_workspace=Path("/workspace"),
+            output=tmp_path / "runtime.yml",
+        )
+
+
+@pytest.mark.parametrize("kind", ["configs", "secrets"])
+@pytest.mark.parametrize("explicit_empty_target", [False, True])
+def test_file_mount_default_destination_cannot_shadow_workspace(
+    tmp_path: Path, kind: str, explicit_empty_target: bool,
+) -> None:
+    container_workspace = Path("/workspace" if kind == "configs" else "/run/secrets/workspace")
+    model = _compose_model(tmp_path, tmp_path / "runtime.yml")
+    model["services"]["mcp"]["volumes"][0]["target"] = str(container_workspace)
+    mount = {"source": "workspace"}
+    if explicit_empty_target:
+        mount["target"] = ""
+    model["services"]["mcp"][kind] = [mount]
+
+    with pytest.raises(ValueError, match="serving_binding_mismatch"):
+        reconcile._validate_serving_mounts(
+            model, workspace=tmp_path, container_workspace=container_workspace,
+            output=tmp_path / "runtime.yml",
+        )
+
+
+@pytest.mark.parametrize("kind, target", [
+    ("configs", "workspace/a.py"),
+    ("secrets", "../../workspace/a.py"),
+])
+def test_file_mount_relative_targets_cannot_bypass_validation(
+    tmp_path: Path, kind: str, target: str,
+) -> None:
+    model = _compose_model(tmp_path, tmp_path / "runtime.yml")
+    model["services"]["mcp"][kind] = [{"source": "override", "target": target}]
+
+    with pytest.raises(ValueError, match="serving_binding_mismatch"):
+        reconcile._validate_serving_mounts(
+            model, workspace=tmp_path, container_workspace=Path("/workspace"),
+            output=tmp_path / "runtime.yml",
+        )
+
+
+@pytest.mark.parametrize("kind", ["configs", "secrets"])
+@pytest.mark.parametrize("target", [None, "", "/etc/unrelated/settings", "/workspace-other/a.py"])
+def test_file_mounts_allow_unrelated_destinations(
+    tmp_path: Path, kind: str, target: str | None,
+) -> None:
+    model = _compose_model(tmp_path, tmp_path / "runtime.yml")
+    mount = {"source": "settings"}
+    if target is not None:
+        mount["target"] = target
+    model["services"]["mcp"][kind] = [mount]
+
+    reconcile._validate_serving_mounts(
+        model, workspace=tmp_path, container_workspace=Path("/workspace"),
+        output=tmp_path / "runtime.yml",
+    )
+
+
+def test_relative_secret_destination_is_under_run_secrets(tmp_path: Path) -> None:
+    model = _compose_model(tmp_path, tmp_path / "runtime.yml")
+    model["services"]["mcp"]["secrets"] = [{"source": "settings", "target": "workspace"}]
+
+    reconcile._validate_serving_mounts(
+        model, workspace=tmp_path, container_workspace=Path("/workspace"),
+        output=tmp_path / "runtime.yml",
+    )
+
+
+@pytest.mark.parametrize("kind", ["configs", "secrets"])
+@pytest.mark.parametrize("mounts", [
+    None, {}, ["override"], [{}], [{"source": 1}],
+    [{"source": "override", "target": None}],
+    [{"source": "override", "target": 1}],
+    [{"source": "override", "target": "/invalid\0path"}],
+])
+def test_file_mounts_reject_unproven_declarations(
+    tmp_path: Path, kind: str, mounts: object,
+) -> None:
+    model = _compose_model(tmp_path, tmp_path / "runtime.yml")
+    model["services"]["mcp"][kind] = mounts
+
+    with pytest.raises(ValueError, match="serving_binding_mismatch"):
+        reconcile._validate_serving_mounts(
+            model, workspace=tmp_path, container_workspace=Path("/workspace"),
+            output=tmp_path / "runtime.yml",
+        )
 
 
 def test_main_is_read_only_without_activate(
