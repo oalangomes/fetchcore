@@ -11,6 +11,16 @@ FetchCore retrieval/performance baseline.
 
 The corpus is private. FetchCore stores no source content here.
 
+## Standard operating procedure
+
+Follow [BENCH_RUNBOOK.md](BENCH_RUNBOOK.md) for dedicated BENCH preflight,
+new runs, resumable measurements, offline validation, ContextYield generation,
+and immutable publication. New runs remain outside the versioned artifact tree.
+The published catalog reserves version numbers even with a fresh local output
+root. V0.1–V0.3 are already versioned legacy measurements and must not be
+rewritten or retroactively attributed BENCH metadata. The operator will add
+V0.4 measured artifacts in a separate commit to the standardization PR.
+
 ## New BENCH execution
 
 For a new run, copy [run-config.example.json](run-config.example.json) outside
@@ -244,7 +254,7 @@ python benchmarks/baseline-v1/compare_runs.py \
 The comparator checks artifact identity and completeness, recomputes derived
 ContextYield from frozen spans, and reports aggregate and per-query differences
 across all measured repetitions. The [S0 verification
-report](../../docs/benchmarks/baseline-v1-s0-verification.md) explains the V0.2
+report](../../docs/benchmarks/baseline-v1-provenance-verification.md) explains the V0.2
 decision and its snapshot-provenance limit.
 
 The evidence-aware artifacts captured before automatic versioning are preserved

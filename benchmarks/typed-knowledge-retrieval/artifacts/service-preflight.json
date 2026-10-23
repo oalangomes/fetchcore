@@ -1,0 +1,124 @@
+{
+  "compose_project": "fetchcore-bench-dedicated",
+  "embedding_endpoint_attestation": {
+    "endpoint": "http://172.21.32.1:11434",
+    "model_listed": "embeddinggemma:latest",
+    "probe": "GET /api/tags",
+    "reachable_from": "WSL host runner",
+    "vector_dimensions": null
+  },
+  "endpoints": {
+    "ollama": "http://172.21.32.1:11434",
+    "opensearch": "http://127.0.0.1:29200",
+    "qdrant": "http://127.0.0.1:26333",
+    "solr": "http://127.0.0.1:28983/solr"
+  },
+  "observed_at_utc": "2026-10-19T20:05:40.959490+00:00",
+  "resource_inventory": {
+    "opensearch": {
+      "count": 5,
+      "names": [
+        ".plugins-ml-config",
+        "fc-bench-neurotrack_ms-5f6a70bb2b4b3145-5f6a70bb2b4b-e40e15047e94-c651ddd6b21b-64cad174",
+        "top_queries-2026.10.17-59497",
+        "top_queries-2026.10.18-59498",
+        "top_queries-2026.10.19-59499"
+      ]
+    },
+    "qdrant": {
+      "count": 1,
+      "names": [
+        "fc-bench-neurotrack_ms-5f6a70bb2b4b3145-5f6a70bb2b4b-e40e15047e-c651ddd6b2-ce0ca6d7"
+      ]
+    },
+    "qdrant_aliases": {
+      "count": 1,
+      "names": [
+        "fc-bench-neurotrack_ms-5f6a70bb2b4b3145-5f6a70bb2b4b"
+      ]
+    },
+    "solr": {
+      "count": 1,
+      "names": [
+        "fc-bench-neurotrack_ms-5f6a70bb2b4b3145"
+      ]
+    }
+  },
+  "service_identity": {
+    "opensearch": {
+      "compose_project": "fetchcore-bench-dedicated",
+      "compose_service": "opensearch",
+      "container_id": "f53191a355483020bc488b84bc4f14e121ff12791516668a7c05471e32a08afb",
+      "owner_label": "fetchcore-shared-infra-v1",
+      "published_ports": {
+        "9200/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "29200"
+          }
+        ],
+        "9600/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "29600"
+          }
+        ]
+      },
+      "volumes": [
+        {
+          "destination": "/usr/share/opensearch/data",
+          "name": "fetchcore-bench-dedicated_opensearch-data"
+        }
+      ]
+    },
+    "qdrant": {
+      "compose_project": "fetchcore-bench-dedicated",
+      "compose_service": "qdrant",
+      "container_id": "d226bf575623e65a2e24e6ef2066e9b87f9aed4c89368354cb5b42164d3d8dc9",
+      "owner_label": "fetchcore-shared-infra-v1",
+      "published_ports": {
+        "6333/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "26333"
+          }
+        ],
+        "6334/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "26334"
+          }
+        ]
+      },
+      "volumes": [
+        {
+          "destination": "/qdrant/storage",
+          "name": "fetchcore-bench-dedicated_qdrant-data"
+        }
+      ]
+    },
+    "solr": {
+      "compose_project": "fetchcore-bench-dedicated",
+      "compose_service": "solr",
+      "container_id": "ff939e0641f4e1e0687bc5b026099eb43a45a1c0176a51ed44001e136fcd3290",
+      "owner_label": "fetchcore-shared-infra-v1",
+      "published_ports": {
+        "8983/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "28983"
+          }
+        ]
+      },
+      "volumes": [
+        {
+          "destination": "/var/solr",
+          "name": "fetchcore-bench-dedicated_solr-data"
+        }
+      ]
+    }
+  },
+  "status": "READ_ONLY",
+  "write_authorization": "absent",
+  "writes_performed": false
+}

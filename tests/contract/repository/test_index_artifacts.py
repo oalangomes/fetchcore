@@ -8,6 +8,7 @@ import pytest
 
 from fetchcore.cli import main
 from fetchcore.application.index_artifacts import (
+    IndexFailureDiagnostics,
     compare_index_artifacts,
     load_index_artifact,
 )
@@ -65,6 +66,58 @@ def test_invalid_artifacts_rejected(mutate):
         load_index_artifact(json.dumps(value))
 
 
+def test_observed_index_stage_timings_roundtrip_and_reject_invented_values():
+    for artifact_name, location in (
+        ("incremental", "execution"), ("delta-plan", "plan"),
+    ):
+        value = fixture(artifact_name)
+        result = value["command"]["result"]
+        stages = {"snapshot_load_ms": 3, "canonical_full_index_ms": 25}
+        target = result["execution"] if location == "execution" else result
+        target["stage_timings_ms"] = stages
+        parsed = load_index_artifact(json.dumps(value))
+        observed = parsed.command["result"]
+        actual = observed["execution"] if location == "execution" else observed
+        assert actual["stage_timings_ms"] == stages
+
+        for invalid in (-1, True, None, 1.5):
+            target["stage_timings_ms"] = {"snapshot_load_ms": invalid}
+            with pytest.raises(ValueError):
+                load_index_artifact(json.dumps(value))
+        target["stage_timings_ms"] = {"invented_time_ms": 0}
+        with pytest.raises(ValueError):
+            load_index_artifact(json.dumps(value))
+
+
+def test_qdrant_noop_and_vendor_stage_observations_stay_validated() -> None:
+    value = fixture()
+    value["backend"] = "qdrant-vector"
+    result = value["command"]["result"]
+    execution = result["execution"]
+    result["mode"] = "noop"
+    execution.update(mode="noop", noop=True, added=0, updated=0, deleted=0)
+    execution["telemetry"] = {
+        "backend_writes": 0,
+        "backend_deletes": 0,
+        "duration_ms": 0,
+        "stage_durations_ms": {"point_validation": 0, "alias_read": 2},
+    }
+    parsed = load_index_artifact(json.dumps(value))
+    assert parsed.command["result"]["execution"]["mode"] == "noop"
+
+    execution["updated"] = 1
+    with pytest.raises(ValueError, match="Contradictory noop"):
+        load_index_artifact(json.dumps(value))
+    execution["updated"] = 0
+    result["mode"] = "incremental"
+    with pytest.raises(ValueError, match="Backend noop"):
+        load_index_artifact(json.dumps(value))
+    result["mode"] = "noop"
+    execution["telemetry"]["stage_durations_ms"] = {"alias_read": -1}
+    with pytest.raises(ValueError, match="Invalid backend stage duration"):
+        load_index_artifact(json.dumps(value))
+
+
 def test_duplicate_keys_and_size_rejected():
     with pytest.raises(ValueError, match="Duplicate"):
         load_index_artifact('{"schema_version":1,"schema_version":1}')
@@ -89,6 +142,42 @@ def test_failure_and_unmeasured_embedding_identity_block_comparison():
     for name in ("failure", "initial-plan"):
         artifact = load_index_artifact(json.dumps(fixture(name)))
         assert compare_index_artifacts(artifact, artifact)["comparable"] is False
+
+
+def test_safe_failure_diagnostics_roundtrip_and_remain_failure_evidence():
+    value = fixture("failure")
+    diagnostics = {
+        "http_status": 400, "attempt": 1, "max_attempts": 3,
+        "input_count": 32, "max_input_chars": 8000,
+        "retries_exhausted": False, "cause_type": "TimeoutError", "cause_errno": -3,
+        "provider_error_type": "context_length_exceeded",
+    }
+    value["command"]["error"]["diagnostics"] = diagnostics
+    artifact = load_index_artifact(json.dumps(value))
+    assert artifact.to_mapping() == value
+    assert load_index_artifact(json.dumps(artifact.to_mapping())) == artifact
+    assert compare_index_artifacts(artifact, artifact)["comparable"] is False
+
+    assert IndexFailureDiagnostics.from_metadata({
+        **diagnostics, "provider_error": "secret text", "url": "http://secret.test",
+        "input": ["private source"], "embedding_model": "private model",
+    }).to_mapping() == diagnostics
+
+
+@pytest.mark.parametrize("diagnostics", [
+    {}, None, {"provider_error": "private source"}, {"http_status": True},
+    {"http_status": 99}, {"http_status": 600}, {"input_count": "secret"},
+    {"input_count": -1}, {"input_count": 1.5}, {"input_count": 2**64},
+    {"attempt": 0}, {"retries_exhausted": 1}, {"cause_type": "private response"},
+    {"provider_error_type": "private source response"},
+])
+def test_unsafe_or_invalid_failure_diagnostics_are_rejected(diagnostics):
+    value = fixture("failure")
+    value["command"]["error"]["diagnostics"] = diagnostics
+    with pytest.raises(ValueError):
+        load_index_artifact(json.dumps(value))
+    if isinstance(diagnostics, dict):
+        assert IndexFailureDiagnostics.from_metadata(diagnostics).to_mapping() == {}
 
 
 def test_offline_cli_wraps_json_with_configuration_identity(tmp_path):

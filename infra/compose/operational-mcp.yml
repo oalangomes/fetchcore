@@ -1,0 +1,103 @@
+# Single-repository OPERATIONAL MCP and read-only Search Lab. This overlay never starts a backend.
+name: fetchcore-operational-mcp
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: tools/explorer/docker/Dockerfile
+      target: python-runtime
+    image: fetchcore-operational-lab:local
+    command: ["python", "-m", "uvicorn", "tools.explorer.api.app:app", "--host", "0.0.0.0", "--port", "8765"]
+    environment:
+      FETCHCORE_CONFIG: /etc/fetchcore/operational-mcp.yml
+      FETCHCORE_OLLAMA_URL: ${FETCHCORE_OPERATIONAL_OLLAMA_URL:-http://host.docker.internal:11434}
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ../../:/workspace:ro
+      - ${FETCHCORE_OPERATIONAL_RUNTIME_CONFIG:-./operational-mcp.runtime.yml}:/etc/fetchcore/operational-mcp.yml:ro
+    expose:
+      - "8765"
+    networks:
+      - operational
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=1000,gid=1000
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/config', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+    restart: unless-stopped
+
+  lab:
+    build:
+      context: ../..
+      dockerfile: tools/explorer/docker/Dockerfile
+      target: web-runtime
+    image: fetchcore-operational-lab-web:local
+    ports:
+      - 127.0.0.1:38767:8080
+    networks:
+      - operational
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+    restart: unless-stopped
+
+  mcp:
+    build:
+      context: ../..
+      dockerfile: tools/explorer/docker/Dockerfile
+      target: python-runtime
+    image: fetchcore-operational-mcp:local
+    command:
+      - python
+      - -c
+      - >-
+        from fetchcore.serving.mcp import mcp;
+        mcp.run(transport="streamable-http", host="0.0.0.0", port=8766,
+        stateless_http=True, json_response=True)
+    environment:
+      FETCHCORE_CONFIG: /etc/fetchcore/operational-mcp.yml
+      FETCHCORE_OLLAMA_URL: ${FETCHCORE_OPERATIONAL_OLLAMA_URL:-http://host.docker.internal:11434}
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ../../:/workspace:ro
+      - ${FETCHCORE_OPERATIONAL_RUNTIME_CONFIG:-./operational-mcp.runtime.yml}:/etc/fetchcore/operational-mcp.yml:ro
+    ports:
+      - 127.0.0.1:38766:8766
+    networks:
+      - operational
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=1000,gid=1000
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+networks:
+  operational:
+    external: true
+    name: fetchcore-operational_default

@@ -1,0 +1,26 @@
+version: 1
+runtime:
+  backend: solr
+  workspace: /workspace
+  repository: oalangomes/fetchcore
+  revision: e0a9a72adb2f8c7e056c5e9993fb5fa34e00e8f1
+retrieval:
+  mode: hybrid
+  dense:
+    enabled: true
+    embedding:
+      provider: ollama
+      model: embeddinggemma
+      dimensions: 768
+      timeout_seconds: 60
+  hybrid:
+    enabled: true
+    strategy: rrf
+backends:
+  solr:
+    url: http://solr:8983/solr
+    collection: fc-operational-fetchcore-635ab7352c2850f2
+    projection_version: "3"
+embedding:
+  ollama:
+    url: http://host.docker.internal:11434

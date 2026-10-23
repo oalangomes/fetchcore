@@ -1,0 +1,11 @@
+# Operator-owned example. Replace every example identity/path/resource with an
+# authorized local value before use. Do not put credentials in this file.
+version: 1
+runtime:
+  backend: solr
+  workspace: /absolute/path/to/authorized/repository
+  repository: owner/repository
+backends:
+  solr:
+    url: http://127.0.0.1:8983/solr
+    collection: fetchcore-developer-local

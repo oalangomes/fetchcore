@@ -16,6 +16,8 @@ The original source files were imported from the handoff package and renamed to 
 
 **Canonical branding:** `assets/brand/` SVGs remain the source of truth for marks. The artwork uses a supporting 3D visual language and does not change product scope.
 
-**Before launch:** verify the imagery in light/dark presentation surfaces and manually configure the GitHub social preview from `github/social-preview.png`, perform crop/legibility checks, and ensure all appearance-related metadata is consistent. Asset rights/public release decision remains bounded by the project's license issue #110.
+**License:** on 2026-10-22, the maintainer explicitly confirmed the rights to redistribute all seven renders under the repository's [MIT license](../../LICENSE), without unauthorized third-party elements or fonts. Their origin remains the approved ChatGPT renders recorded in `manifest.json`; checksums establish integrity, not ownership. The image bytes and manifest checksums have not changed.
+
+**Before launch:** verify the imagery in light/dark presentation surfaces and manually configure the GitHub social preview from `github/social-preview.png`, perform crop/legibility checks, and ensure all appearance-related metadata is consistent. The public exposure/release decision remains tracked separately in issue #110.
 
 Related: #106 (identity), #107 (social preview), #96 (launch).

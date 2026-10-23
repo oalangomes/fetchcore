@@ -9,8 +9,10 @@ snapshot established by the previous indexing deliveries.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
+import re
+import time
 from pathlib import Path
 
 from fetchcore.adapters.retrieval.solr.backend import SolrIndexSnapshot, SolrIndexStore
@@ -56,11 +58,17 @@ from fetchcore.repository.knowledge_pack import (
 from fetchcore.repository.semantic_indexing import (
     SemanticDocumentRepositoryIndexer,
 )
+from fetchcore.repository.safe_scan import SafeScanResult, scan_repository_text
 from fetchcore.retrieval.contracts import KnowledgeSearchError
+from fetchcore.telemetry import IndexStageTelemetry, elapsed_ms
 
 
 _REBUILDABLE_SNAPSHOT_ERRORS = frozenset(
     {"snapshot_missing", "schema_mismatch", "response_parsing_failure"}
+)
+_PATH_SAMPLE_LIMIT = 12
+_SENSITIVE_PATH_PART = re.compile(
+    r"(?i)(secret|token|credential|password|private|\.env|\.pem$|\.key$)"
 )
 
 
@@ -113,11 +121,14 @@ def prepare_repository_index_runtime(
     revision: str | None,
     knowledge_packs: Iterable[RepositoryKnowledgePack] | None = None,
     base_config: RepositoryIndexConfig | None = None,
+    policy_override: Path | None = None,
 ) -> RepositoryIndexRuntime:
     """Resolve repository policy, active knowledge packs and canonical indexer."""
 
     root = workspace.resolve(strict=True)
-    policy = load_repository_index_policy(root, base_config=base_config)
+    policy = load_repository_index_policy(
+        root, base_config=base_config, policy_override=policy_override,
+    )
     document_policy = load_repository_document_index_policy(root)
     registry = default_repository_extractors()
     extractors = policy.select_extractors(registry)
@@ -167,6 +178,97 @@ def prepare_repository_index_runtime(
     )
 
 
+def inspect_local_corpus(
+    workspace: Path,
+    *,
+    path: str | None = None,
+    deep: bool = False,
+    proposal: Path | None = None,
+) -> dict[str, object]:
+    """Observe canonical local corpus behavior without registration or a backend.
+
+    The default runs only the indexer's safe scan. Deep mode performs canonical
+    extraction in memory to expose document coverage and duplication diagnostics.
+    Neither mode persists an index or computes embeddings.
+    """
+    if deep and path is not None:
+        raise ValueError("--deep cannot be combined with --path")
+    if deep and proposal is not None:
+        raise ValueError("--deep cannot be combined with --proposal")
+    root = workspace.resolve(strict=True)
+    runtime = prepare_repository_index_runtime(
+        root, repository="local/corpus-inspection", branch=None, revision=None,
+        policy_override=proposal,
+    )
+    payload = runtime.to_mapping()
+    payload["mode"] = "deep" if deep else "scan"
+    if deep:
+        result = runtime.indexer.index(root)
+        telemetry = result.telemetry.to_mapping()
+        # Per-source chunk counts can be large and are not needed for a corpus view.
+        telemetry.pop("documents_per_source", None)
+        payload["telemetry"] = telemetry
+        payload["corpus_diagnostics"] = analyze_corpus_duplication(
+            result.documents
+        ).to_mapping()
+        return payload
+
+    scan = _scan_local_corpus(runtime, path=path)
+    payload["scan"] = scan.audit_mapping()
+    payload["coverage"] = scan.coverage.to_mapping()
+    payload["source_paths"] = [source.relative for source in scan.sources[:50]]
+    payload["source_paths_truncated"] = len(scan.sources) > 50
+    if path is not None:
+        payload["path"] = path
+        payload["path_status"] = (
+            "read" if scan.sources else next(iter(scan.skipped), "unvisited")
+        )
+    if proposal is not None:
+        if path is not None:
+            current = inspect_local_corpus(root, path=path)
+            payload["impact"] = {
+                "before": current["path_status"],
+                "after": payload["path_status"],
+                "applied": False,
+            }
+        else:
+            current_runtime = prepare_repository_index_runtime(
+                root, repository="local/corpus-inspection", branch=None, revision=None,
+            )
+            current_scan = _scan_local_corpus(current_runtime)
+            before = {source.relative for source in current_scan.sources}
+            after = {source.relative for source in scan.sources}
+            payload["impact"] = {
+                "added_read_paths": sorted(after - before),
+                "removed_read_paths": sorted(before - after),
+                "before_fingerprint": current_runtime.fingerprint,
+                "after_fingerprint": runtime.fingerprint,
+                "before_truncated": current_scan.truncated,
+                "after_truncated": scan.truncated,
+                "applied": False,
+            }
+    return payload
+
+
+def _scan_local_corpus(
+    runtime: RepositoryIndexRuntime, *, path: str | None = None,
+) -> SafeScanResult:
+    config = runtime.indexer.config
+    return scan_repository_text(
+        runtime.workspace,
+        include_patterns=config.include_patterns,
+        exclude_patterns=config.exclude_patterns,
+        max_files=config.max_files,
+        max_file_bytes=config.max_file_bytes,
+        max_total_bytes=config.max_total_bytes,
+        selected_paths=(path,) if path is not None else None,
+        api_sanitizer=getattr(runtime.indexer, "_api_sanitizer", None),
+        api_sanitizer_kinds=getattr(
+            runtime.indexer, "_api_sanitizer_kinds", frozenset({"openapi", "swagger"}),
+        ),
+    )
+
+
 def repository_index_status(
     store: SolrIndexStore,
     runtime: RepositoryIndexRuntime,
@@ -178,6 +280,8 @@ def repository_index_status(
     bound = bind_indexing_contract_store(store, runtime.indexer)
     snapshot, snapshot_error = _load_snapshot_optional(bound, runtime.repository)
     payload = runtime.to_mapping()
+    payload["requested_revision"] = runtime.revision
+    payload["indexed_revision"] = None if snapshot is None else snapshot.revision
     payload["projection"] = (
         bound.inspect_projection(runtime.repository)
         if snapshot is None
@@ -236,9 +340,13 @@ def repository_index_status(
     payload.update(
         {
             "state": "ready" if clean else "changes_pending",
-            "reason": "up_to_date" if clean else plan.reason,
+            "reason": "up_to_date" if clean else (
+                "snapshot_revision_mismatch" if snapshot.revision != runtime.revision
+                else "worktree_changes" if plan.mode == "git-delta" and plan.targeted_paths
+                else plan.reason
+            ),
             "sync_mode": "incremental",
-            "discovery": _discovery_mapping(plan),
+            "discovery": _discovery_mapping(plan, bounded=True),
         }
     )
     return payload
@@ -290,32 +398,41 @@ def dry_run_repository_index(
     runtime: RepositoryIndexRuntime,
     *,
     detector: GitRepositoryChangeDetector | None = None,
+    timer: Callable[[], float] = time.monotonic,
 ) -> dict[str, object]:
     """Calculate the next indexing mutation without persisting anything."""
 
     bound = bind_indexing_contract_store(store, runtime.indexer)
     change_detector = detector or GitRepositoryChangeDetector()
+    stage_started = timer()
     snapshot, snapshot_error = _load_snapshot_optional(bound, runtime.repository)
+    stage_timings_ms = {"snapshot_load_ms": elapsed_ms(stage_started, timer())}
 
     if snapshot is None:
         reason = f"snapshot_{snapshot_error}"
+        stage_started = timer()
         result = runtime.indexer.index(runtime.workspace)
+        stage_timings_ms["canonical_full_index_ms"] = elapsed_ms(stage_started, timer())
         return _full_rebuild_preview(
             runtime,
             result,
             reason=reason,
             previous_snapshot=None,
             snapshot_error=snapshot_error,
+            stage_timings_ms=stage_timings_ms,
         )
 
     if snapshot_indexing_fingerprint(snapshot) != runtime.fingerprint:
+        stage_started = timer()
         result = runtime.indexer.index(runtime.workspace)
+        stage_timings_ms["canonical_full_index_ms"] = elapsed_ms(stage_started, timer())
         return _full_rebuild_preview(
             runtime,
             result,
             reason="indexing_contract_changed",
             previous_snapshot=snapshot,
             snapshot_error=None,
+            stage_timings_ms=stage_timings_ms,
         )
 
     plan = change_detector.plan(
@@ -332,6 +449,9 @@ def dry_run_repository_index(
                 "reason": "up_to_date",
                 "snapshot": snapshot_mapping(snapshot),
                 "discovery": _discovery_mapping(plan),
+                "stage_timings_ms": IndexStageTelemetry.from_mapping(
+                    stage_timings_ms,
+                ).to_mapping(),
                 "planned_mutations": {
                     "added": 0,
                     "updated": 0,
@@ -345,12 +465,15 @@ def dry_run_repository_index(
         )
         return payload
 
+    stage_started = timer()
     previous = bound.load_documents(snapshot.repository)
+    stage_timings_ms["previous_documents_load_ms"] = elapsed_ms(stage_started, timer())
     planner = DocumentAwareGitSolrSynchronizer(
         bound,
         runtime.indexer,
         detector=change_detector,
     )
+    stage_started = timer()
     if plan.mode == "git-delta":
         delta_result = planner._index_delta(runtime.workspace, previous, plan)
         if delta_result is None:
@@ -367,6 +490,7 @@ def dry_run_repository_index(
             previous_documents=previous,
         )
 
+    stage_timings_ms["canonical_delta_index_ms"] = elapsed_ms(stage_started, timer())
     if result.repository != snapshot.repository:
         raise KnowledgeSearchError(
             "repository identity differs from the active Solr snapshot",
@@ -398,6 +522,9 @@ def dry_run_repository_index(
                 "replace_repository": False,
             },
             "indexing_telemetry": result.telemetry.to_mapping(),
+            "stage_timings_ms": IndexStageTelemetry.from_mapping(
+                stage_timings_ms,
+            ).to_mapping(),
             "corpus_diagnostics": analyze_corpus_duplication(result.documents).to_mapping(),
         }
     )
@@ -411,6 +538,7 @@ def _full_rebuild_preview(
     reason: str,
     previous_snapshot: SolrIndexSnapshot | None,
     snapshot_error: str | None,
+    stage_timings_ms: dict[str, int],
 ) -> dict[str, object]:
     payload = runtime.to_mapping()
     payload.update(
@@ -422,6 +550,9 @@ def _full_rebuild_preview(
                 None if previous_snapshot is None else snapshot_mapping(previous_snapshot)
             ),
             "snapshot_error": snapshot_error,
+            "stage_timings_ms": IndexStageTelemetry.from_mapping(
+                stage_timings_ms,
+            ).to_mapping(),
             "discovery": _full_scan_mapping(
                 None if previous_snapshot is None else previous_snapshot.revision,
                 result.revision,
@@ -472,11 +603,35 @@ def _is_clean_same_snapshot(
     )
 
 
-def _discovery_mapping(plan: GitDeltaPlan) -> dict[str, object]:
+def _discovery_mapping(plan: GitDeltaPlan, *, bounded: bool = False) -> dict[str, object]:
     payload = plan.to_mapping()
-    payload["changed_path_values"] = list(plan.changed_paths)
-    payload["removed_path_values"] = list(plan.removed_paths)
+    if not bounded:
+        payload["changed_path_values"] = list(plan.changed_paths)
+        payload["removed_path_values"] = list(plan.removed_paths)
+        return payload
+    payload["changed_path_values"] = [
+        _diagnostic_path(path) for path in plan.changed_paths[:_PATH_SAMPLE_LIMIT]
+    ]
+    payload["removed_path_values"] = [
+        _diagnostic_path(path) for path in plan.removed_paths[:_PATH_SAMPLE_LIMIT]
+    ]
+    payload["path_sample_limit"] = _PATH_SAMPLE_LIMIT
+    payload["path_samples_truncated"] = (
+        len(plan.changed_paths) > _PATH_SAMPLE_LIMIT
+        or len(plan.removed_paths) > _PATH_SAMPLE_LIMIT
+    )
     return payload
+
+
+def _diagnostic_path(path: str) -> str:
+    """Expose only ordinary relative names in read-only operational diagnostics."""
+    if (
+        len(path) > 160 or not path.isascii()
+        or any(ord(char) < 32 or ord(char) > 126 for char in path)
+        or any(_SENSITIVE_PATH_PART.search(part) for part in Path(path).parts)
+    ):
+        return "<redacted>"
+    return path
 
 
 def _full_scan_mapping(

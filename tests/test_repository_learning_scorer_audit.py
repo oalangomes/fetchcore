@@ -9,8 +9,8 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BENCHMARK = ROOT / "benchmarks" / "repository-learning"
-sys.path.insert(0, str(BENCHMARK))
+STUDY_DIR = ROOT / "studies" / "repository-learning"
+sys.path.insert(0, str(STUDY_DIR))
 
 
 def _load_module(name: str, path: Path):  # type: ignore[no-untyped-def]
@@ -21,15 +21,15 @@ def _load_module(name: str, path: Path):  # type: ignore[no-untyped-def]
     return module
 
 
-protocol = _load_module("repository_learning_protocol_audit", BENCHMARK / "protocol.py")
-scorer = _load_module("repository_learning_scorer", BENCHMARK / "scorer.py")
-audit = _load_module("repository_learning_scorer_audit", BENCHMARK / "scorer_audit.py")
+protocol = _load_module("repository_learning_protocol_audit", STUDY_DIR / "protocol.py")
+scorer = _load_module("repository_learning_scorer", STUDY_DIR / "scorer.py")
+audit = _load_module("repository_learning_scorer_audit", STUDY_DIR / "scorer_audit.py")
 
-SCENARIO_PATH = BENCHMARK / "scenarios" / "fetchcore-self.yaml"
-RULER_PATH = BENCHMARK / "scenarios" / "fetchcore-self-ruler-v2.yaml"
-ANNOTATIONS_PATH = BENCHMARK / "scenarios" / "fetchcore-self-v2-audit.yaml"
+SCENARIO_PATH = STUDY_DIR / "scenarios" / "fetchcore-self.yaml"
+RULER_PATH = STUDY_DIR / "scenarios" / "fetchcore-self-ruler-v2.yaml"
+ANNOTATIONS_PATH = STUDY_DIR / "scenarios" / "fetchcore-self-v2-audit.yaml"
 SOURCE_PATH = (
-    BENCHMARK
+    STUDY_DIR
     / ".artifacts"
     / "repository-learning"
     / "codex-20261008-002-v2"

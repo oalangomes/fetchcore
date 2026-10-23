@@ -1,6 +1,6 @@
 # Self-hosted repository indexing
 
-FetchCore can index a repository from GitHub Actions on a self-hosted runner while keeping indexing semantics inside FetchCore.
+FetchCore can index a repository from GitHub Actions on a self-hosted runner while keeping indexing semantics inside FetchCore. The path below describes the Solr-specific reusable workflow; the three OPERATIONAL workflows are listed below.
 
 ```text
 GitHub Actions
@@ -16,9 +16,106 @@ Solr snapshot + repository knowledge
 
 The workflow is transport and scheduling only. It does not reimplement Git delta discovery, fingerprint compatibility, canonical indexing, or persistence rules.
 
-## Why Solr is the first operational backend
+## Operational automatic indexing by backend
 
-FetchCore currently has proven targeted incremental persistence for Solr. OpenSearch and Qdrant still prefer safe full rebuilds in their current `sync()` paths. The workflow therefore uses Solr rather than calling a full rebuild "incremental".
+The reusable `.github/workflows/repository-index.yml` remains Solr-specific for existing callers. Each OPERATIONAL backend now has an **independent GitHub Actions workflow**, with separate manual dispatch, status, concurrency and evidence artifacts:
+
+- [Solr](../../.github/workflows/operational-index.yml), preserving the existing job and reuse-only policy;
+- [OpenSearch](../../.github/workflows/operational-opensearch.yml);
+- [Qdrant](../../.github/workflows/operational-qdrant.yml).
+
+All three use the same CI-success-on-`master` trigger, which always selects `sync`.
+Manual dispatch on `master` exposes `index_lifecycle: plan | sync | rebuild`,
+defaulting to `sync`. OpenSearch and Qdrant reuse the existing backend-neutral
+indexing lifecycle through `scripts/shared_infra.py`; each runs only against its
+own OPERATIONAL resource. Running one workflow manually does not start the other two.
+
+**Retrieval mode policy:** all three operational workflows default to `hybrid`, with `dense` as an explicit alternative. For manual execution, choose the `retrieval_mode` input in that backend's **Run workflow** dropdown. For automatic post-CI executions, set the optional repository variable `FETCHCORE_OPERATIONAL_RETRIEVAL_MODE` to `hybrid` (default when unset) or `dense`. Invalid values fail explicitly; do not silently fall back. Embedding identity stays `ollama/embeddinggemma`, 768 dimensions, regardless of the selected retrieval mode. Solr/OpenSearch hybrid uses lexical BM25+dense; Qdrant uses sparse+dense. Targeted fast paths remain capability-dependent.
+
+This selection configures the **indexing workflow's** retrieval readiness and embedding requirements, not every long-running CLI/MCP/API consumer automatically. Configure the corresponding consumer runtime with the same `retrieval.dense.enabled` and `retrieval.hybrid.enabled` policy through the existing `FETCHCORE_CONFIG` / `FETCHCORE_RETRIEVAL` contract. Switching from a compatible hybrid vector snapshot to dense should not require re-embedding solely because of the search mode. A Solr/OpenSearch snapshot that is lexical-only cannot be promoted by `sync`; use an authorized, explicit vector `rebuild` if needed and verify fingerprints/readiness before enabling the workflow.
+
+For the OpenSearch/Qdrant workflows, set the repository variable
+`FETCHCORE_OPERATIONAL_OLLAMA_URL` to the verified, credential-free Ollama URL
+**reachable from the self-hosted runner**. The runtime requires `embeddinggemma`
+at 768 dimensions. Only existing services and schema-compatible resources/aliases
+are accepted; `ready` and `prepare` run without creating resources. `sync` requires
+an existing compatible snapshot. Manual `plan` can report absence or incompatibility;
+manual `rebuild` invokes the existing explicit replacement command. No workflow
+pulls a model or repairs a schema. Qdrant lexical/targeted remains unsupported.
+An unavailable provider or incompatible live schema stops the run visibly.
+
+### Manual operational recovery
+
+Use the backend's OPERATIONAL workflow linked above, then **Run workflow** with
+**Use workflow from: master**. Manual runs from other branches are rejected.
+
+1. Select `index_lifecycle: plan` and the intended `retrieval_mode`. Inspect the
+   uploaded `status-before.json` and `plan.json`: repository, target/indexed
+   revision, reason, schema/projection compatibility, expected/observed
+   fingerprints and any mutation preview. The workflow performs no index or
+   snapshot writes for this action. Existing service/schema/provider preflight
+   still runs, including one embedding probe; document vectors are not generated.
+2. Verify resource ownership and decide whether replacement is authorized using
+   the [snapshot recovery runbook](repository-indexing.md#missing-or-incompatible-snapshot-runbook).
+   A missing resource/alias, schema failure, collision or unknown ownership is a
+   stop condition. This flow does not provision or adopt resources. Correct and
+   validate schema separately before proceeding.
+3. After explicit authorization, dispatch **the same backend workflow** again
+   with `index_lifecycle: rebuild` and the same retrieval profile and resource
+   configuration. The selected `master` revision is recorded in the evidence;
+   if `master` or configuration changed since inspection, inspect a new plan
+   before authorizing replacement. Each run recalculates status/plan before the
+   selected command. Selecting `rebuild` is the explicit replacement instruction;
+   no failed `sync` or automatic CI event selects it.
+4. Inspect `execution.json`, `status-after.json` and `readiness.json`. The workflow
+   requires the persisted revision to match its target SHA, currentness to be
+   `current`, expected/observed indexing and projection fingerprints to match,
+   and requested retrieval readiness to succeed. A mismatch fails the run.
+
+Plan runs stop after inspection; readiness after execution is not claimed for a
+plan. Rebuild can still fail closed on corrupt state or adapter ownership checks.
+Subsequent automatic runs continue to use strict `sync` and never recover by
+rebuilding implicitly. Schema migration and serving revision reconciliation
+remain separate operator actions.
+
+A successful embedding preflight tests one short input; it does not prove that
+all corpus batches can be embedded. If execution fails with `embedding_failed`,
+inspect the failure envelope in `execution.json` and the step log. All three
+workflows print that same envelope while retaining the nonzero exit code. Safe
+`error.diagnostics`, when available, distinguishes HTTP status, known provider
+error type, batch/input sizes and retry exhaustion without printing source text.
+Correlate unknown provider failures with its existing logs; do not infer a
+timeout or change batch/model/chunking policy from the generic category alone.
+Inspect persisted status before deciding on another explicit recovery attempt.
+
+### Operational acceptance (2026-10-20)
+
+At the accepted `master` revision
+[`0d7c856a1d6083b6bfb27804e15283a94c448e43`](https://github.com/oalangomes/fetchcore/commit/0d7c856a1d6083b6bfb27804e15283a94c448e43),
+GitHub Actions reports successful, independent post-CI runs for all three backends:
+
+| Backend | Successful run | Directly verified |
+| --- | --- | --- |
+| Solr | [39483667899](https://github.com/oalangomes/fetchcore/actions/runs/39483667899) | Existing-snapshot gate, sync, and retrieval-readiness steps succeeded. |
+| OpenSearch | [39483667532](https://github.com/oalangomes/fetchcore/actions/runs/39483667532) | Existing-snapshot gate and sync/readiness verification steps succeeded. |
+| Qdrant | [39483667568](https://github.com/oalangomes/fetchcore/actions/runs/39483667568) | Existing-snapshot gate and sync/readiness verification steps succeeded. |
+
+The operator separately confirmed a completed **manual explicit rebuild** of all
+three incompatible OPERATIONAL snapshots and `readiness` returning `ready: true`
+for each backend. The linked runs verify the subsequent workflow path; they do
+not themselves document the earlier manual rebuild. In the code,
+`PROJECTION_VERSION` remains `"3"` while the internal
+`_PROJECTION_CONTRACT_REVISION` changed to `"4"`; this changed the Projection
+contract fingerprint and required the explicit rebuild. See the
+[Projection contract](../architecture/projection.md). This is not a public
+Projection schema version bump.
+
+The accepted operating cycle is **explicit rebuild when needed → automatic
+incremental sync → readiness**. OPERATIONAL resources remain isolated from DEV
+and BENCH. These runs establish operational function, not equivalence of
+retrieval quality, recall, latency or cost between backends.
+
+The indexed repository is `oalangomes/fetchcore`; writers are serialized per backend, and each workflow publishes bounded JSON command evidence separately. These OPERATIONAL workflows are not BENCH runs, retrieval relevance certification or an authorization to modify unrelated DEV/BENCH namespaces.
 
 ## Operational CLI
 
@@ -40,7 +137,7 @@ fetchcore index ... sync
 
 Every successful command emits JSON. `bootstrap` validates the active Solr
 resource against the FetchCore Projection v3 schema. Explicit owned provisioning
-uses `infra/solr/configset`, which preserves the behavior-proven analyzers, BM25
+uses the bundled copy of `infra/solr/configset` from an installed wheel by default, which preserves the behavior-proven analyzers, BM25
 parameters and vector field contract extracted from AgentsOrchNext. The CLI never
 silently rewrites an incompatible schema. `dry-run` performs no persistent writes.
 With explicit dense/hybrid retrieval configuration, bootstrap also requires the
@@ -238,6 +335,13 @@ repurposed.
 
 ## Explicit index lifecycle
 
+For missing, incompatible, invalid or ambiguous snapshots, follow the
+[snapshot recovery runbook](repository-indexing.md#missing-or-incompatible-snapshot-runbook):
+inspect `status`/`plan`, decide with verified resource binding and schema,
+authorize any rebuild separately, then verify persisted currentness and
+fingerprints. Existing-snapshot OPERATIONAL jobs stop on failure; they never
+turn that failure into rebuild or schema repair authorization.
+
 The reusable input `index_lifecycle` is one of `plan`, `sync`, or `rebuild`. The
 workflow always runs:
 
@@ -344,7 +448,7 @@ Ollama. To opt in to vectors: make the model available externally, set
 `fetchcore index ... rebuild`, verify `fetchcore readiness`, then execute dense
 or hybrid search. Compose never pulls the model or rebuilds automatically.
 
-## FetchCore operational index
+## FetchCore operational Solr index
 
 `.github/workflows/operational-index.yml` runs only after a successful `CI`
 workflow for a `master` push from this repository, or by explicit manual
@@ -372,6 +476,16 @@ and status (`ready` or `changes_pending`) after resource preflight and before
 sync. A new revision can be incrementally synchronized; an absent or
 incompatible snapshot fails before writing. Hosted self-dogfood leaves this
 gate off because its per-run Solr container is intentionally empty.
+
+The indexing workflow does not change an already-running MCP/API process's
+revision binding. After a successful OPERATIONAL update, run the explicit
+[serving reconciliation](mcp.md#reconcile-after-an-operational-index-update)
+from the operator host. It validates the persisted snapshot against the
+authorized workspace HEAD and only then updates the operator-owned serving
+runtime and recreates the two serving containers. Index data and Solr are left
+running. `readiness` and `index status` expose bounded worktree path/count
+evidence when the same revision has pending changes; unknown coverage remains
+not ready. Path samples are limited and sensitive names are redacted.
 
 ## What this dogfood proves
 

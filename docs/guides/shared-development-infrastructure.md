@@ -1,7 +1,7 @@
 # Shared development infrastructure and resource lifecycle
 
-Status: shared DEV/BENCH/OPERATIONAL local infrastructure. Retrieval contracts, Projection v3,
-serializer/embedding fingerprints and frozen benchmark artifacts are unchanged.
+Status: shared DEV/BENCH/OPERATIONAL local infrastructure. Solr, OpenSearch and
+Qdrant have operational acceptance on their separate OPERATIONAL resources.
 
 ## Audit and scope
 
@@ -15,8 +15,9 @@ instances can be selected explicitly and are never adopted as owned Compose proj
 service/resource provisioning, validates repository-resource binding, and emits
 run evidence. Self-dogfood explicitly provisions disposable Solr on hosted runners;
 that hermetic CI path remains unchanged. Operational indexing is reuse-only and
-now defaults to the isolated operational endpoint/resource below. Backend-neutral
-operational indexing parity is tracked separately in issue #123.
+uses the isolated operational endpoints/resources below. See
+[self-hosted indexing](self-hosted-indexing.md) for the three independent workflows
+and their acceptance evidence.
 
 Benchmark `search-intent-v2/run.py` accepts routed environment defaults while
 retaining explicit CLI arguments. Frozen baseline-v1 and paired `evidence.py`
@@ -75,6 +76,16 @@ Omitted backends retain their managed defaults; an unavailable endpoint fails ex
 
 Host-process and Docker URLs are different configurations. A host process can use
 published loopback ports; containers use service DNS on the correct network.
+For Ollama, resolve the operator runtime first: `FETCHCORE_CONFIG` selects the
+operator YAML, `FETCHCORE_OLLAMA_URL` overrides its URL, and `OLLAMA_URL` is the
+legacy environment fallback. The runtime loader records the winning source.
+`shared_infra.py` defaults to `host.docker.internal:11434` for Docker callers;
+when running in WSL, pass the verified WSL-reachable URL through `--ollama-url`.
+Do not assume that WSL loopback reaches the Windows Ollama service. Confirm
+`/api/tags` lists the required model and `/api/embed` returns the configured
+dimension before dense indexing. Record the chosen URL and its configuration
+source; an unreachable or mismatched provider blocks the operation rather than
+triggering an endpoint fallback. This tool never creates an Ollama instance.
 `shared_infra.py app` starts only API, MCP and web after backend service readiness,
 using `infra/compose/shared-app.yml` and the already created network. It never
 prepares a logical resource. One `fetchcore-lab` serves authorized DEV and BENCH
@@ -88,9 +99,9 @@ from WSL. The routing default is `http://host.docker.internal:11434`; pass
 it with container `localhost` or start another Ollama. `FETCHCORE_BACKEND` selects
 `solr`, `opensearch`, or `qdrant-vector` (`--backend qdrant` maps to the latter);
 `FETCHCORE_INDEX_BACKEND` and its endpoint/resource settings select that same backend.
-The indexing CLI consequently rejects OpenSearch/Qdrant with its existing
-`unsupported_backend` error (operational capability unavailable, #123). Selection
-must never redirect an unsupported indexing operation to Solr.
+Registered indexing now supports Solr, OpenSearch and Qdrant through the
+same application boundary (#123, operationally accepted in #130/#202/#203).
+Unsupported backend capabilities still fail explicitly; no request is redirected to Solr.
 
 ## Explicit service and resource preparation
 
@@ -141,24 +152,29 @@ with `--create-if-missing` only for an intentional new resource; subsequent
 checks use `--provision-mode reuse_only`. Then explicitly run `fetchcore index bootstrap`, registration,
 plan and sync using the routed environment. Bootstrap remains Projection v3.
 OpenSearch/Qdrant infrastructure preparation creates only empty schemas and aliases;
-it does not create an indexed snapshot. Their operational index lifecycle remains
-unavailable pending #123 (`unsupported_backend` in the current indexing CLI,
-reported as an unsupported operational capability). Do not switch operational consumers to those
-resources until the indexing lifecycle is explicitly implemented and validated.
+it does not create an indexed snapshot. Their indexing lifecycle is operationally
+supported. Resource creation and an initial or compatibility rebuild remain
+explicit operator actions. The independent OPERATIONAL workflows perform only
+incremental `sync` on pre-existing compatible snapshots after CI succeeds;
+missing/incompatible snapshots require a separate, authorized operator action
+rather than automatic reconstruction.
 
 `run` exports host-process `FETCHCORE_*` settings, not container DNS or MCP-specific
 configuration. Use the emitted values explicitly for MCP-specific settings, or
 `--solr-url`/`--collection` in dogfood. Existing explicit CLI settings take precedence;
 review them before any mutation. It is not a sandbox for arbitrary commands.
 
-## Operational migration
+## Operational lifecycle
 
-Before merging/enabling the new workflow default, explicitly provision the
-operational service, create the emitted operational resource, register the same
-repository and bootstrap/sync it. Verify readiness and revision/fingerprints before
-switching consumers. The old `fetchcore` core and volumes are retained. There is no
-automatic copy, adoption, rebuild or deletion. Until preparation finishes the
-workflow fails closed instead of indexing development.
+The operator confirms that the explicit compatibility rebuild after the Projection
+contract fingerprint change was completed for Solr, OpenSearch and Qdrant, and
+that `readiness` returned `ready: true` for all three. Successful independent
+GitHub Actions runs and their checked readiness steps are recorded in
+[operational acceptance](self-hosted-indexing.md#operational-acceptance-2026-10-20).
+The current cycle is **explicit rebuild when needed → automatic incremental sync
+→ readiness**. A workflow never creates or repairs an incompatible snapshot;
+it fails closed. OPERATIONAL resources stay separate from DEV and BENCH, and
+the old `fetchcore` core and volumes remain outside this lifecycle.
 
 `FETCHCORE_OPERATIONAL_SOLR_URL` and `FETCHCORE_OPERATIONAL_SOLR_COLLECTION` repository
 variables override the workflow defaults for an operator-managed isolated service.
@@ -199,9 +215,9 @@ adoption refusal, ownership mismatch, safe cleanup and resource isolation. Compo
 can be rendered without starting services. No retrieval tuning or schema migration
 is introduced. `ready` checks actual HTTP health; for Qdrant this is an external
 readiness probe because the upstream image has no in-container HTTP client.
-Run live service/resource preparation and readiness on an explicitly allocated host
-before operational migration; use existing shared indexes read-only for retrieval
-validation and never overwrite them as a smoke-test target.
+Use an explicitly allocated host for any later live service/resource preparation;
+use existing shared indexes read-only for retrieval validation and never overwrite
+them as a smoke-test target.
 
 Initial P0 validation on 2026-10-16: Python 3.11 suite **828 passed, 7 skipped**;
 Ruff, mypy (171 source files), wheel/sdist build, Markdown links and legacy/new
@@ -221,3 +237,7 @@ shared-host timings are functional observations, not a performance baseline.
 The [consumer migration validation](../operations/shared-infra-consumer-validation.md)
 records the later full suite, live BENCH benchmark, cross-surface search and
 restart checks for PR #183.
+
+## Benchmark lifecycle standard
+
+The existing functional BENCH instances remain managed here. New performance measurements can opt into run-scoped, owned Compose projects, with immutable run bundles and explicit retention/cleanup as described in the [BENCH infrastructure standard](../benchmarks/infrastructure.md). Separate collections in one container do not isolate host performance; separate containers still share host/embedding-provider capacity. No automatic BENCH provisioning is part of the runtime.

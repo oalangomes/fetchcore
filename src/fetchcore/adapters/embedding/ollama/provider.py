@@ -4,7 +4,18 @@ from __future__ import annotations
 
 import json
 import math
+import socket
 from dataclasses import dataclass
+from errno import (
+    EAGAIN,
+    ECONNABORTED,
+    ECONNREFUSED,
+    ECONNRESET,
+    EHOSTUNREACH,
+    ENETUNREACH,
+    EPIPE,
+    ETIMEDOUT,
+)
 from time import sleep
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -12,6 +23,19 @@ from urllib.request import Request, urlopen
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 
 _OLLAMA_TRANSIENT_RETRY_DELAYS = (0.25, 1.0)
+_TRANSIENT_CONNECTION_ERRNOS = frozenset(
+    {
+        EAGAIN,
+        ECONNABORTED,
+        ECONNREFUSED,
+        ECONNRESET,
+        EHOSTUNREACH,
+        ENETUNREACH,
+        EPIPE,
+        ETIMEDOUT,
+        socket.EAI_AGAIN,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -111,6 +135,7 @@ class OllamaEmbeddingProvider:
             "total_input_chars": sum(len(text) for text in texts),
         }
         raw: bytes | None = None
+        max_attempts = len(_OLLAMA_TRANSIENT_RETRY_DELAYS) + 1
         for attempt, retry_delay in enumerate(
             (*_OLLAMA_TRANSIENT_RETRY_DELAYS, None),
             start=1,
@@ -122,35 +147,50 @@ class OllamaEmbeddingProvider:
                 metadata: dict[str, object] = {
                     "http_status": exc.code,
                     "attempt": attempt,
+                    "max_attempts": max_attempts,
                     **diagnostics,
                 }
                 provider_error = _ollama_http_error_message(exc)
                 if provider_error is not None:
                     metadata["provider_error"] = provider_error
-                if (
-                    retry_delay is not None
-                    and exc.code == 400
+                    reason = _ollama_embedding_failure_reason(provider_error)
+                    if reason is not None:
+                        metadata["provider_error_type"] = reason
+                transient_http_error = (
+                    exc.code == 400
                     and _ollama_transient_embedding_error(provider_error)
-                ):
+                )
+                if retry_delay is not None and transient_http_error:
                     sleep(retry_delay)
                     continue
                 detail = f": {provider_error}" if provider_error is not None else ""
                 raise KnowledgeSearchError(
                     f"embedding request failed with HTTP {exc.code}{detail}",
                     category="embedding_failed",
-                    metadata=metadata,
+                    metadata={
+                        **metadata,
+                        "retries_exhausted": retry_delay is None and transient_http_error,
+                    },
                 ) from exc
-            except TimeoutError as exc:
+            except (TimeoutError, URLError, ConnectionError) as exc:
+                cause = exc.reason if isinstance(exc, URLError) else exc
+                transient = _is_transient_transport_cause(cause)
+                if transient and retry_delay is not None:
+                    sleep(retry_delay)
+                    continue
+                category = "timeout" if isinstance(cause, TimeoutError) else "unavailable"
+                cause_errno = getattr(cause, "errno", None)
                 raise KnowledgeSearchError(
-                    "embedding request timed out",
-                    category="timeout",
-                    metadata=diagnostics,
-                ) from exc
-            except URLError as exc:
-                raise KnowledgeSearchError(
-                    "embedding provider is unavailable",
-                    category="unavailable",
-                    metadata=diagnostics,
+                    f"embedding request {category} after {attempt} attempt(s)",
+                    category=category,
+                    metadata={
+                        **diagnostics,
+                        "attempt": attempt,
+                        "max_attempts": max_attempts,
+                        "cause_type": type(cause).__name__,
+                        "cause_errno": cause_errno if isinstance(cause_errno, int) else None,
+                        "retries_exhausted": transient and retry_delay is None,
+                    },
                 ) from exc
             break
         assert raw is not None
@@ -200,6 +240,27 @@ def _ollama_http_error_message(exc: HTTPError) -> str | None:
         return None
     message = value.strip()
     return message[:512] if message else None
+
+
+def _is_transient_transport_cause(cause: object) -> bool:
+    """Retry only known temporary socket failures, including wrapped URLError reasons."""
+    return (
+        isinstance(cause, (TimeoutError, ConnectionError))
+        or isinstance(cause, OSError)
+        and cause.errno in _TRANSIENT_CONNECTION_ERRNOS
+    )
+
+
+def _ollama_embedding_failure_reason(message: str) -> str | None:
+    """Classify known provider errors without publishing their potentially private text."""
+    normalized = message.casefold()
+    if "exceeds maximum context length" in normalized or "exceeds the context window" in normalized:
+        return "context_length_exceeded"
+    if "out of memory" in normalized or "insufficient memory" in normalized:
+        return "provider_resource_exhausted"
+    if _ollama_transient_embedding_error(message):
+        return "transient_provider_failure"
+    return None
 
 
 def _ollama_transient_embedding_error(message: str | None) -> bool:

@@ -1,0 +1,233 @@
+name: FetchCore operational OpenSearch index
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      index_lifecycle:
+        description: "Explicit action: inspect with plan before authorizing rebuild"
+        type: choice
+        required: true
+        default: sync
+        options: [plan, sync, rebuild]
+      retrieval_mode:
+        description: "Retrieval profile for this OPERATIONAL run"
+        type: choice
+        required: true
+        default: hybrid
+        options: [hybrid, dense]
+
+permissions:
+  contents: read
+
+jobs:
+
+  operational-opensearch-index:
+    name: OPERATIONAL OpenSearch
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ${{ fromJSON(vars.FETCHCORE_INDEX_RUNNER_LABELS_JSON || '["self-hosted","Linux","X64","fetchcore"]') }}
+    timeout-minutes: 45
+    concurrency:
+      group: fetchcore-operational-opensearch
+      cancel-in-progress: false
+    env:
+      FC_BACKEND: opensearch
+      FC_INDEX_LIFECYCLE: ${{ github.event_name == 'workflow_dispatch' && inputs.index_lifecycle || 'sync' }}
+      FC_TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      FC_OLLAMA_URL: ${{ vars.FETCHCORE_OPERATIONAL_OLLAMA_URL }}
+      FETCHCORE_OLLAMA_TIMEOUT_SECONDS: "180"
+      FC_RETRIEVAL_MODE: ${{ inputs.retrieval_mode || vars.FETCHCORE_OPERATIONAL_RETRIEVAL_MODE || 'hybrid' }}
+      FETCHCORE_WORKSPACE: ${{ github.workspace }}
+      FETCHCORE_REPOSITORY: oalangomes/fetchcore
+      FETCHCORE_REVISION: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Resolve explicit retrieval profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$FC_INDEX_LIFECYCLE" in
+            plan|sync|rebuild) ;;
+            *) echo "Invalid OPERATIONAL index_lifecycle: expected plan, sync or rebuild" >&2; exit 2 ;;
+          esac
+          case "$FC_RETRIEVAL_MODE" in
+            hybrid|dense) ;;
+            *) echo "Invalid OPERATIONAL retrieval_mode: expected hybrid or dense" >&2; exit 2 ;;
+          esac
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          import os
+          mode = os.environ["FC_RETRIEVAL_MODE"]
+          retrieval = {
+              "dense": {
+                  "enabled": True,
+                  "embedding": {
+                      "provider": "ollama",
+                      "model": "embeddinggemma",
+                      "dimensions": 768,
+                      "timeout_seconds": 180,
+                  },
+              },
+              "hybrid": {"enabled": mode == "hybrid"},
+          }
+          print("FETCHCORE_RETRIEVAL=" + json.dumps(retrieval, separators=(",", ":")))
+          PY
+
+      - name: Configure isolated registry and run artifact paths
+        shell: bash
+        run: |
+          echo "FC_CACHE=$RUNNER_TEMP/fetchcore-operational-$FC_BACKEND-$GITHUB_RUN_ID-cache" >> "$GITHUB_ENV"
+          echo "FETCHCORE_REPOSITORY_CACHE=$RUNNER_TEMP/fetchcore-operational-$FC_BACKEND-$GITHUB_RUN_ID-cache" >> "$GITHUB_ENV"
+          echo "FC_EVIDENCE=$RUNNER_TEMP/fetchcore-operational-$FC_BACKEND-$GITHUB_RUN_ID/evidence" >> "$GITHUB_ENV"
+      - name: Checkout authorized master revision
+        uses: actions/checkout@v4
+        with:
+          repository: oalangomes/fetchcore
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install FetchCore
+        run: python -m pip install -e ".[mcp]"
+
+      - name: Preflight existing OPERATIONAL resources (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$FC_OLLAMA_URL" || { echo "Configure FETCHCORE_OPERATIONAL_OLLAMA_URL (reachable from the self-hosted runner); no indexing attempted" >&2; exit 2; }
+          test "$(git rev-parse HEAD)" = "$FC_TARGET_SHA" || { echo "Target SHA mismatch" >&2; exit 2; }
+          test "$FC_BACKEND" = opensearch || exit 2
+          mkdir -p "$FC_EVIDENCE"
+          git switch --force-create master "$FC_TARGET_SHA" >/dev/null
+          python scripts/shared_infra.py ready --environment operational --repository oalangomes/fetchcore --backend "$FC_BACKEND" > "$FC_EVIDENCE/service-ready.json"
+          python scripts/shared_infra.py prepare --environment operational --repository oalangomes/fetchcore --backend opensearch > "$FC_EVIDENCE/schema-ready.json"
+          FC_OLLAMA_URL="$FC_OLLAMA_URL" python - <<'PY'
+          import json
+          import os
+          from urllib.request import Request, urlopen
+          from urllib.parse import urlsplit
+          url = os.environ["FC_OLLAMA_URL"].rstrip("/")
+          parsed = urlsplit(url)
+          if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
+              raise SystemExit("Operational Ollama URL must be a credential-free HTTP(S) origin")
+          request = Request(url + "/api/embed", data=json.dumps({"model": "embeddinggemma", "input": "fetchcore operational preflight"}).encode(), headers={"Content-Type": "application/json"})
+          with urlopen(request, timeout=180) as response:
+              payload = json.load(response)
+          vectors = payload.get("embeddings")
+          if not isinstance(vectors, list) or len(vectors) != 1 or not isinstance(vectors[0], list) or len(vectors[0]) != 768:
+              raise SystemExit("Operational embeddinggemma must return exactly one 768-dimensional vector")
+          PY
+
+      - name: Register and inspect snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          fetchcore repo --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" add . --provider local-workspace --json > /dev/null
+          fc() {
+            python scripts/shared_infra.py run --environment operational --repository oalangomes/fetchcore --backend "$FC_BACKEND" --ollama-url "$FC_OLLAMA_URL" -- fetchcore "$@"
+          }
+          fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" status oalangomes/fetchcore --json > "$FC_EVIDENCE/status-before.json"
+
+      - name: Require compatible existing snapshot for sync
+        if: ${{ env.FC_INDEX_LIFECYCLE == 'sync' }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path(os.environ["FC_EVIDENCE"]) / "status-before.json"
+          envelope = json.loads(path.read_text())
+          status = envelope.get("result")
+          if (envelope.get("status") != "succeeded" or not isinstance(status, dict)
+              or status.get("repository") != "oalangomes/fetchcore"
+              or status.get("branch") != "master"
+              or status.get("mode") not in ("noop", "incremental")
+              or status.get("currentness") not in ("current", "stale")
+              or status.get("incremental_possible") is not True
+              or status.get("schema_compatible") is not True
+              or status.get("projection_compatible") is not True
+              or not status.get("indexed_revision")
+              or not status.get("indexing_fingerprint")
+              or not status.get("projection_fingerprint")):
+              raise SystemExit("OPERATIONAL snapshot absent/incompatible: operator must inspect; no implicit rebuild")
+          PY
+
+      - name: Plan index lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          fc() {
+            python scripts/shared_infra.py run --environment operational --repository oalangomes/fetchcore --backend "$FC_BACKEND" --ollama-url "$FC_OLLAMA_URL" -- fetchcore "$@"
+          }
+          fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" plan oalangomes/fetchcore --json > "$FC_EVIDENCE/plan.json"
+
+      - name: Execute explicitly selected indexing action
+        if: ${{ env.FC_INDEX_LIFECYCLE != 'plan' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          fc() {
+            python scripts/shared_infra.py run --environment operational --repository oalangomes/fetchcore --backend "$FC_BACKEND" --ollama-url "$FC_OLLAMA_URL" -- fetchcore "$@"
+          }
+          case "$FC_INDEX_LIFECYCLE" in
+            sync) fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" sync oalangomes/fetchcore --json | tee "$FC_EVIDENCE/execution.json" ;;
+            rebuild) fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" rebuild oalangomes/fetchcore --json | tee "$FC_EVIDENCE/execution.json" ;;
+            *) echo "Invalid OPERATIONAL execution intent" >&2; exit 2 ;;
+          esac
+
+      - name: Verify persisted snapshot and readiness
+        if: ${{ env.FC_INDEX_LIFECYCLE != 'plan' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          fc() {
+            python scripts/shared_infra.py run --environment operational --repository oalangomes/fetchcore --backend "$FC_BACKEND" --ollama-url "$FC_OLLAMA_URL" -- fetchcore "$@"
+          }
+          fc index --cache-root "$FC_CACHE" --allowed-root "$GITHUB_WORKSPACE" status oalangomes/fetchcore --json > "$FC_EVIDENCE/status-after.json"
+          fc readiness --json > "$FC_EVIDENCE/readiness.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          evidence = Path(os.environ["FC_EVIDENCE"])
+          status = json.loads((evidence / "status-after.json").read_text())
+          ready = json.loads((evidence / "readiness.json").read_text())
+          observed = status.get("result")
+          if (status.get("status") != "succeeded" or not isinstance(observed, dict)
+              or observed.get("repository") != "oalangomes/fetchcore"
+              or observed.get("branch") != "master"
+              or observed.get("schema_compatible") is not True
+              or observed.get("projection_compatible") is not True
+              or observed.get("indexed_revision") != os.environ["FC_TARGET_SHA"]
+              or observed.get("currentness") != "current"
+              or not observed.get("snapshot_indexing_fingerprint")
+              or observed.get("snapshot_indexing_fingerprint") != observed.get("indexing_fingerprint")
+              or not observed.get("snapshot_projection_fingerprint")
+              or observed.get("snapshot_projection_fingerprint") != observed.get("projection_fingerprint")):
+              raise SystemExit("OPERATIONAL persisted snapshot identity is not current and compatible")
+          if ready.get("status") != "succeeded" or not ready.get("result", {}).get("ready"):
+              raise SystemExit("OPERATIONAL retrieval readiness did not pass")
+          PY
+
+      - name: Upload bounded operational evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fetchcore-operational-opensearch-${{ github.run_id }}
+          path: ${{ runner.temp }}/fetchcore-operational-opensearch-${{ github.run_id }}/evidence/
+          if-no-files-found: warn
+          retention-days: 30

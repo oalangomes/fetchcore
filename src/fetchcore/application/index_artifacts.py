@@ -5,13 +5,15 @@ Artifacts report supplied evidence, never authorize work or reconstruct history.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 import json
 import math
 import re
 from typing import Any
 from collections.abc import Mapping
+
+from fetchcore.telemetry import IndexStageTelemetry
 
 MAX_ARTIFACT_BYTES = 2_000_000
 OPERATIONS = {"status", "plan", "sync", "rebuild"}
@@ -38,6 +40,67 @@ def _metric(value: object, name: str) -> None:
         or (isinstance(value, float) and not math.isfinite(value))
     ):
         raise ValueError(f"{name} must be a finite nonnegative number or null")
+
+
+def _diagnostic_integer(value: object, minimum: int = 0, maximum: int = 2**63 - 1) -> int | None:
+    return value if type(value) is int and minimum <= value <= maximum else None
+
+
+@dataclass(frozen=True)
+class IndexFailureDiagnostics:
+    """Allowlisted failure observations, excluding source text and provider responses."""
+
+    http_status: int | None = None
+    attempt: int | None = None
+    max_attempts: int | None = None
+    input_count: int | None = None
+    batch_offset: int | None = None
+    total_input_count: int | None = None
+    max_input_chars: int | None = None
+    total_input_chars: int | None = None
+    cause_errno: int | None = None
+    retries_exhausted: bool | None = None
+    cause_type: str | None = None
+    provider_error_type: str | None = None
+
+    @classmethod
+    def from_metadata(cls, metadata: Mapping[str, object]) -> IndexFailureDiagnostics:
+        cause = metadata.get("cause_type")
+        exhausted = metadata.get("retries_exhausted")
+        provider_error_type = metadata.get("provider_error_type")
+        return cls(
+            http_status=_diagnostic_integer(metadata.get("http_status"), 100, 599),
+            attempt=_diagnostic_integer(metadata.get("attempt"), 1),
+            max_attempts=_diagnostic_integer(metadata.get("max_attempts"), 1),
+            input_count=_diagnostic_integer(metadata.get("input_count")),
+            batch_offset=_diagnostic_integer(metadata.get("batch_offset")),
+            total_input_count=_diagnostic_integer(metadata.get("total_input_count")),
+            max_input_chars=_diagnostic_integer(metadata.get("max_input_chars")),
+            total_input_chars=_diagnostic_integer(metadata.get("total_input_chars")),
+            cause_errno=_diagnostic_integer(metadata.get("cause_errno"), -4095, 4095),
+            retries_exhausted=exhausted if isinstance(exhausted, bool) else None,
+            cause_type=cause if isinstance(cause, str) and cause in {
+                "TimeoutError", "ConnectionError", "ConnectionResetError", "ConnectionRefusedError",
+                "ConnectionAbortedError", "BrokenPipeError", "OSError", "gaierror",
+            } else None,
+            provider_error_type=(
+                provider_error_type if isinstance(provider_error_type, str) and provider_error_type in {
+                    "context_length_exceeded", "provider_resource_exhausted",
+                    "transient_provider_failure",
+                } else None
+            ),
+        )
+
+    @classmethod
+    def from_mapping(cls, value: object) -> IndexFailureDiagnostics:
+        data = _object(value, "error.diagnostics")
+        result = cls.from_metadata(data)
+        if not data or data != result.to_mapping():
+            raise ValueError("Invalid failure diagnostics")
+        return result
+
+    def to_mapping(self) -> dict[str, object]:
+        return {name: value for name, value in asdict(self).items() if value is not None}
 
 
 @dataclass(frozen=True)
@@ -108,10 +171,12 @@ class IndexRunArtifact:
             raise ValueError("Invalid CLI result envelope")
         if status == "failed":
             error = _object(command["error"], "error")
-            if set(error) != {"category", "message"}:
+            if set(error) not in ({"category", "message"}, {"category", "message", "diagnostics"}):
                 raise ValueError("Invalid failure evidence")
-            for k in error:
+            for k in ("category", "message"):
                 _text(error[k], "error." + k)
+            if "diagnostics" in error:
+                IndexFailureDiagnostics.from_mapping(error["diagnostics"])
         else:
             _validate_result(command["result"], values["repository"], command["operation"])
         return cls(command=command, **values)
@@ -128,6 +193,8 @@ def _validate_result(value: object, repository: str, operation: str) -> None:
     for key in ("target_revision", "indexed_revision", "previous_indexed_revision"):
         if result.get(key) is not None:
             _text(result[key], key)
+    if "stage_timings_ms" in result:
+        _validate_stage_timings(result["stage_timings_ms"])
     executing = operation in {"sync", "rebuild"}
     if executing != ("execution" in result):
         raise ValueError("Execution evidence does not match operation")
@@ -150,8 +217,14 @@ def _validate_result(value: object, repository: str, operation: str) -> None:
             _validate_measurements(_object(result[section], section), section)
     if executing:
         execution = result["execution"]
-        if execution.get("mode") not in ("incremental", "full_rebuild"):
+        if "stage_timings_ms" in execution:
+            _validate_stage_timings(execution["stage_timings_ms"])
+        if execution.get("mode") not in ("incremental", "full_rebuild", "noop"):
             raise ValueError("Unsupported persisted projection mutation mode")
+        if execution["mode"] == "noop" and result["mode"] != "noop":
+            raise ValueError("Backend noop cannot claim index mutations")
+        if result["mode"] == "noop" and execution["mode"] == "full_rebuild":
+            raise ValueError("Full rebuild cannot claim noop")
         for key in ("added", "updated", "deleted", "unchanged", "duration_ms"):
             if key not in execution or type(execution[key]) is not int:
                 raise ValueError("Missing or invalid execution measurement: " + key)
@@ -208,6 +281,21 @@ def _validate_result(value: object, repository: str, operation: str) -> None:
         raise ValueError("Planned mutations require plan operation")
 
 
+def _validate_stage_timings(value: object) -> None:
+    IndexStageTelemetry.from_mapping(_object(value, "stage_timings_ms"))
+
+
+def _validate_adapter_stage_timings(value: object) -> None:
+    stages = _object(value, "stage_durations_ms")
+    if len(stages) > 32:
+        raise ValueError("Too many backend stage measurements")
+    for name, duration in stages.items():
+        if not isinstance(name, str) or not name.strip() or len(name) > 128:
+            raise ValueError("Invalid backend stage name")
+        if type(duration) is not int or duration < 0:
+            raise ValueError("Invalid backend stage duration")
+
+
 def _validate_measurements(data: dict[str, Any], name: str) -> None:
     counts = {
         "added",
@@ -226,6 +314,12 @@ def _validate_measurements(data: dict[str, Any], name: str) -> None:
         "embedding_cache_hits",
     }
     for key, value in data.items():
+        if key == "stage_timings_ms":
+            _validate_stage_timings(value)
+            continue
+        if key == "stage_durations_ms":
+            _validate_adapter_stage_timings(value)
+            continue
         if (
             key in counts
             or key.endswith(("_ms", "_count", "_requests", "_vectors"))

@@ -9,7 +9,10 @@ from typing import cast
 import pytest
 
 from fetchcore.application import indexing
-from fetchcore.application.composition import EmbeddingProviderRegistry
+from fetchcore.application.composition import BackendRegistry, EmbeddingProviderRegistry
+from fetchcore.application.service import (
+    RepositoryBinding, RetrievalApplicationService, SearchRequest, SourceReadRequest,
+)
 from fetchcore.application.repositories import RepositoryApplicationService
 from fetchcore.adapters.retrieval.solr.backend import (
     SOLR_VECTOR_DIMENSIONS,
@@ -49,6 +52,7 @@ class VectorLifecycleTransport(MemoryTransport):
         self.committed: dict[str, dict[str, object]] = {}
         self.schema_require_vectors: list[bool] = []
         self.search_channels: list[str] = []
+        self.dense_requests: list[dict[str, object]] = []
 
     def get(
         self,
@@ -81,6 +85,8 @@ class VectorLifecycleTransport(MemoryTransport):
     ) -> dict[str, object]:
         if path == "select":
             self.search_channels.append("dense")
+            assert isinstance(payload, dict)
+            self.dense_requests.append(payload)
             docs = self._search_documents()
             return {"response": {"numFound": len(docs), "docs": docs}}
         if isinstance(payload, dict) and "rollback" in payload:
@@ -451,7 +457,7 @@ def test_dense_and_hybrid_serving_use_query_embedding_without_fallback(
                 revision=_git(workspace, "rev-parse", "HEAD"),
                 knowledge_types=(),
                 max_results=5,
-                settings={},
+                settings={"diagnostic_candidate_window": 80, "ann_search_breadth": 160},
                 retrieval=_retrieval(hybrid=hybrid),
             ),
             (),
@@ -461,12 +467,74 @@ def test_dense_and_hybrid_serving_use_query_embedding_without_fallback(
         assert response.telemetry.mode == ("hybrid" if hybrid else "dense")
         assert provider.calls[-1] == ("first function",)
         assert "dense" in transport.search_channels
+        assert "topK=160" in str(transport.dense_requests[-1]["query"])
+        assert transport.dense_requests[-1]["limit"] == 80
+        assert response.metadata["ann_top_k_requested"] == 160
+        assert response.metadata["dense_candidate_window"] == 80
+        assert response.telemetry.metadata["dense_candidates_acquired"] == response.metadata[
+            "dense_candidates_acquired"
+        ]
+        assert isinstance(response.metadata["dense_candidates_acquired"], int)
+        assert response.metadata["dense_candidates_acquired"] <= 80
+        assert len(response.telemetry.metadata["query_vector_sha256"]) == 64
+        assert response.metadata["query_vector_sha256"] == response.telemetry.metadata[
+            "query_vector_sha256"
+        ]
         assert ("lexical" in transport.search_channels) is hybrid
         assert all(result.revision == _git(workspace, "rev-parse", "HEAD") for result in response.results)
         assert all(result.source_ref.startswith(f"repository://{repository}/") for result in response.results)
         if hybrid:
             assert response.metadata["fusion_strategy"] == "rrf"
             assert response.metadata["lexical_fallback"] is False
+
+
+def test_operational_hybrid_revision_rebinding_preserves_search_and_source_provenance(
+    workspace: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = VectorLifecycleTransport()
+    provider = CountingEmbeddingProvider()
+    service, repository = _service(
+        workspace, tmp_path, transport, retrieval=_retrieval(hybrid=True),
+        provider=provider, monkeypatch=monkeypatch,
+    )
+    revision_a = _git(workspace, "rev-parse", "HEAD")
+    service.run("rebuild", repository)
+    (workspace / "a.py").write_text("def first():\n    return 3\n", encoding="utf-8")
+    revision_b = _commit(workspace, "update first")
+    service.run("sync", repository)
+    backend = SolrBackend(
+        transport_factory=lambda settings: transport,
+        embedding_factory=lambda retrieval: provider,
+    )
+    registry = BackendRegistry({"solr": lambda: backend})
+
+    def serving(revision: str) -> RetrievalApplicationService:
+        binding = RepositoryBinding(
+            repository, workspace, "solr", revision=revision,
+            retrieval=_retrieval(hybrid=True),
+        )
+        return RetrievalApplicationService({repository: binding}, backends=registry)
+
+    with pytest.raises(KnowledgeSearchError) as mismatch:
+        serving(revision_a).search(SearchRequest(query="first function"))
+    assert mismatch.value.category == "snapshot_revision_mismatch"
+
+    rebound = serving(revision_b)
+    response = rebound.search(SearchRequest(query="first function"))
+    assert response.results
+    assert response.telemetry.mode == "hybrid"
+    assert all(hit.revision == revision_b for hit in response.results)
+    source = rebound.get_source(SourceReadRequest(
+        source_ref=f"repository://{repository}/a.py", revision=revision_b,
+        line_start=1, line_end=2,
+    ))
+    assert source.revision == revision_b
+    assert "return 3" in source.content
+    with pytest.raises(KnowledgeSearchError) as stale_source:
+        rebound.get_source(SourceReadRequest(
+            source_ref=f"repository://{repository}/a.py", revision=revision_a,
+        ))
+    assert stale_source.value.category == "source_revision_mismatch"
 
 
 def test_provider_failure_never_downgrades_dense_or_hybrid_to_lexical(

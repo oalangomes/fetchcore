@@ -13,6 +13,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
@@ -24,6 +25,35 @@ assert spec is not None and spec.loader is not None
 frozen = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = frozen
 spec.loader.exec_module(frozen)
+
+
+PUBLISHED_ARTIFACTS = HERE / "artifacts"
+
+
+def allocate_bench_run_directory(output_root: Path) -> tuple[str, Path]:
+    """Reserve a version above both local runs and published frozen history.
+
+    This is an operational wrapper policy: the frozen measurement runner stays
+    byte-identical for historical reproducibility.
+    """
+    output_root.mkdir(parents=True, exist_ok=True)
+    versions: list[int] = []
+    for catalog in (output_root, PUBLISHED_ARTIFACTS):
+        if not catalog.is_dir():
+            continue
+        for entry in catalog.iterdir():
+            if entry.is_dir() and entry.name.startswith("V0.") and entry.name[3:].isdigit():
+                versions.append(int(entry.name[3:]))
+    version = max(versions, default=0) + 1
+    while True:
+        name = f"V0.{version}"
+        destination = output_root / name
+        try:
+            destination.mkdir()
+        except FileExistsError:
+            version += 1
+            continue
+        return name, destination
 
 
 def load_run_config(path: Path, corpus: dict[str, object]) -> dict[str, object]:
@@ -49,14 +79,18 @@ def load_run_config(path: Path, corpus: dict[str, object]) -> dict[str, object]:
     for field in ("performance_comparable", "dedicated", "exclusive_host"):
         if not isinstance(config[field], bool):
             raise frozen.BaselineConfigurationError(f"BENCH {field} must be a boolean")
+    project = config["infrastructure_project"]
+    isolated = isinstance(project, str) and bool(
+        re.fullmatch(r"fetchcore-bench-[a-z0-9]{12}", project)
+    )
+    dedicated_project = project == "fetchcore-bench-dedicated" or isolated
     if config["performance_comparable"] and not (
-        config["dedicated"] and config["exclusive_host"]
-        and config["infrastructure_project"] == "fetchcore-bench-dedicated"
+        config["dedicated"] and config["exclusive_host"] and dedicated_project
     ):
         raise frozen.BaselineConfigurationError("comparable performance requires dedicated BENCH and exclusive host")
-    if config["infrastructure_project"] not in {"fetchcore-shared", "fetchcore-bench-dedicated"}:
+    if project not in {"fetchcore-shared", "fetchcore-bench-dedicated"} and not isolated:
         raise frozen.BaselineConfigurationError("BENCH infrastructure project is invalid")
-    if bool(config["dedicated"]) != (config["infrastructure_project"] == "fetchcore-bench-dedicated"):
+    if bool(config["dedicated"]) != dedicated_project:
         raise frozen.BaselineConfigurationError("BENCH dedicated flag and project must agree")
     endpoints = frozen._object(config, "endpoints")
     resources = frozen._object(config, "resources")
@@ -115,6 +149,23 @@ def configured_manifest(manifest: dict[str, object], config: dict[str, object]) 
     return effective
 
 
+def configured_solr_ann_breadth(effective: dict[str, object], breadth: int) -> None:
+    """Set the one experimental variable on a copied manifest in memory."""
+    measurement = frozen._object(effective, "measurement")
+    window = max(int(str(measurement["max_results"])),
+                 int(str(measurement["diagnostic_candidate_window"])))
+    if not window <= breadth <= min(5_000, 4 * window):
+        raise frozen.BaselineConfigurationError(
+            "Solr ANN breadth must be between the frozen candidate window "
+            "and its bounded 4x maximum"
+        )
+    backend_settings = frozen._object(effective, "backend_settings")
+    solr_settings = frozen._object(backend_settings, "solr")
+    solr_settings["ann_search_breadth"] = breadth
+    backend_settings["solr"] = solr_settings
+    effective["backend_settings"] = backend_settings
+
+
 def observed_fingerprints(run_dir: Path) -> dict[str, object]:
     """Summarize observed identities; keep the original artifacts unchanged."""
     observed: dict[str, object] = {"indexing": None, "retrieval": {}}
@@ -154,6 +205,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--arm", action="append", default=[])
     parser.add_argument("--prepare-index", action="store_true")
+    parser.add_argument("--solr-ann-search-breadth", type=int,
+                        help="Bounded Solr KNN topK; leaves the frozen candidate window unchanged")
     parser.add_argument("--resume", help="Resume an incomplete V0.N run with the same BENCH configuration")
     args = parser.parse_args(argv)
     output = args.output.resolve()
@@ -165,6 +218,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.prepare_index and config["provisioning"] != "explicit_rebuild":
         parser.error("--prepare-index requires explicit_rebuild in BENCH run config")
     effective = configured_manifest(frozen._load_json(frozen.MANIFEST_PATH), config)
+    if args.solr_ann_search_breadth is not None:
+        configured_solr_ann_breadth(effective, args.solr_ann_search_breadth)
     before = set(output.glob("V0.*")) if output.exists() else set()
     with TemporaryDirectory(prefix="fetchcore-bench-manifest-") as temporary:
         manifest_path = Path(temporary) / "manifest.json"
@@ -183,14 +238,17 @@ def main(argv: list[str] | None = None) -> int:
         # frozen report formatter raises on None; represent it as unmeasured
         # for this new-run wrapper without mutating source measurements.
         original_format = frozen._format_number
+        original_allocator = frozen._allocate_run_output_dir
         frozen._format_number = lambda value: (
             "not measured" if value is None else original_format(value)
         )
+        frozen._allocate_run_output_dir = allocate_bench_run_directory
         try:
             result = frozen.main()
         finally:
             sys.argv = original_argv
             frozen._format_number = original_format
+            frozen._allocate_run_output_dir = original_allocator
     if args.resume:
         run_dir = output / args.resume
     else:

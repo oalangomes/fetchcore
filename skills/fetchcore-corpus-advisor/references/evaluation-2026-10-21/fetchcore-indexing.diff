@@ -1,0 +1,14 @@
+--- a/.fetchcore/indexing.yaml
++++ b/.fetchcore/indexing.yaml
+@@ -3,0 +4,5 @@
++  include:
++    - "infra/images.lock"
++    - ".env.example"
++    - "tools/explorer/docker/nginx.conf"
++    - "tools/explorer/web/src/style.css"
+@@ -7,0 +13,5 @@
++    - "tools/explorer/.env.example"
++    - "benchmarks/search-intent-v2/artifacts/evidence-smoke/V0.1/queries.json"
++    - "benchmarks/search-intent-v2/artifacts/evidence-smoke/V0.2/queries.json"
++    - "benchmarks/search-intent-v2/artifacts/evidence/V0.1/queries.json"
++    - "benchmarks/search-intent-v2/artifacts/evidence/V0.2/queries.json"

@@ -6,6 +6,7 @@ from pathlib import Path
 from fetchcore.repository.incremental import (
     GitAwareSolrSynchronizer,
     GitRepositoryChangeDetector,
+    GitDeltaPlan,
 )
 from fetchcore.repository.index_contract import (
     IndexContractSolrSnapshot,
@@ -98,6 +99,56 @@ def test_git_detector_falls_back_when_previous_revision_is_unavailable(tmp_path:
 
     assert plan.mode == "full-scan"
     assert plan.reason == "previous_revision_unavailable"
+
+
+def test_git_detector_reports_bounded_stage_times_for_committed_delta(tmp_path: Path) -> None:
+    _repository(tmp_path)
+    (tmp_path / "a.py").write_text("a = 1\n", encoding="utf-8")
+    base = _commit(tmp_path, "base")
+    (tmp_path / "a.py").write_text("a = 2\n", encoding="utf-8")
+    head = _commit(tmp_path, "change a")
+
+    # Deterministic fake clock: discovery covers all Git checks and both diffs;
+    # git_diff_duration_ms covers only the two git diff subprocess/parse spans.
+    ticks = iter((0.0, 0.1, 0.2, 0.3, 0.4, 0.5))
+    plan = GitRepositoryChangeDetector(timer=lambda: next(ticks)).plan(
+        tmp_path, previous_revision=base, current_revision=head,
+    )
+
+    assert plan.mode == "git-delta"
+    assert plan.changed_paths == ("a.py",)
+    assert plan.discovery_duration_ms == 500
+    assert plan.git_diff_duration_ms == 200
+    assert plan.to_mapping()["discovery_duration_ms"] == 500
+    assert plan.to_mapping()["git_diff_duration_ms"] == 200
+
+
+def test_git_detector_noop_still_measures_diff_and_early_fallback_omits_it(
+    tmp_path: Path,
+) -> None:
+    _repository(tmp_path)
+    (tmp_path / "a.py").write_text("a = 1\n", encoding="utf-8")
+    head = _commit(tmp_path, "base")
+    ticks = iter((0.0, 0.1, 0.2, 0.3))
+    noop = GitRepositoryChangeDetector(timer=lambda: next(ticks)).plan(
+        tmp_path, previous_revision=head, current_revision=head,
+    )
+    assert noop.changed_paths == ()
+    assert noop.discovery_duration_ms == 300
+    assert noop.git_diff_duration_ms == 100
+
+    ticks = iter((0.0, 0.125))
+    fallback = GitRepositoryChangeDetector(timer=lambda: next(ticks)).plan(
+        tmp_path, previous_revision=None, current_revision=head,
+    )
+    assert fallback.mode == "full-scan"
+    assert fallback.discovery_duration_ms == 125
+    assert "git_diff_duration_ms" not in fallback.to_mapping()
+
+    # Historical/manually authored plans are unmeasured, not zero-cost.
+    legacy = GitDeltaPlan(mode="git-delta", base_revision=head, current_revision=head)
+    assert "discovery_duration_ms" not in legacy.to_mapping()
+    assert "git_diff_duration_ms" not in legacy.to_mapping()
 
 
 class FixtureStore:

@@ -8,8 +8,9 @@ import math
 import re
 import time
 import uuid
-from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Protocol, TypeVar, cast
 from urllib.error import HTTPError, URLError
@@ -55,11 +56,19 @@ from fetchcore.adapters.retrieval.qdrant.sparse import (
 )
 from fetchcore.projection import (
     PROJECTION_VERSION,
+    ProjectionV3CanonicalDocumentReader,
     ProjectionV3Compiler,
+    ProjectionError,
     corpus_checksum,
     projection_contract_fingerprint,
 )
-from fetchcore.repository.indexing import RepositoryIndexResult, RepositoryIndexer
+from fetchcore.projection.core import ProjectedKnowledgeRecord
+from fetchcore.repository.indexing import (
+    KnowledgeDocument,
+    RepositoryIndexResult,
+    RepositoryIndexer,
+)
+from fetchcore.repository.index_fingerprint import indexing_contract_fingerprint
 from fetchcore.retrieval import RetrievalBackendCapabilities
 from fetchcore.telemetry import (
     IndexSyncTelemetry,
@@ -104,6 +113,7 @@ class QdrantVectorSettings:
     )
     embedding_url: str = "http://localhost:11434"
     embedding_model: str = "embeddinggemma"
+    vector_dimensions: int | None = None
     batch_size: int = 32
     diagnostic_candidate_window: int | None = None
     api_key: str | None = None
@@ -153,6 +163,12 @@ class QdrantVectorSettings:
                 "Qdrant vector batch_size must not exceed 256",
                 category="schema_mismatch",
             )
+        raw_dimensions = data.get("vector_dimensions")
+        vector_dimensions = (
+            None
+            if raw_dimensions in (None, "")
+            else _positive_int(raw_dimensions, "vector_dimensions")
+        )
         raw_window = data.get("diagnostic_candidate_window")
         diagnostic_candidate_window = (
             None
@@ -169,6 +185,7 @@ class QdrantVectorSettings:
             embedding_serializer_mode=embedding_serializer_mode,
             embedding_url=embedding_url,
             embedding_model=embedding_model,
+            vector_dimensions=vector_dimensions,
             batch_size=batch_size,
             diagnostic_candidate_window=diagnostic_candidate_window,
             api_key=api_key,
@@ -268,6 +285,8 @@ class QdrantVectorSnapshot:
     sparse_analyzer_fingerprint: str | None = None
     sparse_modifier: str | None = None
     status: str = "ready"
+    indexing_fingerprint: str | None = None
+    active_collection: str | None = field(default=None, compare=False, repr=False)
 
     @property
     def point_id(self) -> str:
@@ -298,6 +317,7 @@ class QdrantVectorSnapshot:
             "sparse_analyzer_fingerprint": self.sparse_analyzer_fingerprint,
             "sparse_modifier": self.sparse_modifier,
             "snapshot_status": self.status,
+            "indexing_fingerprint": self.indexing_fingerprint,
         }
 
     @classmethod
@@ -328,6 +348,7 @@ class QdrantVectorSnapshot:
                 ),
                 sparse_modifier=_optional_str(value.get("sparse_modifier")),
                 status=str(value["snapshot_status"]),
+                indexing_fingerprint=_optional_str(value.get("indexing_fingerprint")),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise KnowledgeSearchError(
@@ -344,22 +365,35 @@ class QdrantVectorIndexSyncResult:
     added: int
     duration_ms: int
     telemetry: IndexSyncTelemetry | None = None
+    updated: int = 0
+    deleted: int = 0
+    unchanged: int = 0
+    embedding_vectors_reused: int = 0
+    collection_creations: int = 0
+    collection_deletions: int = 0
+    alias_promotions: int = 0
+    stage_durations_ms: tuple[tuple[str, int], ...] = ()
 
     def to_mapping(self) -> dict[str, object]:
         """Return a stable mapping representation of this value."""
+        telemetry = (
+            None if self.telemetry is None else self.telemetry.to_mapping()
+        )
+        if telemetry is not None:
+            telemetry["embedding_vectors_reused"] = self.embedding_vectors_reused
+            telemetry["collection_creations"] = self.collection_creations
+            telemetry["collection_deletions"] = self.collection_deletions
+            telemetry["alias_promotions"] = self.alias_promotions
+            telemetry["stage_durations_ms"] = dict(self.stage_durations_ms)
         return {
             "mode": self.mode,
             "snapshot": self.snapshot.to_mapping(),
             "added": self.added,
-            "updated": 0,
-            "deleted": 0,
-            "unchanged": 0,
+            "updated": self.updated,
+            "deleted": self.deleted,
+            "unchanged": self.unchanged,
             "duration_ms": self.duration_ms,
-            **(
-                {"telemetry": self.telemetry.to_mapping()}
-                if self.telemetry is not None
-                else {}
-            ),
+            **({"telemetry": telemetry} if telemetry is not None else {}),
         }
 
 
@@ -424,18 +458,24 @@ class QdrantVectorIndexStore:
         self.settings = settings
         self.embedder = embedder
         self.compiler = ProjectionV3Compiler(settings.projection_version)
+        self.reader = ProjectionV3CanonicalDocumentReader(settings.projection_version)
         self.serializer = ProjectionV3EmbeddingSerializer(
             settings.projection_version,
             settings.embedding_serializer_mode,
         )
+        self.embedding_provider = embedder
+        self.embedding_serializer = self.serializer
         self.projection_fingerprint = projection_contract_fingerprint(
             settings.projection_version
         )
+        self.indexing_fingerprint: str | None = None
+        self.repository: str | None = None
         self.clock = clock
         self.timer = timer
 
     def health(self) -> dict[str, object]:
         """Return backend health information required by the lifecycle."""
+        self._validate_embedding_identity()
         qdrant = self.transport.request("GET", "collections")
         probe = self.embedder.embed(("fetchcore embedding probe",))
         dimensions = _validate_vector_dimensions(probe)
@@ -445,6 +485,400 @@ class QdrantVectorIndexStore:
             "embedding_model": self.embedder.model_id,
             "vector_dimensions": dimensions,
         }
+
+    @contextmanager
+    def _writer_lock(self, repository: str) -> Iterator[None]:
+        """Acquire an exclusive Qdrant-backed lock shared across processes."""
+        collection = _writer_lock_collection(self.settings, repository)
+        token = uuid.uuid4().hex
+        try:
+            self.transport.request(
+                "PUT",
+                f"collections/{quote(collection, safe='')}",
+                {"vectors": {"size": 1, "distance": "Cosine"}},
+            )
+        except KnowledgeSearchError as exc:
+            if exc.category == "schema_mismatch":
+                raise KnowledgeSearchError(
+                    "Qdrant writer lock is already held; inspect it before retry",
+                    category="concurrent_write",
+                    metadata={
+                        "repository": repository,
+                        "lock_collection": collection,
+                        "recovery_required": True,
+                    },
+                ) from exc
+            raise
+        try:
+            self._upsert_points(
+                collection,
+                [
+                    {
+                        "id": _writer_lock_point_id(repository),
+                        "vector": {"": [1.0]},
+                        "payload": {
+                            "record_kind": "writer_lock",
+                            "repository": repository,
+                            "writer_token": token,
+                            "started_at": self.clock(),
+                        },
+                    }
+                ],
+            )
+        except Exception:
+            try:
+                self._delete_collection_if_present(collection)
+            except Exception as cleanup_error:
+                raise KnowledgeSearchError(
+                    "Qdrant writer lock acquisition failed; inspect lock collection",
+                    category="concurrent_write",
+                    metadata={
+                        "repository": repository,
+                        "lock_collection": collection,
+                        "recovery_required": True,
+                    },
+                ) from cleanup_error
+            raise
+        try:
+            yield
+        except BaseException:
+            self._release_writer_lock(collection, repository, token)
+            raise
+        else:
+            self._release_writer_lock(collection, repository, token)
+
+    def _release_writer_lock(
+        self,
+        collection: str,
+        repository: str,
+        token: str,
+    ) -> None:
+        try:
+            response = self.transport.request(
+                "POST",
+                f"collections/{quote(collection, safe='')}/points",
+                {
+                    "ids": [_writer_lock_point_id(repository)],
+                    "with_payload": True,
+                    "with_vector": False,
+                },
+            )
+            payload = _single_point_payload(response, "Qdrant writer lock")
+        except Exception as exc:
+            raise KnowledgeSearchError(
+                "Qdrant writer lock ownership could not be verified",
+                category="concurrent_write",
+                metadata={"repository": repository, "lock_collection": collection},
+            ) from exc
+        if (
+            payload.get("record_kind") != "writer_lock"
+            or payload.get("repository") != repository
+            or payload.get("writer_token") != token
+        ):
+            raise KnowledgeSearchError(
+                "Qdrant writer lock ownership changed",
+                category="concurrent_write",
+                metadata={"repository": repository, "lock_collection": collection},
+            )
+        self.transport.request(
+            "DELETE",
+            f"collections/{quote(collection, safe='')}",
+        )
+
+    def validate_schema(self, *, require_vectors: bool = False) -> None:
+        """Validate the bound repository's dense and sparse schema without writes."""
+        if not self.repository:
+            raise KnowledgeSearchError(
+                "Qdrant repository binding is missing",
+                category="schema_mismatch",
+            )
+        alias = _repository_alias(self.settings, self.repository)
+        collection = self._active_collection(alias)
+        if collection is None:
+            raise KnowledgeSearchError(
+                "Qdrant repository alias is absent",
+                category="index_missing",
+                metadata={"repository": self.repository, "alias": alias},
+            )
+        self._validate_collection_schema(
+            collection,
+            expected_dimensions=self.settings.vector_dimensions,
+        )
+
+    def _validate_collection_schema(
+        self,
+        collection: str,
+        *,
+        expected_dimensions: int | None = None,
+    ) -> int:
+        response = self.transport.request(
+            "GET",
+            f"collections/{quote(collection, safe='')}",
+        )
+        result = response.get("result")
+        config = result.get("config") if isinstance(result, Mapping) else None
+        params = config.get("params") if isinstance(config, Mapping) else None
+        vectors = params.get("vectors") if isinstance(params, Mapping) else None
+        sparse_vectors = (
+            params.get("sparse_vectors") if isinstance(params, Mapping) else None
+        )
+        dense = _dense_vector_config(vectors)
+        if dense is None or dense.get("distance") != "Cosine":
+            raise KnowledgeSearchError(
+                "Qdrant collection has an incompatible dense-vector schema",
+                category="schema_mismatch",
+                metadata={"collection": collection, "rebuild_required": True},
+            )
+        dimensions = _positive_response_int(dense.get("size"), "dense vector size")
+        if (
+            expected_dimensions is not None
+            and dimensions != expected_dimensions
+        ):
+            raise KnowledgeSearchError(
+                "Qdrant collection vector dimensions do not match configuration",
+                category="schema_mismatch",
+                metadata={
+                    "expected_dimensions": expected_dimensions,
+                    "actual_dimensions": dimensions,
+                    "rebuild_required": True,
+                },
+            )
+        sparse = (
+            sparse_vectors.get(SPARSE_VECTOR_NAME)
+            if isinstance(sparse_vectors, Mapping)
+            else None
+        )
+        if (
+            not isinstance(sparse, Mapping)
+            or sparse.get("modifier") != SPARSE_MODIFIER
+        ):
+            raise KnowledgeSearchError(
+                "Qdrant collection has an incompatible sparse-vector schema",
+                category="schema_mismatch",
+                metadata={"collection": collection, "rebuild_required": True},
+            )
+        return dimensions
+
+    def embedding_snapshot_matches(self, snapshot: QdrantVectorSnapshot) -> bool:
+        """Return whether persisted vectors match the configured provider contract."""
+        return (
+            snapshot.embedding_provider == self.embedder.provider_id
+            and snapshot.embedding_model == self.embedder.model_id
+            and snapshot.embedding_model == self.settings.embedding_model
+            and (
+                self.settings.vector_dimensions is None
+                or snapshot.vector_dimensions == self.settings.vector_dimensions
+            )
+            and snapshot.serializer_mode == self.settings.embedding_serializer_mode
+            and snapshot.serializer_version == VECTOR_EMBEDDING_SERIALIZATION_VERSION
+            and snapshot.serializer_fingerprint == self.serializer.serializer_fingerprint
+            and snapshot.projection_version == self.settings.projection_version
+            and snapshot.projection_fingerprint == self.projection_fingerprint
+        )
+
+    def load_documents(
+        self,
+        repository: str,
+        *,
+        collection: str | None = None,
+    ) -> tuple[KnowledgeDocument, ...]:
+        """Read the complete repository corpus from one stable collection."""
+        active = collection or self._active_collection(
+            _repository_alias(self.settings, repository)
+        )
+        if active is None:
+            raise KnowledgeSearchError(
+                "Qdrant repository collection is absent",
+                category="snapshot_missing",
+                metadata={"repository": repository},
+            )
+        documents: list[KnowledgeDocument] = []
+        seen_ids: set[str] = set()
+        for point in self._scroll_points(
+            active,
+            repository,
+            with_vector=False,
+        ):
+            payload = cast(dict[str, object], point["payload"])
+            try:
+                document = self.reader.read(payload)
+            except ProjectionError as exc:
+                raise KnowledgeSearchError(
+                    "Qdrant canonical document payload is incompatible",
+                    category="schema_mismatch",
+                    metadata={"repository": repository},
+                ) from exc
+            point_id = str(point["id"])
+            if (
+                document.repository != repository
+                or point_id != _knowledge_point_id(document.id)
+                or document.id in seen_ids
+            ):
+                raise KnowledgeSearchError(
+                    "Qdrant repository document identity is inconsistent",
+                    category="response_parsing_failure",
+                    metadata={"repository": repository},
+                )
+            seen_ids.add(document.id)
+            documents.append(document)
+        return tuple(sorted(documents, key=lambda item: item.id))
+
+    def _scroll_points(
+        self,
+        collection: str,
+        repository: str,
+        *,
+        with_vector: bool,
+    ) -> Iterable[dict[str, object]]:
+        """Yield validated Qdrant point pages with an opaque pagination cursor."""
+        offset: object | None = None
+        seen_offsets: set[str] = set()
+        while True:
+            body: dict[str, object] = {
+                "filter": {
+                    "must": [
+                        {"key": "record_kind", "match": {"value": "knowledge"}},
+                        {"key": "repository", "match": {"value": repository}},
+                    ]
+                },
+                "limit": self.settings.batch_size,
+                "with_payload": True,
+                "with_vector": with_vector,
+            }
+            if offset is not None:
+                body["offset"] = offset
+            response = self.transport.request(
+                "POST",
+                f"collections/{quote(collection, safe='')}/points/scroll",
+                body,
+            )
+            result = response.get("result")
+            if not isinstance(result, Mapping):
+                raise KnowledgeSearchError(
+                    "Qdrant scroll result is invalid",
+                    category="response_parsing_failure",
+                )
+            points = result.get("points")
+            if not isinstance(points, list) or len(points) > self.settings.batch_size:
+                raise KnowledgeSearchError(
+                    "Qdrant scroll page is invalid",
+                    category="response_parsing_failure",
+                )
+            for raw_point in points:
+                if not isinstance(raw_point, Mapping):
+                    raise KnowledgeSearchError(
+                        "Qdrant scroll returned an invalid point",
+                        category="response_parsing_failure",
+                    )
+                raw_id = raw_point.get("id")
+                raw_payload = raw_point.get("payload")
+                raw_vector = raw_point.get("vector")
+                if (
+                    isinstance(raw_id, bool)
+                    or not isinstance(raw_id, (str, int))
+                    or not isinstance(raw_payload, Mapping)
+                    or raw_payload.get("record_kind") != "knowledge"
+                    or raw_payload.get("repository") != repository
+                    or (with_vector and not isinstance(raw_vector, (Mapping, list)))
+                ):
+                    raise KnowledgeSearchError(
+                        "Qdrant scroll point identity or shape is invalid",
+                        category="response_parsing_failure",
+                        metadata={"repository": repository},
+                    )
+                point: dict[str, object] = {
+                    "id": str(raw_id),
+                    "payload": dict(raw_payload),
+                }
+                if with_vector:
+                    if isinstance(raw_vector, Mapping):
+                        point["vector"] = dict(raw_vector)
+                    elif isinstance(raw_vector, list):
+                        point["vector"] = list(raw_vector)
+                    else:
+                        raise KnowledgeSearchError(
+                            "Qdrant scroll point has no vector",
+                            category="response_parsing_failure",
+                        )
+                yield point
+            next_offset = result.get("next_page_offset")
+            if next_offset is None:
+                break
+            if isinstance(next_offset, bool) or not isinstance(
+                next_offset, (str, int)
+            ):
+                raise KnowledgeSearchError(
+                    "Qdrant scroll cursor is invalid",
+                    category="response_parsing_failure",
+                )
+            cursor_key = json.dumps(next_offset, separators=(",", ":"))
+            if cursor_key in seen_offsets or not points:
+                raise KnowledgeSearchError(
+                    "Qdrant scroll cursor did not advance",
+                    category="response_parsing_failure",
+                )
+            seen_offsets.add(cursor_key)
+            offset = next_offset
+
+    def _load_points_by_ids(
+        self,
+        collection: str,
+        point_ids: Iterable[str],
+        *,
+        repository: str,
+    ) -> dict[str, dict[str, object]]:
+        identifiers = tuple(sorted(set(point_ids)))
+        if not identifiers:
+            return {}
+        response = self.transport.request(
+            "POST",
+            f"collections/{quote(collection, safe='')}/points",
+            {
+                "ids": list(identifiers),
+                "with_payload": True,
+                "with_vector": True,
+            },
+        )
+        result = response.get("result")
+        if not isinstance(result, list):
+            raise KnowledgeSearchError(
+                "Qdrant point lookup response is invalid",
+                category="response_parsing_failure",
+            )
+        points: dict[str, dict[str, object]] = {}
+        for raw_point in result:
+            if not isinstance(raw_point, Mapping):
+                raise KnowledgeSearchError(
+                    "Qdrant point lookup returned an invalid point",
+                    category="response_parsing_failure",
+                )
+            raw_id = raw_point.get("id")
+            payload = raw_point.get("payload")
+            vector = raw_point.get("vector")
+            if (
+                isinstance(raw_id, bool)
+                or not isinstance(raw_id, (str, int))
+                or not isinstance(payload, Mapping)
+                or payload.get("record_kind") != "knowledge"
+                or payload.get("repository") != repository
+                or not isinstance(vector, (Mapping, list))
+            ):
+                raise KnowledgeSearchError(
+                    "Qdrant point lookup identity or shape is invalid",
+                    category="response_parsing_failure",
+                )
+            point_id = str(raw_id)
+            if point_id not in identifiers or point_id in points:
+                raise KnowledgeSearchError(
+                    "Qdrant point lookup returned an unexpected point",
+                    category="response_parsing_failure",
+                )
+            points[point_id] = {
+                "id": point_id,
+                "payload": dict(payload),
+                "vector": dict(vector) if isinstance(vector, Mapping) else list(vector),
+            }
+        return points
 
     def inspect_collections(self, repository: str) -> QdrantVectorCollectionState:
         """Inspect active and orphaned concrete collections for one repository."""
@@ -463,7 +897,10 @@ class QdrantVectorIndexStore:
 
     def cleanup_orphans(self, repository: str) -> QdrantVectorCleanupResult:
         """Delete stale repository-owned generations without deleting the active one."""
+        with self._writer_lock(repository):
+            return self._cleanup_orphans(repository)
 
+    def _cleanup_orphans(self, repository: str) -> QdrantVectorCleanupResult:
         initial = self.inspect_collections(repository)
         deleted: list[str] = []
         for collection in initial.orphaned_collections:
@@ -486,16 +923,15 @@ class QdrantVectorIndexStore:
     def load_snapshot(self, repository: str) -> QdrantVectorSnapshot:
         """Load and validate the active repository snapshot."""
         alias = _repository_alias(self.settings, repository)
-        try:
-            payload = self.transport.request(
-                "POST",
-                f"collections/{quote(alias, safe='')}/points",
-                {
-                    "ids": [_snapshot_point_id(repository)],
-                    "with_payload": True,
-                    "with_vector": False,
-                },
+        collection = self._active_collection(alias)
+        if collection is None:
+            raise KnowledgeSearchError(
+                "Qdrant has no active vector snapshot",
+                category="snapshot_missing",
+                metadata={"repository": repository, "alias": alias},
             )
+        try:
+            snapshot = self._load_snapshot_from_collection(collection, repository)
         except KnowledgeSearchError as exc:
             if exc.category == "index_missing":
                 raise KnowledgeSearchError(
@@ -504,9 +940,6 @@ class QdrantVectorIndexStore:
                     metadata={"repository": repository},
                 ) from exc
             raise
-        raw_payload = _single_point_payload(payload, "active Qdrant snapshot")
-        snapshot = QdrantVectorSnapshot.from_mapping(raw_payload)
-        self._ensure_snapshot_compatible(snapshot)
         if snapshot.status != "ready":
             raise KnowledgeSearchError(
                 "Qdrant vector snapshot is not ready",
@@ -514,15 +947,103 @@ class QdrantVectorIndexStore:
             )
         return snapshot
 
+    def _load_snapshot_from_collection(
+        self,
+        collection: str,
+        repository: str,
+        *,
+        validate_contract: bool = True,
+    ) -> QdrantVectorSnapshot:
+        response = self.transport.request(
+            "POST",
+            f"collections/{quote(collection, safe='')}/points",
+            {
+                "ids": [_snapshot_point_id(repository)],
+                "with_payload": True,
+                "with_vector": False,
+            },
+        )
+        points = response.get("result")
+        if points == []:
+            raise KnowledgeSearchError(
+                "Qdrant collection has no repository snapshot",
+                category="snapshot_missing",
+                metadata={"repository": repository, "collection": collection},
+            )
+        snapshot = QdrantVectorSnapshot.from_mapping(
+            _single_point_payload(response, "active Qdrant snapshot")
+        )
+        if snapshot.repository != repository:
+            raise KnowledgeSearchError(
+                "Qdrant snapshot repository identity does not match the request",
+                category="snapshot_revision_mismatch",
+                metadata={"repository": repository},
+            )
+        if validate_contract:
+            self._ensure_snapshot_compatible(snapshot)
+        return replace(snapshot, active_collection=collection)
+
     def full_rebuild(self, result: RepositoryIndexResult) -> QdrantVectorIndexSyncResult:
-        """Replace the repository projection with a complete rebuild."""
+        """Embed and validate the first batch before acquiring a writer lock."""
         self._ensure_complete(result)
+        self._validate_result(result)
+        self._validate_embedding_identity()
         if not result.documents:
             raise KnowledgeSearchError(
                 "cannot build an empty Qdrant vector corpus",
                 category="empty_index",
             )
+        self._assert_writer_unlocked(result.repository)
+        alias = _repository_alias(self.settings, result.repository)
+        self._validate_rebuild_target(
+            result.repository,
+            alias,
+            self._active_collection(alias),
+        )
+        self._assert_writer_unlocked(result.repository)
         started = self.timer()
+        first_documents = result.documents[: self.settings.batch_size]
+        first_records = tuple(self.compiler.compile(item) for item in first_documents)
+        embedding_started = self.timer()
+        first_vectors = self.embedder.embed(
+            tuple(self.serializer.serialize_record(item) for item in first_records)
+        )
+        first_embedding_ms = elapsed_ms(embedding_started, self.timer())
+        if len(first_vectors) != len(first_records):
+            raise KnowledgeSearchError(
+                "embedding provider returned an incomplete batch",
+                category="embedding_failed",
+            )
+        first_dimensions = _validate_vector_dimensions(first_vectors)
+        self._validate_configured_dimensions(first_dimensions)
+        lock_started = self.timer()
+        with self._writer_lock(result.repository):
+            lock_wait_ms = elapsed_ms(lock_started, self.timer())
+            return self._full_rebuild(
+                result,
+                started=started,
+                first_records=first_records,
+                first_vectors=first_vectors,
+                first_embedding_ms=first_embedding_ms,
+                first_dimensions=first_dimensions,
+                lock_wait_ms=lock_wait_ms,
+            )
+
+    def _full_rebuild(
+        self,
+        result: RepositoryIndexResult,
+        *,
+        started: float,
+        first_records: tuple[ProjectedKnowledgeRecord, ...],
+        first_vectors: tuple[tuple[float, ...], ...],
+        first_embedding_ms: int,
+        first_dimensions: int,
+        lock_wait_ms: int,
+    ) -> QdrantVectorIndexSyncResult:
+        """Replace the repository projection with a complete rebuild."""
+        self._ensure_complete(result)
+        self._validate_result(result)
+        self._validate_embedding_identity()
         indexed_at = self.clock()
         corpus = corpus_checksum(result.documents)
         alias = _repository_alias(self.settings, result.repository)
@@ -531,36 +1052,51 @@ class QdrantVectorIndexStore:
             result.repository,
             result.revision,
             corpus,
-            indexed_at,
+            f"{indexed_at}:{uuid.uuid4().hex}",
         )
         prior = self._active_collection(alias)
-        self._delete_collection_if_present(concrete)
+        self._validate_rebuild_target(result.repository, alias, prior)
 
         dimensions: int | None = None
         inserted = 0
-        embedding_requests = 0
-        embedding_vectors = 0
-        embedding_duration_ms = 0
+        embedding_requests = 1
+        embedding_vectors = len(first_vectors)
+        embedding_duration_ms = first_embedding_ms
         alias_switched = False
+        staging_attempted = False
+        collection_creation_ms = 0
+        point_write_ms = 0
+        snapshot_validation_ms = 0
+        alias_promotion_ms = 0
         try:
-            for document_batch in _batches(result.documents, self.settings.batch_size):
-                records = tuple(self.compiler.compile(item) for item in document_batch)
-                embedding_started = self.timer()
-                vectors = self.embedder.embed(
-                    tuple(self.serializer.serialize_record(item) for item in records)
-                )
-                embedding_duration_ms += elapsed_ms(embedding_started, self.timer())
-                embedding_requests += 1
-                embedding_vectors += len(vectors)
-                if len(vectors) != len(records):
-                    raise KnowledgeSearchError(
-                        "embedding provider returned an incomplete batch",
-                        category="embedding_failed",
+            for batch_number, document_batch in enumerate(
+                _batches(result.documents, self.settings.batch_size)
+            ):
+                if batch_number == 0:
+                    records, vectors = first_records, first_vectors
+                    observed_dimensions = first_dimensions
+                else:
+                    records = tuple(self.compiler.compile(item) for item in document_batch)
+                    embedding_started = self.timer()
+                    vectors = self.embedder.embed(
+                        tuple(self.serializer.serialize_record(item) for item in records)
                     )
-                observed_dimensions = _validate_vector_dimensions(vectors)
+                    embedding_duration_ms += elapsed_ms(embedding_started, self.timer())
+                    embedding_requests += 1
+                    embedding_vectors += len(vectors)
+                    if len(vectors) != len(records):
+                        raise KnowledgeSearchError(
+                            "embedding provider returned an incomplete batch",
+                            category="embedding_failed",
+                        )
+                    observed_dimensions = _validate_vector_dimensions(vectors)
                 if dimensions is None:
                     dimensions = observed_dimensions
+                    self._validate_configured_dimensions(dimensions)
+                    staging_attempted = True
+                    create_started = self.timer()
                     self._create_collection(concrete, dimensions)
+                    collection_creation_ms += elapsed_ms(create_started, self.timer())
                 elif observed_dimensions != dimensions:
                     raise KnowledgeSearchError(
                         "embedding vector dimensions changed during rebuild",
@@ -574,11 +1110,13 @@ class QdrantVectorIndexStore:
                     }
                     for record, vector in zip(records, vectors, strict=True)
                 ]
+                write_started = self.timer()
                 self.transport.request(
                     "PUT",
                     f"collections/{quote(concrete, safe='')}/points?wait=true",
                     {"points": points},
                 )
+                point_write_ms += elapsed_ms(write_started, self.timer())
                 inserted += len(points)
 
             if dimensions is None:
@@ -586,91 +1124,82 @@ class QdrantVectorIndexStore:
                     "Qdrant rebuild did not determine vector dimensions",
                     category="embedding_failed",
                 )
-            snapshot = QdrantVectorSnapshot(
-                repository=result.repository,
-                branch=result.branch,
-                revision=result.revision,
-                corpus_checksum=corpus,
-                document_count=len(result.documents),
-                projection_version=self.settings.projection_version,
-                projection_fingerprint=self.projection_fingerprint,
-                embedding_provider=self.embedder.provider_id,
-                embedding_model=self.embedder.model_id,
-                vector_dimensions=dimensions,
-                serializer_mode=self.settings.embedding_serializer_mode,
-                serializer_version=VECTOR_EMBEDDING_SERIALIZATION_VERSION,
-                serializer_fingerprint=self.serializer.serializer_fingerprint,
-                indexed_at=indexed_at,
-                sparse_vector_name=SPARSE_VECTOR_NAME,
-                sparse_analyzer_version=SPARSE_ANALYZER_VERSION,
-                sparse_analyzer_fingerprint=SPARSE_ANALYZER_FINGERPRINT,
-                sparse_modifier=SPARSE_MODIFIER,
-            )
-            control_vector = [1.0, *([0.0] * (dimensions - 1))]
-            self.transport.request(
-                "PUT",
-                f"collections/{quote(concrete, safe='')}/points?wait=true",
-                {
-                    "points": [
-                        {
-                            "id": snapshot.point_id,
-                            "vector": {"": control_vector},
-                            "payload": snapshot.to_mapping(),
-                        }
-                    ]
-                },
-            )
+            snapshot = self._snapshot(result, corpus, dimensions, indexed_at)
+            write_started = self.timer()
+            self._write_snapshot(concrete, snapshot)
+            point_write_ms += elapsed_ms(write_started, self.timer())
+            validation_started = self.timer()
             self._validate_staged(concrete, snapshot)
-            actions: list[dict[str, object]] = []
-            if prior is not None:
-                actions.append({"delete_alias": {"alias_name": alias}})
-            actions.append(
-                {
-                    "create_alias": {
-                        "collection_name": concrete,
-                        "alias_name": alias,
-                    }
-                }
-            )
-            self.transport.request(
-                "POST",
-                "collections/aliases",
-                {"actions": actions},
-            )
+            snapshot_validation_ms += elapsed_ms(validation_started, self.timer())
+            if self._active_collection(alias) != prior:
+                raise KnowledgeSearchError(
+                    "Qdrant alias changed while the rebuild was staged",
+                    category="concurrent_update",
+                    metadata={"repository": result.repository},
+                )
+            promotion_started = self.timer()
+            self._switch_alias(alias, prior, concrete)
             alias_switched = True
-            if self.load_snapshot(result.repository) != snapshot:
+            published = self.load_snapshot(result.repository)
+            if (
+                published != snapshot
+                or published.active_collection != concrete
+            ):
                 raise KnowledgeSearchError(
                     "Qdrant alias did not expose the staged snapshot",
                     category="index_update_failure",
                 )
-        except Exception:
-            if alias_switched:
-                rollback_actions: list[dict[str, object]] = [
-                    {"delete_alias": {"alias_name": alias}}
-                ]
-                if prior is not None:
-                    rollback_actions.append(
-                        {
-                            "create_alias": {
-                                "collection_name": prior,
-                                "alias_name": alias,
-                            }
-                        }
+            alias_promotion_ms += elapsed_ms(promotion_started, self.timer())
+        except Exception as exc:
+            try:
+                active = self._active_collection(alias)
+                if active == concrete:
+                    self._switch_alias(alias, concrete, prior)
+                elif active != prior:
+                    raise KnowledgeSearchError(
+                        "Qdrant alias changed during rebuild recovery",
+                        category="concurrent_update",
+                        metadata={"repository": result.repository},
                     )
-                self.transport.request(
-                    "POST",
-                    "collections/aliases",
-                    {"actions": rollback_actions},
+            except Exception as rollback_error:
+                raise KnowledgeSearchError(
+                    "Qdrant rebuild failed and alias recovery could not be verified",
+                    category="index_update_failure",
+                    metadata={
+                        "repository": result.repository,
+                        "staged_collection": concrete,
+                        "rollback_error": type(rollback_error).__name__,
+                    },
+                ) from rollback_error
+            if alias_switched and self._active_collection(alias) != prior:
+                raise KnowledgeSearchError(
+                    "Qdrant rebuild rollback did not restore the prior alias",
+                    category="index_update_failure",
+                    metadata={"repository": result.repository},
+                ) from exc
+            if isinstance(exc, KnowledgeSearchError):
+                metadata = dict(exc.metadata)
+                metadata.update(
+                    {
+                        "repository": result.repository,
+                        "prior_collection": prior,
+                        "staged_collection": concrete if staging_attempted else None,
+                        "recovery_required": (
+                            staging_attempted or bool(metadata.get("recovery_required"))
+                        ),
+                    }
                 )
-            self._delete_collection_if_present(concrete)
+                raise KnowledgeSearchError(
+                    "Qdrant rebuild failed; inspect the active alias and staged generation",
+                    category=exc.category,
+                    metadata=metadata,
+                ) from exc
             raise
 
-        if prior is not None and prior != concrete:
-            self._delete_collection_if_present(prior)
         duration_ms = elapsed_ms(started, self.timer())
         telemetry = IndexSyncTelemetry(
             duration_ms=duration_ms,
-            backend_writes=inserted,
+            backend_writes=inserted + 1,
             backend_deletes=0,
             embedding_requests=embedding_requests,
             embedding_vectors=embedding_vectors,
@@ -678,15 +1207,674 @@ class QdrantVectorIndexStore:
         )
         return QdrantVectorIndexSyncResult(
             mode="full_rebuild",
-            snapshot=snapshot,
+            snapshot=replace(snapshot, active_collection=concrete),
             added=inserted,
             duration_ms=duration_ms,
             telemetry=telemetry,
+            unchanged=0,
+            collection_creations=2,
+            collection_deletions=1,
+            alias_promotions=1,
+            stage_durations_ms=(
+                ("embedding", embedding_duration_ms),
+                ("writer_lock_wait", lock_wait_ms),
+                ("collection_creation", collection_creation_ms),
+                ("point_writes", point_write_ms),
+                ("snapshot_validation", snapshot_validation_ms),
+                ("alias_promotion", alias_promotion_ms),
+                ("total", duration_ms),
+            ),
         )
+
+    def incremental_sync(
+        self,
+        result: RepositoryIndexResult,
+        *,
+        expected_snapshot: QdrantVectorSnapshot | None = None,
+    ) -> QdrantVectorIndexSyncResult:
+        """Stage a repository delta and publish it under the server writer lock."""
+        return self._incremental_sync(result, expected_snapshot=expected_snapshot)
+
+    def _incremental_sync(
+        self,
+        result: RepositoryIndexResult,
+        *,
+        expected_snapshot: QdrantVectorSnapshot | None,
+    ) -> QdrantVectorIndexSyncResult:
+        self._ensure_complete(result)
+        self._validate_result(result)
+        self._validate_embedding_identity()
+        started = self.timer()
+        snapshot = self.load_snapshot(result.repository)
+        if expected_snapshot is not None and not _same_snapshot_generation(
+            snapshot,
+            expected_snapshot,
+        ):
+            raise KnowledgeSearchError(
+                "Qdrant snapshot changed since the application observation",
+                category="concurrent_write",
+                metadata={"repository": result.repository},
+            )
+        if snapshot.indexing_fingerprint != self.indexing_fingerprint:
+            raise KnowledgeSearchError(
+                "Qdrant indexing contract changed; explicit rebuild required",
+                category="rebuild_required",
+                metadata={"reason": "indexing_contract_changed"},
+            )
+        if not self.embedding_snapshot_matches(snapshot):
+            raise KnowledgeSearchError(
+                "Qdrant embedding identity changed; explicit rebuild required",
+                category="rebuild_required",
+                metadata={"reason": "embedding_identity_changed"},
+            )
+        if result.repository != snapshot.repository:
+            raise KnowledgeSearchError(
+                "Qdrant repository binding differs from the active snapshot",
+                category="snapshot_revision_mismatch",
+            )
+        alias = _repository_alias(self.settings, result.repository)
+        active = snapshot.active_collection
+        if active is None or self._active_collection(alias) != active:
+            raise KnowledgeSearchError(
+                "Qdrant active collection changed while loading its snapshot",
+                category="concurrent_write",
+                metadata={"repository": result.repository},
+            )
+        self._validate_collection_schema(
+            active,
+            expected_dimensions=snapshot.vector_dimensions,
+        )
+        previous_documents = self.load_documents(result.repository, collection=active)
+        previous_checksum = corpus_checksum(previous_documents)
+        if (
+            len(previous_documents) != snapshot.document_count
+            or previous_checksum != snapshot.corpus_checksum
+        ):
+            raise KnowledgeSearchError(
+                "Qdrant active documents do not match the persisted snapshot",
+                category="index_stale",
+                metadata={"repository": result.repository, "rebuild_required": True},
+            )
+        current_checksum = corpus_checksum(result.documents)
+        previous_by_id = {item.id: item for item in previous_documents}
+        current_by_id = {item.id: item for item in result.documents}
+        if (
+            len(previous_by_id) != len(previous_documents)
+            or len(current_by_id) != len(result.documents)
+        ):
+            raise KnowledgeSearchError(
+                "Qdrant incremental result contains duplicate document identities",
+                category="unsafe_snapshot",
+            )
+        if (
+            snapshot.revision == result.revision
+            and snapshot.branch == result.branch
+            and snapshot.corpus_checksum == current_checksum
+        ):
+            if not _same_snapshot_generation(
+                snapshot,
+                self.load_snapshot(result.repository),
+            ):
+                raise KnowledgeSearchError(
+                    "Qdrant snapshot changed during no-op",
+                    category="concurrent_write",
+                    metadata={"repository": result.repository},
+                )
+            duration_ms = elapsed_ms(started, self.timer())
+            return QdrantVectorIndexSyncResult(
+                mode="noop",
+                snapshot=snapshot,
+                added=0,
+                updated=0,
+                deleted=0,
+                unchanged=len(result.documents),
+                duration_ms=duration_ms,
+                telemetry=IndexSyncTelemetry(
+                    duration_ms=duration_ms,
+                    backend_writes=0,
+                    backend_deletes=0,
+                ),
+                embedding_vectors_reused=0,
+            )
+
+        self._assert_writer_unlocked(result.repository)
+        previous_records = {
+            document_id: self.compiler.compile(document)
+            for document_id, document in previous_by_id.items()
+        }
+        current_records = {
+            document_id: self.compiler.compile(document)
+            for document_id, document in current_by_id.items()
+        }
+        previous_texts = {
+            document_id: self.serializer.serialize_record(record)
+            for document_id, record in previous_records.items()
+        }
+        current_texts = {
+            document_id: self.serializer.serialize_record(record)
+            for document_id, record in current_records.items()
+        }
+        added_ids = set(current_by_id) - set(previous_by_id)
+        deleted_ids = set(previous_by_id) - set(current_by_id)
+        updated_ids = {
+            document_id
+            for document_id in set(previous_by_id) & set(current_by_id)
+            if (
+                not _same_canonical_document(
+                    previous_by_id[document_id],
+                    current_by_id[document_id],
+                )
+                or previous_by_id[document_id].revision
+                != current_by_id[document_id].revision
+                or previous_by_id[document_id].branch
+                != current_by_id[document_id].branch
+            )
+        }
+        unchanged_ids = (
+            set(previous_by_id) & set(current_by_id)
+        ) - updated_ids
+        changed_ids = added_ids | updated_ids
+        if not changed_ids and snapshot.branch == result.branch:
+            raise KnowledgeSearchError(
+                "Qdrant content checksum changed without a document-level delta",
+                category="unsafe_snapshot",
+            )
+
+        reusable_document_ids = {
+            document_id
+            for document_id in updated_ids
+            if current_texts[document_id] == previous_texts[document_id]
+        }
+        previous_point_ids = {
+            _knowledge_point_id(document_id)
+            for document_id in reusable_document_ids
+        }
+        previous_points: dict[str, dict[str, object]] = {}
+        for batch in _batches(
+            tuple(sorted(previous_point_ids)),
+            self.settings.batch_size,
+        ):
+            previous_points.update(
+                self._load_points_by_ids(
+                    active,
+                    batch,
+                    repository=result.repository,
+                )
+            )
+        if len(previous_points) != len(previous_point_ids):
+            raise KnowledgeSearchError(
+                "Qdrant changed or removed points are missing from the active snapshot",
+                category="index_stale",
+                metadata={"repository": result.repository},
+            )
+        reusable_vectors: dict[str, tuple[float, ...]] = {}
+        for point_id, point in previous_points.items():
+            payload = cast(dict[str, object], point["payload"])
+            document = self.reader.read(payload)
+            expected = previous_records.get(document.id)
+            if (
+                expected is None
+                or expected.to_mapping() != payload
+                or point_id != _knowledge_point_id(document.id)
+            ):
+                raise KnowledgeSearchError(
+                    "Qdrant point changed after its snapshot was loaded",
+                    category="index_stale",
+                    metadata={"repository": result.repository},
+                )
+            if (
+                document.id in updated_ids
+                and current_texts[document.id] == previous_texts[document.id]
+            ):
+                reusable_vectors[current_texts[document.id]] = _dense_point_vector(
+                    point["vector"],
+                    expected_dimensions=snapshot.vector_dimensions,
+                )
+
+        embedding_texts: dict[str, str] = {}
+        for document_id in changed_ids:
+            text = current_texts[document_id]
+            if text not in reusable_vectors:
+                embedding_texts.setdefault(text, text)
+        generated_vectors: dict[str, tuple[float, ...]] = {}
+        embedding_requests = 0
+        embedding_vectors = 0
+        embedding_duration_ms = 0
+        for text_batch in _batches(
+            tuple(embedding_texts),
+            self.settings.batch_size,
+        ):
+            embedding_started = self.timer()
+            vectors = self.embedder.embed(text_batch)
+            embedding_duration_ms += elapsed_ms(embedding_started, self.timer())
+            embedding_requests += 1
+            if len(vectors) != len(text_batch):
+                raise KnowledgeSearchError(
+                    "embedding provider returned an incomplete incremental batch",
+                    category="embedding_failed",
+                )
+            observed_dimensions = _validate_vector_dimensions(vectors)
+            if observed_dimensions != snapshot.vector_dimensions:
+                raise KnowledgeSearchError(
+                    "Qdrant incremental embedding dimensions changed",
+                    category="schema_mismatch",
+                    metadata={
+                        "expected_dimensions": snapshot.vector_dimensions,
+                        "actual_dimensions": observed_dimensions,
+                        "rebuild_required": True,
+                    },
+                )
+            for text, vector in zip(text_batch, vectors, strict=True):
+                generated_vectors[text] = vector
+            embedding_vectors += len(vectors)
+
+        indexed_at = self.clock()
+        next_snapshot = self._snapshot(
+            result,
+            current_checksum,
+            snapshot.vector_dimensions,
+            indexed_at,
+        )
+        updates: list[dict[str, object]] = []
+        for document_id in sorted(changed_ids):
+            record = current_records[document_id]
+            text = current_texts[document_id]
+            point_vector = reusable_vectors.get(text)
+            if point_vector is None:
+                point_vector = generated_vectors.get(text)
+            if point_vector is None:
+                raise KnowledgeSearchError(
+                    "Qdrant incremental vector was not prepared",
+                    category="embedding_failed",
+                )
+            payload = record.to_mapping()
+            updates.append(
+                {
+                    "id": _knowledge_point_id(document_id),
+                    "vector": _qdrant_point_vectors(point_vector, payload),
+                    "payload": payload,
+                }
+            )
+
+        concrete = _concrete_collection(
+            self.settings,
+            result.repository,
+            result.revision,
+            current_checksum,
+            f"{indexed_at}:{uuid.uuid4().hex}",
+        )
+        copied_points = 0
+        deleted_points = 0
+        upserted_points = 0
+        staging_attempted = False
+        lock_wait_ms = 0
+        collection_creation_ms = 0
+        copy_ms = 0
+        deletion_ms = 0
+        update_ms = 0
+        snapshot_write_ms = 0
+        snapshot_validation_ms = 0
+        alias_promotion_ms = 0
+        lock_started = self.timer()
+        try:
+            with self._writer_lock(result.repository):
+                lock_wait_ms = elapsed_ms(lock_started, self.timer())
+                if not _same_snapshot_generation(
+                    snapshot,
+                    self.load_snapshot(result.repository),
+                ):
+                    raise KnowledgeSearchError(
+                        "Qdrant snapshot changed before incremental staging",
+                        category="concurrent_write",
+                        metadata={"repository": result.repository},
+                    )
+                if self._active_collection(alias) != active:
+                    raise KnowledgeSearchError(
+                        "Qdrant alias changed before incremental staging",
+                        category="concurrent_write",
+                        metadata={"repository": result.repository},
+                    )
+                staging_attempted = True
+                create_started = self.timer()
+                self._create_collection(concrete, snapshot.vector_dimensions)
+                collection_creation_ms = elapsed_ms(create_started, self.timer())
+                copy_batch: list[dict[str, object]] = []
+                copied_ids: set[str] = set()
+                copy_started = self.timer()
+                for point in self._scroll_points(
+                    active,
+                    result.repository,
+                    with_vector=True,
+                ):
+                    payload = cast(dict[str, object], point["payload"])
+                    document = self.reader.read(payload)
+                    prior_record = previous_records.get(document.id)
+                    if (
+                        prior_record is None
+                        or prior_record.to_mapping() != payload
+                        or point["id"] != _knowledge_point_id(document.id)
+                        or document.id in copied_ids
+                    ):
+                        raise KnowledgeSearchError(
+                            "Qdrant source point differs from its canonical snapshot",
+                            category="index_stale",
+                            metadata={"repository": result.repository},
+                        )
+                    copied_ids.add(document.id)
+                    if document.id in updated_ids:
+                        continue
+                    copy_batch.append(point)
+                    if len(copy_batch) == self.settings.batch_size:
+                        self._upsert_points(concrete, copy_batch)
+                        copied_points += len(copy_batch)
+                        copy_batch = []
+                if copy_batch:
+                    self._upsert_points(concrete, copy_batch)
+                    copied_points += len(copy_batch)
+                if len(copied_ids) != len(previous_documents):
+                    raise KnowledgeSearchError(
+                        "Qdrant staging copy did not observe the full active corpus",
+                        category="index_update_failure",
+                        metadata={
+                            "expected_document_count": len(previous_documents),
+                            "copied_source_count": len(copied_ids),
+                        },
+                    )
+                copy_ms = elapsed_ms(copy_started, self.timer())
+
+                removed_point_ids = tuple(
+                    _knowledge_point_id(document_id)
+                    for document_id in sorted(deleted_ids)
+                )
+                delete_started = self.timer()
+                for id_batch in _batches(
+                    removed_point_ids,
+                    self.settings.batch_size,
+                ):
+                    self._delete_points(concrete, id_batch)
+                    deleted_points += len(id_batch)
+                deletion_ms = elapsed_ms(delete_started, self.timer())
+
+                upsert_batch: list[dict[str, object]] = []
+                update_started = self.timer()
+                for point in updates:
+                    upsert_batch.append(point)
+                    if len(upsert_batch) == self.settings.batch_size:
+                        self._upsert_points(concrete, upsert_batch)
+                        upserted_points += len(upsert_batch)
+                        upsert_batch = []
+                if upsert_batch:
+                    self._upsert_points(concrete, upsert_batch)
+                    upserted_points += len(upsert_batch)
+                update_ms = elapsed_ms(update_started, self.timer())
+
+                snapshot_write_started = self.timer()
+                self._write_snapshot(concrete, next_snapshot)
+                snapshot_write_ms = elapsed_ms(snapshot_write_started, self.timer())
+                validation_started = self.timer()
+                self._validate_staged(concrete, next_snapshot)
+                snapshot_validation_ms = elapsed_ms(validation_started, self.timer())
+                if (
+                    self._active_collection(alias) != active
+                    or not _same_snapshot_generation(
+                        snapshot,
+                        self.load_snapshot(result.repository),
+                    )
+                ):
+                    raise KnowledgeSearchError(
+                        "Qdrant alias changed before incremental promotion",
+                        category="concurrent_write",
+                        metadata={"repository": result.repository},
+                    )
+                try:
+                    promotion_started = self.timer()
+                    self._switch_alias(alias, active, concrete)
+                    published = self.load_snapshot(result.repository)
+                    if (
+                        published != next_snapshot
+                        or published.active_collection != concrete
+                    ):
+                        raise KnowledgeSearchError(
+                            "Qdrant alias did not expose the verified incremental generation",
+                            category="index_update_failure",
+                        )
+                    alias_promotion_ms = elapsed_ms(promotion_started, self.timer())
+                except Exception as promotion_error:
+                    observed = self._active_collection(alias)
+                    if observed == concrete:
+                        try:
+                            self._switch_alias(alias, concrete, active)
+                        except Exception as rollback_error:
+                            raise KnowledgeSearchError(
+                                "Qdrant promotion failed and alias rollback requires recovery",
+                                category="index_update_failure",
+                                metadata={
+                                    "repository": result.repository,
+                                    "prior_collection": active,
+                                    "staged_collection": concrete,
+                                    "rollback_error": type(rollback_error).__name__,
+                                },
+                            ) from rollback_error
+                    elif observed != active:
+                        raise KnowledgeSearchError(
+                            "Qdrant alias changed during incremental recovery",
+                            category="concurrent_write",
+                            metadata={"repository": result.repository},
+                        ) from promotion_error
+                    raise
+        except KnowledgeSearchError as exc:
+            metadata = dict(exc.metadata)
+            metadata.update(
+                {
+                    "repository": result.repository,
+                    "prior_collection": active,
+                    "staged_collection": concrete if staging_attempted else None,
+                    "recovery_required": (
+                        staging_attempted or bool(metadata.get("recovery_required"))
+                    ),
+                }
+            )
+            try:
+                metadata["active_collection_after_failure"] = self._active_collection(alias)
+            except KnowledgeSearchError as inspection_error:
+                metadata["active_collection_after_failure"] = "unverified"
+                metadata["alias_inspection_error"] = inspection_error.category
+            raise KnowledgeSearchError(
+                "Qdrant incremental sync failed; inspect active and staged generations",
+                category=exc.category,
+                metadata=metadata,
+            ) from exc
+
+        published = replace(next_snapshot, active_collection=concrete)
+        duration_ms = elapsed_ms(started, self.timer())
+        telemetry = IndexSyncTelemetry(
+            duration_ms=duration_ms,
+            backend_writes=copied_points + upserted_points + 1,
+            backend_deletes=deleted_points,
+            embedding_requests=embedding_requests,
+            embedding_vectors=embedding_vectors,
+            embedding_duration_ms=embedding_duration_ms,
+        )
+        return QdrantVectorIndexSyncResult(
+            mode="incremental",
+            snapshot=published,
+            added=len(added_ids),
+            updated=len(updated_ids),
+            deleted=len(deleted_ids),
+            unchanged=len(unchanged_ids),
+            duration_ms=duration_ms,
+            telemetry=telemetry,
+            embedding_vectors_reused=len(result.documents) - embedding_vectors,
+            collection_creations=2,
+            collection_deletions=1,
+            alias_promotions=1,
+            stage_durations_ms=(
+                ("planning", max(0, elapsed_ms(started, lock_started) - embedding_duration_ms)),
+                ("embedding", embedding_duration_ms),
+                ("writer_lock_wait", lock_wait_ms),
+                ("collection_creation", collection_creation_ms),
+                ("generation_copy", copy_ms),
+                ("point_deletions", deletion_ms),
+                ("point_upserts", update_ms),
+                ("snapshot_write", snapshot_write_ms),
+                ("snapshot_validation", snapshot_validation_ms),
+                ("alias_promotion", alias_promotion_ms),
+                ("total", duration_ms),
+            ),
+        )
+
+    def _snapshot(
+        self,
+        result: RepositoryIndexResult,
+        corpus: str,
+        dimensions: int,
+        indexed_at: str,
+    ) -> QdrantVectorSnapshot:
+        return QdrantVectorSnapshot(
+            repository=result.repository,
+            branch=result.branch,
+            revision=result.revision,
+            corpus_checksum=corpus,
+            document_count=len(result.documents),
+            projection_version=self.settings.projection_version,
+            projection_fingerprint=self.projection_fingerprint,
+            embedding_provider=self.embedder.provider_id,
+            embedding_model=self.embedder.model_id,
+            vector_dimensions=dimensions,
+            serializer_mode=self.settings.embedding_serializer_mode,
+            serializer_version=VECTOR_EMBEDDING_SERIALIZATION_VERSION,
+            serializer_fingerprint=self.serializer.serializer_fingerprint,
+            indexed_at=indexed_at,
+            sparse_vector_name=SPARSE_VECTOR_NAME,
+            sparse_analyzer_version=SPARSE_ANALYZER_VERSION,
+            sparse_analyzer_fingerprint=SPARSE_ANALYZER_FINGERPRINT,
+            sparse_modifier=SPARSE_MODIFIER,
+            indexing_fingerprint=self.indexing_fingerprint,
+        )
+
+    def _write_snapshot(
+        self,
+        collection: str,
+        snapshot: QdrantVectorSnapshot,
+    ) -> None:
+        control_vector = [1.0, *([0.0] * (snapshot.vector_dimensions - 1))]
+        self._upsert_points(
+            collection,
+            [
+                {
+                    "id": snapshot.point_id,
+                    "vector": {"": control_vector},
+                    "payload": snapshot.to_mapping(),
+                }
+            ],
+        )
+
+    def _switch_alias(
+        self,
+        alias: str,
+        expected: str | None,
+        target: str | None,
+    ) -> None:
+        if self._active_collection(alias) != expected:
+            raise KnowledgeSearchError(
+                "Qdrant alias changed before atomic promotion",
+                category="concurrent_update",
+                metadata={"alias": alias},
+            )
+        actions: list[dict[str, object]] = []
+        if expected is not None:
+            actions.append({"delete_alias": {"alias_name": alias}})
+        if target is not None:
+            actions.append(
+                {"create_alias": {"collection_name": target, "alias_name": alias}}
+            )
+        if actions:
+            self.transport.request(
+                "POST",
+                "collections/aliases",
+                {"actions": actions},
+            )
+        if self._active_collection(alias) != target:
+            raise KnowledgeSearchError(
+                "Qdrant alias promotion did not expose the requested collection",
+                category="index_update_failure",
+                metadata={"alias": alias},
+            )
+
+    def _upsert_points(
+        self,
+        collection: str,
+        points: list[dict[str, object]],
+    ) -> None:
+        if points:
+            self.transport.request(
+                "PUT",
+                f"collections/{quote(collection, safe='')}/points?wait=true",
+                {"points": points},
+            )
+
+    def _delete_points(
+        self,
+        collection: str,
+        point_ids: tuple[str, ...],
+    ) -> None:
+        if point_ids:
+            self.transport.request(
+                "POST",
+                f"collections/{quote(collection, safe='')}/points/delete?wait=true",
+                {"points": list(point_ids)},
+            )
+
+    @staticmethod
+    def _validate_result(result: RepositoryIndexResult) -> None:
+        if any(
+            item.repository != result.repository or item.revision != result.revision
+            for item in result.documents
+        ):
+            raise KnowledgeSearchError(
+                "Qdrant indexing result contains foreign repository or revision data",
+                category="unsafe_snapshot",
+            )
+        identifiers = [item.id for item in result.documents]
+        if len(set(identifiers)) != len(identifiers):
+            raise KnowledgeSearchError(
+                "Qdrant indexing result contains duplicate document identities",
+                category="unsafe_snapshot",
+            )
+
+    def _validate_configured_dimensions(self, dimensions: int) -> None:
+        if (
+            self.settings.vector_dimensions is not None
+            and dimensions != self.settings.vector_dimensions
+        ):
+            raise KnowledgeSearchError(
+                "Qdrant embedding dimensions do not match configuration",
+                category="schema_mismatch",
+                metadata={
+                    "expected_dimensions": self.settings.vector_dimensions,
+                    "actual_dimensions": dimensions,
+                    "rebuild_required": True,
+                },
+            )
+
+    def _validate_embedding_identity(self) -> None:
+        if self.embedder.model_id != self.settings.embedding_model:
+            raise KnowledgeSearchError(
+                "Qdrant embedding model differs from its configured identity",
+                category="schema_mismatch",
+                metadata={
+                    "configured_model": self.settings.embedding_model,
+                    "provider_model": self.embedder.model_id,
+                    "rebuild_required": True,
+                },
+            )
 
     def reset(self, repository: str) -> None:
         """Remove the active alias and every concrete collection owned by a repository."""
+        with self._writer_lock(repository):
+            self._reset(repository)
 
+    def _reset(self, repository: str) -> None:
         state = self.inspect_collections(repository)
         if state.active_collection is not None:
             self.transport.request(
@@ -714,6 +1902,10 @@ class QdrantVectorIndexStore:
         collection: str,
         snapshot: QdrantVectorSnapshot,
     ) -> None:
+        self._validate_collection_schema(
+            collection,
+            expected_dimensions=snapshot.vector_dimensions,
+        )
         count = _qdrant_count(
             self.transport.request(
                 "POST",
@@ -738,49 +1930,122 @@ class QdrantVectorIndexStore:
                 category="index_update_failure",
                 metadata={"expected": snapshot.document_count, "actual": count},
             )
-        raw_snapshot = _single_point_payload(
-            self.transport.request(
-                "POST",
-                f"collections/{quote(collection, safe='')}/points",
-                {
-                    "ids": [snapshot.point_id],
-                    "with_payload": True,
-                    "with_vector": False,
-                },
-            ),
-            "staged Qdrant snapshot",
+        documents = self.load_documents(
+            snapshot.repository,
+            collection=collection,
         )
-        observed = QdrantVectorSnapshot.from_mapping(raw_snapshot)
-        self._ensure_snapshot_compatible(observed)
+        if (
+            len(documents) != snapshot.document_count
+            or corpus_checksum(documents) != snapshot.corpus_checksum
+        ):
+            raise KnowledgeSearchError(
+                "Qdrant staged documents do not match the requested snapshot",
+                category="index_update_failure",
+                metadata={"repository": snapshot.repository},
+            )
+        observed = self._load_snapshot_from_collection(
+            collection,
+            snapshot.repository,
+        )
         if observed != snapshot:
             raise KnowledgeSearchError(
                 "Qdrant staged vector snapshot does not match compiled corpus",
                 category="index_update_failure",
             )
 
+    def _validate_rebuild_target(
+        self,
+        repository: str,
+        alias: str,
+        active_collection: str | None,
+    ) -> None:
+        """Prove repository ownership before replacing an active generation."""
+        if active_collection is None:
+            orphaned = self._owned_collections(repository)
+            if orphaned:
+                raise KnowledgeSearchError(
+                    "Qdrant repository alias is absent but owned-prefix collections exist",
+                    category="schema_mismatch",
+                    metadata={
+                        "repository": repository,
+                        "alias": alias,
+                        "unaliased_collections": list(orphaned),
+                    },
+                )
+            return
+        if not active_collection.startswith(
+            _repository_collection_prefix(self.settings, repository)
+        ):
+            raise KnowledgeSearchError(
+                "Qdrant repository alias selects a collection outside its namespace",
+                category="schema_mismatch",
+                metadata={"repository": repository, "alias": alias},
+            )
+        try:
+            self._load_snapshot_from_collection(
+                active_collection,
+                repository,
+                validate_contract=False,
+            )
+        except KnowledgeSearchError as exc:
+            if exc.category != "snapshot_missing":
+                raise
+            total = _qdrant_count(
+                self.transport.request(
+                    "POST",
+                    f"collections/{quote(active_collection, safe='')}/points/count",
+                    {"exact": True},
+                )
+            )
+            if total == 0:
+                return
+            raise KnowledgeSearchError(
+                "Qdrant aliased collection has points but no repository ownership snapshot",
+                category="snapshot_missing",
+                metadata={
+                    "repository": repository,
+                    "alias": alias,
+                    "collection": active_collection,
+                    "point_count": total,
+                },
+            ) from exc
+
     def _owned_collections(self, repository: str) -> tuple[str, ...]:
-        payload = self.transport.request("GET", "collections")
-        result = payload.get("result")
-        if not isinstance(result, Mapping):
-            raise KnowledgeSearchError(
-                "Qdrant collections response is invalid",
-                category="response_parsing_failure",
-            )
-        raw_collections = result.get("collections", [])
-        if not isinstance(raw_collections, list):
-            raise KnowledgeSearchError(
-                "Qdrant collections response is invalid",
-                category="response_parsing_failure",
-            )
         prefix = _repository_collection_prefix(self.settings, repository)
+        return tuple(
+            name
+            for name in self._collection_names()
+            if name.startswith(prefix)
+        )
+
+    def _collection_names(self) -> tuple[str, ...]:
+        response = self.transport.request("GET", "collections")
+        result = response.get("result")
+        collections = result.get("collections") if isinstance(result, Mapping) else None
+        if not isinstance(collections, list):
+            raise KnowledgeSearchError(
+                "Qdrant collections response is invalid",
+                category="response_parsing_failure",
+            )
         names = {
             str(item.get("name"))
-            for item in raw_collections
-            if isinstance(item, Mapping)
-            and item.get("name")
-            and str(item.get("name")).startswith(prefix)
+            for item in collections
+            if isinstance(item, Mapping) and item.get("name")
         }
         return tuple(sorted(names))
+
+    def _assert_writer_unlocked(self, repository: str) -> None:
+        lock_name = _writer_lock_collection(self.settings, repository)
+        if lock_name in self._collection_names():
+            raise KnowledgeSearchError(
+                "Qdrant writer lock is already held; inspect it before retry",
+                category="concurrent_write",
+                metadata={
+                    "repository": repository,
+                    "lock_collection": lock_name,
+                    "recovery_required": True,
+                },
+            )
 
     def _active_collection(self, alias: str) -> str | None:
         payload = self.transport.request("GET", "aliases")
@@ -825,10 +2090,14 @@ class QdrantVectorIndexStore:
             "projection_version": self.settings.projection_version,
             "projection_fingerprint": self.projection_fingerprint,
             "embedding_provider": self.embedder.provider_id,
-            "embedding_model": self.embedder.model_id,
+            "embedding_model": self.settings.embedding_model,
             "serializer_mode": self.settings.embedding_serializer_mode.value,
             "serializer_version": VECTOR_EMBEDDING_SERIALIZATION_VERSION,
             "serializer_fingerprint": self.serializer.serializer_fingerprint,
+            "sparse_vector_name": SPARSE_VECTOR_NAME,
+            "sparse_analyzer_version": SPARSE_ANALYZER_VERSION,
+            "sparse_analyzer_fingerprint": SPARSE_ANALYZER_FINGERPRINT,
+            "sparse_modifier": SPARSE_MODIFIER,
         }
         actual = {
             "projection_version": snapshot.projection_version,
@@ -838,8 +2107,16 @@ class QdrantVectorIndexStore:
             "serializer_mode": snapshot.serializer_mode.value,
             "serializer_version": snapshot.serializer_version,
             "serializer_fingerprint": snapshot.serializer_fingerprint,
+            "sparse_vector_name": snapshot.sparse_vector_name,
+            "sparse_analyzer_version": snapshot.sparse_analyzer_version,
+            "sparse_analyzer_fingerprint": snapshot.sparse_analyzer_fingerprint,
+            "sparse_modifier": snapshot.sparse_modifier,
         }
-        if actual == expected and snapshot.vector_dimensions > 0:
+        dimensions_match = (
+            self.settings.vector_dimensions is None
+            or snapshot.vector_dimensions == self.settings.vector_dimensions
+        )
+        if actual == expected and snapshot.vector_dimensions > 0 and dimensions_match:
             return
         raise KnowledgeSearchError(
             "Qdrant vector snapshot contract is incompatible",
@@ -871,6 +2148,7 @@ class QdrantVectorKnowledgeIndex:
         """Initialize QdrantVectorKnowledgeIndex with its explicit dependencies."""
         self.store = store
         self.indexer = indexer
+        self.store.indexing_fingerprint = indexing_contract_fingerprint(indexer)
 
     def rebuild(self, workspace: Path) -> QdrantVectorIndexSyncResult:
         """Rebuild the repository projection from canonical source state."""
@@ -878,8 +2156,20 @@ class QdrantVectorKnowledgeIndex:
 
     def sync(self, workspace: Path) -> QdrantVectorIndexSyncResult:
         """Synchronize the repository projection with canonical source state."""
-        # Deliberately safe/full for the parity experiment; no second incremental runtime.
-        return self.rebuild(workspace)
+        repository = self.indexer.resolve_repository_identity(workspace)
+        snapshot = self.store.load_snapshot(repository)
+        if snapshot.active_collection is None:
+            raise KnowledgeSearchError(
+                "Qdrant snapshot was not pinned to a concrete collection",
+                category="snapshot_missing",
+                metadata={"repository": repository},
+            )
+        previous = self.store.load_documents(
+            repository,
+            collection=snapshot.active_collection,
+        )
+        result = self.indexer.index(workspace, previous_documents=previous)
+        return self.store.incremental_sync(result, expected_snapshot=snapshot)
 
 
 def _unconfigured_embedding_provider(
@@ -948,6 +2238,10 @@ class QdrantVectorBackend:
         effective_settings = dict(scope.settings)
         if scope.retrieval is not None:
             effective_settings["embedding_model"] = scope.retrieval.dense.embedding.model
+            if scope.retrieval.dense.embedding.dimensions is not None:
+                effective_settings["vector_dimensions"] = (
+                    scope.retrieval.dense.embedding.dimensions
+                )
         settings = QdrantVectorSettings.from_mapping(effective_settings)
         transport = self.transport_factory(settings)
         embedding = (
@@ -978,6 +2272,13 @@ class QdrantVectorBackend:
             scope.workspace
         )
         snapshot = store.load_snapshot(repository)
+        collection = snapshot.active_collection
+        if collection is None:
+            raise KnowledgeSearchError(
+                "Qdrant snapshot was not pinned to a concrete collection",
+                category="snapshot_missing",
+                metadata={"repository": repository},
+            )
         if scope.revision is not None and scope.revision != snapshot.revision:
             raise KnowledgeSearchError(
                 "requested revision does not match the active Qdrant vector snapshot",
@@ -1004,11 +2305,10 @@ class QdrantVectorBackend:
             )
 
         qdrant_filter = _qdrant_filter(scope, snapshot)
-        alias = _repository_alias(settings, repository)
         pool_count = _qdrant_count(
             transport.request(
                 "POST",
-                f"collections/{quote(alias, safe='')}/points/count",
+                f"collections/{quote(collection, safe='')}/points/count",
                 {"filter": qdrant_filter, "exact": True},
             )
         )
@@ -1021,6 +2321,7 @@ class QdrantVectorBackend:
                 backend_id=self.backend_id,
                 transport=transport,
                 settings=settings,
+                collection=collection,
                 snapshot=snapshot,
                 intent=intent,
                 scope=scope,
@@ -1038,7 +2339,7 @@ class QdrantVectorBackend:
         dense_started = self.timer()
         raw_query = transport.request(
             "POST",
-            f"collections/{quote(alias, safe='')}/points/query",
+            f"collections/{quote(collection, safe='')}/points/query",
             {
                 "query": list(vectors[0]),
                 "filter": qdrant_filter,
@@ -1236,6 +2537,7 @@ def _qdrant_hybrid_response(
     backend_id: str,
     transport: QdrantTransport,
     settings: QdrantVectorSettings,
+    collection: str,
     snapshot: QdrantVectorSnapshot,
     intent: SearchIntent,
     scope: SearchScope,
@@ -1278,12 +2580,11 @@ def _qdrant_hybrid_response(
             "Qdrant hybrid retrieval requires at least one deterministic sparse query term",
             category="schema_mismatch",
         )
-    alias = _repository_alias(settings, snapshot.repository)
     dense_started = timer()
     dense_points = _qdrant_query_points(
         transport.request(
             "POST",
-            f"collections/{quote(alias, safe='')}/points/query",
+            f"collections/{quote(collection, safe='')}/points/query",
             {
                 "query": list(dense_vector),
                 "filter": qdrant_filter,
@@ -1298,7 +2599,7 @@ def _qdrant_hybrid_response(
     sparse_points = _qdrant_query_points(
         transport.request(
             "POST",
-            f"collections/{quote(alias, safe='')}/points/query",
+            f"collections/{quote(collection, safe='')}/points/query",
             {
                 "query": sparse_query.to_qdrant(),
                 "using": SPARSE_VECTOR_NAME,
@@ -1733,6 +3034,43 @@ def _repository_alias(settings: QdrantVectorSettings, repository: str) -> str:
     return f"{settings.collection}-{digest}"
 
 
+def _writer_lock_collection(
+    settings: QdrantVectorSettings,
+    repository: str,
+) -> str:
+    identity = f"{settings.url}\0{_repository_alias(settings, repository)}"
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+    return f"fetchcore-qdrant-writer-lock-{digest}"
+
+
+def _writer_lock_point_id(repository: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"fetchcore:qdrant:writer-lock:{repository}"))
+
+
+def _same_snapshot_generation(
+    left: QdrantVectorSnapshot,
+    right: QdrantVectorSnapshot,
+) -> bool:
+    return left == right and left.active_collection == right.active_collection
+
+
+def _same_canonical_document(
+    previous: KnowledgeDocument,
+    current: KnowledgeDocument,
+) -> bool:
+    def content(document: KnowledgeDocument) -> str:
+        value = document.to_mapping()
+        value.pop("branch", None)
+        value.pop("revision", None)
+        value.pop("indexed_at", None)
+        provenance = value.get("provenance")
+        if isinstance(provenance, dict):
+            provenance.pop("revision", None)
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+    return content(previous) == content(current)
+
+
 def _repository_collection_prefix(
     settings: QdrantVectorSettings,
     repository: str,
@@ -1795,6 +3133,49 @@ def _qdrant_count(payload: Mapping[str, object]) -> int:
             "Qdrant count response is invalid",
             category="response_parsing_failure",
         ) from exc
+
+
+def _dense_vector_config(value: object) -> Mapping[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    dense = value.get("") if "" in value else value
+    return dense if isinstance(dense, Mapping) else None
+
+
+def _positive_response_int(value: object, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise KnowledgeSearchError(
+            f"Qdrant {label} is invalid",
+            category="response_parsing_failure",
+        )
+    return value
+
+
+def _dense_point_vector(
+    value: object,
+    *,
+    expected_dimensions: int,
+) -> tuple[float, ...]:
+    dense: object = value.get("") if isinstance(value, Mapping) else value
+    if not isinstance(dense, (list, tuple)):
+        raise KnowledgeSearchError(
+            "Qdrant point is missing its dense vector",
+            category="response_parsing_failure",
+        )
+    vector = tuple(
+        _finite_float(item, "Qdrant dense vector value") for item in dense
+    )
+    if len(vector) != expected_dimensions:
+        raise KnowledgeSearchError(
+            "Qdrant point dense vector dimensions are incompatible",
+            category="schema_mismatch",
+            metadata={
+                "expected_dimensions": expected_dimensions,
+                "actual_dimensions": len(vector),
+                "rebuild_required": True,
+            },
+        )
+    return vector
 
 
 def _single_point_payload(

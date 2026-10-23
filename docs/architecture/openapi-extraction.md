@@ -32,8 +32,9 @@ The source rendition is an *allowlist* of safe structural tokens — **never sum
 ## Parser safety and explicit limits
 
 - Strict JSON parsing with duplicate-key rejection; bounded YAML SafeLoader, no aliases, duplicate map keys rejected; bounded nesting, nodes, units and source file byte limits.
+- Format preflight accepts at most 1,000,000 characters, matching the default scanner's 1 MB per-file limit. This admits eligible files previously blocked between 256,001 and 1,000,000 characters. The indexing contract is version 27, so existing projections require an explicit rebuild; the default indexer still quarantines API artifacts.
 - OpenAPI/Swagger content signature and version are required. Wrong, malformed and unsupported formats remain blocked; files with no safe operations or schemas remain blocked.
-- Schema/reference traversal is shallow and bounded. Recursive JSON Schema, composition/anyOf/allOf/oneOf, nested examples and external refs are not interpreted. S5 adds safe relative local reference observations at this sanitizer boundary; see [S5](local-reference-resolution-s5.md).
+- Schema/reference traversal is shallow and bounded. Recursive JSON Schema, composition/anyOf/allOf/oneOf, nested examples and external refs are not interpreted. S5 adds safe relative local reference observations at this sanitizer boundary; see [S5](local-reference-resolution.md).
 - Only local `$ref` *observations* (not resolved links). No HTTP I/O, code execution, spec validation-as-a-service, generated API clients or agent orchestration.
 - Indexing is opt-in through `OpenApiRepositoryIndexer`. Semantic interpreter changes trigger explicit indexing fingerprint incompatibility/rebuild; no silent reuse of old search projections.
 - Existing semantic interpreters cause full-scan behavior on changes. S2 does **not** claim incremental indexing efficiency improvements.
@@ -57,7 +58,7 @@ This is a programmatic indexing entrypoint, **not yet a default CLI/MCP configur
 
 ## Reproducibility
 
-The [S2 synthetic protocol](../../benchmarks/api-extraction-s2/README.md) uses the frozen S0 fixture corpus and checks 3/3 explicitly annotated Swagger/OpenAPI operation ground truths, retained Postman quarantine, original source provenance and sentinel exclusion. Coverage compares the old S0 default against the S2 opt-in.
+The [S2 synthetic protocol](../../tests/acceptance/acquisition/openapi/README.md) uses the frozen S0 fixture corpus and checks 3/3 explicitly annotated Swagger/OpenAPI operation ground truths, retained Postman quarantine, original source provenance and sentinel exclusion. Coverage compares the old S0 default against the S2 opt-in.
 
 This gate is **operation acquisition/recovery**, not ranked Recall@K/MRR, multirepository routing, p95 real workload performance or complete cross-backend security auditing. Those require the separately controlled retrievalgate measurements and operational stack gates before promoting default rollout.
 

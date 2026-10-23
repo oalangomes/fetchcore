@@ -6,7 +6,7 @@ This module does not write, index, migrate, or implicitly repair projections.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, TYPE_CHECKING, cast
 
 from fetchcore.retrieval.contracts import KnowledgeSearchError
@@ -45,6 +45,7 @@ class ReadinessReport:
     mode: str
     checks: dict[str, ReadinessFact]
     fingerprints: dict[str, str | None]
+    observations: dict[str, object] = field(default_factory=dict)
 
     @property
     def ready(self) -> bool:
@@ -65,6 +66,7 @@ class ReadinessReport:
             "mode": self.mode,
             "checks": {key: value.to_mapping() for key, value in sorted(self.checks.items())},
             "fingerprints": dict(sorted(self.fingerprints.items())),
+            "observations": self.observations,
         }
 
 
@@ -80,7 +82,8 @@ def _failed(category: str) -> ReadinessFact:
         return ReadinessFact("absent", category)
     if category in {"index_stale", "snapshot_revision_mismatch"}:
         return ReadinessFact("stale", category)
-    if category in {"schema_mismatch", "rebuild_required", "indexing_contract_changed"}:
+    if category in {"schema_mismatch", "rebuild_required", "indexing_contract_changed",
+                    "repository_binding_mismatch"}:
         return ReadinessFact("incompatible", category)
     if category in {"unavailable", "timeout", "connection_failure", "embedding_failed"}:
         return ReadinessFact("unavailable", category)
@@ -131,6 +134,7 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
     }
     fingerprints: dict[str, str | None] = {}
     indexed_revision: str | None = None
+    observations: dict[str, object] = {}
 
     if config.repository is None:
         checks["snapshot"] = ReadinessFact("unknown", "repository_unbound")
@@ -166,10 +170,12 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
             SOLR_VECTOR_DIMENSIONS,
         )
         from fetchcore.adapters.retrieval.opensearch.backend import (
-            OpenSearchIndexStore, OpenSearchSettings, UrllibOpenSearchTransport,
+            OpenSearchIndexStore, OpenSearchIndexSnapshot, OpenSearchSettings,
+            UrllibOpenSearchTransport, OPENSEARCH_VECTOR_DIMENSIONS,
         )
         from fetchcore.adapters.retrieval.qdrant.backend import (
-            QdrantVectorIndexStore, QdrantVectorSettings, UrllibQdrantTransport,
+            QdrantVectorIndexStore, QdrantVectorSettings, QdrantVectorSnapshot,
+            UrllibQdrantTransport,
         )
         provider = None
         if mode in {"dense", "hybrid"}:
@@ -180,9 +186,12 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
                     model=str(config.backend_settings.get("embedding_model", EmbeddingConfig.model)),
                 )
             )
-            if config.backend == "solr":
-                from fetchcore.adapters.retrieval.solr.backend import SOLR_VECTOR_DIMENSIONS
-                if selected.dimensions not in {None, SOLR_VECTOR_DIMENSIONS}:
+            if config.backend in {"solr", "opensearch"}:
+                expected_dimensions = (
+                    SOLR_VECTOR_DIMENSIONS if config.backend == "solr"
+                    else OPENSEARCH_VECTOR_DIMENSIONS
+                )
+                if selected.dimensions not in {None, expected_dimensions}:
                     checks["embedding"] = ReadinessFact(
                         "incompatible", "vector_dimensions_mismatch"
                     )
@@ -209,7 +218,7 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
                 backend_settings=dict(config.backend_settings),
             )
             if provider is None:
-                store = bind_indexing_contract_store(index.store, index.runtime.indexer)
+                store = bind_indexing_contract_store(cast(SolrIndexStore, index.store), index.runtime.indexer)
             else:
                 settings = SolrSettings.from_mapping(dict(config.backend_settings))
                 vector_store = SolrIndexStore(
@@ -234,6 +243,11 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
                 mode, checks, fingerprints,
             )
         snapshot = store.load_snapshot(config.repository)
+        if config.backend == "solr" and snapshot.repository != config.repository:
+            raise KnowledgeSearchError(
+                "persisted snapshot repository does not match serving binding",
+                category="repository_binding_mismatch",
+            )
         indexed_revision = snapshot.revision
         fingerprints["projection"] = snapshot.projection_fingerprint
         fingerprints["embedding_serializer"] = snapshot.embedding_serializer_fingerprint if hasattr(
@@ -244,6 +258,18 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
             solr_store = cast(SolrIndexStore, store)
             solr_snapshot = cast(SolrIndexSnapshot, snapshot)
             status = repository_index_status(solr_store, index.runtime)
+            discovery = status.get("discovery")
+            observed_currentness: dict[str, object] = {}
+            if isinstance(discovery, dict):
+                observed_currentness = {
+                    key: discovery[key] for key in (
+                        "mode", "reason", "changed_paths", "removed_paths",
+                        "targeted_paths", "changed_path_values", "removed_path_values",
+                        "path_sample_limit", "path_samples_truncated",
+                    ) if key in discovery
+                }
+            observed_currentness["status_reason"] = status.get("reason")
+            observations["currentness"] = observed_currentness
             expected = index.runtime.fingerprint
             actual = snapshot_indexing_fingerprint(solr_snapshot)
             fingerprints["indexing"] = actual
@@ -256,10 +282,10 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
                 checks["indexing_fingerprint"] = ReadinessFact(
                     "incompatible", str(status.get("reason", "rebuild_required")),
                 )
-            if status["state"] == "ready" and config.revision is not None:
-                checks["currentness"] = ReadinessFact("ready")
-            elif config.revision is not None and snapshot.revision != config.revision:
+            if config.revision is not None and snapshot.revision != config.revision:
                 checks["currentness"] = ReadinessFact("stale", "snapshot_revision_mismatch")
+            elif status["state"] == "ready" and config.revision is not None:
+                checks["currentness"] = ReadinessFact("ready")
             elif status["state"] == "changes_pending":
                 checks["currentness"] = ReadinessFact("stale", "changes_pending")
             else:
@@ -278,18 +304,89 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
                         ReadinessFact("ready") if dimensions == SOLR_VECTOR_DIMENSIONS
                         else ReadinessFact("incompatible", "vector_dimensions_mismatch")
                     )
-        else:
-            # Operational indexing contract for these adapters is #123.
-            # A compatible snapshot doesn't independently prove source/indexing
-            # fingerprint or working tree currentness.
-            checks["indexing_fingerprint"] = ReadinessFact("unknown", "indexing_contract_unavailable")
-            checks["currentness"] = (
-                ReadinessFact("stale", "snapshot_revision_mismatch")
-                if config.revision is not None and indexed_revision != config.revision
-                else ReadinessFact("unknown", "source_currentness_unverified")
+        elif config.backend == "opensearch":
+            from fetchcore.application.index_operations import prepare_repository_index_runtime
+            from fetchcore.adapters.retrieval.opensearch.operational import OpenSearchOperationalIndex
+            os_store = cast(OpenSearchIndexStore, store)
+            os_snapshot = cast(OpenSearchIndexSnapshot, snapshot)
+            runtime = prepare_repository_index_runtime(
+                config.workspace, repository=config.repository, branch=None,
+                revision=config.revision,
             )
-            if mode in {"dense", "hybrid"} and provider is not None:
-                checks["embedding"] = ReadinessFact("unknown", "vector_readiness_unverified")
+            observation = OpenSearchOperationalIndex(os_store, runtime).observe()
+            checks["schema"] = (
+                ReadinessFact("ready") if observation.schema_compatible
+                else ReadinessFact("incompatible", "schema_mismatch")
+            )
+            fingerprints["indexing"] = os_snapshot.indexing_fingerprint
+            fingerprints["expected_indexing"] = runtime.fingerprint
+            checks["indexing_fingerprint"] = (
+                ReadinessFact("ready")
+                if os_snapshot.indexing_fingerprint == runtime.fingerprint
+                else ReadinessFact("incompatible", "indexing_contract_changed")
+            )
+            checks["currentness"] = ReadinessFact(
+                "ready" if observation.currentness == "current" else cast(ReadinessState, observation.currentness),
+                None if observation.currentness == "current" else observation.reason,
+            )
+            if mode in {"dense", "hybrid"}:
+                if not os_store.embedding_snapshot_matches(os_snapshot):
+                    checks["embedding"] = ReadinessFact("incompatible", "embedding_identity_changed")
+                elif provider is None:
+                    checks["embedding"] = ReadinessFact("unavailable", "embedding_provider_missing")
+                else:
+                    from fetchcore.retrieval.embedding import validate_vector_dimensions
+                    dimensions = validate_vector_dimensions(provider.embed(("fetchcore readiness",)))
+                    checks["embedding"] = (
+                        ReadinessFact("ready") if dimensions == OPENSEARCH_VECTOR_DIMENSIONS
+                        else ReadinessFact("incompatible", "vector_dimensions_mismatch")
+                    )
+        else:
+            from fetchcore.application.index_operations import prepare_repository_index_runtime
+            from fetchcore.adapters.retrieval.qdrant.operational import QdrantOperationalIndex
+            from fetchcore.retrieval.embedding import validate_vector_dimensions
+            q_store = cast(QdrantVectorIndexStore, store)
+            q_snapshot = cast(QdrantVectorSnapshot, snapshot)
+            runtime = prepare_repository_index_runtime(
+                config.workspace, repository=config.repository, branch=None,
+                revision=config.revision,
+            )
+            q_observation = QdrantOperationalIndex(q_store, runtime).observe()
+            checks["schema"] = (
+                ReadinessFact("ready") if q_observation.schema_compatible
+                else ReadinessFact("incompatible", "schema_mismatch")
+            )
+            fingerprints["indexing"] = q_snapshot.indexing_fingerprint
+            fingerprints["expected_indexing"] = runtime.fingerprint
+            checks["indexing_fingerprint"] = (
+                ReadinessFact("ready")
+                if q_snapshot.indexing_fingerprint == runtime.fingerprint
+                else ReadinessFact("incompatible", "indexing_contract_changed")
+            )
+            checks["currentness"] = ReadinessFact(
+                "ready" if q_observation.currentness == "current"
+                else cast(ReadinessState, q_observation.currentness),
+                None if q_observation.currentness == "current" else q_observation.reason,
+            )
+            if mode in {"dense", "hybrid"}:
+                if selected.dimensions not in {None, q_snapshot.vector_dimensions}:
+                    checks["embedding"] = ReadinessFact(
+                        "incompatible", "vector_dimensions_mismatch",
+                    )
+                elif not q_store.embedding_snapshot_matches(q_snapshot):
+                    checks["embedding"] = ReadinessFact(
+                        "incompatible", "embedding_identity_changed",
+                    )
+                elif provider is None:
+                    checks["embedding"] = ReadinessFact(
+                        "unavailable", "embedding_provider_missing",
+                    )
+                else:
+                    dimensions = validate_vector_dimensions(provider.embed(("fetchcore readiness",)))
+                    checks["embedding"] = (
+                        ReadinessFact("ready") if dimensions == q_snapshot.vector_dimensions
+                        else ReadinessFact("incompatible", "vector_dimensions_mismatch")
+                    )
         checks["snapshot"] = ReadinessFact("ready")
     except (KnowledgeSearchError, OSError, ValueError) as exc:
         category = _category(exc)
@@ -306,5 +403,5 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
 
     return ReadinessReport(
         config.backend, config.repository, config.revision, indexed_revision,
-        mode, checks, fingerprints,
+        mode, checks, fingerprints, observations,
     )

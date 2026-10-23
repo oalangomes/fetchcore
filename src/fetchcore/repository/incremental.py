@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import fnmatch
+import glob
 import json
 import os
 import subprocess
+import time
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -15,6 +17,8 @@ from fetchcore.repository.indexing import (
     DocumentUpdate,
     KnowledgeDocument,
     RemovedKnowledgeDocument,
+    RepositoryIndexer,
+    RepositoryIndexResult,
     RepositoryIndexChanges,
     RepositoryIndexTelemetry,
 )
@@ -31,6 +35,8 @@ class GitDeltaPlan:
     changed_paths: tuple[str, ...] = ()
     removed_paths: tuple[str, ...] = ()
     reason: str = "safe_git_delta"
+    discovery_duration_ms: int | None = None
+    git_diff_duration_ms: int | None = None
 
     @property
     def targeted_paths(self) -> int:
@@ -39,7 +45,7 @@ class GitDeltaPlan:
 
     def to_mapping(self) -> dict[str, object]:
         """Return a stable mapping representation of the Git delta plan."""
-        return {
+        payload: dict[str, object] = {
             "mode": self.mode,
             "reason": self.reason,
             "base_revision": self.base_revision,
@@ -48,10 +54,71 @@ class GitDeltaPlan:
             "removed_paths": len(self.removed_paths),
             "targeted_paths": self.targeted_paths,
         }
+        if self.discovery_duration_ms is not None:
+            payload["discovery_duration_ms"] = self.discovery_duration_ms
+        if self.git_diff_duration_ms is not None:
+            payload["git_diff_duration_ms"] = self.git_diff_duration_ms
+        return payload
+
+
+def index_repository_delta(
+    indexer: RepositoryIndexer,
+    workspace: Path,
+    previous: tuple[KnowledgeDocument, ...],
+    plan: GitDeltaPlan,
+) -> RepositoryIndexResult | None:
+    """Index only safely changed paths, preserving the complete canonical corpus."""
+    raw_policy = getattr(indexer, "requires_full_scan_for_paths", None)
+    if callable(raw_policy) and raw_policy(plan.changed_paths, plan.removed_paths):
+        return None
+    affected_paths = set(plan.changed_paths) | set(plan.removed_paths)
+    eligible_changed = tuple(
+        path for path in plan.changed_paths
+        if _eligible_path(path, indexer.config.include_patterns, indexer.config.exclude_patterns)
+    )
+    if len(eligible_changed) > indexer.config.max_files:
+        return None
+    delta_documents: tuple[KnowledgeDocument, ...] = ()
+    delta_telemetry: RepositoryIndexTelemetry | None = None
+    if eligible_changed:
+        delta_config = replace(
+            indexer.config,
+            include_patterns=tuple(glob.escape(path) for path in eligible_changed),
+        )
+        delta_indexer = RepositoryIndexer(
+            delta_config,
+            symbol_extractors=indexer.symbol_extractors,
+            clock=indexer.clock,
+            timer=indexer.timer,
+        )
+        delta = delta_indexer.index(workspace)
+        if not delta.changes.removal_detection_complete or not delta.telemetry.scan_traversal_complete:
+            return None
+        delta_documents = delta.documents
+        delta_telemetry = delta.telemetry
+    retained = tuple(item for item in previous if item.path not in affected_paths)
+    documents = tuple(sorted(
+        (*retained, *delta_documents),
+        key=lambda item: (item.path, item.line_start, item.line_end, item.chunk_ref),
+    ))
+    changes = _diff_documents(documents, previous)
+    repository = indexer.config.repository or indexer.resolve_repository_identity(workspace)
+    revision = plan.current_revision or indexer.config.revision or "unknown"
+    telemetry = _delta_telemetry(
+        repository=repository, revision=revision, documents=documents,
+        changes=changes, delta=delta_telemetry,
+    )
+    return RepositoryIndexResult(
+        repository=repository, branch=indexer.config.branch, revision=revision,
+        documents=documents, changes=changes, telemetry=telemetry,
+    )
 
 
 class GitRepositoryChangeDetector:
     """Use Git history and working-tree state only when the delta can be proven safe."""
+
+    def __init__(self, *, timer: Callable[[], float] = time.monotonic) -> None:
+        self.timer = timer
 
     def plan(
         self,
@@ -61,6 +128,18 @@ class GitRepositoryChangeDetector:
         current_revision: str | None,
     ) -> GitDeltaPlan:
         """Plan a safe repository delta from Git history and working-tree state."""
+        started = self.timer()
+        result = self._plan(workspace, previous_revision=previous_revision,
+                            current_revision=current_revision)
+        return replace(result, discovery_duration_ms=_elapsed_ms(started, self.timer()))
+
+    def _plan(
+        self,
+        workspace: Path,
+        *,
+        previous_revision: str | None,
+        current_revision: str | None,
+    ) -> GitDeltaPlan:
         root = workspace.resolve(strict=True)
         if not root.is_dir():
             return _full_scan(previous_revision, current_revision, "workspace_not_directory")
@@ -91,20 +170,25 @@ class GitRepositoryChangeDetector:
 
         changed: set[str] = set()
         removed: set[str] = set()
+        git_diff_seconds = 0.0
         if previous_revision != current_revision:
+            diff_started = self.timer()
             committed = _git_name_status(
                 root,
                 ("diff", "--name-status", "-z", "--find-renames", previous_revision, current_revision),
             )
+            git_diff_seconds += max(0.0, self.timer() - diff_started)
             if committed is None:
                 return _full_scan(previous_revision, current_revision, "commit_delta_unavailable")
             changed.update(committed[0])
             removed.update(committed[1])
 
+        diff_started = self.timer()
         working = _git_name_status(
             root,
             ("diff", "--name-status", "-z", "--find-renames", current_revision),
         )
+        git_diff_seconds += max(0.0, self.timer() - diff_started)
         if working is None:
             return _full_scan(previous_revision, current_revision, "working_tree_delta_unavailable")
         changed.update(working[0])
@@ -131,7 +215,12 @@ class GitRepositoryChangeDetector:
             current_revision=current_revision,
             changed_paths=tuple(sorted(changed)),
             removed_paths=tuple(sorted(removed)),
+            git_diff_duration_ms=max(0, round(git_diff_seconds * 1_000)),
         )
+
+
+def _elapsed_ms(started: float, ended: float) -> int:
+    return max(0, round((ended - started) * 1_000))
 
 
 def _full_scan(

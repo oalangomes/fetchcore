@@ -148,16 +148,75 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     assert "github.event.workflow_run.conclusion == 'success'" in operational_index
     assert "github.event.workflow_run.event == 'push'" in operational_index
     assert "head_repository.full_name == github.repository" in operational_index
-    assert operational_index.count("github.event.workflow_run.head_sha || github.sha") == 2
     assert '["self-hosted","Linux","X64","fetchcore"]' in operational_index
-    operational_inputs = yaml.safe_load(operational_index)["jobs"]["operational-index"]["with"]
+    operational_jobs = yaml.safe_load(operational_index)["jobs"]
+    operational_inputs = operational_jobs["operational-index"]["with"]
     assert "FETCHCORE_OPERATIONAL_SOLR_COLLECTION" in operational_inputs["collection"]
     assert "fc-operational-fetchcore-635ab7352c2850f2" in operational_inputs["collection"]
     assert "http://127.0.0.1:38983/solr" in operational_inputs["solr_url"]
     assert operational_inputs["create_if_missing"] is False
     assert operational_inputs["solr_provision_mode"] == "reuse_only"
-    assert operational_inputs["index_lifecycle"] == "sync"
+    assert "github.event_name == 'workflow_dispatch'" in operational_inputs["index_lifecycle"]
+    assert "inputs.index_lifecycle || 'sync'" in operational_inputs["index_lifecycle"]
     assert operational_inputs["evaluate"] is False
+    assert "github.event.workflow_run.head_sha || github.sha" in operational_inputs["target_ref"]
+    assert "github.event.workflow_run.head_sha || github.sha" in operational_inputs["fetchcore_ref"]
+    assert "FETCHCORE_OPERATIONAL_OLLAMA_URL" in operational_inputs["ollama_url"]
+    assert operational_inputs["embedding_provider"] == "ollama"
+    assert operational_inputs["embedding_model"] == "embeddinggemma"
+    assert operational_inputs["embedding_dimensions"] == 768
+    assert "FETCHCORE_OPERATIONAL_RETRIEVAL_MODE" in operational_inputs["evaluation_modes_json"]
+    assert "'hybrid'" in operational_inputs["evaluation_modes_json"]
+    solr_dispatch = yaml.safe_load(operational_index)[True]["workflow_dispatch"]["inputs"]["retrieval_mode"]
+    assert solr_dispatch["default"] == "hybrid"
+    assert solr_dispatch["options"] == ["hybrid", "dense"]
+
+    assert list(operational_jobs) == ["operational-index"]  # Solr unchanged
+
+    for backend in ("opensearch", "qdrant"):
+        path = workflow_dir / f"operational-{backend}.yml"
+        backend_workflow = path.read_text(encoding="utf-8")
+        assert "workflow_run:" in backend_workflow
+        assert "workflow_dispatch:" in backend_workflow
+        assert "github.event.workflow_run.conclusion == 'success'" in backend_workflow
+        assert "github.event.workflow_run.event == 'push'" in backend_workflow
+        assert "head_repository.full_name == github.repository" in backend_workflow
+        backend_jobs = yaml.safe_load(backend_workflow)["jobs"]
+        vector = backend_jobs[f"operational-{backend}-index"]
+        assert len(backend_jobs) == 1
+        assert vector["env"]["FC_BACKEND"] == backend
+        assert vector["concurrency"]["group"] == f"fetchcore-operational-{backend}"
+        assert vector["concurrency"]["cancel-in-progress"] is False
+        assert "FETCHCORE_OPERATIONAL_OLLAMA_URL" in vector["env"]["FC_OLLAMA_URL"]
+        assert "FETCHCORE_OPERATIONAL_RETRIEVAL_MODE" in vector["env"]["FC_RETRIEVAL_MODE"]
+        assert "'hybrid'" in vector["env"]["FC_RETRIEVAL_MODE"]
+        dispatch = yaml.safe_load(backend_workflow)[True]["workflow_dispatch"]["inputs"]["retrieval_mode"]
+        assert dispatch["default"] == "hybrid"
+        assert dispatch["options"] == ["hybrid", "dense"]
+        assert "github.event.workflow_run.head_sha || github.sha" in vector["env"]["FC_TARGET_SHA"]
+        profile_step = next(
+            step["run"] for step in vector["steps"]
+            if step.get("name") == "Resolve explicit retrieval profile"
+        )
+        assert "hybrid|dense" in profile_step
+        assert '"provider": "ollama"' in profile_step
+        assert '"model": "embeddinggemma"' in profile_step
+        assert '"dimensions": 768' in profile_step
+        assert '"enabled": mode == "hybrid"' in profile_step
+        assert "FETCHCORE_RETRIEVAL=" in profile_step
+        vector_steps = "\n".join(
+            step.get("run", "") for step in vector["steps"] if isinstance(step, dict)
+        )
+        assert "--create-if-missing" not in vector_steps
+        assert f"--backend {backend}" in vector_steps
+        assert "prepare --environment operational" in vector_steps
+        if backend == "qdrant":
+            assert "--vector-dimensions 768" in vector_steps
+        assert "status-before.json" in vector_steps
+        assert "plan oalangomes/fetchcore --json" in vector_steps
+        assert "sync oalangomes/fetchcore --json" in vector_steps
+        assert "status-after.json" in vector_steps
+        assert "readiness --json" in vector_steps
 
     assert "FETCHCORE_DOCS_LOCALIZATION_ENABLED == 'true'" in localization
     assert "Validate localization configuration" in localization

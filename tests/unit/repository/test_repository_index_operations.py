@@ -293,8 +293,81 @@ def test_status_is_cheap_and_reports_clean_same_snapshot(tmp_path: Path) -> None
         "targeted_paths": 0,
         "changed_path_values": [],
         "removed_path_values": [],
+        "path_sample_limit": 12,
+        "path_samples_truncated": False,
     }
     assert store.transport_fixture.posts == 0
+
+
+def test_same_revision_dirty_status_has_bounded_redacted_evidence(tmp_path: Path) -> None:
+    runtime = prepare_repository_index_runtime(
+        tmp_path, repository="acme/widgets", branch="main", revision="rev-a",
+    )
+    store = FixtureStore(_snapshot(
+        fingerprint=runtime.fingerprint, revision="rev-a", document_count=1,
+    ))
+    paths = ("private/secret-token.txt", "docs/line\nfeed.md") + tuple(
+        f"src/file-{index}.py" for index in range(20)
+    )
+    detector = FixtureDetector(GitDeltaPlan(
+        mode="git-delta", base_revision="rev-a", current_revision="rev-a",
+        changed_paths=paths,
+    ))
+
+    status = repository_index_status(store, runtime, detector=detector)  # type: ignore[arg-type]
+
+    assert status["state"] == "changes_pending"
+    assert status["reason"] == "worktree_changes"
+    discovery = status["discovery"]
+    assert discovery["changed_paths"] == 22
+    assert len(discovery["changed_path_values"]) == 12
+    assert discovery["path_samples_truncated"] is True
+    assert "secret-token" not in str(discovery)
+    assert "line\nfeed" not in str(discovery)
+
+
+def test_non_index_pattern_change_does_not_prove_snapshot_currentness(tmp_path: Path) -> None:
+    runtime = prepare_repository_index_runtime(
+        tmp_path, repository="acme/widgets", branch="main", revision="rev-a",
+    )
+    store = FixtureStore(_snapshot(
+        fingerprint=runtime.fingerprint, revision="rev-a", document_count=1,
+    ))
+    detector = FixtureDetector(GitDeltaPlan(
+        mode="git-delta", base_revision="rev-a", current_revision="rev-a",
+        changed_paths=("scratch.tmp",),
+    ))
+
+    status = repository_index_status(store, runtime, detector=detector)  # type: ignore[arg-type]
+
+    # Include patterns alone cannot prove that a changed file is unrelated to
+    # repository policy, knowledge-pack selection or another indexing input.
+    assert status["state"] == "changes_pending"
+    assert status["reason"] == "worktree_changes"
+    assert status["discovery"]["changed_path_values"] == ["scratch.tmp"]
+
+
+def test_status_distinguishes_revision_mismatch_from_matching_fingerprints(
+    tmp_path: Path,
+) -> None:
+    runtime = prepare_repository_index_runtime(
+        tmp_path, repository="acme/widgets", branch="main", revision="rev-b",
+    )
+    store = FixtureStore(_snapshot(
+        fingerprint=runtime.fingerprint, revision="rev-a", document_count=1,
+    ))
+    detector = FixtureDetector(GitDeltaPlan(
+        mode="git-delta", base_revision="rev-a", current_revision="rev-b",
+        changed_paths=("src/service.py",),
+    ))
+
+    status = repository_index_status(store, runtime, detector=detector)  # type: ignore[arg-type]
+
+    assert status["state"] == "changes_pending"
+    assert status["reason"] == "snapshot_revision_mismatch"
+    assert status["requested_revision"] == "rev-b"
+    assert status["indexed_revision"] == "rev-a"
+    assert status["snapshot_fingerprint_matches"] is True
 
 
 def test_inspection_exposes_projection_mismatch_and_full_rebuild_requirement(
@@ -394,8 +467,16 @@ def test_dry_run_calculates_targeted_update_without_solr_writes(tmp_path: Path) 
         )
     )
 
-    payload = dry_run_repository_index(store, runtime, detector=detector)  # type: ignore[arg-type]
+    ticks = iter((0.0, 0.1, 0.2, 0.3, 0.4, 0.5))
+    payload = dry_run_repository_index(  # type: ignore[arg-type]
+        store, runtime, detector=detector, timer=lambda: next(ticks),
+    )
     mutations = payload["planned_mutations"]
+    assert payload["stage_timings_ms"] == {
+        "snapshot_load_ms": 100,
+        "previous_documents_load_ms": 100,
+        "canonical_delta_index_ms": 100,
+    }
 
     assert payload["mode"] == "incremental"
     assert payload["noop"] is False

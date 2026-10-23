@@ -1,0 +1,31 @@
+version: 1
+
+selection:
+  include:
+    - "infra/images.lock"
+    - ".env.example"
+    - "tools/explorer/docker/nginx.conf"
+    - "tools/explorer/web/src/style.css"
+  exclude:
+    - "benchmarks/baseline-v1/artifacts/**"
+    - ".fetchcore-dogfood/**"
+    - "dogfood/scenarios/**"
+    - "tools/explorer/.env.example"
+    - "benchmarks/search-intent-v2/artifacts/evidence-smoke/V0.1/queries.json"
+    - "benchmarks/search-intent-v2/artifacts/evidence-smoke/V0.2/queries.json"
+    - "benchmarks/search-intent-v2/artifacts/evidence/V0.1/queries.json"
+    - "benchmarks/search-intent-v2/artifacts/evidence/V0.2/queries.json"
+
+limits:
+  max_files: 2500
+  max_file_bytes: 1000000
+  max_total_bytes: 64000000
+
+chunking:
+  max_lines: 160
+  overlap_lines: 20
+
+classification:
+  rules:
+    - pattern: "dogfood/**"
+      knowledge_type: tests

@@ -80,6 +80,29 @@ def test_run_only_executes_requested_command(monkeypatch):
     assert run.call_args.kwargs["env"]["FETCHCORE_SOLR_COLLECTION"].startswith("fc-bench-")
 
 
+def test_run_passes_explicit_host_ollama_url_to_requested_command(monkeypatch):
+    run = Mock()
+    monkeypatch.setattr(infra.subprocess, "run", run)
+    endpoint = "http://wsl-gateway:11434"
+    invoke(
+        monkeypatch,
+        "run",
+        "--environment",
+        "operational",
+        "--repository",
+        "oalangomes/fetchcore",
+        "--backend",
+        "qdrant",
+        "--ollama-url",
+        endpoint,
+        "--",
+        "fetchcore",
+        "index",
+    )
+    assert run.call_args.args[0] == ["fetchcore", "index"]
+    assert run.call_args.kwargs["env"]["FETCHCORE_OLLAMA_URL"] == endpoint
+
+
 def test_app_uses_existing_network_and_same_resource_without_starting_backend(monkeypatch):
     run = Mock(return_value=subprocess.CompletedProcess([], 0, ""))
     ready = Mock(return_value={"status": "ready"})
@@ -345,8 +368,8 @@ def test_indexing_never_routes_to_another_backend(tmp_path, environment, backend
     assert settings[field] == config[f"FETCHCORE_{backend.upper()}_{field.upper()}"]
 
 
-@pytest.mark.parametrize("backend", ["opensearch", "qdrant"])
-def test_routed_unsupported_indexing_fails_before_backend_access(monkeypatch, backend):
+@pytest.mark.parametrize("backend", ["qdrant"])
+def test_routed_qdrant_requires_vector_dimensions_before_backend_access(monkeypatch, backend):
     from click.testing import CliRunner
     from fetchcore.cli import main
     from fetchcore.application import indexing
@@ -358,7 +381,8 @@ def test_routed_unsupported_indexing_fails_before_backend_access(monkeypatch, ba
         main, ["index", "--repository", "a/b", "sync"], env=config,
     )
     assert result.exit_code == 1, result.output
-    assert "unsupported_backend" in result.output
+    assert "schema_mismatch" in result.output
+    assert "requires explicit vector_dimensions" in result.output
     build_solr.assert_not_called()
 
 

@@ -92,6 +92,70 @@ Create an operator-owned YAML file using the
 `FETCHCORE_CONFIG` to its path, and run `fetchcore-mcp`. The MCP adapter
 delegates loading and composition to the application runtime boundary.
 
+## OPERATIONAL loopback Streamable HTTP
+
+The repository includes a single-binding OPERATIONAL MCP and Search Lab
+overlay for the existing OPERATIONAL Solr collection. The Lab API and MCP
+service load the same runtime file, so they share the repository, pinned
+revision, collection and hybrid retrieval configuration (BM25 + dense with
+RRF). Both use the configured Ollama embedding model. The Lab web UI
+reaches its API through the existing application boundary; MCP clients use the
+separate MCP endpoint. The overlay attaches to the existing
+`fetchcore-operational_default` network and does not start or recreate a
+backend. Workspace and runtime configuration mounts are read-only.
+
+The default Ollama endpoint is `http://host.docker.internal:11434`; override it
+with `FETCHCORE_OPERATIONAL_OLLAMA_URL` when the embedding service uses another
+host-reachable URL. Ollama must already be running with `embeddinggemma` and
+768-dimensional vectors available. The overlay does not start Ollama or pull a
+model.
+
+From the repository root, build and start the MCP service and Lab:
+
+```bash
+docker compose -f infra/compose/operational-mcp.yml up -d --build mcp api lab
+```
+
+The Lab is available at `http://127.0.0.1:38767`; its API and MCP process use
+the same configured application runtime. The MCP endpoint is
+`http://127.0.0.1:38766/mcp`. It exposes only `search` and `get_source` through
+the native `fetchcore.serving.mcp` adapter.
+Use `docker compose -f infra/compose/operational-mcp.yml logs mcp` to inspect
+MCP startup failures and `docker compose -f infra/compose/operational-mcp.yml logs api lab`
+for Lab startup failures. Stop the stack with
+`docker compose -f infra/compose/operational-mcp.yml stop mcp api lab`. Before
+starting, verify that the workspace HEAD matches `runtime.revision` and that
+the configured collection snapshot is ready at the same revision.
+
+### Reconcile after an OPERATIONAL index update
+
+After the index workflow succeeds, run explicit operator reconciliation on the
+host that owns the materialized workspace and Compose deployment. It reads the
+active Solr snapshot and verifies the workspace HEAD, schema, projection,
+indexing and embedding identities, and worktree currentness. A failed check
+leaves the serving binding unchanged. Host URLs below are used for validation;
+the generated serving config retains the container URLs.
+
+```bash
+export FETCHCORE_OPERATIONAL_RUNTIME_CONFIG="$HOME/.config/fetchcore/operational-mcp.runtime.yml"
+mkdir -p "$(dirname "$FETCHCORE_OPERATIONAL_RUNTIME_CONFIG")"
+PYTHONPATH=src python -m fetchcore.operational.reconcile \
+  --config infra/compose/operational-mcp.runtime.yml \
+  --workspace "$PWD" \
+  --solr-url http://127.0.0.1:38983/solr \
+  --ollama-url http://127.0.0.1:11434 \
+  --output "$FETCHCORE_OPERATIONAL_RUNTIME_CONFIG" \
+  --activate
+```
+
+Omit `--activate` for a read-only compatibility check. Keep
+`FETCHCORE_OPERATIONAL_RUNTIME_CONFIG` in the operator's Compose environment
+for later `docker compose up` commands. The command replaces only the
+operator-owned runtime file and force-recreates `mcp` and `api` with
+`--no-deps`, refreshing Docker Desktop/WSL file bind mounts. It does not
+recreate Solr, snapshots or the Lab web container. A dirty worktree or unknown
+change coverage blocks activation. No fetch, checkout or reindex is performed.
+
 ## Historical environment contract
 
 - `FETCHCORE_MCP_WORKSPACE`

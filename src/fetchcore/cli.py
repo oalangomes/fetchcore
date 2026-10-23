@@ -23,6 +23,8 @@ from fetchcore.application.indexing import (
     RepositoryIndexApplicationService,
     build_index_context as _build_index_context,
 )
+from fetchcore.application.index_operations import inspect_local_corpus
+from fetchcore.application.index_artifacts import IndexFailureDiagnostics
 from fetchcore.retrieval.contracts import KnowledgeSearchError, KnowledgeSearchResponse
 from fetchcore.repository.index_policy import RepositoryIndexPolicyError
 from fetchcore.application.repositories import RepositoryApplicationService
@@ -247,13 +249,24 @@ def _run_repo_operation(
     try:
         result = execute()
     except RepositoryRegistryError as exc:
+        diagnostics = (
+            IndexFailureDiagnostics.from_metadata(exc.__cause__.metadata).to_mapping()
+            if operation in {"status", "plan", "sync", "rebuild"}
+            and isinstance(exc.__cause__, KnowledgeSearchError) else {}
+        )
         if as_json:
+            error: dict[str, object] = {"category": exc.category, "message": str(exc)}
+            if diagnostics:
+                error["diagnostics"] = diagnostics
             click.echo(json.dumps({
                 "operation": operation, "status": "failed",
-                "error": {"category": exc.category, "message": str(exc)},
+                "error": error,
             }, sort_keys=True, indent=2))
             raise click.exceptions.Exit(1) from exc
-        raise click.ClickException(_error_message(exc)) from exc
+        message = _error_message(exc)
+        if diagnostics:
+            message += "; diagnostics=" + json.dumps(diagnostics, sort_keys=True)
+        raise click.ClickException(message) from exc
     if as_json:
         click.echo(json.dumps({"operation": operation, "status": "succeeded", "result": result},
                               sort_keys=True, indent=2))
@@ -509,6 +522,44 @@ def index_artifact(input_path: Path, configuration: Path, run_id: str, observed_
     click.echo(json.dumps(artifact.to_mapping(), sort_keys=True, indent=2))
 
 
+@index_group.command("corpus")
+@click.option("--path", help="Inspect one repository-relative path with canonical admission rules.")
+@click.option("--deep", is_flag=True, help="Run bounded canonical extraction in memory.")
+@click.option("--proposal", type=click.Path(path_type=Path, exists=True, dir_okay=False),
+              help="Validate an external policy and compare observed source admission.")
+@click.option("--json", "as_json", is_flag=True, help="Emit deterministic JSON.")
+@click.pass_context
+def index_corpus(ctx: click.Context, path: str | None, deep: bool,
+                 proposal: Path | None, as_json: bool) -> None:
+    """Inspect a local corpus without registration, backend, or index writes."""
+    assert ctx.parent is not None
+    options = ctx.parent.obj
+    try:
+        result = inspect_local_corpus(
+            options["workspace"], path=path, deep=deep, proposal=proposal,
+        )
+    except (OSError, ValueError, RepositoryIndexPolicyError, yaml.YAMLError) as exc:
+        category = getattr(exc, "category", "corpus_inspection_failure")
+        if as_json:
+            click.echo(json.dumps({"operation": "corpus", "status": "failed",
+                                   "error": {"category": category}}, sort_keys=True, indent=2))
+            raise click.exceptions.Exit(1) from exc
+        raise click.ClickException(f"corpus inspection failed: {category}") from exc
+    payload = {"operation": "corpus", "status": "succeeded", "result": result}
+    if as_json:
+        click.echo(json.dumps(payload, sort_keys=True, indent=2))
+    else:
+        scan = result.get("scan")
+        repository_info = result["repository"]
+        assert isinstance(repository_info, dict)
+        click.echo(f"corpus: {result['mode']} workspace={repository_info['workspace']}")
+        if isinstance(scan, dict):
+            click.echo(f"discovered={scan['discovered_files']} eligible={scan['eligible_files']} "
+                       f"read={scan['files_read']} truncated={scan['truncated']}")
+        if path is not None:
+            click.echo(f"{path}: {result['path_status']}")
+
+
 def _dispatch_index(ctx: click.Context, operation: str, reference: str | None,
                     as_json: bool) -> None:
     assert ctx.parent is not None
@@ -523,14 +574,22 @@ def _dispatch_index(ctx: click.Context, operation: str, reference: str | None,
                         "Registered targets cannot be combined with explicit workspace/identity options",
                     )
             try:
-                settings = _json_object(options["backend_settings"])
-                runtime = load_runtime_config(
-                    path=options["config_path"],
-                    overrides={
-                        "runtime": {"backend": options["backend"]},
-                        "backends": {options["backend"]: settings},
-                    },
-                )
+                runtime = load_runtime_config(path=options["config_path"])
+                overrides: dict[str, object] = {}
+                backend = runtime.backend
+                if (parent.get_parameter_source("backend") != click.core.ParameterSource.DEFAULT
+                        or "runtime.backend" not in runtime.sources):
+                    backend = options["backend"]
+                    overrides["runtime"] = {"backend": backend}
+                if (parent.get_parameter_source("backend_settings")
+                        != click.core.ParameterSource.DEFAULT):
+                    overrides["backends"] = {
+                        backend: _json_object(options["backend_settings"]),
+                    }
+                if overrides:
+                    runtime = load_runtime_config(
+                        path=options["config_path"], overrides=overrides,
+                    )
                 providers = EmbeddingProviderRegistry(
                     settings={"ollama": runtime.ollama.to_mapping()}
                 )

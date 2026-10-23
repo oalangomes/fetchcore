@@ -1,4 +1,4 @@
-name: FetchCore operational index
+name: FetchCore operational Solr index
 
 on:
   workflow_run:
@@ -7,6 +7,19 @@ on:
     branches:
       - master
   workflow_dispatch:
+    inputs:
+      index_lifecycle:
+        description: "Explicit action: inspect with plan before authorizing rebuild"
+        type: choice
+        required: true
+        default: sync
+        options: [plan, sync, rebuild]
+      retrieval_mode:
+        description: "Retrieval profile for this OPERATIONAL run"
+        type: choice
+        required: true
+        default: hybrid
+        options: [hybrid, dense]
 
 permissions:
   contents: read
@@ -14,7 +27,7 @@ permissions:
 jobs:
   operational-index:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository)
@@ -30,8 +43,12 @@ jobs:
       collection: ${{ vars.FETCHCORE_OPERATIONAL_SOLR_COLLECTION || 'fc-operational-fetchcore-635ab7352c2850f2' }}
       create_if_missing: false
       solr_provision_mode: reuse_only
-      require_existing_snapshot: true
-      index_lifecycle: sync
+      require_existing_snapshot: ${{ (github.event_name == 'workflow_dispatch' && inputs.index_lifecycle || 'sync') == 'sync' }}
+      index_lifecycle: ${{ github.event_name == 'workflow_dispatch' && inputs.index_lifecycle || 'sync' }}
       evaluate: false
-      evaluation_modes_json: '["lexical"]'
+      evaluation_modes_json: ${{ format('["{0}"]', inputs.retrieval_mode || vars.FETCHCORE_OPERATIONAL_RETRIEVAL_MODE || 'hybrid') }}
+      embedding_provider: ollama
+      embedding_model: embeddinggemma
+      embedding_dimensions: 768
+      ollama_url: ${{ vars.FETCHCORE_OPERATIONAL_OLLAMA_URL }}
       artifact_retention_days: 30

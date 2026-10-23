@@ -19,7 +19,7 @@ cannot currently be inspected. No reset, deletion or recreation was attempted.
 | Qdrant | BLOCKED | BLOCKED | BLOCKED | BLOCKED | BLOCKED | BLOCKED |
 
 Evidence for every blocked cell: daemon failure and refused endpoints in
-`/home/alangomes/.local/state/fetchcore/shared-infra-p0-20261016/recheck-212339Z/runtime.json`.
+`/home/operator/.local/state/fetchcore/shared-infra-p0-20261016/recheck-212339Z/runtime.json`.
 Persistence is unverified in this recheck, not evidence of data loss. Restoring
 the Docker Desktop daemon and repeating live checks is required before closure.
 
@@ -73,7 +73,7 @@ frozen benchmark artifact was changed.
 Evidence and reusable commands are at:
 
 ```text
-/home/alangomes/.local/state/fetchcore/shared-infra-p0-20261016/
+/home/operator/.local/state/fetchcore/shared-infra-p0-20261016/
 ```
 
 The directory contains before/after inventories, command output, routing JSON,
@@ -237,8 +237,8 @@ never substitute a DEV or operational core in those variables.
 From this checkout, define paths (no common shell/system variable is repurposed):
 
 ```bash
-P0_STATE=/home/alangomes/.local/state/fetchcore/shared-infra-p0-20261016
-P0_ROOT=/home/alangomes/projetos/GitHub/fetchcore.worktrees/copilot
+P0_STATE=/home/operator/.local/state/fetchcore/shared-infra-p0-20261016
+P0_ROOT=/home/operator/projetos/GitHub/fetchcore.worktrees/copilot
 cd "$P0_ROOT"
 ```
 

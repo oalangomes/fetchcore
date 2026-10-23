@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from fetchcore.application import RetrievalApplicationService, SearchRequest, SourceReadRequest
 from fetchcore.application.runtime_config import load_runtime_config, service_from_runtime_config
-from fetchcore.retrieval.contracts import SearchIntent
+from fetchcore.retrieval.contracts import KnowledgeSearchError, SearchIntent
 
 if TYPE_CHECKING:
     from mcp.server import MCPServer
@@ -21,6 +21,7 @@ def create_mcp_server(service: RetrievalApplicationService) -> MCPServer:
     """Create the thin MCP transport adapter around a retrieval service."""
     try:
         from mcp.server import MCPServer
+        from mcp.server.mcpserver.exceptions import ToolError
     except ModuleNotFoundError as exc:  # pragma: no cover - packaging guard
         if exc.name == "mcp":
             raise RuntimeError(
@@ -47,15 +48,18 @@ def create_mcp_server(service: RetrievalApplicationService) -> MCPServer:
         intent: dict[str, object] | None = None,
     ) -> dict[str, object]:
         """Search technical repository knowledge inside the authorized scope."""
-        response = service.search(
-            SearchRequest(
-                query=query,
-                repository=repository,
-                limit=limit,
-                knowledge_types=tuple(knowledge_types or ()),
-                intent=SearchIntent.from_mapping(intent) if intent is not None else None,
+        try:
+            response = service.search(
+                SearchRequest(
+                    query=query,
+                    repository=repository,
+                    limit=limit,
+                    knowledge_types=tuple(knowledge_types or ()),
+                    intent=SearchIntent.from_mapping(intent) if intent is not None else None,
+                )
             )
-        )
+        except KnowledgeSearchError as exc:
+            raise ToolError(f"FetchCore retrieval failed: {exc.category}") from exc
         return response.to_mapping()
 
     @server.tool(name="get_source")
@@ -68,16 +72,19 @@ def create_mcp_server(service: RetrievalApplicationService) -> MCPServer:
         context_lines: int = 0,
     ) -> dict[str, object]:
         """Read bounded source; optional revision is an exact materialized precondition."""
-        result = service.get_source(
-            SourceReadRequest(
-                source_ref=source_ref,
-                repository=repository,
-                revision=revision,
-                line_start=line_start,
-                line_end=line_end,
-                context_lines=context_lines,
+        try:
+            result = service.get_source(
+                SourceReadRequest(
+                    source_ref=source_ref,
+                    repository=repository,
+                    revision=revision,
+                    line_start=line_start,
+                    line_end=line_end,
+                    context_lines=context_lines,
+                )
             )
-        )
+        except KnowledgeSearchError as exc:
+            raise ToolError(f"FetchCore source read failed: {exc.category}") from exc
         return result.to_mapping()
 
     return server

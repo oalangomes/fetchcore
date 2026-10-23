@@ -117,17 +117,31 @@ def test_registered_lifecycle_initial_noop_incremental_rebuild(workspace, tmp_pa
     assert first["mode"] == "initial"
     assert first["currentness"] == "absent"
     assert first["planned_mutations"]["upsert_documents"] == 2
-    assert first == invoke("plan")["result"]
+    repeated_first = invoke("plan")["result"]
+    assert {key: value for key, value in first.items() if key != "stage_timings_ms"} == {
+        key: value for key, value in repeated_first.items() if key != "stage_timings_ms"
+    }
+    assert first["stage_timings_ms"]["canonical_full_index_ms"] >= 0
     assert tree_bytes(tmp_path) == before
     assert backend.post_calls == []
     assert invoke("sync", success=False)["error"]["category"] == "snapshot_missing"
     assert backend.post_calls == []
     rebuilt = invoke("rebuild")["result"]
     assert rebuilt["execution"]["snapshot"]["revision"] == registered["revision"]
+    assert set(rebuilt["execution"]["stage_timings_ms"]) == {
+        "canonical_full_index_ms", "persistence_call_ms",
+    }
     assert invoke("status")["result"]["currentness"] == "current"
     backend.post_calls.clear()
-    assert invoke("plan")["result"]["mode"] == "noop"
-    assert invoke("sync")["result"]["mode"] == "noop"
+    noop_plan = invoke("plan")["result"]
+    noop_sync = invoke("sync")["result"]
+    assert noop_plan["mode"] == "noop"
+    assert noop_sync["mode"] == "noop"
+    assert noop_plan["stage_timings_ms"]["snapshot_load_ms"] >= 0
+    assert noop_sync["execution"]["stage_timings_ms"]["snapshot_load_ms"] >= 0
+    assert "previous_documents_load_ms" not in noop_plan["stage_timings_ms"]
+    assert "previous_documents_load_ms" not in noop_sync["execution"]["stage_timings_ms"]
+    assert "persistence_call_ms" not in noop_sync["execution"]["stage_timings_ms"]
     assert backend.post_calls == []
 
     (workspace / "a.py").write_text("def first():\n    return 42\n")
@@ -142,11 +156,20 @@ def test_registered_lifecycle_initial_noop_incremental_rebuild(workspace, tmp_pa
     assert plan["discovery"]["removed_path_values"] == ["removed.py"]
     assert plan["planned_mutations"]["updated"] == 1
     assert plan["planned_mutations"]["deleted"] == 1
+    for stage in ("snapshot_load_ms", "previous_documents_load_ms",
+                  "canonical_delta_index_ms"):
+        assert isinstance(plan["stage_timings_ms"][stage], int)
+        assert plan["stage_timings_ms"][stage] >= 0
+    assert "persistence_call_ms" not in plan["stage_timings_ms"]
     assert backend.post_calls == []
     outcome = invoke("sync")["result"]
     assert outcome["mode"] == "incremental"
     assert outcome["execution"]["snapshot"]["revision"] == revision
     assert outcome["execution"]["updated"] == 1
+    for stage in ("snapshot_load_ms", "previous_documents_load_ms",
+                  "canonical_delta_index_ms", "persistence_call_ms"):
+        assert isinstance(outcome["execution"]["stage_timings_ms"][stage], int)
+        assert outcome["execution"]["stage_timings_ms"][stage] >= 0
     assert all("rollback" not in payload for _, payload, _ in backend.post_calls)
     assert invoke("status")["result"]["currentness"] == "current"
     canonical = copy.deepcopy(backend.documents)
@@ -206,7 +229,7 @@ def test_schema_failure_is_read_only_even_for_rebuild(workspace, tmp_path, backe
 
 @pytest.mark.parametrize("operation", ["plan", "status", "sync", "rebuild"])
 def test_unsupported_backend_is_typed(invoke, operation):
-    result = invoke(operation, success=False, extra=("--backend", "opensearch"))
+    result = invoke(operation, success=False, extra=("--backend", "local-semantic"))
     assert result["error"]["category"] == "unsupported_backend"
 
 
@@ -285,7 +308,11 @@ def test_commit_failure_restores_indexed_revision(workspace, tmp_path, backend, 
     backend.fail_next_commit = True
     assert invoke("sync", success=False)["error"]["category"] == "index_update_failure"
     assert backend.documents == previous
-    assert invoke("status")["result"]["currentness"] == "stale"
+    status = invoke("status")["result"]
+    assert status["currentness"] == "stale"
+    assert status["reason"] == "snapshot_revision_mismatch"
+    assert status["indexed_revision"] != status["target_revision"]
+    assert status["discovery"]["changed_path_values"] == ["a.py"]
 
 
 def test_strict_synchronizer_blocks_late_rebuild(workspace, tmp_path, backend, invoke, monkeypatch):
@@ -310,7 +337,10 @@ def test_dirty_workspace_same_head_is_not_noop(workspace, tmp_path, backend, inv
     (workspace / "a.py").write_text("def first():\n    return 999\n")
     plan = invoke("plan")["result"]
     assert plan["mode"] == "incremental"
-    assert invoke("status")["result"]["currentness"] == "unknown"
+    status = invoke("status")["result"]
+    assert status["currentness"] == "unknown"
+    assert status["reason"] == "worktree_changes"
+    assert status["discovery"]["changed_path_values"] == ["a.py"]
     assert plan["currentness"] == "stale"
     assert plan["planned_mutations"]["updated"] == 1
     assert backend.post_calls == []
@@ -373,6 +403,41 @@ def test_backend_failure_output_redacts_raw_details(workspace, tmp_path, backend
     assert result["error"]["category"] == "connection_failure"
     assert "secret" not in str(result)
     assert "private" not in str(result)
+    assert backend.post_calls == []
+
+
+def test_embedding_http_failure_retains_safe_diagnostics_without_source_content(
+    workspace, tmp_path, backend, invoke, monkeypatch,
+):
+    from io import BytesIO
+    from urllib.error import HTTPError
+    from fetchcore.adapters.embedding.ollama import provider as ollama
+
+    register(workspace, tmp_path)
+
+    def fail(*args, **kwargs):
+        raise HTTPError(
+            "http://user:secret@provider.test/private", 400, "private response", None,
+            BytesIO(b'{"error":"private source content cannot be embedded"}'),
+        )
+
+    monkeypatch.setattr(ollama, "urlopen", fail)
+    provider = ollama.OllamaEmbeddingProvider()
+
+    def rebuild(*args, **kwargs):
+        provider.embed(("secret source", "private code"))
+
+    monkeypatch.setattr(SolrIndexStore, "full_rebuild", rebuild)
+    result = invoke("rebuild", success=False)
+    assert result["error"]["category"] == "embedding_failed"
+    assert result["error"]["diagnostics"] == {
+        "http_status": 400, "attempt": 1, "max_attempts": 3,
+        "input_count": 2, "batch_offset": 0, "total_input_count": 2,
+        "max_input_chars": 13, "total_input_chars": 25, "retries_exhausted": False,
+    }
+    assert "secret" not in json.dumps(result)
+    assert "private" not in json.dumps(result)
+    assert "provider_error" not in json.dumps(result)
     assert backend.post_calls == []
 
 

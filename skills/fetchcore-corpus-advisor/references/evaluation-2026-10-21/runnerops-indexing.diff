@@ -1,0 +1,10 @@
+--- a/.fetchcore/indexing.yaml
++++ b/.fetchcore/indexing.yaml
+@@ -0,0 +1,7 @@
++version: 1
++selection:
++  include:
++    - runnerctl
++    - .env.example
++    - scripts/systemd/runnerops-systemctl
++    - site/styles.css
