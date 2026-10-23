@@ -150,10 +150,25 @@ PYTHONPATH=src python -m fetchcore.operational.reconcile \
 
 Omit `--activate` for a read-only compatibility check. Keep
 `FETCHCORE_OPERATIONAL_RUNTIME_CONFIG` in the operator's Compose environment
-for later `docker compose up` commands. The command replaces only the
+for later `docker compose up` commands. With `--activate`, the command first
+reads `docker compose config --format json` with the activation environment.
+Both `mcp` and `api` must bind the validated host workspace at the runtime's
+container workspace path and the generated runtime file at
+`/etc/fetchcore/operational-mcp.yml`, read-only. A different checkout, missing
+or overlapping mount, or runtime environment override is rejected as
+`serving_binding_mismatch` before any runtime file is written or container
+is recreated. Use `--compose-file` to select the deployment that mounts the
+authorized workspace when working with multiple checkouts.
+
+The command replaces only the
 operator-owned runtime file and force-recreates `mcp` and `api` with
 `--no-deps`, refreshing Docker Desktop/WSL file bind mounts. It does not
-recreate Solr, snapshots or the Lab web container. A dirty worktree or unknown
+recreate Solr, snapshots or the Lab web container. The Lab proxy uses Docker
+DNS with a one-second cache so it can follow the replacement API's address
+without a restart. Existing Lab images must be rebuilt once to adopt this
+proxy configuration. Schema, snapshot and connectivity failures retain their
+observed error categories; an unknown indexed revision is not evidence of a
+revision mismatch. A dirty worktree or unknown
 change coverage blocks activation. No fetch, checkout or reindex is performed.
 
 ## Historical environment contract
