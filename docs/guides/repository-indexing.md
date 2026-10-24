@@ -269,6 +269,29 @@ it remains distinct from full projection **replacement**. The existing runtime
 reports that discovery reason and applies a canonical document diff. No-op sync
 performs zero backend writes, including snapshot writes.
 
+### Exact Git delta paths
+
+Git delta extraction scans the exact changed repository-relative paths admitted by
+the existing include/exclude policy. Include patterns retain their normal basename
+matching semantics for full scans; they are not used as a substitute for exact
+delta paths. Changing a root `README.md` must not re-extract an unchanged nested
+`docs/README.md` and append it to the retained corpus. Unchanged documents retain
+their source provenance; backend snapshot validation still rejects duplicate IDs.
+This correction changes neither persisted identities nor indexing fingerprints.
+
+A controlled read-only reproduction of the failed
+[OPERATIONAL Qdrant run](https://github.com/oalangomes/fetchcore/actions/runs/40044231851)
+used source revision `d5ac384bed6a4478c89002cd318c5ee918376bea` and the compatible
+5,188-document snapshot at `487cbb5bdac3d4e5dcb1c8797dee7fe13606ea0c`.
+The only experimental change was bounding delta extraction to exact paths.
+The original delta produced 5,341 documents with 5,229 unique IDs and failed
+`unsafe_snapshot`. The corrected delta produces 5,229 unique documents
+(41 added, 81 updated, 5,107 unchanged, none removed); its corpus checksum matches
+a full canonical scan of the same revision. The reproduction made zero backend
+writes and zero embedding requests. It establishes corpus equivalence, not a
+retrieval-quality or latency improvement. The persistent snapshot was preserved;
+the normal incremental lifecycle can be retried after deploying the correction.
+
 ## Output
 
 Targeted commands support human output or `--json`, representing identical facts:
