@@ -170,7 +170,10 @@ and raw snapshots; inspect public reports before versioning them. Publish protoc
 checksums, safe identities, metrics and per-query regressions. Preserve partial
 provenance as partial. Do not fabricate unavailable results or measurements.
 
-The current execution is **blocked**, not a negative quality result:
-[control attestation](artifacts/blocked-control.json). See the
-[result report](../../docs/benchmarks/results/hybrid-fusion.md). No configuration
-has passed the promotion gates; no tuning is recommended.
+The recovered execution has a valid completed control with 400 observations per
+arm across all six dense/hybrid arms. The expected private `capture.json.gz` is
+missing, so replay, finalist analysis and confirmation remain pending. This is
+not a negative quality result, and no configuration has passed the promotion
+gates. See the [historical blocked control attestation](artifacts/blocked-control.json),
+the [sanitized completed-control report](artifacts/control-report.json), and the
+[current result report](../../docs/benchmarks/results/hybrid-fusion.md).
