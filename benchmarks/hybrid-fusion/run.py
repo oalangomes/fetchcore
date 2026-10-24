@@ -490,11 +490,12 @@ def private_output(path):
         raise ValueError("output exists; artifacts are immutable")
 
 
-def context_for(args):
+def context_for(args, *, rebuild=False):
     evidence, wrapper, suite, queries, identity = inputs()
     config = wrapper.load_run_config(args.run_config, suite.corpus)
-    if config["provisioning"] != "reuse_only" or not config["dedicated"]:
-        raise ValueError("this experiment requires dedicated BENCH reuse_only resources")
+    provisioning = "explicit_rebuild" if rebuild else "reuse_only"
+    if config["provisioning"] != provisioning or not config["dedicated"]:
+        raise ValueError("this operation requires dedicated BENCH " + provisioning + " resources")
     manifest = wrapper.configured_manifest(
         wrapper.frozen._load_json(wrapper.frozen.MANIFEST_PATH), config
     )
@@ -887,6 +888,7 @@ def replay(args):
     if any(capture["identity"][key] != value for key, value in identity.items()):
         raise ValueError("capture corpus/query identity mismatch")
     observations = {}
+    replay_cache = {}
     for backend in BACKENDS:
         rows = capture["captures"][backend + "-hybrid"]
         validate_rows(rows, queries, 20)
@@ -901,19 +903,35 @@ def replay(args):
         observations[backend] = {v[0]: [] for v in variants()}
         truths = {c.query_id: c.truth for c in suite.cases}
         for row in rows:
+            acquisition_key = mapping_fingerprint(
+                {
+                    "input": row["input"],
+                    "evidence": row["evidence"],
+                    "lexical_acquired": row["lexical_acquired"],
+                    "dense_acquired": row["dense_acquired"],
+                }
+            )
             ordered = (
                 variants()
                 if (row["iteration"] + list(queries).index(row["query_id"])) % 2 == 0
                 else variants()[::-1]
             )
             for variant in ordered:
-                observations[backend][variant[0]].append(
-                    replay_row(
+                # Repeated identical acquisitions share immutable diagnostic payloads.
+                # Include raw scores/materialization in identity, not just the kernel fingerprint.
+                cache_key = (backend, row["query_id"], acquisition_key, variant[0])
+                if cache_key not in replay_cache:
+                    replay_cache[cache_key] = replay_row(
                         row,
                         variant,
                         80 if backend == "qdrant-vector" else 20,
                         truths[row["query_id"]],
                     )
+                observations[backend][variant[0]].append(
+                    {
+                        **replay_cache[cache_key],
+                        "iteration": row["iteration"],
+                    }
                 )
     comparisons = {
         v[0]: {b: compare(observations[b]["control"], observations[b][v[0]]) for b in BACKENDS}

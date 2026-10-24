@@ -259,3 +259,121 @@ def test_public_report_excludes_private_provider_metadata(tmp_path):
     )
     assert "secret-private-endpoint" not in text
     assert "sha256:old" in text
+
+
+def rebuild_module(monkeypatch):
+    monkeypatch.setitem(sys.modules, "run", BENCH)
+    return BENCH.module("hybrid_rebuild", ROOT / "benchmarks/hybrid-fusion/rebuild.py")
+
+
+def test_rebuild_cache_preserves_vectors_and_requires_exact_identity(tmp_path, monkeypatch):
+    rebuild = rebuild_module(monkeypatch)
+
+    class Provider:
+        def __init__(self):
+            self.calls = []
+
+        def embed(self, texts):
+            self.calls.append(texts)
+            return tuple((0.1234567890123456,) * 768 for _ in texts)
+
+    provider = Provider()
+    cache = rebuild.SharedEmbeddingCache(provider, tmp_path / "vectors.sqlite", "identity-one")
+    first = cache.embed(("same", "same", "different"))
+    assert provider.calls == [("same", "different")]
+    assert first[0][0] == 0.1234567890123456
+    assert cache.embed(("same",)) == (first[0],)
+    assert len(provider.calls) == 1
+    other = rebuild.SharedEmbeddingCache(provider, tmp_path / "vectors.sqlite", "identity-two")
+    assert other.embed(("same",)) == (first[0],)
+    assert len(provider.calls) == 2
+    cache.db.close()
+    other.db.close()
+
+
+def test_rebuild_rejects_incompatible_vectors_before_caching(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    rebuild = rebuild_module(monkeypatch)
+    cache = rebuild.SharedEmbeddingCache(
+        SimpleNamespace(embed=lambda texts: ((1.0,),)), tmp_path / "bad.sqlite", "identity"
+    )
+    with pytest.raises(ValueError, match="incompatible vector"):
+        cache.embed(("source",))
+    assert cache.db.execute("SELECT count(*) FROM vectors").fetchone()[0] == 0
+    cache.db.close()
+
+
+def test_rebuild_requires_explicit_execution_before_any_io(tmp_path):
+    import subprocess
+    import os
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "benchmarks/hybrid-fusion/rebuild.py"),
+            "--run-config",
+            str(tmp_path / "absent-config"),
+            "--workspace",
+            str(tmp_path / "absent-corpus"),
+            "--output",
+            str(tmp_path / "output.json"),
+            "--embedding-cache",
+            str(tmp_path / "cache.sqlite"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+    )
+    assert result.returncode == 2
+    assert "explicit --execute-rebuild required" in result.stderr
+    assert not (tmp_path / "cache.sqlite").exists()
+
+
+def test_complete_offline_replay_reuses_identical_acquisitions(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    _, _, suite, queries, identity = BENCH.inputs()
+    _, row = fixture()
+    for doc in row["evidence"]:
+        doc["source_ref"] = "repository://" + suite.corpus["repository"] + "/" + doc["source"]
+        doc["revision"] = suite.corpus["revision"]
+    captures = {
+        b + "-hybrid": [
+            {**row, "query_id": q, "iteration": i} for q in queries for i in range(1, 21)
+        ]
+        for b in BENCH.BACKENDS
+    }
+    source = tmp_path / "capture.json.gz"
+    output = tmp_path / "replay.json.gz"
+    BENCH.write(
+        source,
+        {
+            "protocol": BENCH.PROTOCOL,
+            "schema_version": 1,
+            "stage": "capture",
+            "status": "complete",
+            "identity": identity,
+            "snapshots": {},
+            "measurement": BENCH.FULL_MEASUREMENT,
+            "measurement_kind": "real",
+            "captures": captures,
+        },
+    )
+    original = BENCH.replay_row
+    calls = []
+
+    def checked(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(BENCH, "replay_row", checked)
+    BENCH.replay(SimpleNamespace(capture=source, output=output))
+    result = BENCH.read(output, stage="replay")
+    assert len(calls) == 3 * 20 * len(BENCH.variants())
+    for backend in BENCH.BACKENDS:
+        for variant in BENCH.variants():
+            assert len(result["observations"][backend][variant[0]]) == 400
+            assert result["aggregates"][backend][variant[0]]["duration_ms"] is None
+    assert result["finalists"] == []

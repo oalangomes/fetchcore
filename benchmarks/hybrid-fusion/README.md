@@ -75,6 +75,31 @@ spans per query. Capture repeats hybrid acquisition once per query/repetition,
 records full bounded lists with source materialization/provenance, and checks
 that offline control replay matches actual spans and fusion fingerprints.
 
+## Explicitly authorized preparation
+
+When an operator explicitly authorizes replacing incompatible BENCH projections,
+perform preparation separately, before freezing the new control. Copy the private
+BENCH configuration and set `provisioning: explicit_rebuild` only in that copy.
+The measurement configuration remains `reuse_only` throughout all four stages.
+
+```bash
+python benchmarks/hybrid-fusion/rebuild.py --execute-rebuild \
+  --run-config /private/bench-rebuild-config.json --workspace /private/frozen-corpus \
+  --embedding-cache /private/hybrid84/preparation-embeddings.sqlite \
+  --output /private/hybrid84/authorized-rebuild.json.gz
+```
+
+This command validates owned dedicated BENCH containers/volumes/endpoints and
+frozen inputs, indexes canonical knowledge once, and calls the existing native
+full-rebuild operations. It never provisions containers or changes OPERATIONAL.
+The old compatibility errors, new canonical count, per-backend rebuild telemetry,
+post-write snapshots and corpus checksum equivalence are recorded privately.
+A preparation-only exact-input SQLite vector cache binds provider/model/digest,
+dimensions and projection/serializer identities. It shares compatible vectors
+between backend writes; it is never used in measured retrieval. Incompatible
+vectors fail before caching. The initial blocked artifacts remain historical
+evidence; newly rebuilt snapshots establish a separately identified control.
+
 ## Experiments and interpretation
 
 Allocation: the nine pairs `{20,40,80} × {20,40,80}`, with RRF k=60. Causal
