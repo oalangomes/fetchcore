@@ -122,7 +122,8 @@ import sys
 
 config = json.loads(Path(os.environ["FIXTURE_ENVELOPES"]).read_text())
 args = sys.argv[1:]
-operation = ("readiness" if args[0] == "readiness" else "register" if args[0] == "repo"
+operation = ("config" if args[0] == "config" else
+             "readiness" if args[0] == "readiness" else "register" if args[0] == "repo"
              else next(value for value in args if value in {"bootstrap", "status", "plan", "sync", "rebuild"}))
 log = Path(os.environ["FIXTURE_LOG"])
 with log.open("a") as output:

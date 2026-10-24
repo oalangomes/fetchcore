@@ -4,7 +4,7 @@ This is the [ADR-0005](../adr/ADR-0005-developer-local-installation.md) installa
 
 ## Prerequisites and installation
 
-Use Python 3.11 or newer, Git, an isolated Python environment and an operator-owned, compatible Solr 9 resource. Docker is one way to run Solr, but FetchCore does not require it. Ollama is not needed for this lexical path. For a local repository, choose an allowed root and keep its checked-out revision available to CLI and MCP. A Git registration alone does not give the current MCP process a persistent workspace; use a local workspace for the first MCP journey.
+Use CPython 3.11–3.15, Git, an isolated Python environment and an operator-owned, compatible Solr 9 resource. Docker is one way to run Solr, but FetchCore does not require it. Ollama is not needed for this lexical path. For a local repository, choose an allowed root and keep its checked-out revision available to CLI and MCP. A Git registration alone does not give the current MCP process a persistent workspace; use a local workspace for the first MCP journey.
 
 The current source distribution builds a wheel and sdist. From a FetchCore source checkout, build a candidate artifact; the installation and subsequent commands can then run from another directory without importing the checkout:
 

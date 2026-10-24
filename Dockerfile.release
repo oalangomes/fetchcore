@@ -1,0 +1,22 @@
+ARG PYTHON_IMAGE=python:3.11-slim@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce
+FROM ${PYTHON_IMAGE}
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN groupadd --gid 10001 fetchcore \
+    && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin fetchcore
+
+# Install the same wheel validated by CI. No source checkout is copied or rebuilt.
+COPY dist/*.whl /tmp/candidate/
+RUN set -- /tmp/candidate/*.whl && test "$#" -eq 1 \
+    && python -m pip install "fetchcore[mcp] @ file://$1" \
+    && rm -rf /tmp/candidate \
+    && mkdir /workspace && chown fetchcore:fetchcore /workspace
+
+USER fetchcore
+WORKDIR /workspace
+ENV FETCHCORE_MCP_WORKSPACE=/workspace
+ENTRYPOINT ["fetchcore-mcp"]

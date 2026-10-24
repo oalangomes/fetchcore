@@ -15,9 +15,7 @@ on:
         options: [patch, minor, major]
 
 permissions:
-  contents: write
-  pull-requests: read
-  actions: write
+  contents: read
 
 concurrency:
   group: fetchcore-release
@@ -28,9 +26,15 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'master')
+       github.event.workflow_run.head_branch == 'master' &&
+       github.event.workflow_run.event != 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: write
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -49,6 +53,7 @@ jobs:
           REQUESTED_BUMP: ${{ inputs.bump || 'patch' }}
         run: |
           set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/master ]] || { echo 'Release must run on master' >&2; exit 1; }
           git fetch origin master --tags
           current="$(git rev-parse HEAD)"
           if [[ "$EVENT" == workflow_run && "$CI_SHA" != "$current" ]]; then
@@ -150,6 +155,84 @@ jobs:
           git push origin HEAD:master
           # GITHUB_TOKEN push does not trigger CI; dispatch it explicitly.
           gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref master
+          gh workflow run self-dogfood.yml --repo "$GITHUB_REPOSITORY" --ref master
+
+      - uses: actions/setup-python@v5
+        if: steps.decide.outputs.action == 'publish'
+        with:
+          python-version: "3.11"
+
+      - name: Require functional dogfood for the exact release revision
+        if: steps.decide.outputs.action == 'publish'
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          for attempt in $(seq 1 40); do
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/self-dogfood.yml/runs?head_sha=$sha&per_page=100")"
+            if jq -e --arg sha "$sha" '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == "master" and (.event == "push" or .event == "workflow_dispatch") and .conclusion == "success")] | length > 0' <<< "$runs" >/dev/null; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo 'No successful functional dogfood for release SHA' >&2
+          exit 1
+
+      - name: Download exact CI candidates and verify installed-artifact evidence
+        if: steps.decide.outputs.action == 'publish'
+        env:
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets reports
+          gh run download "$CI_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name python-distributions --dir release-assets
+          for runtime in 3.11 3.12 3.13 3.14 3.15; do
+            gh run download "$CI_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              --name "artifact-smoke-$runtime" --dir reports
+          done
+          python scripts/ci/release-evidence.py --dist release-assets --reports reports \
+            --version "${TAG#v}" --source-sha "$(git rev-parse HEAD)" \
+            --output release-assets/release-evidence.json
+
+      - name: Build and validate release container from the verified wheel
+        if: steps.decide.outputs.action == 'publish'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+          image="fetchcore:$TAG"
+          context="$(mktemp -d)"
+          mkdir "$context/dist"
+          cp release-assets/*.whl "$context/dist/"
+          cp Dockerfile.release "$context/Dockerfile"
+          source infra/images.lock
+          scripts/ci/docker-pull.sh "$FETCHCORE_PYTHON_IMAGE"
+          docker build --build-arg PYTHON_IMAGE="$FETCHCORE_PYTHON_IMAGE" \
+            --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+            --label "org.opencontainers.image.version=${TAG#v}" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --tag "$image" "$context"
+          archive="release-assets/fetchcore-$TAG-container.tar"
+          docker image save --output "$archive" "$image"
+          docker image load --input "$archive"
+          docker run --rm --entrypoint python \
+            --mount "type=bind,src=$PWD/scripts/ci/artifact-smoke.py,dst=/smoke.py,readonly" \
+            "$image" -I /smoke.py --version "${TAG#v}" --require-non-root > reports/container.json
+          image_id="$(docker image inspect --format '{{.Id}}' "$image")"
+          python scripts/ci/release-evidence.py --dist release-assets --reports reports \
+            --version "${TAG#v}" --source-sha "$(git rev-parse HEAD)" \
+            --container-smoke reports/container.json --image "$image" --image-id "$image_id" \
+            --container-archive "$archive" \
+            --output release-assets/release-evidence.json
+
+      - name: Upload validated candidate evidence
+        if: steps.decide.outputs.action == 'publish'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-${{ steps.decide.outputs.tag }}
+          path: release-assets/
+          if-no-files-found: error
 
       - name: Publish validated version
         if: steps.decide.outputs.action == 'publish'
@@ -164,6 +247,13 @@ jobs:
           PY
           )"
           [[ "$TAG" == "v$declared" ]] || { echo "::error::Project version does not match $TAG"; exit 1; }
+          # A retry never replaces a completed release or existing assets.
+          # Partial publication stays visible and requires operator reconciliation.
+          releases="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100")"
+          if jq -e --arg tag "$TAG" 'any(.[][]; .tag_name == $tag)' <<< "$releases" >/dev/null; then
+            echo 'Release already exists; refusing to overwrite assets' >&2
+            exit 1
+          fi
           # Assemble the first release notes before pushing its immutable tag.
           initial_notes=""
           if [[ "$TAG" == "v0.0.1" ]] &&
@@ -187,15 +277,16 @@ jobs:
             git tag -a "$TAG" -m "FetchCore $TAG"
             git push origin "$TAG"
           fi
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            if [[ "$TAG" == "v0.0.1" ]]; then
-              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
-                --title "FetchCore $TAG" --notes-file "$initial_notes"
-            else
-              gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
-                --title "FetchCore $TAG" --generate-notes
-            fi
+          # Keep the release draft until every exact candidate asset is attached.
+          if [[ "$TAG" == "v0.0.1" ]]; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --draft --title "FetchCore $TAG" --notes-file "$initial_notes"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --draft --title "FetchCore $TAG" --generate-notes
           fi
+          gh release upload "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY"
+          gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
 
       - name: Summary
         if: always()

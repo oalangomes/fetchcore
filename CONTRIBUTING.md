@@ -4,7 +4,7 @@ FetchCore turns software repositories into **typed, traceable, backend-neutral e
 
 ## Start from a clean checkout
 
-Requirements: Python 3.11+ and Git. Docker/Compose are optional for backend and container checks.
+Requirements: CPython 3.11–3.15 and Git. Docker/Compose are optional for backend and container checks.
 
 ```bash
 git clone https://github.com/oalangomes/fetchcore.git
@@ -15,6 +15,11 @@ make check
 ```
 
 The default checks cover lint, types, tests/coverage, packaging and documentation. Backend-dependent integration tests and the self-dogfood workflow are separate gates. Do not mistake passing service health for a successfully indexed repository. See the [getting-started guide](docs/guides/getting-started.md) and [documentation index](docs/README.md).
+
+CI runs tests and clean wheel/sdist installation smoke on each supported Python
+minor version. The sole coverage threshold is `tool.coverage.report.fail_under`
+in `pyproject.toml` (48%); neither CI nor Make overrides it. See the
+[CI contract](docs/guides/ci-workflows.md#python-and-distribution-contract).
 
 ## Proposing changes
 

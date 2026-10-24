@@ -474,6 +474,7 @@ jobs:
           FETCHCORE_INDEX_REVISION: ${{ steps.identity.outputs.revision }}
         run: |
           set -o pipefail
+          fetchcore config show --json > "${FETCHCORE_DOGFOOD_OUTPUT%/evidence}/configuration.json"
           fetchcore index bootstrap | tee "$FETCHCORE_DOGFOOD_OUTPUT/bootstrap.json"
 
       - name: Index status before execution
@@ -663,6 +664,24 @@ jobs:
             cat "$FETCHCORE_DOGFOOD_OUTPUT/run-evidence.json"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Compose versioned operational manifest
+        if: ${{ always() && steps.identity.outcome == 'success' }}
+        env:
+          REPOSITORY: ${{ steps.identity.outputs.repository }}
+          REVISION: ${{ steps.identity.outputs.revision }}
+          INDEX_LIFECYCLE: ${{ inputs.index_lifecycle }}
+          TARGET: ${{ inputs.collection }}
+          RUN_OUTCOME: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          test -f "${FETCHCORE_DOGFOOD_OUTPUT%/evidence}/configuration.json" || exit 0
+          python .fetchcore-runtime/scripts/ci/build-run-manifest.py \
+            --repository "$REPOSITORY" --revision "$REVISION" --backend solr \
+            --target "$TARGET" --run-id "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --observed-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --lifecycle "$INDEX_LIFECYCLE" \
+            --outcome "$RUN_OUTCOME" --configuration "${FETCHCORE_DOGFOOD_OUTPUT%/evidence}/configuration.json" \
+            --directory "$FETCHCORE_DOGFOOD_OUTPUT" --output "$FETCHCORE_DOGFOOD_OUTPUT/run-manifest.json"
 
       - name: Upload FetchCore indexing evidence
         if: ${{ always() }}

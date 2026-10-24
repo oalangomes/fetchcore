@@ -59,6 +59,69 @@ Pull-request code stays on GitHub-hosted runners.
 Localization is independently gated by
 `FETCHCORE_DOCS_LOCALIZATION_ENABLED=true`.
 
+## Python and distribution contract
+
+Supported runtimes are ordinary CPython 3.11, 3.12, 3.13, 3.14 and 3.15 on Linux.
+`requires-python = ">=3.11,<3.16"` bounds this declared set. Future minors,
+alternative interpreters and free-threaded builds require separate validation.
+The test and installed-artifact matrices cover the same set. Lint, typecheck,
+tests/coverage, build, artifact smoke and runtime-devex have separate jobs.
+Coverage uses the single 48% threshold in `pyproject.toml`; an individual matrix
+failure remains visible because matrix execution does not fail fast.
+
+The build job produces one wheel and sdist, retained as `python-distributions`.
+Each artifact-smoke job downloads those exact files and installs each in a
+separate temporary environment, without editable installation, source import
+shadowing or pip wheel-cache reuse. The sdist must build successfully there.
+Smoke checks include package version/import, bundled Solr configset, CLI help,
+runtime capabilities, and a bounded MCP initialize/list-tools exchange.
+No backend service is needed for these packaging checks.
+
+`artifact-smoke-<minor>` evidence records artifact SHA-256, full source SHA,
+installed version, Python version, checks and a dependency name/version inventory.
+It excludes private paths, pip `direct_url`, environment variables and credentials.
+The inventory is an equivalent dependency inventory, not a signed SBOM or a
+vulnerability assessment. Dependency resolution is recorded per candidate;
+byte-for-byte rebuild reproducibility across future dependency releases is not
+claimed. `SOURCE_DATE_EPOCH` fixes the build's source timestamp.
+
+The self-dogfood workflow also runs on `master` pushes. The release workflow
+requires its functional success for the exact candidate SHA. Protocol/runtime
+failures block publication; report-only retrieval relevance measurements remain
+separate. Repository branch protection should require CI matrix jobs and
+self-dogfood explicitly; those settings are outside source control.
+
+## Operational run manifest
+
+Indexing workflows emit `run-manifest.json` alongside existing command JSON and
+the legacy Solr `run-evidence.json`. The new `fetchcore.operational-run` schema
+version 1 composes existing validated `IndexRunArtifact` observations. Solr,
+OpenSearch and Qdrant use the same composition contract. The original command
+and legacy evidence formats remain unchanged.
+
+The manifest records run/repository/revision/backend/destination identity, a hash
+of effective runtime configuration, requested lifecycle, workflow outcome and
+ordered command observations. The observation timestamp is the collection time,
+not a fabricated command start time. Observations retain actual lifecycle,
+currentness, rebuild-required reason, projection/indexing/embedding fingerprints,
+mutation counts and measured telemetry/stage durations. `outcome` records the job
+state at collection time; later artifact upload or cleanup can still fail the job.
+A full discovery scan
+does not imply a persistent rebuild. Plan counts stay separate from executed
+mutations. Unmeasured embedding/backend work and unexecuted stages stay absent.
+Failure category and allowlisted failure diagnostics are retained; raw command
+source paths, endpoint configuration and error messages are excluded.
+
+Composition is offline and opt-in through
+`scripts/ci/build-run-manifest.py`; it performs no indexing or retrieval. Input
+JSON is bounded to 2 MB per command and at most 16 observations per run. Failed
+runs retain available observations, including a failed command; a failure before
+any command yields an empty observation list when configuration was captured.
+A failure before configuration capture has only the existing workflow evidence.
+Malformed observations fail validation rather than producing invented metrics.
+Collection runs before artifact upload even after an indexing failure.
+The effective configuration file is hashed outside the uploaded evidence folder.
+
 ## Container inputs
 
 Critical Python and Solr image references live in `infra/images.lock` and are
