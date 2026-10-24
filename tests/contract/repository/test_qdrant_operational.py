@@ -1042,6 +1042,32 @@ def test_application_driver_bootstrap_plan_rebuild_sync_and_noop(
     assert all(document.revision == committed_revision for document in documents)
     assert all(document.provenance.revision == committed_revision for document in documents)
 
+    # A literal root README delta must not re-extract the retained nested README.
+    readme = workspace / "README.md"
+    nested_readme = workspace / "docs" / "README.md"
+    nested_readme.parent.mkdir()
+    readme.write_text("# Root\nOriginal\n")
+    nested_readme.write_text("# Nested\nStable\n")
+    subprocess.run([*git, "add", "README.md", "docs/README.md"], check=True)
+    subprocess.run([*git, "commit", "-qm", "add documentation"], check=True)
+    service.run("sync", registered.repository)
+
+    readme.write_text("# Root\nUpdated\n")
+    subprocess.run([*git, "add", "README.md"], check=True)
+    subprocess.run([*git, "commit", "-qm", "change only root README"], check=True)
+    root_plan = service.run("plan", registered.repository)
+    assert root_plan["planned_mutations"]["resulting_document_count"] == 4
+    assert root_plan["planned_mutations"]["updated"] == 1
+    assert root_plan["planned_mutations"]["unchanged"] == 3
+    root_sync = service.run("sync", registered.repository)
+    assert root_sync["execution"]["snapshot"]["document_count"] == 4
+    assert root_sync["execution"]["telemetry"]["embedding_vectors"] == 1
+    assert root_sync["execution"]["telemetry"]["embedding_vectors_reused"] == 3
+    no_op = service.run("sync", registered.repository)
+    assert no_op["mode"] == "noop"
+    assert no_op["execution"]["telemetry"]["backend_writes"] == 0
+    assert no_op["execution"]["telemetry"]["embedding_requests"] == 0
+
 
 def test_driver_without_git_history_uses_incremental_full_scan_not_rebuild(
     tmp_path: Path,

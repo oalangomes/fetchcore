@@ -630,6 +630,17 @@ class RepositoryIndexer:
     ) -> RepositoryIndexResult:
         """Index one repository workspace into canonical knowledge documents."""
 
+        return self._index(workspace, previous_documents=previous_documents)
+
+    def _index(
+        self,
+        workspace: Path,
+        *,
+        previous_documents: Iterable[KnowledgeDocument] = (),
+        selected_paths: tuple[str, ...] | None = None,
+    ) -> RepositoryIndexResult:
+        """Share canonical extraction for full scans and exact Git delta paths."""
+
         started = self.timer()
         root = workspace.resolve(strict=True)
         if not root.is_dir():
@@ -641,6 +652,7 @@ class RepositoryIndexer:
             max_files=self.config.max_files,
             max_file_bytes=self.config.max_file_bytes,
             max_total_bytes=self.config.max_total_bytes,
+            selected_paths=selected_paths,
             api_sanitizer=getattr(self, "_api_sanitizer", None),
             api_sanitizer_kinds=getattr(
                 self, "_api_sanitizer_kinds", frozenset({"openapi", "swagger"}),

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
+
+import pytest
 
 from fetchcore.repository.incremental import (
     GitAwareSolrSynchronizer,
     GitRepositoryChangeDetector,
     GitDeltaPlan,
+    index_repository_delta,
 )
 from fetchcore.repository.index_contract import (
     IndexContractSolrSnapshot,
@@ -14,6 +18,7 @@ from fetchcore.repository.index_contract import (
 )
 from fetchcore.repository.indexing import RepositoryIndexConfig, RepositoryIndexer
 from fetchcore.backends.solr import SolrIndexSnapshot, SolrIndexSyncResult
+from fetchcore.projection import corpus_checksum
 
 
 def _git(workspace: Path, *args: str) -> str:
@@ -63,6 +68,36 @@ def test_git_detector_combines_committed_and_working_tree_changes(tmp_path: Path
     assert plan.changed_paths == ("a.py", "b.py", "untracked.py")
     assert plan.removed_paths == ("removed.py",)
     assert plan.reason == "safe_git_delta"
+
+
+@pytest.mark.parametrize("name", ["README.md", "pyproject.toml", "service.py", "file[1].py"])
+def test_delta_root_path_does_not_reindex_nested_same_basename(tmp_path: Path, name: str) -> None:
+    _repository(tmp_path)
+    (tmp_path / "docs").mkdir()
+    source = tmp_path / name
+    nested = tmp_path / "docs" / name
+    source.write_text("value = 1\n")
+    nested.write_text("stable = 7\n")
+    base = _commit(tmp_path, "base")
+    config = RepositoryIndexConfig(repository="acme/widgets", revision=base)
+    previous = RepositoryIndexer(config).index(tmp_path)
+    source.write_text("value = 2\n")
+    head = _commit(tmp_path, "change root source")
+    indexer = RepositoryIndexer(replace(config, revision=head))
+    plan = GitRepositoryChangeDetector().plan(tmp_path, previous_revision=base, current_revision=head)
+
+    delta = index_repository_delta(indexer, tmp_path, previous.documents, plan)
+    full = indexer.index(tmp_path, previous_documents=previous.documents)
+
+    assert delta is not None
+    assert len(delta.documents) == len({d.id for d in delta.documents}) == len(full.documents) == 2
+    assert corpus_checksum(delta.documents) == corpus_checksum(full.documents)
+    assert len(delta.changes.updated) == 1
+    assert len(delta.changes.unchanged) == 1
+    assert delta.telemetry.files_read == delta.telemetry.files_evaluated == 1
+    assert next(d for d in delta.documents if d.path == "docs/" + name) == next(
+        d for d in previous.documents if d.path == "docs/" + name
+    )
 
 
 def test_git_detector_tracks_dirty_deletion_at_same_head(tmp_path: Path) -> None:

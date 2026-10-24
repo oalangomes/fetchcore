@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import fnmatch
-import glob
 import json
 import os
 import subprocess
@@ -81,17 +80,16 @@ def index_repository_delta(
     delta_documents: tuple[KnowledgeDocument, ...] = ()
     delta_telemetry: RepositoryIndexTelemetry | None = None
     if eligible_changed:
-        delta_config = replace(
-            indexer.config,
-            include_patterns=tuple(glob.escape(path) for path in eligible_changed),
-        )
         delta_indexer = RepositoryIndexer(
-            delta_config,
+            indexer.config,
             symbol_extractors=indexer.symbol_extractors,
             clock=indexer.clock,
             timer=indexer.timer,
         )
-        delta = delta_indexer.index(workspace)
+        # Include patterns intentionally match both basenames and relative paths.
+        # They cannot express a literal root path: README.md also matches nested
+        # README.md files. Bound discovery explicitly before merging retained data.
+        delta = delta_indexer._index(workspace, selected_paths=eligible_changed)
         if not delta.changes.removal_detection_complete or not delta.telemetry.scan_traversal_complete:
             return None
         delta_documents = delta.documents
