@@ -137,6 +137,15 @@ def inputs():
     return evidence, wrapper, suite, queries, identity
 
 
+def arm_id(backend, mode):
+    """Resolve public arm identity from the existing manifest, never from a vendor ID."""
+    arms = json.loads((ROOT / "benchmarks/baseline-v1/manifest.json").read_text())["arms"]
+    matches = [a["id"] for a in arms if a["backend"] == backend and a["mode"] == mode]
+    if len(matches) != 1:
+        raise ValueError("exactly one manifest arm required for " + backend + "/" + mode)
+    return matches[0]
+
+
 def variants():
     return (
         [("control", None, None, 60)]
@@ -415,7 +424,7 @@ def verify_control(control, identity):
         raise ValueError("real control required")
     for backend in BACKENDS:
         for mode in ("dense", "hybrid"):
-            rows = control["observations"].get(backend + "-" + mode, [])
+            rows = control["observations"].get(arm_id(backend, mode), [])
             validate_rows(rows, control["query_ids"], 20)
             for query in control["query_ids"]:
                 ranks = {
@@ -766,8 +775,8 @@ def online(args):
             run["comparisons"] = {
                 v[0]: {
                     b: compare(
-                        run["observations"][b + "-hybrid/control"],
-                        run["observations"][b + "-hybrid/" + v[0]],
+                        run["observations"][arm_id(b, "hybrid") + "/control"],
+                        run["observations"][arm_id(b, "hybrid") + "/" + v[0]],
                     )
                     for b in BACKENDS
                 }
@@ -779,8 +788,8 @@ def online(args):
             run["promotion_gates"] = {
                 v[0]: {
                     b: promotion_gate(
-                        run["observations"][b + "-hybrid/control"],
-                        run["observations"][b + "-hybrid/" + v[0]],
+                        run["observations"][arm_id(b, "hybrid") + "/control"],
+                        run["observations"][arm_id(b, "hybrid") + "/" + v[0]],
                         run["comparisons"][v[0]][b],
                         performance_comparable=run["performance_comparable"],
                     )
@@ -890,7 +899,7 @@ def replay(args):
     observations = {}
     replay_cache = {}
     for backend in BACKENDS:
-        rows = capture["captures"][backend + "-hybrid"]
+        rows = capture["captures"][arm_id(backend, "hybrid")]
         validate_rows(rows, queries, 20)
         for row in rows:
             if max(row["lexical_acquired"], row["dense_acquired"]) > 80:
@@ -989,6 +998,7 @@ def report(args):
             "error",
             "snapshot_errors",
             "comparisons",
+            "one_axis_comparisons",
             "finalists",
             "performance_comparable",
             "performance_reason",
@@ -1053,6 +1063,8 @@ def report(args):
     safe.update(identity=artifact["identity"], raw_artifact_sha256=digest(args.artifact))
     safe["stage"] = "public-report"
     write(args.output, safe)
+    if getattr(args, "diagnostics_output", None):
+        write(args.diagnostics_output, public_diagnostics(artifact, digest(args.artifact)))
 
 
 def main():
@@ -1060,6 +1072,7 @@ def main():
     parser.add_argument("command", choices=("control", "capture", "replay", "confirm", "report"))
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--performance-attestation", type=Path)
+    parser.add_argument("--diagnostics-output", type=Path)
     for option in ("run-config", "workspace", "control", "capture", "replay", "artifact"):
         parser.add_argument("--" + option, type=Path)
     args = parser.parse_args()

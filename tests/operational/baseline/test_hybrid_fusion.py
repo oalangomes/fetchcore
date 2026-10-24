@@ -340,7 +340,7 @@ def test_complete_offline_replay_reuses_identical_acquisitions(tmp_path, monkeyp
         doc["source_ref"] = "repository://" + suite.corpus["repository"] + "/" + doc["source"]
         doc["revision"] = suite.corpus["revision"]
     captures = {
-        b + "-hybrid": [
+        BENCH.arm_id(b, "hybrid"): [
             {**row, "query_id": q, "iteration": i} for q in queries for i in range(1, 21)
         ]
         for b in BENCH.BACKENDS
