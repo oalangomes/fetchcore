@@ -1,0 +1,13 @@
+{
+  "status": "source-reviewed-before-experiment",
+  "method": "Direct inspection of source spans at the pinned clean revision; no retrieval output used. Agent-reviewed, not an independent human review.",
+  "source_sha256": {
+    "src/shared/middlewares/authMiddleware.js": "321796a3a666b5072389b74eab1351969d3bf927308a54d501a5cbcea4425e24",
+    "src/shared/middlewares/requestIdMiddleware.js": "74c4c373f3b7255dc027fd78281c3a30b359682a5c29eb4ab9d5c83ec0d8e321",
+    "src/shared/utils/cryptoUtils.js": "3530a969ceb6b10f81c7782acb1b22ef55c34f009125052c5d1dc33820216e20",
+    "src/shared/utils/tokenUtils.js": "c101dafd56de801b64c06efbc0941038c92e1f52e1f3055783c9cc5da6109bfa",
+    "src/shared/validations/accountPolicy.js": "5c7d835f6732b8f3fdcae87400f4c5472e34dc58fb05e0dec58364a581cff06f",
+    "src/shared/middlewares/sanitizeQueryMiddleware.js": "f2bd23c9bd979e22b3c9a71eb3720506b92c5db175b73db853158f3490f7c455"
+  },
+  "queries_sha256": "cd49ea670a092206c4eb0638f853893dc58f9761ebee860bd39dd85cee260cee"
+}
