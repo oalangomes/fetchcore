@@ -28,6 +28,7 @@ from fetchcore.retrieval.embedding import (
     ProjectionV3EmbeddingSerializer,
     validate_vector_dimensions,
 )
+from fetchcore.retrieval.hybrid import FusionObserver, HybridFusionCapture, allocate_fusion_input
 from fetchcore.retrieval.fusion import (
     DEFAULT_RRF_K,
     FusionCandidate,
@@ -1253,11 +1254,13 @@ class OpenSearchBackend:
             [RetrievalConfig], EmbeddingProvider
         ] = _unconfigured_embedding_provider,
         timer: Callable[[], float] = time.monotonic,
+        fusion_observer: FusionObserver | None = None,
     ) -> None:
         """Initialize OpenSearchBackend with its explicit dependencies."""
         self.transport_factory = transport_factory
         self.embedding_factory = embedding_factory
         self.timer = timer
+        self.fusion_observer = fusion_observer
 
     def lookup_exact(self, anchor: Anchor, scope: KnowledgeSearchScope) -> KnowledgeSearchResponse:
         # Reuse the exact keyword translator and snapshot/provenance checks.
@@ -1286,6 +1289,10 @@ class OpenSearchBackend:
                 category="schema_mismatch",
             )
         settings = OpenSearchSettings.from_mapping(scope.settings)
+        if scope.retrieval is not None and scope.retrieval.hybrid.enabled:
+            scope.retrieval.hybrid.validate_acquisition_budget(
+                max(scope.max_results, settings.diagnostic_candidate_window or scope.max_results)
+            )
         transport = self.transport_factory(settings)
         store = OpenSearchIndexStore(
             transport,
@@ -2011,8 +2018,11 @@ def _hybrid_response(
     lexical_ms: int,
 ) -> KnowledgeSearchResponse:
     fusion_started = backend.timer()
-    lexical_fusion_candidates = lexical_candidates[: scope.max_results]
-    dense_fusion_candidates = dense_candidates[: scope.max_results]
+    hybrid_config = scope.retrieval.hybrid if scope.retrieval is not None else None
+    lexical_limit = (hybrid_config.lexical_fusion_window if hybrid_config else None) or scope.max_results
+    dense_limit = (hybrid_config.dense_fusion_window if hybrid_config else None) or scope.max_results
+    lexical_fusion_candidates = lexical_candidates if backend.fusion_observer else lexical_candidates[:lexical_limit]
+    dense_fusion_candidates = dense_candidates if backend.fusion_observer else dense_candidates[:dense_limit]
     lexical_by_id = {
         str(item.item["id"]): item for item in lexical_fusion_candidates
     }
@@ -2044,15 +2054,60 @@ def _hybrid_response(
                 )),
             )
         )
-    fusion_input = FusionInput(
-        candidates=tuple(fusion_candidates),
+    hybrid = scope.retrieval.hybrid if scope.retrieval is not None else None
+    lexical_window = (hybrid.lexical_fusion_window if hybrid else None) or scope.max_results
+    dense_window = (hybrid.dense_fusion_window if hybrid else None) or scope.max_results
+    rrf_k = hybrid.rrf_k if hybrid else DEFAULT_RRF_K
+    lexical_signals = tuple(sorted(
+        (item for item in fusion_candidates if item.lexical is not None),
+        key=lambda item: item.lexical.rank if item.lexical is not None else 0,
+    ))
+    dense_signals = tuple(sorted(
+        (item for item in fusion_candidates if item.dense is not None),
+        key=lambda item: item.dense.rank if item.dense is not None else 0,
+    ))
+    if backend.fusion_observer is not None:
+        full_input = FusionInput(tuple(fusion_candidates), scope.max_results)
+        evidence = []
+        for candidate in fusion_candidates:
+            acquired = lexical_by_id.get(candidate.candidate_id) or dense_by_id[candidate.candidate_id]
+            record = acquired.item
+            evidence.append(SearchResult(
+                id=candidate.candidate_id,
+                source=str(record.get("path", record.get("source_ref", ""))),
+                source_ref=str(record.get("source_ref", "")),
+                knowledge_type=str(record.get("knowledge_type", "unknown")),
+                content=str(record.get("content", "")),
+                score=(candidate.lexical.normalized_score if candidate.lexical is not None
+                       else cast(FusionChannelSignal, candidate.dense).normalized_score),
+                line_start=optional_int(record.get("line_start")),
+                line_end=optional_int(record.get("line_end")),
+                revision=snapshot.revision,
+                checksum=optional_str(record.get("checksum")),
+                source_type=str(record.get("source_type", "repository")),
+                observations=structural_observations(record, source_ref=str(record.get("source_ref", "")), revision=snapshot.revision),
+                relationships=relationships(record),
+                metadata={key: record[key] for key in ("chunk_ref", "source_checksum", "document_revision", "branch") if key in record},
+            ))
+        backend.fusion_observer(HybridFusionCapture(
+            full_input, tuple(evidence), len(lexical_candidates), len(dense_candidates),
+        ))
+    fusion_input = allocate_fusion_input(
+        lexical=lexical_signals, dense=dense_signals,
+        lexical_window=lexical_window, dense_window=dense_window,
         max_results=scope.max_results,
     )
+    admitted_lexical = {item.candidate_id for item in fusion_input.candidates if item.lexical is not None}
+    admitted_dense = {item.candidate_id for item in fusion_input.candidates if item.dense is not None}
+    lexical_by_id = {key: value for key, value in lexical_by_id.items() if key in admitted_lexical}
+    dense_by_id = {key: value for key, value in dense_by_id.items() if key in admitted_dense}
+    lexical_fusion_candidates = lexical_candidates[:lexical_window]
+    dense_fusion_candidates = dense_candidates[:dense_window]
     fusion_result = FusionKernel().fuse(
         FusionRequest(
             input=fusion_input,
             strategy="rrf",
-            parameters={"k": _RRF_K},
+            parameters={"k": rrf_k},
         )
     )
     fusion_ms = elapsed_ms(fusion_started, backend.timer())
@@ -2186,7 +2241,7 @@ def _hybrid_response(
                         None if dense is None else dense.raw_score
                     ),
                     "rrf_score": rrf_score,
-                    "rrf_k": _RRF_K,
+                    "rrf_k": rrf_k,
                     "rrf_lexical_contribution": lexical_contribution,
                     "rrf_dense_contribution": dense_contribution,
                     "document_revision": item.get("document_revision"),
@@ -2305,7 +2360,7 @@ def _hybrid_response(
             "lexical_fallback": False,
             "hybrid_fusion": True,
             "fusion_strategy": "rrf",
-            "rrf_k": _RRF_K,
+            "rrf_k": rrf_k,
             "fusion_parameters": dict(fusion_result.parameters),
             "fusion_normalization_identity": fusion_result.normalization_identity,
             "fusion_input_fingerprint": fusion_result.input_fingerprint,

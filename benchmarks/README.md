@@ -10,6 +10,7 @@ satisfaction or semantic authority.
 | [baseline-v1](baseline-v1/) | Official, frozen | Nine-backend/mode retrieval matrix and ContextYield |
 | [search-intent-v2](search-intent-v2/) | Controlled experiment | Paired serving/query representation comparison |
 | [targeted-exact](targeted-exact/) | Controlled experiment | Exact acquisition and constrained fallback measurements |
+| [hybrid-fusion](hybrid-fusion/) | Controlled experiment | Frozen hybrid acquisition replay and real fusion confirmation |
 | [typed-knowledge-retrieval](typed-knowledge-retrieval/) | Controlled experiment | Pinned typed evidence and isolated backend retrieval |
 
 The machine-readable [catalog](catalog.json) is a small inventory, not a new
@@ -32,4 +33,4 @@ See [experiment conventions](../docs/benchmarks/protocol.md).
 
 All **new** runs may use the shared [BENCH lifecycle and infrastructure standard](../docs/benchmarks/infrastructure.md). `benchmark_ops.py` creates a sidecar `bundle.json` with the native runner's output, verifies hashes and status, and enforces explicit review before immutable publication. `benchmark_infra.py` plans existing functional BENCH resources or run-scoped ephemeral performance Compose projects; neither runner nor ordinary CI creates Docker resources implicitly.
 
-The four native protocols retain their own scoring, Ground Truth and run semantics. The official baseline V0.1–V0.4 is not rewritten. A completed smoke or a successful offline preflight is not a promoted benchmark result.
+The native protocols retain their own scoring, Ground Truth and run semantics. The official baseline V0.1–V0.4 is not rewritten. A completed smoke or a successful offline preflight is not a promoted benchmark result.

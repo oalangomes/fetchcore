@@ -1,0 +1,25 @@
+{
+  "command": "make check (development Python interpreter)",
+  "status": "passed",
+  "tests": {
+    "passed": 1459,
+    "skipped": 9
+  },
+  "coverage_percent": 61.53,
+  "lint": "passed",
+  "mypy": "184 source files passed",
+  "build": "sdist and wheel passed",
+  "documentation": "76 Markdown files checked",
+  "localization": {
+    "status": "non-strict check passed",
+    "valid": 2,
+    "stale": 2,
+    "missing": 40,
+    "orphan": 0
+  },
+  "check_log_sha256": "439eebf43f94bf19654b185356afffe3b08fdf4d8c11583bf31711e3c3f2ae95",
+  "artifacts": {
+    "fetchcore-0.1.0.dev0-py3-none-any.whl": "5ac158d0afa4ec16124fbec166d7e6fefaf98df031e4ea04ac0fdab7f696839f",
+    "fetchcore-0.1.0.dev0.tar.gz": "282b7f9ef6b9f4cd34f27b5ea98db6bd94a0ccd891f3676fa5c61a8d925afd3e"
+  }
+}

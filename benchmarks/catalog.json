@@ -24,6 +24,12 @@
       "classification": "controlled_experiment",
       "protocol": "fetchcore.typed-knowledge-retrieval-v1",
       "purpose": "pinned typed evidence acquisition and isolated backend retrieval"
+    },
+    {
+      "id": "hybrid-fusion",
+      "classification": "controlled_experiment",
+      "protocol": "fetchcore.hybrid-fusion-v1",
+      "purpose": "frozen hybrid acquisition replay and separately measured candidate admission/RRF experiments"
     }
   ]
 }

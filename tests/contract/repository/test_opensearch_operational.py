@@ -488,3 +488,45 @@ def test_registered_application_lifecycle(tmp_path: Path, monkeypatch: pytest.Mo
     assert synced["execution"]["telemetry"]["embedding_vectors"] == 0
     assert synced["discovery"]["mode"] == "git-delta"
     assert service.run("status", registered.repository)["currentness"] == "current"
+
+
+def test_hybrid_windows_capture_replay_and_legacy(tmp_path):
+    from dataclasses import replace
+    from fetchcore.retrieval.contracts import SearchScope
+    from fetchcore.retrieval.fusion import FusionKernel, FusionRequest
+    from fetchcore.retrieval.hybrid import allocate_fusion_input
+    class Provider:
+        provider_id='ollama'
+        model_id='embeddinggemma'
+        def embed(self,texts):
+            return tuple((1.0,)*768 for _ in texts)
+    class HybridMemory(MemoryOpenSearch):
+        def request(self,method,path,payload=None,**kwargs):
+            if path.endswith('/_search') and isinstance(payload,dict) and 'knn' in payload.get('query',{}):
+                index=path.split('/')[0];index=self.aliases.get(index,index)
+                docs=sorted((d for d in self.indices[index].values() if d['record_kind']=='knowledge'),key=lambda d:d['id'])
+                return {'hits':{'total':{'value':len(docs)},'hits':[{'_source':copy.deepcopy(d),'_score':.8} for d in docs[:payload['size']]]}}
+            return super().request(method,path,payload,**kwargs)
+    transport=HybridMemory();provider=Provider()
+    persistence=OpenSearchIndexStore(transport,OpenSearchSettings(index='fetchcore-test'),embedding_provider=provider,clock=lambda:'fixture')
+    for n in range(3):
+        (tmp_path/f'file{n}.py').write_text(f'value = {n}\n')
+    persistence.full_rebuild(indexer('rev-1').index(tmp_path))
+    retrieval=RetrievalConfig.from_mapping({'dense':{'enabled':True},'hybrid':{'enabled':True}})
+    backend=OpenSearchBackend(transport_factory=lambda _:transport,embedding_factory=lambda _:provider)
+    scope=SearchScope(workspace=tmp_path,repository='acme/widgets',revision='rev-1',knowledge_types=(),max_results=1,
+        settings={'index':'fetchcore-test','diagnostic_candidate_window':80},retrieval=retrieval)
+    intent=SearchIntent(canonical_query='value')
+    control=backend.search(intent,scope,())
+    captures=[];backend.fusion_observer=captures.append
+    observed=backend.search(intent,scope,())
+    assert observed.metadata['fusion_output_fingerprint'] == control.metadata['fusion_output_fingerprint']
+    assert [r.to_mapping() for r in observed.results] == [r.to_mapping() for r in control.results]
+    assert len(captures[-1].evidence) == 3
+    scope=replace(scope,retrieval=replace(retrieval,hybrid=replace(retrieval.hybrid,lexical_fusion_window=80,dense_fusion_window=80,rrf_k=120)))
+    response=backend.search(intent,scope,())
+    full=captures[-1].input
+    replay=allocate_fusion_input(lexical=tuple(sorted((c for c in full.candidates if c.lexical),key=lambda c:c.lexical.rank)),
+        dense=tuple(sorted((c for c in full.candidates if c.dense),key=lambda c:c.dense.rank)),lexical_window=80,dense_window=80,max_results=1)
+    assert FusionKernel().fuse(FusionRequest(replay,parameters={'k':120})).output_fingerprint == response.metadata['fusion_output_fingerprint']
+    assert all(r.checksum and r.revision == 'rev-1' and r.line_start for r in captures[-1].evidence)
