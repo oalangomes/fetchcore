@@ -47,6 +47,12 @@ queries and post-run snapshot checks pass. `consolidate` validates all three
 per-backend artifacts before writing the combined manifest. Keep each backend's
 output and checkpoint directory together.
 
+Offline replay also writes one checksummed result checkpoint per backend/query;
+its artifact contains references and aggregate metrics rather than the expanded
+fusion payloads. It accepts `--resume` with the same output path to skip validated
+replay queries. This keeps both capture and replay working sets bounded to one
+query while preserving detailed per-candidate diagnostics in the private shards.
+
 ```bash
 python3.11 --version  # must print Python 3.11.16
 

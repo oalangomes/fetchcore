@@ -470,6 +470,14 @@ def test_complete_offline_replay_reuses_identical_acquisitions(tmp_path, monkeyp
     assert len(calls) == 3 * 20 * len(BENCH.variants())
     for backend in BENCH.BACKENDS:
         for variant in BENCH.variants():
-            assert len(result["observations"][backend][variant[0]]) == 400
+            assert len(result["observations"][backend][variant[0]]) == 20
+            first = result["observations"][backend][variant[0]][0]
+            payload = BENCH.load_checkpoint(
+                Path(first["path"]),
+                identity_fingerprint=result["checkpoint_identities"][backend],
+                backend=backend,
+                query_id=first["query_id"],
+            )
+            assert len(payload["observations"][variant[0]]) == 20
             assert result["aggregates"][backend][variant[0]]["duration_ms"] is None
     assert result["finalists"] == []

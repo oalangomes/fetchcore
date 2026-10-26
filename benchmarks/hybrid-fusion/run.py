@@ -563,6 +563,57 @@ def iter_capture_rows(capture, backend, queries):
         raise ValueError("capture is missing query checkpoints")
 
 
+def iter_capture_groups(capture, backend, queries):
+    """Yield one query's captures, keeping new shard-based inputs bounded in memory."""
+    captures = capture["captures"][arm_id(backend, "hybrid")]
+    if captures and isinstance(captures[0], dict) and "path" in captures[0]:
+        expected_fp = capture["checkpoint_identities"][arm_id(backend, "hybrid")]
+        seen = set()
+        for descriptor in captures:
+            query_id = descriptor["query_id"]
+            if query_id in seen:
+                raise ValueError("duplicate query checkpoint in capture manifest")
+            seen.add(query_id)
+            payload = load_checkpoint(
+                Path(descriptor["path"]), identity_fingerprint=expected_fp,
+                backend=backend, query_id=query_id,
+            )
+            validate_rows(payload["captures"], [query_id], 20)
+            yield query_id, payload["captures"]
+        if seen != set(queries):
+            raise ValueError("capture is missing query checkpoints")
+        return
+    grouped = {query_id: [] for query_id in queries}
+    for row in captures:
+        grouped[row["query_id"]].append(row)
+    for query_id in queries:
+        validate_rows(grouped[query_id], [query_id], 20)
+        yield query_id, grouped[query_id]
+
+
+def compact_replay_row(row):
+    keys = ("query_id", "iteration", *QUALITY, "budgets", "recovered_requirements", "candidates_examined",
+            "candidates_returned", "returned_chars", "returned_line_count",
+            "lexical_acquired", "dense_acquired", "lexical_admitted", "dense_admitted",
+            "useful_hit_density")
+    return {key: row[key] for key in keys if key in row}
+
+
+def replay_observation(replay, backend, variant, query_id, iteration):
+    observations = replay["observations"][backend][variant]
+    if observations and isinstance(observations[0], dict) and "path" in observations[0]:
+        descriptor = next(item for item in observations if item["query_id"] == query_id)
+        payload = load_checkpoint(
+            Path(descriptor["path"]),
+            identity_fingerprint=replay["checkpoint_identities"][backend],
+            backend=backend, query_id=query_id,
+        )
+        rows = payload["observations"][variant]
+    else:
+        rows = observations
+    return next(row for row in rows if row["iteration"] == iteration)
+
+
 def performance_window(path, started, finished, config):
     if path is None:
         return False
@@ -860,9 +911,8 @@ def online(args):
                             if args.command == "capture":
                                 query_captures.append(row)
                             else:
-                                expected = next(
-                                    r for r in replay["observations"][arm.backend][variant[0]]
-                                    if (r["query_id"], r["iteration"]) == (case.query_id, iteration + 1)
+                                expected = replay_observation(
+                                    replay, arm.backend, variant[0], case.query_id, iteration + 1
                                 )
                                 same_acquisition = expected["full_acquisition_fingerprint"] == c.input.fingerprint
                                 measured["same_acquisition_as_replay"] = same_acquisition
@@ -1012,7 +1062,13 @@ def online(args):
 
 
 def replay(args):
-    private_output(args.output)
+    if getattr(args, "resume", False):
+        if args.output.exists() or not args.capture:
+            raise ValueError("cannot resume a completed or unbound replay")
+        if args.output.resolve().is_relative_to(ROOT):
+            raise ValueError("raw artifacts must be outside repository (private source)")
+    else:
+        private_output(args.output)
     _, _, suite, queries, identity = inputs()
     capture = read(args.capture, stage="capture")
     if capture.get("measurement") != FULL_MEASUREMENT or capture.get("measurement_kind") != "real":
@@ -1020,7 +1076,7 @@ def replay(args):
     if any(capture["identity"][key] != value for key, value in identity.items()):
         raise ValueError("capture corpus/query identity mismatch")
     observations = {}
-    replay_cache = {}
+    comparison_rows = {}
     available = {
         backend for backend in BACKENDS
         if arm_id(backend, "hybrid") in capture["captures"]
@@ -1029,57 +1085,78 @@ def replay(args):
     selected = {BACKEND_ALIASES[requested_backend]} if requested_backend else available
     if not selected or not selected <= available:
         raise ValueError("capture does not contain the requested backend(s)")
+    checkpoint_dir = getattr(args, "checkpoint_dir", None) or Path(str(args.output) + ".checkpoints")
+    if checkpoint_dir.resolve().is_relative_to(ROOT):
+        raise ValueError("checkpoint directory must be outside repository")
+    if getattr(args, "resume", False):
+        if not checkpoint_dir.is_dir():
+            raise ValueError("replay checkpoint directory does not exist")
+    elif checkpoint_dir.exists():
+        raise ValueError("replay checkpoint directory exists; use --resume or choose a new output")
+    capture_fingerprint = digest(args.capture)
+    checkpoint_identities = {}
     for backend in sorted(selected):
         observations[backend] = {v[0]: [] for v in variants()}
+        comparison_rows[backend] = {v[0]: [] for v in variants()}
         truths = {c.query_id: c.truth for c in suite.cases}
-        seen_rows = set()
-        for row in iter_capture_rows(capture, backend, queries):
-            key = (row["query_id"], row["iteration"])
-            if key in seen_rows:
-                raise ValueError("duplicate capture observation")
-            seen_rows.add(key)
-            if max(row["lexical_acquired"], row["dense_acquired"]) > 80:
-                raise ValueError("captured acquisition exceeds budget")
-            for doc in row["evidence"]:
-                if doc.get("revision") != suite.corpus["revision"] or not doc.get(
-                    "source_ref", ""
-                ).startswith("repository://" + suite.corpus["repository"] + "/"):
-                    raise ValueError("captured evidence provenance differs from corpus")
-            acquisition_key = mapping_fingerprint(
-                {
-                    "input": row["input"],
-                    "evidence": row["evidence"],
-                    "lexical_acquired": row["lexical_acquired"],
-                    "dense_acquired": row["dense_acquired"],
-                }
-            )
-            ordered = (
-                variants()
-                if (row["iteration"] + list(queries).index(row["query_id"])) % 2 == 0
-                else variants()[::-1]
-            )
-            for variant in ordered:
-                # Repeated identical acquisitions share immutable diagnostic payloads.
-                # Include raw scores/materialization in identity, not just the kernel fingerprint.
-                cache_key = (backend, row["query_id"], acquisition_key, variant[0])
-                if cache_key not in replay_cache:
-                    replay_cache[cache_key] = replay_row(
-                        row,
-                        variant,
-                        80 if backend == "qdrant-vector" else 20,
-                        truths[row["query_id"]],
-                    )
-                observations[backend][variant[0]].append(
-                    {
-                        **replay_cache[cache_key],
-                        "iteration": row["iteration"],
-                    }
+        checkpoint_identity = mapping_fingerprint({
+            "stage": "replay", "capture_fingerprint": capture_fingerprint,
+            "identity": capture["identity"], "backend": backend,
+            "variants": [v[0] for v in variants()],
+        })
+        checkpoint_identities[backend] = checkpoint_identity
+        for query_id, query_captures in iter_capture_groups(capture, backend, queries):
+            checkpoint = checkpoint_path(checkpoint_dir, backend, query_id)
+            if getattr(args, "resume", False) and checkpoint.exists():
+                saved = load_checkpoint(
+                    checkpoint, identity_fingerprint=checkpoint_identity,
+                    backend=backend, query_id=query_id,
                 )
-        expected_keys = {(q, n) for q in queries for n in range(1, 21)}
-        if seen_rows != expected_keys:
-            raise ValueError("capture is incomplete or contains duplicate observations")
+            else:
+                per_variant = {v[0]: [] for v in variants()}
+                compact = {v[0]: [] for v in variants()}
+                query_cache = {}
+                for row in query_captures:
+                    if max(row["lexical_acquired"], row["dense_acquired"]) > 80:
+                        raise ValueError("captured acquisition exceeds budget")
+                    for doc in row["evidence"]:
+                        if doc.get("revision") != suite.corpus["revision"] or not doc.get(
+                            "source_ref", ""
+                        ).startswith("repository://" + suite.corpus["repository"] + "/"):
+                            raise ValueError("captured evidence provenance differs from corpus")
+                    acquisition_key = mapping_fingerprint({
+                        "input": row["input"], "evidence": row["evidence"],
+                        "lexical_acquired": row["lexical_acquired"],
+                        "dense_acquired": row["dense_acquired"],
+                    })
+                    for variant in variants():
+                        cache_key = (acquisition_key, variant[0])
+                        if cache_key not in query_cache:
+                            query_cache[cache_key] = replay_row(
+                                row, variant, 80 if backend == "qdrant-vector" else 20,
+                                truths[query_id],
+                            )
+                        replayed = {**query_cache[cache_key], "iteration": row["iteration"]}
+                        per_variant[variant[0]].append(replayed)
+                        compact[variant[0]].append(compact_replay_row(replayed))
+                saved = {"observations": per_variant, "comparison_rows": compact}
+                save_checkpoint(
+                    checkpoint, identity_fingerprint=checkpoint_identity,
+                    backend=backend, query_id=query_id, payload=saved,
+                )
+            descriptor = {"query_id": query_id, "path": str(checkpoint)}
+            for variant in variants():
+                observations[backend][variant[0]].append(descriptor)
+                comparison_rows[backend][variant[0]].extend(
+                    saved["comparison_rows"][variant[0]]
+                )
+        for variant in variants():
+            validate_rows(comparison_rows[backend][variant[0]], queries, 20)
     comparisons = {
-        v[0]: {b: compare(observations[b]["control"], observations[b][v[0]]) for b in BACKENDS}
+        v[0]: {
+            b: compare(comparison_rows[b]["control"], comparison_rows[b][v[0]])
+            for b in BACKENDS
+        }
         for v in variants()[1:]
     } if selected == set(BACKENDS) else {}
     axis_pairs = [
@@ -1090,7 +1167,7 @@ def replay(args):
     ]
     pairs = {
         a + "/" + b: {
-            backend: compare(observations[backend][a], observations[backend][b])
+            backend: compare(comparison_rows[backend][a], comparison_rows[backend][b])
             for backend in BACKENDS
         }
         for a, b in axis_pairs
@@ -1105,12 +1182,14 @@ def replay(args):
             "identity": capture["identity"],
             "snapshots": capture["snapshots"],
             "backend_artifacts": sorted(selected),
+            "checkpoint_identities": checkpoint_identities,
             "measurement": capture["measurement"],
             "capture_fingerprint": digest(args.capture),
             "observations": observations,
             "aggregates": {
-                backend: {key: summarize(rows) for key, rows in arms.items()}
-                for backend, arms in observations.items()
+                backend: {
+                    key: summarize(comparison_rows[backend][key]) for key in arms
+                } for backend, arms in observations.items()
             },
             "comparisons": comparisons,
             "one_axis_comparisons": pairs,
@@ -1256,6 +1335,9 @@ def consolidate(args):
             if arm not in merged["captures"] or len(merged["captures"][arm]) != len(merged["query_ids"]):
                 raise ValueError("capture backend is missing validated query checkpoints")
             expected_fp = merged["checkpoint_identities"][arm]
+            query_ids = [descriptor["query_id"] for descriptor in merged["captures"][arm]]
+            if len(set(query_ids)) != len(query_ids) or set(query_ids) != set(merged["query_ids"]):
+                raise ValueError("capture backend has duplicate or missing query checkpoints")
             for descriptor in merged["captures"][arm]:
                 load_checkpoint(
                     Path(descriptor["path"]), identity_fingerprint=expected_fp,
@@ -1263,19 +1345,32 @@ def consolidate(args):
                 )
     else:
         merged["observations"] = {}
+        comparison_rows = {}
         merged["capture_fingerprints"] = {}
         for backend, artifact in backend_by_artifact.items():
             merged["observations"][backend] = artifact["observations"][backend]
             merged["capture_fingerprints"][backend] = artifact["capture_fingerprint"]
+            comparison_rows[backend] = {variant[0]: [] for variant in variants()}
+            expected_fp = artifact["checkpoint_identities"][backend]
+            for descriptor in artifact["observations"][backend]["control"]:
+                payload = load_checkpoint(
+                    Path(descriptor["path"]), identity_fingerprint=expected_fp,
+                    backend=backend, query_id=descriptor["query_id"],
+                )
+                for variant, rows in payload["comparison_rows"].items():
+                    comparison_rows[backend][variant].extend(rows)
         merged["aggregates"] = {
-            backend: {key: summarize(rows) for key, rows in arms.items()}
-            for backend, arms in merged["observations"].items()
+            backend: {
+                key: summarize(comparison_rows[backend][key])
+                for key in merged["observations"][backend]
+            }
+            for backend in BACKENDS
         }
         merged["comparisons"] = {
             variant[0]: {
                 backend: compare(
-                    merged["observations"][backend]["control"],
-                    merged["observations"][backend][variant[0]],
+                    comparison_rows[backend]["control"],
+                    comparison_rows[backend][variant[0]],
                 ) for backend in BACKENDS
             } for variant in variants()[1:]
         }
@@ -1288,7 +1383,7 @@ def consolidate(args):
         merged["one_axis_comparisons"] = {
             a + "/" + b: {
                 backend: compare(
-                    merged["observations"][backend][a], merged["observations"][backend][b]
+                    comparison_rows[backend][a], comparison_rows[backend][b]
                 ) for backend in BACKENDS
             } for a, b in axis_pairs
         }
