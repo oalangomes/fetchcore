@@ -1467,13 +1467,22 @@ def consolidate(args):
             raise ValueError("backend artifact measurement/query manifests differ")
     backend_by_artifact = {}
     for artifact in artifacts:
-        backends = {
-            backend for backend in BACKENDS
-            if any(key.startswith(arm_id(backend, "hybrid")) for key in artifact.get("observations", {}))
-            or arm_id(backend, "hybrid") in artifact.get("captures", {})
-            or arm_id(backend, "hybrid") in artifact.get("snapshots", {})
-            or backend in artifact.get("backend_artifacts", [])
-        }
+        if stage == "replay":
+            # Per-backend replay artifacts carry the full common snapshot map
+            # from consolidated capture, so identify them by their explicit
+            # backend manifest instead of mistaking shared snapshots for three
+            # measured backends.
+            backends = set(artifact.get("backend_artifacts", []))
+        else:
+            backends = {
+                backend for backend in BACKENDS
+                if any(
+                    key.startswith(arm_id(backend, "hybrid"))
+                    for key in artifact.get("observations", {})
+                )
+                or arm_id(backend, "hybrid") in artifact.get("captures", {})
+                or arm_id(backend, "hybrid") in artifact.get("snapshots", {})
+            }
         if len(backends) != 1:
             raise ValueError("each input must contain exactly one backend")
         backend = next(iter(backends))

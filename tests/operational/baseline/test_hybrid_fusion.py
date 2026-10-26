@@ -504,6 +504,14 @@ def test_frozen_historical_and_confirmation_inputs_attest():
     assert identity["ground_truth_fingerprint"] == suite.fingerprint
     assert evidence.PROTOCOL == "fetchcore.search-intent-v2-evidence"
 
+    confirmation_dir = ROOT / "benchmarks/hybrid-fusion"
+    confirmation_path = confirmation_dir / "confirmation-queries.json"
+    review = json.loads((confirmation_dir / "confirmation-review.json").read_text())
+    assert BENCH.digest(confirmation_path) == review["queries_sha256"]
+    confirmation = BENCH.load_baseline_suite(confirmation_path)
+    assert len(confirmation.cases) == 10
+    assert all(case.intent.canonical_query for case in confirmation.cases)
+
 
 def test_offline_aggregation_never_invents_latency():
     truth, capture = fixture()
@@ -672,7 +680,12 @@ def test_complete_offline_replay_reuses_identical_acquisitions(tmp_path, monkeyp
             "stage": "capture",
             "status": "complete",
             "identity": identity,
-            "snapshots": {},
+            "snapshots": {
+                BENCH.arm_id(backend, mode): {
+                    "backend": backend, "mode": mode, "projection": "frozen-shared"
+                }
+                for backend in BENCH.BACKENDS for mode in ("dense", "hybrid")
+            },
             "measurement": BENCH.FULL_MEASUREMENT,
             "measurement_kind": "real",
             "captures": captures,
