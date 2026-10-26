@@ -39,13 +39,20 @@ recorded ownership/configuration before starting resources. Incompatible or
 missing snapshots stop the selected backend before retrieval.
 
 Each online invocation handles one backend. It atomically writes one checksummed
-checkpoint per query under `<output>.checkpoints/<backend>/`. `--resume` validates
-the runner/input/configuration fingerprint and checksum, then skips only queries
-with valid checkpoints. An interrupted query without a complete checkpoint is
-measured again. The final per-backend artifact is written only after all its
-queries and post-run snapshot checks pass. `consolidate` validates all three
-per-backend artifacts before writing the combined manifest. Keep each backend's
-output and checkpoint directory together.
+checkpoint per query and arm under `<output>.checkpoints/<backend>/<arm>/`.
+`--resume` validates the runner/runtime, corpus, query, configuration, control,
+model, snapshot, backend, arm, and query identities plus the full payload
+checksum. An absent checkpoint means the query is still pending and will run. An
+existing corrupt or incompatible checkpoint is rejected and preserved; it is
+never silently deleted, replaced, or treated as absent. A query interrupted
+before the atomic checkpoint commit runs again. The final per-backend artifact is
+written only after all its queries and post-run snapshot checks pass.
+`consolidate` validates all three per-backend artifacts before writing the
+combined manifest. Keep each backend's output and checkpoint directory together.
+
+`confirm` is a cross-backend stage because finalist selection and acceptance
+compare all three backends. Do not pass `--backend`; `--resume` resumes the joint
+stage's checksummed per-query records for all three arms and the fixed holdout.
 
 Offline replay also writes one checksummed result checkpoint per backend/query;
 its artifact contains references and aggregate metrics rather than the expanded
@@ -71,8 +78,11 @@ python3.11 benchmarks/hybrid-fusion/run.py consolidate \
   --backend-artifact /private/hybrid84/control-qdrant.json.gz \
   --output /private/hybrid84/control.json.gz
 
-# On interruption, repeat the same backend command with --resume and the same paths.
-# Example: add --resume to the original Solr control command above.
+# On interruption, repeat the affected command with --resume and the same paths.
+# Example:
+python3.11 benchmarks/hybrid-fusion/run.py control --backend solr \
+  --run-config /private/bench-config.json --workspace /private/frozen-corpus \
+  --output /private/hybrid84/control-solr.json.gz --resume
 
 python3.11 benchmarks/hybrid-fusion/run.py capture --backend solr \
   --run-config /private/bench-config.json --workspace /private/frozen-corpus \
@@ -87,14 +97,31 @@ python3.11 benchmarks/hybrid-fusion/run.py capture --backend qdrant \
   --control /private/hybrid84/control.json.gz \
   --output /private/hybrid84/capture-qdrant.json.gz
 python3.11 benchmarks/hybrid-fusion/run.py consolidate \
+  --control /private/hybrid84/control.json.gz \
   --backend-artifact /private/hybrid84/capture-solr.json.gz \
   --backend-artifact /private/hybrid84/capture-opensearch.json.gz \
   --backend-artifact /private/hybrid84/capture-qdrant.json.gz \
   --output /private/hybrid84/capture.json.gz
 
-python3.11 benchmarks/hybrid-fusion/run.py replay \
+python3.11 benchmarks/hybrid-fusion/run.py replay --backend solr \
   --capture /private/hybrid84/capture.json.gz \
+  --output /private/hybrid84/replay-solr.json.gz
+python3.11 benchmarks/hybrid-fusion/run.py replay --backend opensearch \
+  --capture /private/hybrid84/capture.json.gz \
+  --output /private/hybrid84/replay-opensearch.json.gz
+python3.11 benchmarks/hybrid-fusion/run.py replay --backend qdrant \
+  --capture /private/hybrid84/capture.json.gz \
+  --output /private/hybrid84/replay-qdrant.json.gz
+python3.11 benchmarks/hybrid-fusion/run.py consolidate \
+  --backend-artifact /private/hybrid84/replay-solr.json.gz \
+  --backend-artifact /private/hybrid84/replay-opensearch.json.gz \
+  --backend-artifact /private/hybrid84/replay-qdrant.json.gz \
   --output /private/hybrid84/replay.json.gz
+
+# Resume an interrupted replay with the original capture, output and checkpoint paths.
+python3.11 benchmarks/hybrid-fusion/run.py replay --backend solr \
+  --capture /private/hybrid84/capture.json.gz \
+  --output /private/hybrid84/replay-solr.json.gz --resume
 
 python3.11 benchmarks/hybrid-fusion/run.py confirm \
   --run-config /private/bench-config.json --workspace /private/frozen-corpus \

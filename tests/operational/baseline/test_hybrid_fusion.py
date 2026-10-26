@@ -135,6 +135,8 @@ def test_artifact_seal_incomplete_and_corrupt_rejected(tmp_path):
 
 
 def test_query_checkpoint_is_atomic_checksummed_and_identity_bound(tmp_path):
+    import gzip
+
     path = BENCH.checkpoint_path(tmp_path, "solr", "query/with unsafe path")
     payload = {"observations": {"arm/control": [{"iteration": 1}]}, "captures": []}
     BENCH.save_checkpoint(
@@ -151,6 +153,15 @@ def test_query_checkpoint_is_atomic_checksummed_and_identity_bound(tmp_path):
             path, identity_fingerprint="sha256:runner-b", backend="solr",
             query_id="query/with unsafe path",
         )
+    with pytest.raises(ValueError, match="identity mismatch"):
+        BENCH.load_checkpoint(
+            path, identity_fingerprint="sha256:runner-a", backend="opensearch",
+            query_id="query/with unsafe path",
+        )
+    with pytest.raises(ValueError, match="identity mismatch"):
+        BENCH.load_checkpoint(
+            path, identity_fingerprint="sha256:runner-a", backend="solr", query_id="other-query"
+        )
     damaged = bytearray(path.read_bytes())
     damaged[-5] ^= 1
     path.write_bytes(damaged)
@@ -159,6 +170,51 @@ def test_query_checkpoint_is_atomic_checksummed_and_identity_bound(tmp_path):
             path, identity_fingerprint="sha256:runner-a", backend="solr",
             query_id="query/with unsafe path",
         )
+    assert BENCH.checkpoint_path(tmp_path, "solr", "q", partition="solr-dense") != BENCH.checkpoint_path(
+        tmp_path, "solr", "q", partition="solr-hybrid"
+    )
+    sealed_path = BENCH.checkpoint_path(tmp_path, "solr", "checksum-query")
+    BENCH.save_checkpoint(
+        sealed_path, identity_fingerprint="sha256:runner-a", backend="solr",
+        query_id="checksum-query", payload={"value": "original"},
+    )
+    sealed = json.loads(gzip.decompress(sealed_path.read_bytes()))
+    sealed["payload"]["value"] = "tampered"
+    sealed_path.write_bytes(gzip.compress(json.dumps(sealed).encode(), mtime=0))
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        BENCH.load_checkpoint(
+            sealed_path, identity_fingerprint="sha256:runner-a", backend="solr",
+            query_id="checksum-query",
+        )
+
+
+def test_resume_counter_runs_missing_queries_and_reuses_only_valid_ones(tmp_path):
+    calls = []
+    identity = "sha256:fixed-inputs"
+
+    def execute(query_id, *, resume):
+        path = BENCH.checkpoint_path(tmp_path, "solr", query_id, partition="solr-hybrid")
+        payload = BENCH.reusable_checkpoint(
+            path, resume=resume, identity_fingerprint=identity,
+            backend="solr", query_id=query_id,
+        )
+        if payload is None:
+            calls.append(query_id)
+            payload = {"query_id": query_id, "measurement": len(calls)}
+            BENCH.save_checkpoint(
+                path, identity_fingerprint=identity, backend="solr", query_id=query_id,
+                payload=payload,
+            )
+        return payload
+
+    execute("q1", resume=False)
+    execute("q2", resume=False)
+    assert calls == ["q1", "q2"]
+    execute("q1", resume=True)
+    execute("q2", resume=True)
+    assert calls == ["q1", "q2"]
+    execute("q3", resume=True)  # absent means pending, so it runs
+    assert calls == ["q1", "q2", "q3"]
 
 
 def test_interrupted_run_can_resume_only_valid_completed_query_checkpoints(tmp_path):
@@ -195,11 +251,14 @@ def test_replay_reads_query_shards_without_requiring_legacy_capture_array(tmp_pa
     )
     capture = {
         "captures": {
-            BENCH.arm_id("solr", "hybrid"): [{"query_id": "q1", "path": str(path)}]
+            BENCH.arm_id("solr", "hybrid"): [BENCH.checkpoint_descriptor(path, "q1")]
         },
         "checkpoint_identities": {BENCH.arm_id("solr", "hybrid"): identity},
     }
     assert list(BENCH.iter_capture_rows(capture, "solr", ["q1"])) == rows
+    path.write_bytes(path.read_bytes() + b"tampered shard")
+    with pytest.raises(ValueError, match="checkpoint file checksum mismatch"):
+        list(BENCH.iter_capture_rows(capture, "solr", ["q1"]))
 
 
 def test_checkpoint_persistence_memory_tracks_one_query_not_total_run(tmp_path):
@@ -227,6 +286,148 @@ def test_consolidation_waits_for_all_three_backends(tmp_path):
             SimpleNamespace(output=tmp_path / "combined.json.gz", backend_artifact=["one", "two"])
         )
     assert not (tmp_path / "combined.json.gz").exists()
+
+
+def test_capture_consolidation_binds_control_snapshots_and_validates_query_shards(tmp_path):
+    from types import SimpleNamespace
+
+    query_ids = [f"q{i}" for i in range(20)]
+    identity = {"corpus": {"repository": "acme/repo", "revision": "rev"}}
+    embedding = {"provider": "ollama", "model": "embeddinggemma", "dimensions": 768}
+    services = {"solr": "s1", "opensearch": "o1", "qdrant": "q1", "ollama": "v1"}
+    environment = {
+        "profile_id": "fetchcore-hybrid-fusion-v1", "python_version": "3.11.16",
+        "platform_system": "Linux", "platform_release": "test", "machine": "x86_64",
+        "cpu_count": 8, "embedding": embedding, "services": services,
+    }
+    snapshots = {
+        BENCH.arm_id(backend, mode): {"backend": backend, "mode": mode}
+        for backend in BENCH.BACKENDS for mode in ("dense", "hybrid")
+    }
+    observations = {
+        BENCH.arm_id(backend, mode): [
+            {"query_id": query_id, "iteration": iteration, "result_spans": []}
+            for query_id in query_ids for iteration in range(1, 21)
+        ]
+        for backend in BENCH.BACKENDS for mode in ("dense", "hybrid")
+    }
+    control_path = tmp_path / "control.json.gz"
+    BENCH.write(control_path, {
+        "protocol": BENCH.PROTOCOL, "schema_version": 1, "stage": "control",
+        "status": "complete", "identity": identity, "measurement": BENCH.FULL_MEASUREMENT,
+        "measurement_kind": "real", "query_ids": query_ids, "observations": observations,
+        "snapshots": snapshots, "snapshot_errors": {}, "environment": environment,
+        "service_versions": services, "embedding_identity": embedding,
+        "embedding_digest": "sha256:model", "consolidated_backends": list(BENCH.BACKENDS),
+    })
+    control_fingerprint = BENCH.digest(control_path)
+    artifacts = []
+    qdrant_capture_path = None
+    qdrant_capture_payload = None
+    for backend in BENCH.BACKENDS:
+        arm = BENCH.arm_id(backend, "hybrid")
+        checkpoint_identity = f"sha256:{backend}-capture"
+        descriptors = []
+        for query_id in query_ids:
+            captures = [
+                {"query_id": query_id, "iteration": iteration, "evidence": []}
+                for iteration in range(1, 21)
+            ]
+            rows = [{"query_id": query_id, "iteration": iteration} for iteration in range(1, 21)]
+            checkpoint = BENCH.checkpoint_path(
+                tmp_path / f"{backend}.checkpoints", backend, query_id, partition=arm
+            )
+            BENCH.save_checkpoint(
+                checkpoint, identity_fingerprint=checkpoint_identity,
+                backend=backend, query_id=query_id,
+                payload={"observations": {arm + "/control": rows}, "captures": captures},
+            )
+            descriptors.append(BENCH.checkpoint_descriptor(checkpoint, query_id))
+        artifact_path = tmp_path / f"capture-{backend}.json.gz"
+        BENCH.write(artifact_path, {
+            "protocol": BENCH.PROTOCOL, "schema_version": 1, "stage": "capture",
+            "status": "complete", "identity": identity, "measurement": BENCH.FULL_MEASUREMENT,
+            "measurement_kind": "real", "query_ids": query_ids,
+            "snapshots": {arm: snapshots[arm], BENCH.arm_id(backend, "dense"): snapshots[BENCH.arm_id(backend, "dense")]},
+            "captures": {arm: descriptors}, "checkpoint_identities": {arm: checkpoint_identity},
+            "control_artifact_fingerprint": control_fingerprint,
+            "environment": environment, "embedding_identity": embedding,
+            "embedding_digest": "sha256:model",
+        })
+        artifacts.append(artifact_path)
+        if backend == "qdrant-vector":
+            qdrant_capture_path = artifact_path
+            qdrant_capture_payload = BENCH.read(artifact_path, stage="capture")
+    output = tmp_path / "capture.json.gz"
+    BENCH.consolidate(SimpleNamespace(
+        output=output, backend_artifact=artifacts, control=control_path,
+    ))
+    result = BENCH.read(output, stage="capture")
+    assert result["consolidated_backends"] == list(BENCH.BACKENDS)
+    assert all(len(result["captures"][BENCH.arm_id(b, "hybrid")]) == 20 for b in BENCH.BACKENDS)
+
+    altered = BENCH.read(qdrant_capture_path, stage="capture")
+    altered["snapshots"][BENCH.arm_id("qdrant-vector", "hybrid")] = {"snapshot": "other"}
+    BENCH.write(qdrant_capture_path, altered)
+    rejected = tmp_path / "rejected.json.gz"
+    with pytest.raises(ValueError, match="snapshot differs"):
+        BENCH.consolidate(SimpleNamespace(
+            output=rejected, backend_artifact=artifacts, control=control_path,
+        ))
+    assert not rejected.exists()
+
+    wrong_control = tmp_path / "different-control.json.gz"
+    different = BENCH.read(control_path, stage="control")
+    different["decision"] = "re-sealed but distinct control artifact"
+    BENCH.write(wrong_control, different)
+    altered = dict(qdrant_capture_payload)
+    altered["control_artifact_fingerprint"] = BENCH.digest(wrong_control)
+    BENCH.write(qdrant_capture_path, altered)
+    with pytest.raises(ValueError, match="runner/input identities differ|different controls"):
+        BENCH.consolidate(SimpleNamespace(
+            output=tmp_path / "mixed-controls.json.gz",
+            backend_artifact=artifacts, control=wrong_control,
+        ))
+    assert not (tmp_path / "mixed-controls.json.gz").exists()
+
+    altered = dict(qdrant_capture_payload)
+    altered["captures"] = dict(altered["captures"])
+    altered["captures"][BENCH.arm_id("qdrant-vector", "hybrid")] = altered["captures"][
+        BENCH.arm_id("qdrant-vector", "hybrid")
+    ][:-1]
+    BENCH.write(qdrant_capture_path, altered)
+    with pytest.raises(ValueError, match="missing validated query checkpoints"):
+        BENCH.consolidate(SimpleNamespace(
+            output=tmp_path / "missing-shard.json.gz",
+            backend_artifact=artifacts, control=control_path,
+        ))
+    assert not (tmp_path / "missing-shard.json.gz").exists()
+
+    with pytest.raises(ValueError, match="duplicate backend artifact"):
+        BENCH.consolidate(SimpleNamespace(
+            output=tmp_path / "duplicate-backend.json.gz",
+            backend_artifact=[artifacts[0], artifacts[0], artifacts[2]],
+            control=control_path,
+        ))
+    assert not (tmp_path / "duplicate-backend.json.gz").exists()
+
+
+def test_confirm_rejects_independent_backend_selection(tmp_path):
+    import os
+    import subprocess
+
+    result = subprocess.run(
+        [
+            sys.executable, str(ROOT / "benchmarks/hybrid-fusion/run.py"), "confirm",
+            "--backend", "solr", "--run-config", str(tmp_path / "config.json"),
+            "--workspace", str(tmp_path / "workspace"), "--control", str(tmp_path / "control.json"),
+            "--replay", str(tmp_path / "replay.json"), "--output", str(tmp_path / "out.json"),
+        ],
+        capture_output=True, text=True, check=False,
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+    )
+    assert result.returncode == 2
+    assert "cross-backend stage" in result.stderr
 
 
 def test_missing_materialization_and_tampered_fusion_input_fail_closed():
@@ -315,10 +516,12 @@ def test_offline_aggregation_never_invents_latency():
 
 
 def test_public_report_excludes_private_provider_metadata(tmp_path):
-    from types import SimpleNamespace
+    import os
+    import subprocess
 
     source = tmp_path / "private.json"
     destination = tmp_path / "public.json"
+    diagnostics = tmp_path / "public-diagnostics.json"
     BENCH.write(
         source,
         {
@@ -326,7 +529,10 @@ def test_public_report_excludes_private_provider_metadata(tmp_path):
             "schema_version": 1,
             "stage": "control",
             "status": "blocked",
-            "identity": {"runtime": {"revision": "fixture"}},
+            "identity": {
+                "runtime": {"revision": "fixture", "private_path": "/secret/runner"},
+                "private_path": "/private/config.json",
+            },
             "error": "secret-private-endpoint",
             "captures": {"content": "private source"},
             "snapshot_errors": {
@@ -346,8 +552,18 @@ def test_public_report_excludes_private_provider_metadata(tmp_path):
             },
         },
     )
-    BENCH.report(SimpleNamespace(artifact=source, output=destination))
+    completed = subprocess.run(
+        [
+            sys.executable, str(ROOT / "benchmarks/hybrid-fusion/run.py"), "report",
+            "--artifact", str(source), "--output", str(destination),
+            "--diagnostics-output", str(diagnostics),
+        ],
+        capture_output=True, text=True, check=False,
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+    )
+    assert completed.returncode == 0, completed.stderr
     text = destination.read_text()
+    diagnostics_text = diagnostics.read_text()
     assert (
         "private endpoint" not in text
         and "private host" not in text
@@ -355,6 +571,11 @@ def test_public_report_excludes_private_provider_metadata(tmp_path):
     )
     assert "secret-private-endpoint" not in text
     assert "sha256:old" in text
+    assert "/secret/runner" not in text + diagnostics_text
+    assert "/private/config.json" not in text + diagnostics_text
+    assert "private source" not in diagnostics_text
+    assert "private endpoint" not in diagnostics_text
+    assert BENCH.read(diagnostics, complete=False)["stage"] == "control"
 
 
 def rebuild_module(monkeypatch):
@@ -442,7 +663,7 @@ def test_complete_offline_replay_reuses_identical_acquisitions(tmp_path, monkeyp
         for b in BENCH.BACKENDS
     }
     source = tmp_path / "capture.json.gz"
-    output = tmp_path / "replay.json.gz"
+    outputs = []
     BENCH.write(
         source,
         {
@@ -465,7 +686,13 @@ def test_complete_offline_replay_reuses_identical_acquisitions(tmp_path, monkeyp
         return original(*args, **kwargs)
 
     monkeypatch.setattr(BENCH, "replay_row", checked)
-    BENCH.replay(SimpleNamespace(capture=source, output=output))
+    for backend in BENCH.BACKENDS:
+        output = tmp_path / f"replay-{backend}.json.gz"
+        BENCH.replay(SimpleNamespace(capture=source, output=output, backend=backend))
+        outputs.append(output)
+    combined_output = tmp_path / "replay.json.gz"
+    BENCH.consolidate(SimpleNamespace(output=combined_output, backend_artifact=outputs))
+    output = combined_output
     result = BENCH.read(output, stage="replay")
     assert len(calls) == 3 * 20 * len(BENCH.variants())
     for backend in BENCH.BACKENDS:
@@ -481,3 +708,47 @@ def test_complete_offline_replay_reuses_identical_acquisitions(tmp_path, monkeyp
             assert len(payload["observations"][variant[0]]) == 20
             assert result["aggregates"][backend][variant[0]]["duration_ms"] is None
     assert result["finalists"] == []
+
+    mismatched_references = BENCH.read(outputs[0], stage="replay")
+    mismatched_references["observations"]["solr"][BENCH.variants()[1][0]][0]["sha256"] = "0" * 64
+    mismatched_path = tmp_path / "replay-solr-mismatched-reference.json.gz"
+    BENCH.write(mismatched_path, mismatched_references)
+    with pytest.raises(ValueError, match="variants reference different query checkpoints"):
+        BENCH.consolidate(SimpleNamespace(
+            output=tmp_path / "mismatched-replay.json.gz",
+            backend_artifact=[mismatched_path, outputs[1], outputs[2]],
+        ))
+    assert not (tmp_path / "mismatched-replay.json.gz").exists()
+
+    resume_output = tmp_path / "resumed-solr-replay.json.gz"
+    checkpoint_dir = Path(str(resume_output) + ".checkpoints")
+    backend = "solr"
+    query_id = next(iter(queries))
+    checkpoint_identity = BENCH.mapping_fingerprint({
+        "stage": "replay", "capture_fingerprint": BENCH.digest(source),
+        "identity": identity, "backend": backend,
+        "variants": [v[0] for v in BENCH.variants()],
+    })
+    query_captures = [
+        capture_row for capture_row in captures[BENCH.arm_id(backend, "hybrid")]
+        if capture_row["query_id"] == query_id
+    ]
+    replay_observations = {v[0]: [] for v in BENCH.variants()}
+    comparison_rows = {v[0]: [] for v in BENCH.variants()}
+    truth = next(case.truth for case in suite.cases if case.query_id == query_id)
+    for capture_row in query_captures:
+        for variant in BENCH.variants():
+            replayed = BENCH.replay_row(capture_row, variant, 20, truth)
+            replay_observations[variant[0]].append(replayed)
+            comparison_rows[variant[0]].append(BENCH.compact_replay_row(replayed))
+    checkpoint = BENCH.checkpoint_path(checkpoint_dir, backend, query_id)
+    BENCH.save_checkpoint(
+        checkpoint, identity_fingerprint=checkpoint_identity, backend=backend,
+        query_id=query_id,
+        payload={"observations": replay_observations, "comparison_rows": comparison_rows},
+    )
+    calls.clear()
+    BENCH.replay(SimpleNamespace(
+        capture=source, output=resume_output, backend=backend, resume=True,
+    ))
+    assert len(calls) == 19 * len(BENCH.variants())
