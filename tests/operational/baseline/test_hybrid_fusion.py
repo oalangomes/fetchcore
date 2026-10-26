@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import tracemalloc
 
 import pytest
 
@@ -131,6 +132,101 @@ def test_artifact_seal_incomplete_and_corrupt_rejected(tmp_path):
     path.write_text(json.dumps(edited))
     with pytest.raises(ValueError, match="checksum"):
         BENCH.read(path)
+
+
+def test_query_checkpoint_is_atomic_checksummed_and_identity_bound(tmp_path):
+    path = BENCH.checkpoint_path(tmp_path, "solr", "query/with unsafe path")
+    payload = {"observations": {"arm/control": [{"iteration": 1}]}, "captures": []}
+    BENCH.save_checkpoint(
+        path, identity_fingerprint="sha256:runner-a", backend="solr",
+        query_id="query/with unsafe path", payload=payload,
+    )
+    assert BENCH.load_checkpoint(
+        path, identity_fingerprint="sha256:runner-a", backend="solr",
+        query_id="query/with unsafe path",
+    ) == payload
+    assert not list(path.parent.glob("*.tmp"))
+    with pytest.raises(ValueError, match="identity mismatch"):
+        BENCH.load_checkpoint(
+            path, identity_fingerprint="sha256:runner-b", backend="solr",
+            query_id="query/with unsafe path",
+        )
+    damaged = bytearray(path.read_bytes())
+    damaged[-5] ^= 1
+    path.write_bytes(damaged)
+    with pytest.raises(ValueError, match="invalid checkpoint|checksum mismatch"):
+        BENCH.load_checkpoint(
+            path, identity_fingerprint="sha256:runner-a", backend="solr",
+            query_id="query/with unsafe path",
+        )
+
+
+def test_interrupted_run_can_resume_only_valid_completed_query_checkpoints(tmp_path):
+    identity = "sha256:current-runner-and-inputs"
+    first = BENCH.checkpoint_path(tmp_path, "opensearch", "q1")
+    second = BENCH.checkpoint_path(tmp_path, "opensearch", "q2")
+    BENCH.save_checkpoint(
+        first, identity_fingerprint=identity, backend="opensearch", query_id="q1",
+        payload={"observations": {"arm/control": [{"iteration": 1}]}, "captures": []},
+    )
+    assert BENCH.load_checkpoint(
+        first, identity_fingerprint=identity, backend="opensearch", query_id="q1"
+    )["observations"]["arm/control"][0]["iteration"] == 1
+    assert not second.exists()  # interruption before q2: it must be measured on resume
+    BENCH.save_checkpoint(
+        second, identity_fingerprint=identity, backend="opensearch", query_id="q2",
+        payload={"observations": {"arm/control": [{"iteration": 1}]}, "captures": []},
+    )
+    with pytest.raises(ValueError, match="identity mismatch"):
+        BENCH.load_checkpoint(
+            first, identity_fingerprint="sha256:changed-runner", backend="opensearch", query_id="q1"
+        )
+
+
+def test_replay_reads_query_shards_without_requiring_legacy_capture_array(tmp_path):
+    _, row = fixture()
+    row["query_id"] = "q1"
+    rows = [{**row, "iteration": iteration} for iteration in range(1, 21)]
+    identity = "sha256:capture-fingerprint"
+    path = BENCH.checkpoint_path(tmp_path, "solr", "q1")
+    BENCH.save_checkpoint(
+        path, identity_fingerprint=identity, backend="solr", query_id="q1",
+        payload={"captures": rows, "observations": {}},
+    )
+    capture = {
+        "captures": {
+            BENCH.arm_id("solr", "hybrid"): [{"query_id": "q1", "path": str(path)}]
+        },
+        "checkpoint_identities": {BENCH.arm_id("solr", "hybrid"): identity},
+    }
+    assert list(BENCH.iter_capture_rows(capture, "solr", ["q1"])) == rows
+
+
+def test_checkpoint_persistence_memory_tracks_one_query_not_total_run(tmp_path):
+    tracemalloc.start()
+    try:
+        for index in range(12):
+            query_id = f"q{index}"
+            BENCH.save_checkpoint(
+                BENCH.checkpoint_path(tmp_path, "qdrant-vector", query_id),
+                identity_fingerprint="sha256:stable", backend="qdrant-vector",
+                query_id=query_id,
+                payload={"captures": [{"content": "x" * 750_000}], "observations": {}},
+            )
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 5_000_000
+
+
+def test_consolidation_waits_for_all_three_backends(tmp_path):
+    from types import SimpleNamespace
+
+    with pytest.raises(ValueError, match="exactly three"):
+        BENCH.consolidate(
+            SimpleNamespace(output=tmp_path / "combined.json.gz", backend_artifact=["one", "two"])
+        )
+    assert not (tmp_path / "combined.json.gz").exists()
 
 
 def test_missing_materialization_and_tampered_fusion_input_fail_closed():

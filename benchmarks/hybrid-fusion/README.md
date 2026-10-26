@@ -28,46 +28,87 @@ It does not increase acquisition or change output limits. RRF remains the existi
 
 ## Execution
 
-Run from an installed development checkout (or set `PYTHONPATH=src`). Keep raw
-outputs and the existing BENCH run configuration outside the repository. Use the
-schema of `benchmarks/baseline-v1/run-config.example.json`, with
-`provisioning: reuse_only`, `dedicated: true`, and owned dedicated BENCH resources.
-The runner checks current Docker ownership, volume bindings, endpoints and
-snapshots; it never starts containers, indexes, rebuilds, migrates or cleans up.
-Operators must verify recorded ownership/configuration before starting resources.
-Incompatible or missing snapshots stop **all arms before retrieval**.
+Run from an installed development checkout (or set `PYTHONPATH=src`) with
+Python **3.11.16**. Keep raw outputs, checkpoints, corpus, and the existing BENCH
+run configuration outside the repository. Use the schema of
+`benchmarks/baseline-v1/run-config.example.json`, with `provisioning: reuse_only`,
+`dedicated: true`, and owned dedicated BENCH resources. The runner checks current
+Docker ownership, volume bindings, endpoints and snapshots; it never starts
+containers, indexes, rebuilds, migrates or cleans up. Operators must verify
+recorded ownership/configuration before starting resources. Incompatible or
+missing snapshots stop the selected backend before retrieval.
+
+Each online invocation handles one backend. It atomically writes one checksummed
+checkpoint per query under `<output>.checkpoints/<backend>/`. `--resume` validates
+the runner/input/configuration fingerprint and checksum, then skips only queries
+with valid checkpoints. An interrupted query without a complete checkpoint is
+measured again. The final per-backend artifact is written only after all its
+queries and post-run snapshot checks pass. `consolidate` validates all three
+per-backend artifacts before writing the combined manifest. Keep each backend's
+output and checkpoint directory together.
 
 ```bash
-python benchmarks/hybrid-fusion/run.py control \
+python3.11 --version  # must print Python 3.11.16
+
+python3.11 benchmarks/hybrid-fusion/run.py control --backend solr \
   --run-config /private/bench-config.json --workspace /private/frozen-corpus \
+  --output /private/hybrid84/control-solr.json.gz
+python3.11 benchmarks/hybrid-fusion/run.py control --backend opensearch \
+  --run-config /private/bench-config.json --workspace /private/frozen-corpus \
+  --output /private/hybrid84/control-opensearch.json.gz
+python3.11 benchmarks/hybrid-fusion/run.py control --backend qdrant \
+  --run-config /private/bench-config.json --workspace /private/frozen-corpus \
+  --output /private/hybrid84/control-qdrant.json.gz
+python3.11 benchmarks/hybrid-fusion/run.py consolidate \
+  --backend-artifact /private/hybrid84/control-solr.json.gz \
+  --backend-artifact /private/hybrid84/control-opensearch.json.gz \
+  --backend-artifact /private/hybrid84/control-qdrant.json.gz \
   --output /private/hybrid84/control.json.gz
 
-python benchmarks/hybrid-fusion/run.py capture \
+# On interruption, repeat the same backend command with --resume and the same paths.
+# Example: add --resume to the original Solr control command above.
+
+python3.11 benchmarks/hybrid-fusion/run.py capture --backend solr \
   --run-config /private/bench-config.json --workspace /private/frozen-corpus \
   --control /private/hybrid84/control.json.gz \
+  --output /private/hybrid84/capture-solr.json.gz
+python3.11 benchmarks/hybrid-fusion/run.py capture --backend opensearch \
+  --run-config /private/bench-config.json --workspace /private/frozen-corpus \
+  --control /private/hybrid84/control.json.gz \
+  --output /private/hybrid84/capture-opensearch.json.gz
+python3.11 benchmarks/hybrid-fusion/run.py capture --backend qdrant \
+  --run-config /private/bench-config.json --workspace /private/frozen-corpus \
+  --control /private/hybrid84/control.json.gz \
+  --output /private/hybrid84/capture-qdrant.json.gz
+python3.11 benchmarks/hybrid-fusion/run.py consolidate \
+  --backend-artifact /private/hybrid84/capture-solr.json.gz \
+  --backend-artifact /private/hybrid84/capture-opensearch.json.gz \
+  --backend-artifact /private/hybrid84/capture-qdrant.json.gz \
   --output /private/hybrid84/capture.json.gz
 
-python benchmarks/hybrid-fusion/run.py replay \
+python3.11 benchmarks/hybrid-fusion/run.py replay \
   --capture /private/hybrid84/capture.json.gz \
   --output /private/hybrid84/replay.json.gz
 
-python benchmarks/hybrid-fusion/run.py confirm \
+python3.11 benchmarks/hybrid-fusion/run.py confirm \
   --run-config /private/bench-config.json --workspace /private/frozen-corpus \
   --control /private/hybrid84/control.json.gz \
   --replay /private/hybrid84/replay.json.gz \
   --output /private/hybrid84/confirmation.json.gz
 
-python benchmarks/hybrid-fusion/run.py report \
+python3.11 benchmarks/hybrid-fusion/run.py report \
   --artifact /private/hybrid84/confirmation.json.gz \
   --output /private/hybrid84/public-report.json
 ```
 
-Raw output paths must be new and outside the repository. Artifacts are sealed
-with canonical checksums; incomplete, tampered, duplicate or incompatible input
-observations fail explicitly. Record the runtime and runner source fingerprints,
-exact revision/dirty status, effective configuration identity and model digest.
-Do not edit code or the configuration between stages. A corrected run uses a new
-output, rather than merging partial measurements or overwriting history.
+Raw output paths must be new and outside the repository. Artifacts and query
+checkpoints are sealed with canonical checksums; incomplete, tampered, duplicate,
+fingerprint-incompatible or cross-backend-mixed inputs fail explicitly. Record
+the runtime and runner source fingerprints, exact revision/dirty status, effective
+configuration identity and model digest. Do not edit code or the configuration
+between stages. A runner change changes its fingerprint: preserve old controls as
+historical evidence and create a new control with this runner. Resume only with
+the same runner, inputs, config, backend, snapshots and output/checkpoint paths.
 
 The control measures all three dense and hybrid arms through the application and
 real adapters. It must contain all 400 observations per arm and repeatable ranked

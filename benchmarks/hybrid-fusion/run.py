@@ -13,7 +13,9 @@ from pathlib import Path
 from statistics import mean
 import subprocess
 import sys
+import tempfile
 import time
+import zlib
 
 from fetchcore.application import (
     BackendRegistry,
@@ -41,6 +43,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 PROTOCOL = "fetchcore.hybrid-fusion-v1"
 BACKENDS = ("solr", "opensearch", "qdrant-vector")
+BACKEND_ALIASES = {"solr": "solr", "opensearch": "opensearch", "qdrant": "qdrant-vector"}
 FULL_MEASUREMENT = {
     "queries": 20,
     "k": 20,
@@ -91,6 +94,57 @@ def read(path, *, stage=None, complete=True):
     if complete and result.get("status") != "complete":
         raise ValueError("incomplete/blocked artifact cannot be used as evidence")
     return result
+
+
+def checkpoint_path(directory, backend, query_id):
+    """Return a stable, path-safe checkpoint name for one backend/query pair."""
+    key = hashlib.sha256(query_id.encode("utf-8")).hexdigest()
+    return directory / backend / (key + ".json.gz")
+
+
+def save_checkpoint(path, *, identity_fingerprint, backend, query_id, payload):
+    """Atomically persist a checksummed query checkpoint."""
+    body = {
+        "checkpoint_version": 1,
+        "identity_fingerprint": identity_fingerprint,
+        "backend": backend,
+        "query_id": query_id,
+        "payload": payload,
+    }
+    sealed = {**body, "checksum": mapping_fingerprint(body)}
+    raw = json.dumps(sealed, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    try:
+        with open(fd, "wb", closefd=True) as stream:
+            stream.write(gzip.compress(raw, mtime=0))
+            stream.flush()
+            import os
+
+            os.fsync(stream.fileno())
+        Path(temporary).replace(path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def load_checkpoint(path, *, identity_fingerprint, backend, query_id):
+    """Load only a complete, untampered checkpoint bound to this run."""
+    try:
+        sealed = json.loads(gzip.decompress(path.read_bytes()))
+    except (OSError, EOFError, gzip.BadGzipFile, json.JSONDecodeError, zlib.error) as exc:
+        raise ValueError(f"invalid checkpoint: {path.name}") from exc
+    checksum = sealed.pop("checksum", None)
+    if checksum != mapping_fingerprint(sealed):
+        raise ValueError(f"checkpoint checksum mismatch: {path.name}")
+    if (
+        sealed.get("checkpoint_version") != 1
+        or sealed.get("identity_fingerprint") != identity_fingerprint
+        or sealed.get("backend") != backend
+        or sealed.get("query_id") != query_id
+        or not isinstance(sealed.get("payload"), dict)
+    ):
+        raise ValueError(f"checkpoint identity mismatch: {path.name}")
+    return sealed["payload"]
 
 
 def runtime_identity():
@@ -417,12 +471,12 @@ def rank_finalists(comparisons):
     return [r[0] for r in sorted(eligible, key=lambda r: (-r[1], -r[2], r[3], r[0]))]
 
 
-def verify_control(control, identity):
+def verify_control(control, identity, backends=BACKENDS):
     if control["identity"] != identity or control["measurement"] != FULL_MEASUREMENT:
         raise ValueError("control measurement/corpus/runtime identity mismatch")
     if control.get("measurement_kind") != "real":
         raise ValueError("real control required")
-    for backend in BACKENDS:
+    for backend in backends:
         for mode in ("dense", "hybrid"):
             rows = control["observations"].get(arm_id(backend, mode), [])
             validate_rows(rows, control["query_ids"], 20)
@@ -436,6 +490,18 @@ def verify_control(control, identity):
                     raise ValueError(
                         "control ranked spans are not repeatable: " + backend + "/" + query
                     )
+
+
+def environment_matches_backend(expected, actual):
+    """Compare the host/model identity and the service subset measured this run."""
+    host_fields = (
+        "profile_id", "python_version", "platform_system", "platform_release",
+        "machine", "cpu_count", "embedding",
+    )
+    if any(expected.get(key) != actual.get(key) for key in host_fields):
+        return False
+    expected_services = expected.get("services", {})
+    return all(expected_services.get(key) == value for key, value in actual.get("services", {}).items())
 
 
 def promotion_gate(control, candidate, comparison, *, performance_comparable):
@@ -470,6 +536,31 @@ def promotion_gate(control, candidate, comparison, *, performance_comparable):
             if latency_ratio > 1.15:
                 reasons.append("p95-exceeds-15-percent")
     return {"passed": not reasons, "reasons": reasons, "p95_ratio": latency_ratio}
+
+
+def iter_capture_rows(capture, backend, queries):
+    """Yield legacy rows or validated query-shard rows one query at a time."""
+    captures = capture["captures"][arm_id(backend, "hybrid")]
+    if not captures or not (isinstance(captures[0], dict) and "path" in captures[0]):
+        validate_rows(captures, queries, 20)
+        yield from captures
+        return
+    seen_queries = set()
+    expected_fp = capture["checkpoint_identities"][arm_id(backend, "hybrid")]
+    for descriptor in captures:
+        query_id = descriptor["query_id"]
+        if query_id in seen_queries:
+            raise ValueError("duplicate query checkpoint in capture manifest")
+        seen_queries.add(query_id)
+        saved = load_checkpoint(
+            Path(descriptor["path"]), identity_fingerprint=expected_fp,
+            backend=backend, query_id=query_id,
+        )
+        query_rows = saved["captures"]
+        validate_rows(query_rows, [query_id], 20)
+        yield from query_rows
+    if seen_queries != set(queries):
+        raise ValueError("capture is missing query checkpoints")
 
 
 def performance_window(path, started, finished, config):
@@ -560,7 +651,15 @@ def context_for(args, *, rebuild=False):
 
 
 def online(args):
-    private_output(args.output)
+    if args.resume:
+        if args.output.exists():
+            raise ValueError("cannot resume a completed artifact")
+        if args.backend is None:
+            raise ValueError("--resume requires one explicit --backend")
+        if args.output.resolve().is_relative_to(ROOT):
+            raise ValueError("raw artifacts must be outside repository (private source)")
+    else:
+        private_output(args.output)
     evidence, suite, queries, identity, context, config = context_for(args)
     started = time.time()
     arms = [
@@ -570,6 +669,11 @@ def online(args):
         )
         if a.backend in BACKENDS and a.mode in ("dense", "hybrid")
     ]
+    if args.backend is not None:
+        selected_backend = BACKEND_ALIASES[args.backend]
+        arms = [a for a in arms if a.backend == selected_backend]
+        if not arms:
+            raise ValueError("no benchmark arms for backend " + args.backend)
     adapters = evidence.setup.benchmark_backend_adapters()
     scopes = {
         a.id: SearchScope(
@@ -599,6 +703,7 @@ def online(args):
         "snapshot_errors": {},
         "observations": {},
         "captures": {},
+        "checkpoint_identities": {},
         "performance_comparable": False,
         "performance_reason": "No independently attested exclusive measurement window; config alone is insufficient.",
     }
@@ -630,13 +735,18 @@ def online(args):
         )
         if args.command != "control":
             control = read(args.control, stage="control")
-            verify_control(control, identity)
-            if control["environment"] != run["environment"]:
+            verify_control(
+                control,
+                identity,
+                (BACKEND_ALIASES[args.backend],) if args.backend else BACKENDS,
+            )
+            if not environment_matches_backend(control["environment"], run["environment"]):
                 raise ValueError("environment changed since control")
-            if (
-                control["snapshots"] != run["snapshots"]
-                or control["embedding_digest"] != run["embedding_digest"]
-            ):
+            expected_snapshots = {
+                key: value for key, value in control["snapshots"].items()
+                if key in run["snapshots"]
+            }
+            if expected_snapshots != run["snapshots"] or control["embedding_digest"] != run["embedding_digest"]:
                 raise ValueError("snapshots/model changed since control")
         selected_variants = [("control", None, None, 60)]
         if args.command == "confirm":
@@ -646,6 +756,14 @@ def online(args):
             selected_variants += [
                 v for key in replay["finalists"] for v in variants() if v[0] == key
             ]
+        checkpoint_dir = args.checkpoint_dir or Path(str(args.output) + ".checkpoints")
+        if checkpoint_dir.resolve().is_relative_to(ROOT):
+            raise ValueError("checkpoint directory must be outside repository")
+        if args.resume:
+            if not checkpoint_dir.is_dir():
+                raise ValueError("checkpoint directory does not exist")
+        elif checkpoint_dir.exists():
+            raise ValueError("checkpoint directory exists; use --resume or choose a new output")
         for arm in arms:
             if args.command != "control" and arm.mode != "hybrid":
                 continue
@@ -656,52 +774,64 @@ def online(args):
             for variant in selected_variants:
                 run["observations"][arm.id + "/" + variant[0]] = []
             run["captures"][arm.id] = []
-            for iteration in range(-1, 20):
-                for qi, case in enumerate(suite.cases):
-                    order = (
-                        selected_variants if (qi + iteration) % 2 == 0 else selected_variants[::-1]
+            checkpoint_identity = mapping_fingerprint({
+                "stage": args.command, "identity": identity, "snapshots": run["snapshots"],
+                "environment": run["environment"], "embedding_digest": run["embedding_digest"],
+                "measurement": FULL_MEASUREMENT, "backend": arm.backend,
+                "variants": [v[0] for v in selected_variants],
+                "workspace": str(args.workspace.resolve()),
+                "control_artifact": digest(args.control) if args.control else None,
+                "replay_artifact": digest(args.replay) if args.replay else None,
+            })
+            run["checkpoint_identities"][arm.id] = checkpoint_identity
+            for qi, case in enumerate(suite.cases):
+                checkpoint = checkpoint_path(checkpoint_dir, arm.backend, case.query_id)
+                if args.resume and checkpoint.exists():
+                    saved = load_checkpoint(
+                        checkpoint, identity_fingerprint=checkpoint_identity,
+                        backend=arm.backend, query_id=case.query_id,
                     )
+                    for key, rows in saved["observations"].items():
+                        run["observations"].setdefault(key, []).extend(rows)
+                    if args.command == "capture":
+                        run["captures"][arm.id].append(
+                            {"query_id": case.query_id, "path": str(checkpoint)}
+                        )
+                    print(arm.id, case.query_id, "checkpoint", flush=True)
+                    continue
+                query_observations = {arm.id + "/" + v[0]: [] for v in selected_variants}
+                query_captures = []
+                for iteration in range(-1, 20):
+                    order = selected_variants if (qi + iteration) % 2 == 0 else selected_variants[::-1]
                     for variant in order:
                         scope = scopes[arm.id]
                         if variant[0] != "control":
                             hybrid = replace(
                                 scope.retrieval.hybrid,
                                 lexical_fusion_window=variant[1],
-                                dense_fusion_window=variant[2],
-                                rrf_k=variant[3],
+                                dense_fusion_window=variant[2], rrf_k=variant[3],
                             )
-                            scope = replace(
-                                scope, retrieval=replace(scope.retrieval, hybrid=hybrid)
-                            )
+                            scope = replace(scope, retrieval=replace(scope.retrieval, hybrid=hybrid))
                         binding = RepositoryBinding(
-                            scope.repository,
-                            scope.workspace,
-                            arm.backend,
-                            scope.revision,
-                            scope.settings,
-                            scope.retrieval,
-                            scope.knowledge_types,
+                            scope.repository, scope.workspace, arm.backend, scope.revision,
+                            scope.settings, scope.retrieval, scope.knowledge_types,
                         )
                         service = RetrievalApplicationService(
                             {scope.repository: binding},
-                            backends=BackendRegistry(
-                                {arm.backend: lambda backend=backend: backend}
-                            ),
+                            backends=BackendRegistry({arm.backend: lambda backend=backend: backend}),
                         )
                         captured.clear()
                         call_started = time.perf_counter()
-                        response = service.search(
-                            SearchRequest(
-                                query=queries[case.query_id], repository=scope.repository, limit=20
-                            )
-                        )
+                        response = service.search(SearchRequest(
+                            query=queries[case.query_id], repository=scope.repository, limit=20,
+                        ))
                         end_to_end_ms = (time.perf_counter() - call_started) * 1000
                         evidence.validate_response(response, arm, scope, run["snapshots"][arm.id])
                         if iteration < 0:
                             continue
                         measured = observation(response, case.truth, iteration + 1)
                         measured["end_to_end_ms"] = end_to_end_ms
-                        run["observations"][arm.id + "/" + variant[0]].append(measured)
+                        query_observations[arm.id + "/" + variant[0]].append(measured)
                         if args.command in ("capture", "confirm"):
                             if len(captured) != 1:
                                 raise ValueError("exactly one acquisition capture required")
@@ -709,68 +839,59 @@ def online(args):
                             if max(c.lexical_acquired, c.dense_acquired) > 80:
                                 raise ValueError("acquisition exceeded 80")
                             row = {
-                                "query_id": case.query_id,
-                                "iteration": iteration + 1,
+                                "query_id": case.query_id, "iteration": iteration + 1,
                                 "input": c.input.to_mapping(),
                                 "evidence": [d.to_mapping() for d in c.evidence],
                                 "lexical_acquired": c.lexical_acquired,
                                 "dense_acquired": c.dense_acquired,
                             }
                             replayed = replay_row(
-                                row,
-                                variant,
-                                80 if arm.backend == "qdrant-vector" else 20,
-                                case.truth,
+                                row, variant, 80 if arm.backend == "qdrant-vector" else 20, case.truth,
                             )
-                            if (
-                                replayed["result_spans"]
-                                != run["observations"][arm.id + "/" + variant[0]][-1][
-                                    "result_spans"
-                                ]
-                            ):
+                            if replayed["result_spans"] != measured["result_spans"]:
                                 raise ValueError("capture replay differs from real materialization")
-                            if (
-                                replayed["fusion"]["output_fingerprint"]
-                                != response.metadata["fusion_output_fingerprint"]
-                            ):
-                                raise ValueError(
-                                    "capture replay fusion fingerprint differs from runtime"
-                                )
+                            if replayed["fusion"]["output_fingerprint"] != response.metadata[
+                                "fusion_output_fingerprint"
+                            ]:
+                                raise ValueError("capture replay fusion fingerprint differs from runtime")
                             row["real_fusion_output_fingerprint"] = response.metadata[
                                 "fusion_output_fingerprint"
                             ]
                             if args.command == "capture":
-                                run["captures"][arm.id].append(row)
+                                query_captures.append(row)
                             else:
                                 expected = next(
-                                    r
-                                    for r in replay["observations"][arm.backend][variant[0]]
-                                    if (r["query_id"], r["iteration"])
-                                    == (case.query_id, iteration + 1)
+                                    r for r in replay["observations"][arm.backend][variant[0]]
+                                    if (r["query_id"], r["iteration"]) == (case.query_id, iteration + 1)
                                 )
-                                same_acquisition = (
-                                    expected["full_acquisition_fingerprint"] == c.input.fingerprint
-                                )
+                                same_acquisition = expected["full_acquisition_fingerprint"] == c.input.fingerprint
                                 measured["same_acquisition_as_replay"] = same_acquisition
                                 measured["full_acquisition_fingerprint"] = c.input.fingerprint
                                 if same_acquisition and (
-                                    expected["fusion"]["output_fingerprint"]
-                                    != replayed["fusion"]["output_fingerprint"]
+                                    expected["fusion"]["output_fingerprint"] != replayed["fusion"]["output_fingerprint"]
                                     or expected["result_spans"] != replayed["result_spans"]
-                                    or expected["evidence_provenance"]
-                                    != replayed["evidence_provenance"]
+                                    or expected["evidence_provenance"] != replayed["evidence_provenance"]
                                 ):
-                                    raise ValueError(
-                                        "real confirmation differs for identical acquired candidates"
-                                    )
-                print(arm.id, "iteration", iteration + 1, flush=True)
+                                    raise ValueError("real confirmation differs for identical acquired candidates")
+                save_checkpoint(
+                    checkpoint, identity_fingerprint=checkpoint_identity,
+                    backend=arm.backend, query_id=case.query_id,
+                    payload={"observations": query_observations, "captures": query_captures},
+                )
+                for key, rows in query_observations.items():
+                    run["observations"].setdefault(key, []).extend(rows)
+                if args.command == "capture":
+                    run["captures"][arm.id].append(
+                        {"query_id": case.query_id, "path": str(checkpoint)}
+                    )
+                print(arm.id, case.query_id, "checkpointed", flush=True)
             if evidence.snapshot_identity(arm, scopes[arm.id]) != run["snapshots"][arm.id]:
                 raise ValueError("snapshot changed during measurement")
         if args.command == "control":
             run["observations"] = {
                 key.split("/")[0]: value for key, value in run["observations"].items()
             }
-            verify_control(run, identity)
+            verify_control(run, identity, tuple(sorted({a.backend for a in arms})))
         if args.command == "confirm":
             run["comparisons"] = {
                 v[0]: {
@@ -883,7 +1004,9 @@ def online(args):
         run["status"] = "complete"
     except Exception as exc:
         run.update(status="blocked", error=f"{type(exc).__name__}: {exc}", decision="not-promoted")
-        write(args.output, run)
+        blocked_path = args.output.with_name(args.output.name + ".blocked.json.gz")
+        if not blocked_path.exists():
+            write(blocked_path, run)
         raise
     write(args.output, run)
 
@@ -898,10 +1021,23 @@ def replay(args):
         raise ValueError("capture corpus/query identity mismatch")
     observations = {}
     replay_cache = {}
-    for backend in BACKENDS:
-        rows = capture["captures"][arm_id(backend, "hybrid")]
-        validate_rows(rows, queries, 20)
-        for row in rows:
+    available = {
+        backend for backend in BACKENDS
+        if arm_id(backend, "hybrid") in capture["captures"]
+    }
+    requested_backend = getattr(args, "backend", None)
+    selected = {BACKEND_ALIASES[requested_backend]} if requested_backend else available
+    if not selected or not selected <= available:
+        raise ValueError("capture does not contain the requested backend(s)")
+    for backend in sorted(selected):
+        observations[backend] = {v[0]: [] for v in variants()}
+        truths = {c.query_id: c.truth for c in suite.cases}
+        seen_rows = set()
+        for row in iter_capture_rows(capture, backend, queries):
+            key = (row["query_id"], row["iteration"])
+            if key in seen_rows:
+                raise ValueError("duplicate capture observation")
+            seen_rows.add(key)
             if max(row["lexical_acquired"], row["dense_acquired"]) > 80:
                 raise ValueError("captured acquisition exceeds budget")
             for doc in row["evidence"]:
@@ -909,9 +1045,6 @@ def replay(args):
                     "source_ref", ""
                 ).startswith("repository://" + suite.corpus["repository"] + "/"):
                     raise ValueError("captured evidence provenance differs from corpus")
-        observations[backend] = {v[0]: [] for v in variants()}
-        truths = {c.query_id: c.truth for c in suite.cases}
-        for row in rows:
             acquisition_key = mapping_fingerprint(
                 {
                     "input": row["input"],
@@ -942,10 +1075,13 @@ def replay(args):
                         "iteration": row["iteration"],
                     }
                 )
+        expected_keys = {(q, n) for q in queries for n in range(1, 21)}
+        if seen_rows != expected_keys:
+            raise ValueError("capture is incomplete or contains duplicate observations")
     comparisons = {
         v[0]: {b: compare(observations[b]["control"], observations[b][v[0]]) for b in BACKENDS}
         for v in variants()[1:]
-    }
+    } if selected == set(BACKENDS) else {}
     axis_pairs = [
         (a[0], b[0])
         for a in variants()[1:10]
@@ -958,7 +1094,7 @@ def replay(args):
             for backend in BACKENDS
         }
         for a, b in axis_pairs
-    }
+    } if selected == set(BACKENDS) else {}
     write(
         args.output,
         {
@@ -968,6 +1104,7 @@ def replay(args):
             "status": "complete",
             "identity": capture["identity"],
             "snapshots": capture["snapshots"],
+            "backend_artifacts": sorted(selected),
             "measurement": capture["measurement"],
             "capture_fingerprint": digest(args.capture),
             "observations": observations,
@@ -977,7 +1114,7 @@ def replay(args):
             },
             "comparisons": comparisons,
             "one_axis_comparisons": pairs,
-            "finalists": rank_finalists(comparisons),
+            "finalists": rank_finalists(comparisons) if comparisons else [],
             "decision": "offline-selection-only; real confirmation and comparable latency required",
         },
     )
@@ -1067,12 +1204,109 @@ def report(args):
         write(args.diagnostics_output, public_diagnostics(artifact, digest(args.artifact)))
 
 
+def consolidate(args):
+    """Seal a multi-backend artifact only after every backend artifact validates."""
+    private_output(args.output)
+    if len(args.backend_artifact) != len(BACKENDS):
+        raise ValueError("consolidation requires exactly three backend artifacts")
+    artifacts = [read(path, complete=True) for path in args.backend_artifact]
+    stage = artifacts[0]["stage"]
+    if stage not in ("control", "capture", "replay"):
+        raise ValueError("only control, capture, or replay artifacts can be consolidated")
+    if any(a["stage"] != stage for a in artifacts):
+        raise ValueError("backend artifact stages differ")
+    if any(a["identity"] != artifacts[0]["identity"] for a in artifacts[1:]):
+        raise ValueError("backend artifact runner/input fingerprints differ")
+    backend_by_artifact = {}
+    for artifact in artifacts:
+        backends = {
+            backend for backend in BACKENDS
+            if any(key.startswith(arm_id(backend, "hybrid")) for key in artifact.get("observations", {}))
+            or arm_id(backend, "hybrid") in artifact.get("captures", {})
+            or arm_id(backend, "hybrid") in artifact.get("snapshots", {})
+            or backend in artifact.get("backend_artifacts", [])
+        }
+        if len(backends) != 1:
+            raise ValueError("each input must contain exactly one backend")
+        backend = next(iter(backends))
+        if backend in backend_by_artifact:
+            raise ValueError("duplicate backend artifact")
+        backend_by_artifact[backend] = artifact
+    if set(backend_by_artifact) != set(BACKENDS):
+        raise ValueError("consolidation requires Solr, OpenSearch, and Qdrant")
+    merged = dict(artifacts[0])
+    for field in ("snapshots", "snapshot_errors", "observations", "captures", "checkpoint_identities"):
+        merged[field] = {}
+        for artifact in backend_by_artifact.values():
+            merged[field].update(artifact.get(field, {}))
+    if stage == "control":
+        services = {}
+        for artifact in backend_by_artifact.values():
+            services.update(artifact.get("service_versions", {}))
+        merged["service_versions"] = services
+        merged["environment"] = capture_baseline_environment(
+            "fetchcore-hybrid-fusion-v1",
+            services=services,
+            embedding=merged["environment"]["embedding"],
+        ).to_mapping()
+        verify_control(merged, merged["identity"])
+    elif stage == "capture":
+        for backend in BACKENDS:
+            arm = arm_id(backend, "hybrid")
+            if arm not in merged["captures"] or len(merged["captures"][arm]) != len(merged["query_ids"]):
+                raise ValueError("capture backend is missing validated query checkpoints")
+            expected_fp = merged["checkpoint_identities"][arm]
+            for descriptor in merged["captures"][arm]:
+                load_checkpoint(
+                    Path(descriptor["path"]), identity_fingerprint=expected_fp,
+                    backend=backend, query_id=descriptor["query_id"],
+                )
+    else:
+        merged["observations"] = {}
+        merged["capture_fingerprints"] = {}
+        for backend, artifact in backend_by_artifact.items():
+            merged["observations"][backend] = artifact["observations"][backend]
+            merged["capture_fingerprints"][backend] = artifact["capture_fingerprint"]
+        merged["aggregates"] = {
+            backend: {key: summarize(rows) for key, rows in arms.items()}
+            for backend, arms in merged["observations"].items()
+        }
+        merged["comparisons"] = {
+            variant[0]: {
+                backend: compare(
+                    merged["observations"][backend]["control"],
+                    merged["observations"][backend][variant[0]],
+                ) for backend in BACKENDS
+            } for variant in variants()[1:]
+        }
+        axis_pairs = [
+            (a[0], b[0])
+            for a in variants()[1:10]
+            for b in variants()[1:10]
+            if a[0] < b[0] and ((a[1] == b[1]) != (a[2] == b[2]))
+        ]
+        merged["one_axis_comparisons"] = {
+            a + "/" + b: {
+                backend: compare(
+                    merged["observations"][backend][a], merged["observations"][backend][b]
+                ) for backend in BACKENDS
+            } for a, b in axis_pairs
+        }
+        merged["finalists"] = rank_finalists(merged["comparisons"])
+    merged["consolidated_backends"] = list(BACKENDS)
+    write(args.output, merged)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("control", "capture", "replay", "confirm", "report"))
+    parser.add_argument("command", choices=("control", "capture", "replay", "confirm", "report", "consolidate"))
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--performance-attestation", type=Path)
     parser.add_argument("--diagnostics-output", type=Path)
+    parser.add_argument("--backend", choices=tuple(BACKEND_ALIASES))
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--checkpoint-dir", type=Path)
+    parser.add_argument("--backend-artifact", type=Path, action="append", default=[])
     for option in ("run-config", "workspace", "control", "capture", "replay", "artifact"):
         parser.add_argument("--" + option, type=Path)
     args = parser.parse_args()
@@ -1082,10 +1316,17 @@ def main():
         "confirm": ("run_config", "workspace", "control", "replay"),
         "replay": ("capture",),
         "report": ("artifact",),
+        "consolidate": (),
     }
     if any(getattr(args, key) is None for key in needed[args.command]):
         parser.error("missing required inputs for " + args.command)
-    if args.command in ("control", "capture", "confirm"):
+    if args.command == "consolidate":
+        if not args.backend_artifact:
+            parser.error("consolidate requires --backend-artifact three times")
+        consolidate(args)
+    elif args.command in ("control", "capture", "confirm"):
+        if args.resume and args.backend is None:
+            parser.error("--resume requires an explicit --backend")
         online(args)
     elif args.command == "replay":
         replay(args)
