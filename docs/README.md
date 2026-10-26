@@ -31,6 +31,7 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Plan, sync or rebuild a registered repository | [Repository indexing lifecycle](guides/repository-indexing.md) |
 | Search or run MCP | [Searching](guides/searching.md) and [MCP](guides/mcp.md) |
 | Configure or add a backend | [Runtime configuration](guides/runtime-configuration.md), [configuration reference](reference/configuration.md), and [adding a backend](guides/adding-a-backend.md) |
+| Use MongoDB Search and Vector Search | [MongoDB adapter](guides/mongodb-search.md), including Atlas/local requirements and the pending benchmark gate |
 | Maintain PT-BR documentation | [Documentation localization](guides/documentation-localization.md) |
 | Understand release gates, labels and the initial version | [Release policy](release-policy.md) and [v0.0.1 technical overview](releases/initial-release.md) |
 | Review the launch exposure audit and remaining gate | [Public exposure review 2026-10-22](operations/public-exposure-review-2026-10-22.md) |

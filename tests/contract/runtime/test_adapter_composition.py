@@ -6,6 +6,7 @@ import pytest
 
 from fetchcore.adapters.embedding.ollama.provider import OllamaEmbeddingProvider
 from fetchcore.adapters.retrieval.local.backend import LocalSemanticBackend
+from fetchcore.adapters.retrieval.mongodb.backend import MongoDBSearchBackend
 from fetchcore.adapters.retrieval.opensearch.backend import OpenSearchBackend
 from fetchcore.adapters.retrieval.qdrant.backend import (
     QdrantVectorBackend,
@@ -32,6 +33,7 @@ def test_builtin_backend_registry_preserves_ids_and_implementations() -> None:
         "solr": SolrBackend,
         "opensearch": OpenSearchBackend,
         "qdrant-vector": QdrantVectorBackend,
+        "mongodb-search": MongoDBSearchBackend,
     }
     registry = BackendRegistry()
     for backend_id, implementation in expected.items():

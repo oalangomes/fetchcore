@@ -46,6 +46,11 @@ _BACKEND_FIELDS = {
         "embedding_serializer_mode", "embedding_url", "embedding_model", "batch_size",
         "diagnostic_candidate_window", "api_key", "vector_dimensions",
     }),
+    "mongodb-search": frozenset({
+        "uri", "database", "collection", "search_index", "vector_index", "timeout_seconds",
+        "batch_size", "vector_dimensions", "projection_version", "field_boosts",
+        "signal_type_boosts", "diagnostic_candidate_window",
+    }),
 }
 
 
@@ -192,6 +197,10 @@ def validate_backend_settings(backend: str, settings: Mapping[str, object]) -> N
         from fetchcore.adapters.retrieval.qdrant.backend import QdrantVectorSettings
 
         QdrantVectorSettings.from_mapping(data)
+    elif backend == "mongodb-search":
+        from fetchcore.adapters.retrieval.mongodb.settings import MongoDBSettings
+
+        MongoDBSettings.from_mapping(data)
 
 
 def _merge(base: dict[str, object], override: Mapping[str, object]) -> None:
@@ -260,9 +269,17 @@ def _env_overlay(env: Mapping[str, str], default_backend: str) -> dict[str, obje
         backends[selected] = _json_mapping(legacy_settings, "FETCHCORE_MCP_BACKEND_SETTINGS")
     backend_settings = backends.setdefault(selected, {})
     assert isinstance(backend_settings, dict)
-    prefix = {"solr": "SOLR", "opensearch": "OPENSEARCH", "qdrant-vector": "QDRANT"}.get(selected)
+    prefix = {
+        "solr": "SOLR", "opensearch": "OPENSEARCH", "qdrant-vector": "QDRANT",
+        "mongodb-search": "MONGODB",
+    }.get(selected)
     if prefix:
-        for field_name in ("URL", "COLLECTION", "INDEX", "API_KEY", "VECTOR_DIMENSIONS"):
+        fields = (
+            ("URI", "DATABASE", "COLLECTION", "SEARCH_INDEX", "VECTOR_INDEX", "VECTOR_DIMENSIONS")
+            if selected == "mongodb-search"
+            else ("URL", "COLLECTION", "INDEX", "API_KEY", "VECTOR_DIMENSIONS")
+        )
+        for field_name in fields:
             name = f"FETCHCORE_{prefix}_{field_name}"
             if name in env:
                 setting_value: object = env[name]

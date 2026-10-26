@@ -14,7 +14,9 @@ if TYPE_CHECKING:
 
 BackendFactory = Callable[[], KnowledgeSearchBackend]
 EmbeddingFactory = Callable[[EmbeddingConfig, Mapping[str, object]], EmbeddingProvider]
-BUILTIN_BACKEND_IDS = frozenset({"local-semantic", "solr", "opensearch", "qdrant-vector"})
+BUILTIN_BACKEND_IDS = frozenset({
+    "local-semantic", "solr", "opensearch", "qdrant-vector", "mongodb-search",
+})
 BUILTIN_EMBEDDING_PROVIDER_IDS = frozenset({"ollama"})
 
 
@@ -147,6 +149,7 @@ def builtin_backend_factories(
 ) -> dict[str, BackendFactory]:
     """Return the code-owned backend catalog without constructing adapters eagerly."""
     from fetchcore.adapters.retrieval.local.backend import LocalSemanticBackend
+    from fetchcore.adapters.retrieval.mongodb.backend import MongoDBSearchBackend
     from fetchcore.adapters.retrieval.opensearch.backend import OpenSearchBackend
     from fetchcore.adapters.retrieval.qdrant.backend import QdrantVectorBackend
     from fetchcore.adapters.retrieval.solr.backend import SolrBackend
@@ -184,6 +187,11 @@ def builtin_backend_factories(
             )
         ),
         "qdrant-vector": lambda: QdrantVectorBackend(embedding_factory=qdrant_provider),
+        "mongodb-search": lambda: MongoDBSearchBackend(
+            embedding_factory=lambda retrieval: registry.create(
+                retrieval.dense.embedding, backend_id="mongodb-search", backend_name="MongoDB"
+            )
+        ),
     }
 
 

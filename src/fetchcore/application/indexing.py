@@ -39,6 +39,9 @@ from fetchcore.adapters.retrieval.opensearch.backend import (
     UrllibOpenSearchTransport,
 )
 from fetchcore.adapters.retrieval.opensearch.operational import OpenSearchOperationalIndex
+from fetchcore.adapters.retrieval.mongodb.indexing import MongoDBIndexStore, MongoDBOperationalIndex
+from fetchcore.adapters.retrieval.mongodb.settings import MongoDBSettings
+from fetchcore.adapters.retrieval.mongodb.transport import PyMongoTransport
 from fetchcore.adapters.retrieval.qdrant.backend import (
     QdrantVectorBackend,
     QdrantVectorIndexStore,
@@ -74,6 +77,8 @@ def indexing_capabilities(backend: str) -> IndexingCapabilities:
         return IndexingCapabilities(incremental=True, rebuild=True)
     if backend == "qdrant-vector":
         return IndexingCapabilities(incremental=True, rebuild=True)
+    if backend == "mongodb-search":
+        return IndexingCapabilities(incremental=True, rebuild=True)
     raise KnowledgeSearchError(
         "Unsupported operational indexing backend", category="unsupported_backend",
     )
@@ -99,6 +104,12 @@ class IndexContext:
         return self.retrieval_mode in {"dense", "hybrid"}
 
     def legacy(self, operation: str) -> dict[str, object]:
+        if self.backend == "mongodb-search":
+            assert self.driver is not None
+            try:
+                return self.driver.run("plan" if operation == "dry-run" else operation)
+            finally:
+                cast(MongoDBIndexStore, self.store).transport.close()
         if self.backend == "qdrant-vector":
             store_qdrant = cast(QdrantVectorIndexStore, self.store)
             driver_qdrant = cast(QdrantOperationalIndex, self.driver)
@@ -178,6 +189,24 @@ def build_index_context(
     runtime = prepare_repository_index_runtime(
         root, repository=repository.strip(), branch=branch or None, revision=revision or None,
     )
+    if backend == "mongodb-search":
+        mongo_settings = MongoDBSettings.from_mapping(backend_settings)
+        mongo_provider = None
+        if retrieval is not None and retrieval.mode in {"dense", "hybrid"}:
+            if retrieval.dense.embedding.dimensions not in {None, mongo_settings.vector_dimensions}:
+                raise KnowledgeSearchError(
+                    "MongoDB vector dimensions mismatch", category="schema_mismatch",
+                )
+            mongo_provider = (providers or EmbeddingProviderRegistry()).create(
+                retrieval.dense.embedding, backend_id=backend, backend_name="MongoDB",
+            )
+        mongo_store = MongoDBIndexStore(
+            PyMongoTransport(mongo_settings), mongo_settings, embedding_provider=mongo_provider,
+        )
+        return IndexContext(
+            root, backend, runtime, mongo_store, retrieval,
+            MongoDBOperationalIndex(mongo_store, runtime),
+        )
     if backend == "qdrant-vector":
         settings_data = dict(backend_settings)
         configured_settings = QdrantVectorSettings.from_mapping(settings_data)
@@ -441,6 +470,8 @@ class RepositoryIndexApplicationService:
                 revision=source.revision, backend=self.backend, backend_settings=self.backend_settings,
                 retrieval=self.retrieval, providers=self.providers,
             )
+            if self.backend == "mongodb-search":
+                stack.callback(cast(MongoDBIndexStore, context.store).transport.close)
             if context.driver is not None:
                 return {
                     "repository": source.repository, "provider": source.provider,

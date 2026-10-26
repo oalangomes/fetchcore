@@ -8,6 +8,7 @@
 | `solr` | `adapters/retrieval/solr` | Solr retrieval and operational index synchronization. |
 | `opensearch` | `adapters/retrieval/opensearch` | OpenSearch retrieval and operational index synchronization. |
 | `qdrant-vector` | `adapters/retrieval/qdrant` | Qdrant dense and hybrid vector/sparse acquisition and operational index synchronization. |
+| `mongodb-search` | `adapters/retrieval/mongodb` | Experimental MongoDB Search lexical/structured, Vector Search dense, FetchCore RRF hybrid, exact lookup, and incremental synchronization; [deployment and validation limits](../guides/mongodb-search.md). |
 | `ollama` | `adapters/embedding/ollama` | Embedding provider, separate from retrieval backends. |
 
 Inspect each adapter's `retrieval_capabilities` for exact mode support. An unsupported requested mode raises a typed error; there is no implicit dense/lexical substitution. See [retrieval configuration](configuration.md).
