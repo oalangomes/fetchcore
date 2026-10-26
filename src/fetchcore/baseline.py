@@ -440,7 +440,19 @@ class BaselineSuite:
                     f"baseline suite query {query_id!r} intent must be an object"
                 )
             try:
-                intent = SearchIntent.from_mapping(dict(raw_intent))
+                intent_mapping = dict(raw_intent)
+                # A schema-v2 suite may use canonical_query without repeating
+                # its version on every nested intent. Normalize that declared
+                # suite schema at this boundary while keeping standalone intent
+                # parsing strict.
+                if (
+                    schema_version == 2
+                    and "schema_version" not in intent_mapping
+                    and set(intent_mapping)
+                    & {"canonical_query", "anchors", "expression", "expansions"}
+                ):
+                    intent_mapping["schema_version"] = 2
+                intent = SearchIntent.from_mapping(intent_mapping)
             except ValueError as exc:
                 raise BaselineConfigurationError(f"invalid intent for {query_id!r}: {exc}") from exc
             raw_requirements = raw_query.get("required_evidence")

@@ -308,6 +308,12 @@ alias for this opt-in policy. Nonempty `solr_port` and `solr_volume` inputs fail
 explicitly: configure `solr_url` for persistent service ownership. Fixed ports
 and shared-volume ownership are unsupported.
 
+Owned container startup waits through connection failures, timeouts and HTTP
+503 within the bounded startup retry budget. Persistent failures still fail the
+job and remove only its owned container. Authentication, other HTTP errors and
+protocol errors fail immediately. A 503 from an existing configured service does
+not authorize provisioning a replacement.
+
 ## Isolating a second repository
 
 Every persistent repository index gets its own core/collection. For example, a

@@ -1,0 +1,230 @@
+{
+  "schema_version": 2,
+  "corpus": {
+    "corpus_id": "neurotrack-ms-74ce3244",
+    "repository": "oalangomes/NeuroTrack_MS",
+    "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+  },
+  "queries": [
+    {
+      "id": "holdout-auth-header",
+      "intent": {
+        "canonical_query": "Reject requests missing an authorization bearer token"
+      },
+      "required_evidence": [
+        {
+          "id": "auth-header",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/shared/middlewares/authMiddleware.js",
+                  "line_start": 46,
+                  "line_end": 56
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-jwt-verification",
+      "intent": {
+        "canonical_query": "Verify access token signatures using the configured JWT algorithm"
+      },
+      "required_evidence": [
+        {
+          "id": "jwt-verification",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/shared/middlewares/authMiddleware.js",
+                  "line_start": 58,
+                  "line_end": 75
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-token-revocation",
+      "intent": {
+        "canonical_query": "Reject blacklisted access tokens by their token identifier"
+      },
+      "required_evidence": [
+        {
+          "id": "token-revocation",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/shared/middlewares/authMiddleware.js",
+                  "line_start": 77,
+                  "line_end": 85
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-request-correlation",
+      "intent": {
+        "canonical_query": "Propagate incoming request IDs through response headers and asynchronous context"
+      },
+      "required_evidence": [
+        {
+          "id": "request-correlation",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/shared/middlewares/requestIdMiddleware.js",
+                  "line_start": 11,
+                  "line_end": 20
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-secret-encryption",
+      "intent": {
+        "canonical_query": "Encrypt MFA secrets with an initialization vector and authenticated encryption tag"
+      },
+      "required_evidence": [
+        {
+          "id": "secret-encryption",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/shared/utils/cryptoUtils.js",
+                  "line_start": 26,
+                  "line_end": 37
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-secret-decryption",
+      "intent": {
+        "canonical_query": "Split encrypted payloads into initialization vector authentication tag and ciphertext"
+      },
+      "required_evidence": [
+        {
+          "id": "secret-decryption",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/shared/utils/cryptoUtils.js",
+                  "line_start": 51,
+                  "line_end": 61
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-access-token",
+      "intent": {
+        "canonical_query": "Generate short lived access tokens with a random unique JWT identifier"
+      },
+      "required_evidence": [
+        {
+          "id": "access-token",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/shared/utils/tokenUtils.js",
+                  "line_start": 47,
+                  "line_end": 56
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-refresh-token",
+      "intent": {
+        "canonical_query": "Generate refresh tokens containing device metadata with a separate signing secret"
+      },
+      "required_evidence": [
+        {
+          "id": "refresh-token",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/shared/utils/tokenUtils.js",
+                  "line_start": 68,
+                  "line_end": 76
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-password-policy",
+      "intent": {
+        "canonical_query": "Validate minimum password length through the canonical account policy schema"
+      },
+      "required_evidence": [
+        {
+          "id": "password-policy",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/shared/validations/accountPolicy.js",
+                  "line_start": 23,
+                  "line_end": 26
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "holdout-query-sanitization",
+      "intent": {
+        "canonical_query": "Sanitize a cloned query object and replace the Express request query property"
+      },
+      "required_evidence": [
+        {
+          "id": "query-sanitization",
+          "alternatives": [
+            {
+              "regions": [
+                {
+                  "path": "src/shared/middlewares/sanitizeQueryMiddleware.js",
+                  "line_start": 34,
+                  "line_end": 49
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

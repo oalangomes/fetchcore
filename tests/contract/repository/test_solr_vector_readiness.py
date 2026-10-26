@@ -589,3 +589,37 @@ def test_provider_failure_never_downgrades_dense_or_hybrid_to_lexical(
             )
         assert captured.value.category == "embedding_failed"
         assert transport.search_channels == []
+
+
+def test_hybrid_windows_capture_and_legacy_equivalence(workspace, tmp_path, monkeypatch):
+    from dataclasses import replace
+    from fetchcore.retrieval.fusion import FusionInput, FusionKernel, FusionRequest
+    from fetchcore.retrieval.hybrid import allocate_fusion_input
+    transport = VectorLifecycleTransport()
+    provider = CountingEmbeddingProvider()
+    service, repository = _service(workspace, tmp_path, transport, retrieval=_retrieval(),
+                                   provider=provider, monkeypatch=monkeypatch)
+    service.run('rebuild', repository)
+    backend = SolrBackend(transport_factory=lambda _: transport, embedding_factory=lambda _: provider)
+    scope = SearchScope(workspace=workspace, repository=repository, revision=_git(workspace,'rev-parse','HEAD'),
+                        knowledge_types=(), max_results=1, settings={'diagnostic_candidate_window':80},
+                        retrieval=_retrieval(hybrid=True))
+    intent = SearchIntent(canonical_query='function')
+    control = backend.search(intent,scope,())
+    captures = [];backend.fusion_observer = captures.append
+    observed = backend.search(intent,scope,())
+    assert [r.to_mapping() for r in control.results] == [r.to_mapping() for r in observed.results]
+    assert control.metadata['fusion_output_fingerprint'] == observed.metadata['fusion_output_fingerprint']
+    capture = captures[-1]
+    assert len(capture.evidence) > 1
+    assert all(r.checksum and r.revision == scope.revision and r.line_start for r in capture.evidence)
+    wider = replace(scope,retrieval=replace(scope.retrieval,hybrid=replace(scope.retrieval.hybrid,
+                               lexical_fusion_window=80,dense_fusion_window=80,rrf_k=10)))
+    response = backend.search(intent,wider,())
+    assert len(response.results) == 1
+    full = capture.input
+    admitted = allocate_fusion_input(lexical=tuple(sorted((c for c in full.candidates if c.lexical),key=lambda c:c.lexical.rank)),
+              dense=tuple(sorted((c for c in full.candidates if c.dense),key=lambda c:c.dense.rank)),
+              lexical_window=80,dense_window=80,max_results=1)
+    assert FusionKernel().fuse(FusionRequest(admitted,parameters={'k':10})).output_fingerprint == response.metadata['fusion_output_fingerprint']
+    assert len(FusionInput.from_mapping(response.metadata['fusion_input']).candidates) > 1

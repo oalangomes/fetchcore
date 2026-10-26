@@ -13,3 +13,20 @@ Repository-owned `.fetchcore` policy controls corpus admission and indexing beha
 Shared Projection v3 controls require a string `projection_version`, string keys in `field_boosts` and `signal_type_boosts`, and finite numeric boost values. Field boosts retain the range `0 < value <= 100`; signal type boosts retain `0 < value <= 10`. `diagnostic_candidate_window`, when set, must be a JSON integer from 1 through 5000. Booleans, numeric strings, floats for the window, and non-finite boosts are invalid.
 
 Solr dense and hybrid retrieval accept `backends.solr.ann_search_breadth` as an optional integer. It sets the Solr KNN `topK` independently of the returned candidate window (`max(max_results, diagnostic_candidate_window)`). If omitted, `topK` equals that window, preserving existing behavior. An explicit breadth must be at least the window and at most the smaller of 5000 or four times the window; invalid values raise a typed configuration error before the dense query. For example, a window of 80 with `ann_search_breadth: 160` requests 160 KNN hits but receives at most 80 candidates for the existing final cutoff and hybrid fusion. This is a Solr adapter setting; it does not change canonical query meaning, embeddings, RRF, persisted fingerprints or other backends. Query metadata and retrieval telemetry expose `ann_top_k_requested`, `dense_candidates_acquired` and `query_vector_sha256` (a digest of the encoded query vector for paired verification); candidate counts are returned candidates, not internal HNSW visits. Larger breadth may cost more latency and does not guarantee exact nearest neighbors. Set it per workload after a controlled quality and cost comparison.
+
+`retrieval.hybrid` accepts optional positive integer `lexical_fusion_window`,
+`dense_fusion_window`, and `rrf_k` (default 60). A fusion window admits an ordered
+prefix of eligible candidates; it does not set the backend acquisition window or
+output limit. Sparse ranks retain their original positions after eligibility.
+An explicit window above `max(max_results, diagnostic_candidate_window)` fails
+before backend I/O. Fewer available candidates are valid and are not a request
+budget reduction. Booleans, zero, negatives and non-integers are rejected.
+
+Omitted windows preserve each backend's legacy admission: Solr/OpenSearch use
+`max_results` per channel; Qdrant uses its effective acquisition window. Omitted
+windows and default `rrf_k=60` are not added to the legacy serialized mapping.
+For an explicit experiment, a caller can set
+`hybrid: {enabled: true, lexical_fusion_window: 40, dense_fusion_window: 80, rrf_k: 60}`
+with acquisition configured to at least 80. This is a configuration example,
+**not a recommended tuning**: [issue #84](../benchmarks/results/hybrid-fusion.md)
+has no promoted configuration. Defaults remain unchanged.

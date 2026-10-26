@@ -1,0 +1,47 @@
+{
+  "checks": {
+    "additional_published_artifact_seal_test": {
+      "passed": 1,
+      "targeted_group_passed": 16
+    },
+    "docs_links": {
+      "markdown_files": 77,
+      "result": "passed"
+    },
+    "docs_localization": {
+      "exit_code": 0,
+      "missing": 40,
+      "orphan": 0,
+      "stale": 2,
+      "valid": 2
+    },
+    "historical_artifact_byte_preservation": {
+      "passed": 33
+    },
+    "mypy": {
+      "result": "passed",
+      "source_files": 184
+    },
+    "privacy": {
+      "mode": "recursive structural field/value validation; repository source paths retained as provenance",
+      "result": "passed"
+    },
+    "ruff": "passed",
+    "targeted_operational_contract_retrieval_tests": {
+      "passed": 264
+    }
+  },
+  "ci": {
+    "final_published_head_result": "recorded in PR conversation after push",
+    "observed_workflows": 3,
+    "result": "success",
+    "runnerctl_exit_code": 0,
+    "sha": "28a87975a45846efea9d681b244da47df0961f27"
+  },
+  "decision": "benchmark-complete; no-promotion; PR remains Draft",
+  "limitations": [
+    "two original public control envelopes have stale seals and remain explicitly flagged historical evidence; corrected replacements validate",
+    "performance-comparability pending; no exclusive interval",
+    "localization backlog is recorded; not all translations current"
+  ]
+}

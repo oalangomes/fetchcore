@@ -128,6 +128,27 @@ class HybridRetrievalConfig:
 
     enabled: bool = False
     strategy: FusionStrategy = "rrf"
+    lexical_fusion_window: int | None = None
+    dense_fusion_window: int | None = None
+    rrf_k: int = 60
+
+    def __post_init__(self) -> None:
+        for name in ("lexical_fusion_window", "dense_fusion_window", "rrf_k"):
+            value = getattr(self, name)
+            if value is None and name != "rrf_k":
+                continue
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise RetrievalConfigurationError(f"retrieval.hybrid.{name} must be a positive integer")
+
+    def validate_acquisition_budget(self, budget: int) -> None:
+        """Reject impossible fusion windows before acquisition; never clamp them."""
+        for name in ("lexical_fusion_window", "dense_fusion_window"):
+            value = getattr(self, name)
+            if value is not None and value > budget:
+                raise RetrievalConfigurationError(
+                    f"retrieval.hybrid.{name} exceeds acquisition budget {budget}",
+                    metadata={"window": value, "acquisition_budget": budget},
+                )
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object] | None) -> HybridRetrievalConfig:
@@ -142,11 +163,23 @@ class HybridRetrievalConfig:
                 "retrieval.hybrid.strategy currently supports only 'rrf'",
                 metadata={"strategy": strategy},
             )
-        return cls(enabled=enabled, strategy="rrf")
+        return cls(
+            enabled=enabled, strategy="rrf",
+            lexical_fusion_window=data.get("lexical_fusion_window"),  # type: ignore[arg-type]
+            dense_fusion_window=data.get("dense_fusion_window"),  # type: ignore[arg-type]
+            rrf_k=data.get("rrf_k", 60),  # type: ignore[arg-type]
+        )
 
     def to_mapping(self) -> dict[str, object]:
         """Return a stable mapping representation of this value."""
-        return {"enabled": self.enabled, "strategy": self.strategy}
+        result: dict[str, object] = {"enabled": self.enabled, "strategy": self.strategy}
+        for name in ("lexical_fusion_window", "dense_fusion_window"):
+            value = getattr(self, name)
+            if value is not None:
+                result[name] = value
+        if self.rrf_k != 60:
+            result["rrf_k"] = self.rrf_k
+        return result
 
 
 @dataclass(frozen=True)

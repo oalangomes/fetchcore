@@ -29,6 +29,7 @@ from fetchcore.retrieval.embedding import (
     ProjectionV3EmbeddingSerializer,
     validate_vector_dimensions as _validate_vector_dimensions,
 )
+from fetchcore.retrieval.hybrid import FusionObserver, HybridFusionCapture, allocate_fusion_input
 from fetchcore.retrieval.fusion import (
     DEFAULT_RRF_K,
     FusionCandidate,
@@ -2200,11 +2201,13 @@ class QdrantVectorBackend:
             [QdrantVectorSettings, EmbeddingConfig], EmbeddingProvider
         ] = _unconfigured_embedding_provider,
         timer: Callable[[], float] = time.monotonic,
+        fusion_observer: FusionObserver | None = None,
     ) -> None:
         """Initialize QdrantVectorBackend with its explicit dependencies."""
         self.transport_factory = transport_factory
         self.embedding_factory = embedding_factory
         self.timer = timer
+        self.fusion_observer = fusion_observer
 
     def search(
         self,
@@ -2243,6 +2246,10 @@ class QdrantVectorBackend:
                     scope.retrieval.dense.embedding.dimensions
                 )
         settings = QdrantVectorSettings.from_mapping(effective_settings)
+        if scope.retrieval is not None and scope.retrieval.hybrid.enabled:
+            scope.retrieval.hybrid.validate_acquisition_budget(
+                max(scope.max_results, settings.diagnostic_candidate_window or scope.max_results)
+            )
         transport = self.transport_factory(settings)
         embedding = (
             scope.retrieval.dense.embedding
@@ -2334,6 +2341,7 @@ class QdrantVectorBackend:
                 started=started,
                 timer=self.timer,
                 embedding_ms=embedding_ms,
+                fusion_observer=self.fusion_observer,
             )
 
         dense_started = self.timer()
@@ -2550,6 +2558,7 @@ def _qdrant_hybrid_response(
     started: float,
     timer: Callable[[], float],
     embedding_ms: int,
+    fusion_observer: FusionObserver | None = None,
 ) -> KnowledgeSearchResponse:
     expected_sparse = {
         "sparse_vector_name": SPARSE_VECTOR_NAME,
@@ -2684,15 +2693,58 @@ def _qdrant_hybrid_response(
                 ),
             )
         )
-    fusion_input = FusionInput(
-        candidates=tuple(fusion_candidates),
+    hybrid = scope.retrieval.hybrid if scope.retrieval is not None else None
+    lexical_window = (hybrid.lexical_fusion_window if hybrid else None) or query_limit
+    dense_window = (hybrid.dense_fusion_window if hybrid else None) or query_limit
+    rrf_k = hybrid.rrf_k if hybrid else DEFAULT_RRF_K
+    lexical_signals = tuple(sorted(
+        (item for item in fusion_candidates if item.lexical is not None),
+        key=lambda item: item.lexical.rank if item.lexical is not None else 0,
+    ))
+    dense_signals = tuple(sorted(
+        (item for item in fusion_candidates if item.dense is not None),
+        key=lambda item: item.dense.rank if item.dense is not None else 0,
+    ))
+    if fusion_observer is not None:
+        full_input = FusionInput(tuple(fusion_candidates), scope.max_results)
+        evidence = []
+        for candidate in fusion_candidates:
+            acquired = sparse_by_id.get(candidate.candidate_id) or dense_by_id[candidate.candidate_id]
+            record = acquired.payload
+            evidence.append(SearchResult(
+                id=candidate.candidate_id,
+                source=str(record.get("path", record.get("source_ref", ""))),
+                source_ref=str(record.get("source_ref", "")),
+                knowledge_type=str(record.get("knowledge_type", "unknown")),
+                content=str(record.get("content", "")),
+                score=(candidate.lexical.normalized_score if candidate.lexical is not None
+                       else cast(FusionChannelSignal, candidate.dense).normalized_score),
+                line_start=_optional_int(record.get("line_start")),
+                line_end=_optional_int(record.get("line_end")),
+                revision=snapshot.revision,
+                checksum=_optional_str(record.get("checksum")),
+                source_type=str(record.get("source_type", "repository")),
+                observations=_projection_observations(record, source_ref=str(record.get("source_ref", "")), revision=snapshot.revision),
+                relationships=_projection_relationships(record),
+                metadata={key: record[key] for key in ("chunk_ref", "source_checksum", "document_revision", "branch") if key in record},
+            ))
+        fusion_observer(HybridFusionCapture(
+            full_input, tuple(evidence), len(sparse_points), len(dense_points),
+        ))
+    fusion_input = allocate_fusion_input(
+        lexical=lexical_signals, dense=dense_signals,
+        lexical_window=lexical_window, dense_window=dense_window,
         max_results=scope.max_results,
     )
+    admitted_lexical = {item.candidate_id for item in fusion_input.candidates if item.lexical is not None}
+    admitted_dense = {item.candidate_id for item in fusion_input.candidates if item.dense is not None}
+    sparse_by_id = {key: value for key, value in sparse_by_id.items() if key in admitted_lexical}
+    dense_by_id = {key: value for key, value in dense_by_id.items() if key in admitted_dense}
     fusion_result = FusionKernel().fuse(
         FusionRequest(
             input=fusion_input,
             strategy="rrf",
-            parameters={"k": DEFAULT_RRF_K},
+            parameters={"k": rrf_k},
         )
     )
     fusion_ms = elapsed_ms(fusion_started, timer())
@@ -2715,7 +2767,7 @@ def _qdrant_hybrid_response(
         )
         payload = source_candidate.payload
         source_ref = str(payload.get("source_ref", ""))
-        sparse_terms = sparse_terms_by_id.get(fused.candidate_id, ())
+        sparse_terms = sparse_terms_by_id.get(fused.candidate_id, ()) if sparse is not None else ()
         candidate_order.append(
             {
                 "id": fused.candidate_id,
@@ -2836,7 +2888,7 @@ def _qdrant_hybrid_response(
         "sparse_retrieval": True,
         "hybrid_fusion": True,
         "fusion_strategy": "rrf",
-        "rrf_k": DEFAULT_RRF_K,
+        "rrf_k": rrf_k,
         "fusion_parameters": dict(fusion_result.parameters),
         "fusion_normalization_identity": fusion_result.normalization_identity,
         "fusion_input_fingerprint": fusion_result.input_fingerprint,

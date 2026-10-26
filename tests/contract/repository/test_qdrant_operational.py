@@ -1114,3 +1114,37 @@ def test_driver_without_git_history_uses_incremental_full_scan_not_rebuild(
     assert cast(dict[str, object], no_op["execution"])["noop"] is True
     assert len(transport.writes) == writes_after_sync
     assert len(embedder.texts) == embeddings_after_sync
+
+
+def test_hybrid_capture_windows_and_sparse_original_ranks(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from fetchcore.adapters.retrieval.qdrant import backend as q
+    from fetchcore.retrieval.fusion import FusionInput, FusionKernel, FusionRequest
+    from fetchcore.retrieval.hybrid import allocate_fusion_input
+    transport = MemoryQdrant();index,embedder = store(transport)
+    for n in range(3):
+        (tmp_path/f'file{n}.py').write_text(f'value = {n}\n')
+    index.full_rebuild(index_result(tmp_path,'rev-1'))
+    retrieval = RetrievalConfig.from_mapping({'dense':{'enabled':True,'embedding':{'dimensions':4}},'hybrid':{'enabled':True}})
+    backend = QdrantVectorBackend(transport_factory=lambda _:transport,embedding_factory=lambda *_:embedder)
+    scope = SearchScope(workspace=tmp_path,repository=_REPOSITORY,revision='rev-1',knowledge_types=(),max_results=1,
+        settings={'collection':'fetchcore-test','vector_dimensions':4,'diagnostic_candidate_window':80},retrieval=retrieval)
+    intent = SearchIntent(canonical_query='value')
+    control = backend.search(intent,scope,())
+    captures=[];backend.fusion_observer=captures.append
+    observed = backend.search(intent,scope,())
+    assert observed.metadata['fusion_output_fingerprint'] == control.metadata['fusion_output_fingerprint']
+    assert [r.to_mapping() for r in observed.results] == [r.to_mapping() for r in control.results]
+    assert len(FusionInput.from_mapping(control.metadata['fusion_input']).candidates) == 3
+    first = next(c.candidate_id for c in captures[-1].input.candidates if c.lexical and c.lexical.rank == 1)
+    original=q.matched_sparse_terms
+    monkeypatch.setattr(q,'matched_sparse_terms',lambda intent,payload: () if payload['id']==first else original(intent,payload))
+    scope=replace(scope,retrieval=replace(retrieval,hybrid=replace(retrieval.hybrid,lexical_fusion_window=1,dense_fusion_window=1,rrf_k=30)))
+    response=backend.search(intent,scope,())
+    admitted=FusionInput.from_mapping(response.metadata['fusion_input'])
+    assert [c.lexical.rank for c in admitted.candidates if c.lexical] == [2]
+    assert all(r.checksum and r.line_start == 1 and r.revision == 'rev-1' for r in captures[-1].evidence)
+    full=captures[-1].input
+    replay=allocate_fusion_input(lexical=tuple(sorted((c for c in full.candidates if c.lexical),key=lambda c:c.lexical.rank)),
+        dense=tuple(sorted((c for c in full.candidates if c.dense),key=lambda c:c.dense.rank)),lexical_window=1,dense_window=1,max_results=1)
+    assert FusionKernel().fuse(FusionRequest(replay,parameters={'k':30})).output_fingerprint == response.metadata['fusion_output_fingerprint']

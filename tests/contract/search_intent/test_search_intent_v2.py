@@ -484,6 +484,20 @@ def test_baseline_reader_preserves_v2_instead_of_dropping_new_fields():
         BaselineSuite.from_mapping(payload)
 
 
+def test_schema_v2_suite_infers_missing_nested_intent_version():
+    from fetchcore.baseline import load_baseline_suite
+
+    root = Path(__file__).resolve().parents[3]
+    suite_path = root / "benchmarks/hybrid-fusion/confirmation-queries.json"
+    raw = json.loads(suite_path.read_text())
+    assert raw["schema_version"] == 2
+    assert all("schema_version" not in row["intent"] for row in raw["queries"])
+
+    suite = load_baseline_suite(suite_path)
+    assert len(suite.cases) == 10
+    assert all(case.intent.canonical_query for case in suite.cases)
+
+
 def test_sparse_channel_cannot_silently_discard_declared_boolean_groups():
     with pytest.raises(KnowledgeSearchError) as caught:
         intent_sparse_terms(SearchIntent(canonical_query=QUERY, expression=BRANCHES))
