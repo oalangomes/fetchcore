@@ -378,6 +378,8 @@ def test_http_client_classifies_service_failures(monkeypatch: pytest.MonkeyPatch
             "GET", "http://127.0.0.1:8983/solr/admin/info/system", timeout=1,
         )
     assert failure.value.category == category
+    if isinstance(error, HTTPError) and error.code == 503:
+        assert failure.value.http_status == 503
 
 
 def test_credentials_and_unsafe_paths_are_rejected_without_disclosure(tmp_path: Path) -> None:
@@ -554,3 +556,59 @@ def test_cleanup_command_failure_does_not_trigger_prepare_compensation(
     output = json.loads(capsys.readouterr().out)
     assert output["error"]["message"] == "Exact owned cleanup failed"
     assert "cleanup_error" not in output
+
+
+@pytest.mark.parametrize('status', [503, 500, 401, 403])
+@pytest.mark.parametrize('persistent', [False, True])
+def test_owned_startup_retries_only_503_with_bounded_failure_and_cleanup(
+    tmp_path: Path, status: int, persistent: bool,
+) -> None:
+    class StartingSolr(FakeSolr):
+        attempts = 0
+
+        def request(self, method: str, url: str, **kwargs: Any) -> Mapping[str, object]:
+            if url.endswith('/admin/info/system'):
+                self.attempts += 1
+                if self.attempts == 1:
+                    raise SolrRuntimeError('connection_refused', 'initial missing service')
+                if persistent or self.attempts == 2:
+                    category = 'authentication_required' if status in (401, 403) else 'service_error'
+                    raise SolrRuntimeError(category, f'HTTP {status}', http_status=status)
+            return super().request(method, url, **kwargs)
+
+    solr = StartingSolr(resources={'fetchcore-self-dogfood'})
+    docker = FakeDocker()
+    sleeps = []
+    kwargs = {
+        "client": solr, "docker": docker, "choose_port": lambda: 49123, "sleep": sleeps.append,
+    }
+    cfg = config(tmp_path, create_if_missing=True, provision_mode=ProvisionMode.PROVISION_IF_MISSING)
+    if status == 503 and not persistent:
+        state = prepare_solr_runtime(cfg, **kwargs)
+        assert state.owned_by_run
+        assert solr.attempts == 3
+        assert len(sleeps) == 1
+        assert len(docker.calls) == 1
+    else:
+        with pytest.raises(SolrRuntimeError) as failure:
+            prepare_solr_runtime(cfg, **kwargs)
+        assert failure.value.category == (
+            'authentication_required' if status in (401, 403) else 'service_error'
+        )
+        assert solr.attempts == (3 if status == 503 else 2)
+        assert len(sleeps) == (1 if status == 503 else 0)
+        assert docker.calls[-1] == ('rm', '-f', 'fetchcore-solr-123-1')
+
+
+def test_existing_503_never_authorizes_replacement_container(tmp_path: Path) -> None:
+    class UnavailableSolr(FakeSolr):
+        def request(self, *args: Any, **kwargs: Any) -> Mapping[str, object]:
+            raise SolrRuntimeError('service_error', 'HTTP 503', http_status=503)
+
+    docker = FakeDocker(forbidden=True)
+    with pytest.raises(SolrRuntimeError, match='503'):
+        prepare_solr_runtime(
+            config(tmp_path, create_if_missing=True, provision_mode=ProvisionMode.PROVISION_IF_MISSING),
+            client=UnavailableSolr(), docker=docker,
+        )
+    assert docker.calls == []

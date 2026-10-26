@@ -44,9 +44,10 @@ class ProvisionMode(str, Enum):
 class SolrRuntimeError(RuntimeError):
     """Safe, typed operational failure; messages never include configured URLs."""
 
-    def __init__(self, category: str, message: str) -> None:
+    def __init__(self, category: str, message: str, *, http_status: int | None = None) -> None:
         super().__init__(message)
         self.category = category
+        self.http_status = http_status
 
 
 @dataclass(frozen=True)
@@ -148,6 +149,7 @@ class UrllibJsonClient:
             if 500 <= exc.code <= 599:
                 raise SolrRuntimeError(
                     "service_error", f"Solr endpoint returned HTTP {exc.code}",
+                    http_status=exc.code,
                 ) from exc
             raise SolrRuntimeError(
                 "http_error", f"Solr endpoint returned HTTP {exc.code}",
@@ -408,7 +410,11 @@ def _wait_for_service(
             return service
         except SolrRuntimeError as exc:
             last_error = exc
-            if exc.category not in {"connection_refused", "connection_failure", "timeout"}:
+            # Only an explicitly owned startup may wait through HTTP 503.
+            # Other 5xx, authentication and protocol errors remain terminal.
+            if exc.category not in {"connection_refused", "connection_failure", "timeout"} and not (
+                exc.category == "service_error" and exc.http_status == 503
+            ):
                 raise
             if attempt + 1 < config.startup_attempts:
                 sleep(config.startup_interval_seconds)

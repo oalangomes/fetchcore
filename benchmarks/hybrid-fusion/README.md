@@ -255,3 +255,20 @@ the source-free [control report](artifacts/runs/4d9332bf/control-report.json),
 [confirmation report](artifacts/runs/4d9332bf/confirmation-report.json), and their
 sanitized diagnostics in the same run directory. The historical blocked
 attestation and prior control report remain preserved and unchanged.
+
+## Offline consolidation correction
+
+Consolidation version 1 validates each control/capture arm's stored aggregate
+against its unchanged observations and merges every eligible arm (six control
+arms, three capture arms). Missing, duplicate, foreign or incompatible arms fail
+before output is written. Input ordering does not change the sealed output.
+The optional `consolidation` record contains input file SHA-256 identities and
+the processing runner hash; the measurement `identity.runtime` remains the
+original execution identity. Historical schema-v1 artifacts remain readable.
+
+Preserve the original consolidated files and their dependent capture/replay
+bindings. Generate a separately named corrected control and public report with
+`consolidate` / `report`; this is offline presentation repair, not a new retrieval
+measurement. A changed runner/runtime fingerprint cannot resume historical
+online measurements. No control, capture or replay rerun is required for this
+repair.

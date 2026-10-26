@@ -324,6 +324,8 @@ def test_capture_consolidation_binds_control_snapshots_and_validates_query_shard
     artifacts = []
     qdrant_capture_path = None
     qdrant_capture_payload = None
+    truth, sample_capture = fixture()
+    template = BENCH.replay_row(sample_capture, ("control", None, None, 60), 20, truth)
     for backend in BENCH.BACKENDS:
         arm = BENCH.arm_id(backend, "hybrid")
         checkpoint_identity = f"sha256:{backend}-capture"
@@ -333,7 +335,10 @@ def test_capture_consolidation_binds_control_snapshots_and_validates_query_shard
                 {"query_id": query_id, "iteration": iteration, "evidence": []}
                 for iteration in range(1, 21)
             ]
-            rows = [{"query_id": query_id, "iteration": iteration} for iteration in range(1, 21)]
+            rows = [
+                {**template, "query_id": query_id, "iteration": iteration}
+                for iteration in range(1, 21)
+            ]
             checkpoint = BENCH.checkpoint_path(
                 tmp_path / f"{backend}.checkpoints", backend, query_id, partition=arm
             )
@@ -344,12 +349,18 @@ def test_capture_consolidation_binds_control_snapshots_and_validates_query_shard
             )
             descriptors.append(BENCH.checkpoint_descriptor(checkpoint, query_id))
         artifact_path = tmp_path / f"capture-{backend}.json.gz"
+        observations = {arm + "/control": [
+            {**template, "query_id": q, "iteration": i}
+            for q in query_ids for i in range(1, 21)
+        ]}
         BENCH.write(artifact_path, {
             "protocol": BENCH.PROTOCOL, "schema_version": 1, "stage": "capture",
             "status": "complete", "identity": identity, "measurement": BENCH.FULL_MEASUREMENT,
             "measurement_kind": "real", "query_ids": query_ids,
             "snapshots": {arm: snapshots[arm], BENCH.arm_id(backend, "dense"): snapshots[BENCH.arm_id(backend, "dense")]},
             "captures": {arm: descriptors}, "checkpoint_identities": {arm: checkpoint_identity},
+            "observations": observations,
+            "aggregates": {key: BENCH.summarize(rows) for key, rows in observations.items()},
             "control_artifact_fingerprint": control_fingerprint,
             "environment": environment, "embedding_identity": embedding,
             "embedding_digest": "sha256:model",
@@ -765,3 +776,92 @@ def test_complete_offline_replay_reuses_identical_acquisitions(tmp_path, monkeyp
         capture=source, output=resume_output, backend=backend, resume=True,
     ))
     assert len(calls) == 19 * len(BENCH.variants())
+
+
+def control_artifacts(tmp_path):
+    truth, capture = fixture()
+    template = BENCH.replay_row(capture, ('control', None, None, 60), 20, truth)
+    query_ids = [f'q{i}' for i in range(20)]
+    paths = []
+    for backend in BENCH.BACKENDS:
+        observations = {
+            BENCH.arm_id(backend, mode): [
+                {**template, 'query_id': q, 'iteration': i}
+                for q in query_ids for i in range(1, 21)
+            ] for mode in ('dense', 'hybrid')
+        }
+        payload = {
+            'protocol': BENCH.PROTOCOL, 'schema_version': 1, 'stage': 'control',
+            'status': 'complete', 'identity': {'runner_fingerprint': 'frozen'},
+            'measurement': BENCH.FULL_MEASUREMENT, 'measurement_kind': 'real',
+            'query_ids': query_ids, 'observations': observations,
+            'snapshots': {arm: {'revision': 'frozen'} for arm in observations},
+            'aggregates': {arm: BENCH.summarize(rows) for arm, rows in observations.items()},
+        }
+        path = tmp_path / f'{backend}.json.gz'
+        BENCH.write(path, payload)
+        paths.append(path)
+    return paths
+
+
+def test_control_consolidation_preserves_all_six_arms_and_is_order_independent(tmp_path):
+    from types import SimpleNamespace
+
+    paths = control_artifacts(tmp_path)
+    originals = {path: path.read_bytes() for path in paths}
+    outputs = [tmp_path / 'forward.gz', tmp_path / 'reverse.gz']
+    for output, inputs in zip(outputs, (paths, paths[::-1])):
+        BENCH.consolidate(SimpleNamespace(output=output, backend_artifact=inputs))
+        combined = BENCH.read(output)
+        assert len(combined['aggregates']) == len(combined['observations']) == 6
+        assert sum(map(len, combined['observations'].values())) == 2400
+        for path in paths:
+            source = BENCH.read(path)
+            assert combined['identity'] == source['identity']
+            for arm, rows in source['observations'].items():
+                assert combined['observations'][arm] == rows
+                assert combined['aggregates'][arm] == source['aggregates'][arm]
+                assert combined['aggregates'][arm] == BENCH.summarize(rows)
+                assert combined['snapshots'][arm] == source['snapshots'][arm]
+    assert outputs[0].read_bytes() == outputs[1].read_bytes()
+    assert all(path.read_bytes() == original for path, original in originals.items())
+
+
+@pytest.mark.parametrize('fault', [
+    'missing_arm', 'missing_aggregate', 'missing_row', 'duplicate_row', 'duplicate_backend',
+    'fingerprint', 'aggregate', 'corruption', 'foreign_arm', 'snapshot_collision',
+])
+def test_control_consolidation_rejects_invalid_inputs_atomically(tmp_path, fault):
+    from types import SimpleNamespace
+    import gzip
+
+    paths = control_artifacts(tmp_path)
+    altered = BENCH.read(paths[0])
+    arm = BENCH.arm_id('solr', 'dense')
+    if fault == 'missing_arm':
+        del altered['observations'][arm]
+    elif fault == 'missing_aggregate':
+        del altered['aggregates'][arm]
+    elif fault == 'missing_row':
+        altered['observations'][arm].pop()
+    elif fault == 'duplicate_row':
+        altered['observations'][arm][-1] = altered['observations'][arm][0]
+    elif fault == 'duplicate_backend':
+        paths[1] = paths[0]
+    elif fault == 'fingerprint':
+        altered['identity']['runner_fingerprint'] = 'incompatible'
+    elif fault == 'aggregate':
+        altered['aggregates'][arm]['evidence_recall_at_k'] = -1
+    elif fault == 'foreign_arm':
+        altered['observations']['unexpected-arm'] = altered['observations'][arm]
+    elif fault == 'snapshot_collision':
+        altered['snapshots'][BENCH.arm_id('opensearch', 'dense')] = {'revision': 'other'}
+    BENCH.write(paths[0], altered)
+    if fault == 'corruption':
+        payload = json.loads(gzip.decompress(paths[0].read_bytes()))
+        payload['observations'][arm][0]['revision'] = 'corrupt'
+        paths[0].write_bytes(gzip.compress(json.dumps(payload).encode()))
+    output = tmp_path / 'invalid.gz'
+    with pytest.raises(ValueError):
+        BENCH.consolidate(SimpleNamespace(output=output, backend_artifact=paths))
+    assert not output.exists()

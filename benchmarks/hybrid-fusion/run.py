@@ -1331,6 +1331,7 @@ def report(args):
             "performance_comparable",
             "performance_reason",
             "aggregates",
+            "consolidation",
             "promotion_gates",
             "selected",
         )
@@ -1424,7 +1425,7 @@ def public_diagnostics(artifact, raw_artifact_sha256):
     keys = (
         "protocol", "schema_version", "stage", "status", "measurement", "decision",
         "comparisons", "one_axis_comparisons", "finalists", "aggregates",
-        "promotion_gates", "selected",
+        "promotion_gates", "selected", "consolidation",
     )
     result = {key: artifact[key] for key in keys if key in artifact}
     result["identity"] = public_identity(artifact.get("identity", {}))
@@ -1491,11 +1492,35 @@ def consolidate(args):
         backend_by_artifact[backend] = artifact
     if set(backend_by_artifact) != set(BACKENDS):
         raise ValueError("consolidation requires Solr, OpenSearch, and Qdrant")
+    # Canonical backend order makes the sealed result independent of CLI order.
+    artifacts = [backend_by_artifact[backend] for backend in BACKENDS]
     merged = dict(artifacts[0])
     for field in ("snapshots", "snapshot_errors", "observations", "captures", "checkpoint_identities"):
         merged[field] = {}
-        for artifact in backend_by_artifact.values():
-            merged[field].update(artifact.get(field, {}))
+        for artifact in artifacts:
+            for key, value in artifact.get(field, {}).items():
+                if key in merged[field] and (field != "snapshots" or merged[field][key] != value):
+                    raise ValueError("duplicate or incompatible consolidated " + field)
+                merged[field][key] = value
+    if stage in ("control", "capture"):
+        merged["aggregates"] = {}
+        for backend in BACKENDS:
+            artifact = backend_by_artifact[backend]
+            expected_arms = (
+                {arm_id(backend, mode) for mode in ("dense", "hybrid")}
+                if stage == "control" else {arm_id(backend, "hybrid") + "/control"}
+            )
+            if set(artifact.get("observations", {})) != expected_arms:
+                raise ValueError("backend observation arms are missing or incompatible")
+            if set(artifact.get("aggregates", {})) != expected_arms:
+                raise ValueError("backend aggregate arms are missing or incompatible")
+            for arm in sorted(expected_arms):
+                rows = artifact["observations"][arm]
+                validate_rows(rows, artifact["query_ids"], 20)
+                aggregate = summarize(rows)
+                if aggregate != artifact["aggregates"][arm]:
+                    raise ValueError("backend aggregate differs from observations")
+                merged["aggregates"][arm] = aggregate
     if stage == "control":
         services = {}
         reference_environment = artifacts[0].get("environment", {})
@@ -1651,6 +1676,14 @@ def consolidate(args):
         }
         merged["finalists"] = rank_finalists(merged["comparisons"])
     merged["consolidated_backends"] = list(BACKENDS)
+    merged["consolidation"] = {
+        "version": 1,
+        "processor_runner_sha256": digest(Path(__file__)),
+        "inputs": sorted(
+            ({"sha256": digest(path)} for path in args.backend_artifact),
+            key=lambda item: item["sha256"],
+        ),
+    }
     write(args.output, merged)
 
 
