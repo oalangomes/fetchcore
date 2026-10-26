@@ -244,10 +244,14 @@ and raw snapshots; inspect public reports before versioning them. Publish protoc
 checksums, safe identities, metrics and per-query regressions. Preserve partial
 provenance as partial. Do not fabricate unavailable results or measurements.
 
-The recovered execution has a valid completed control with 400 observations per
-arm across all six dense/hybrid arms. The expected private `capture.json.gz` is
-missing, so replay, finalist analysis and confirmation remain pending. This is
-not a negative quality result, and no configuration has passed the promotion
-gates. See the [historical blocked control attestation](artifacts/blocked-control.json),
-the [sanitized completed-control report](artifacts/control-report.json), and the
-[current result report](../../docs/benchmarks/results/hybrid-fusion.md).
+The completed run on runner fingerprint
+`4d9332bf28c4b294e935bec1d09401bf5bd17ac6f56fad3b8cdbe330d7f4518d` has valid
+control, capture, replay and joint confirmation artifacts. Replay selected
+`rrf-30`; all three backends passed holdout quality non-regression with no lost
+evidence. Promotion remains pending because no independent exclusive-host
+attestation was available. See the [current result report](../../docs/benchmarks/results/hybrid-fusion.md),
+the source-free [control report](artifacts/runs/4d9332bf/control-report.json),
+[replay report](artifacts/runs/4d9332bf/replay-report.json),
+[confirmation report](artifacts/runs/4d9332bf/confirmation-report.json), and their
+sanitized diagnostics in the same run directory. The historical blocked
+attestation and prior control report remain preserved and unchanged.

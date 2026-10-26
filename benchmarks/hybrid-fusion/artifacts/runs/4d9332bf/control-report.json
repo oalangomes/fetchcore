@@ -1,0 +1,338 @@
+{
+  "aggregates": {
+    "opensearch-dense": {
+      "candidates_examined_mean": 80,
+      "candidates_returned_mean": 20,
+      "context_yield": {
+        "100": 0.54825395,
+        "1000": 0.8732539500000001,
+        "250": 0.74944445,
+        "500": 0.86075395
+      },
+      "dense_acquired_mean": 80,
+      "dense_admitted_mean": null,
+      "duration_ms": {
+        "p50": 31,
+        "p95": 41,
+        "p99": 48
+      },
+      "end_to_end_ms": {
+        "p50": 31.58081699984905,
+        "p95": 41.916599999240134,
+        "p99": 48.917183999947156
+      },
+      "evidence_ndcg_at_k": 0.75151705,
+      "evidence_recall_at_k": 0.84166665,
+      "evidence_reciprocal_rank": 0.72884615,
+      "lexical_acquired_mean": null,
+      "lexical_admitted_mean": null,
+      "returned_chars_mean": 23137.65,
+      "returned_line_count_mean": 661,
+      "span_coverage_at_k": 0.8732539500000001,
+      "stage_duration_ms": {
+        "dense": {
+          "p50": 14,
+          "p95": 20,
+          "p99": 24
+        },
+        "embedding": {
+          "p50": 12,
+          "p95": 15,
+          "p99": 16
+        }
+      },
+      "useful_context_line_ratio": 0.0548501,
+      "useful_hit_density_mean": 0.0825
+    },
+    "opensearch-hybrid": {
+      "candidates_examined_mean": 36.45,
+      "candidates_returned_mean": 20,
+      "context_yield": {
+        "100": 0.3553968,
+        "1000": 0.8220635000000001,
+        "250": 0.7303968,
+        "500": 0.7928968
+      },
+      "dense_acquired_mean": 80,
+      "dense_admitted_mean": 20,
+      "duration_ms": {
+        "p50": 55,
+        "p95": 74,
+        "p99": 83
+      },
+      "end_to_end_ms": {
+        "p50": 56.4471429988771,
+        "p95": 75.73140099884768,
+        "p99": 85.31020000009448
+      },
+      "evidence_ndcg_at_k": 0.5924429,
+      "evidence_recall_at_k": 0.8,
+      "evidence_reciprocal_rank": 0.55047615,
+      "lexical_acquired_mean": 80,
+      "lexical_admitted_mean": 20,
+      "returned_chars_mean": 27038.15,
+      "returned_line_count_mean": 688.2,
+      "span_coverage_at_k": 0.8220635000000001,
+      "stage_duration_ms": {
+        "dense": {
+          "p50": 15,
+          "p95": 22,
+          "p99": 31
+        },
+        "embedding": {
+          "p50": 12,
+          "p95": 15,
+          "p99": 17
+        },
+        "fusion": {
+          "p50": 0,
+          "p95": 1,
+          "p99": 1
+        },
+        "lexical": {
+          "p50": 20,
+          "p95": 26,
+          "p99": 38
+        }
+      },
+      "useful_context_line_ratio": 0.0422212,
+      "useful_hit_density_mean": 0.075
+    },
+    "qdrant-dense": {
+      "candidates_examined_mean": 80,
+      "candidates_returned_mean": 20,
+      "context_yield": {
+        "100": 0.54825395,
+        "1000": 0.8732539500000001,
+        "250": 0.74944445,
+        "500": 0.86075395
+      },
+      "dense_acquired_mean": 80,
+      "dense_admitted_mean": null,
+      "duration_ms": {
+        "p50": 833,
+        "p95": 886,
+        "p99": 904
+      },
+      "end_to_end_ms": {
+        "p50": 833.0632139986847,
+        "p95": 886.2580559998605,
+        "p99": 904.5610880002641
+      },
+      "evidence_ndcg_at_k": 0.7513155,
+      "evidence_recall_at_k": 0.84166665,
+      "evidence_reciprocal_rank": 0.72869995,
+      "lexical_acquired_mean": null,
+      "lexical_admitted_mean": null,
+      "returned_chars_mean": 23141.45,
+      "returned_line_count_mean": 661,
+      "span_coverage_at_k": 0.8732539500000001,
+      "stage_duration_ms": {
+        "dense": {
+          "p50": 197,
+          "p95": 229,
+          "p99": 246
+        },
+        "embedding": {
+          "p50": 14,
+          "p95": 17,
+          "p99": 20
+        }
+      },
+      "useful_context_line_ratio": 0.0548501,
+      "useful_hit_density_mean": 0.0825
+    },
+    "qdrant-hybrid": {
+      "candidates_examined_mean": 144.25,
+      "candidates_returned_mean": 20,
+      "context_yield": {
+        "100": 0.41007935,
+        "1000": 0.8713889,
+        "250": 0.60888885,
+        "500": 0.8422222
+      },
+      "dense_acquired_mean": 80,
+      "dense_admitted_mean": 80,
+      "duration_ms": {
+        "p50": 1176,
+        "p95": 1267,
+        "p99": 1284
+      },
+      "end_to_end_ms": {
+        "p50": 1178.055846999996,
+        "p95": 1269.5572970005742,
+        "p99": 1286.7437710010563
+      },
+      "evidence_ndcg_at_k": 0.75382035,
+      "evidence_recall_at_k": 0.9,
+      "evidence_reciprocal_rank": 0.73797615,
+      "lexical_acquired_mean": 80,
+      "lexical_admitted_mean": 80,
+      "returned_chars_mean": 215143.05,
+      "returned_line_count_mean": 1200.75,
+      "span_coverage_at_k": 0.9088889,
+      "stage_duration_ms": {
+        "dense": {
+          "p50": 195,
+          "p95": 226,
+          "p99": 236
+        },
+        "embedding": {
+          "p50": 15,
+          "p95": 18,
+          "p99": 20
+        },
+        "fusion": {
+          "p50": 116,
+          "p95": 142,
+          "p99": 164
+        },
+        "lexical": {
+          "p50": 210,
+          "p95": 242,
+          "p99": 258
+        }
+      },
+      "useful_context_line_ratio": 0.02971245,
+      "useful_hit_density_mean": 0.0775
+    },
+    "solr-dense": {
+      "candidates_examined_mean": 80,
+      "candidates_returned_mean": 20,
+      "context_yield": {
+        "100": 0.54825395,
+        "1000": 0.79825395,
+        "250": 0.74944445,
+        "500": 0.78575395
+      },
+      "dense_acquired_mean": 80,
+      "dense_admitted_mean": null,
+      "duration_ms": {
+        "p50": 26,
+        "p95": 34,
+        "p99": 40
+      },
+      "end_to_end_ms": {
+        "p50": 26.40840000094613,
+        "p95": 35.016199999517994,
+        "p99": 40.94600099961099
+      },
+      "evidence_ndcg_at_k": 0.7147466,
+      "evidence_recall_at_k": 0.76666665,
+      "evidence_reciprocal_rank": 0.7094017,
+      "lexical_acquired_mean": null,
+      "lexical_admitted_mean": null,
+      "returned_chars_mean": 21559.75,
+      "returned_line_count_mean": 621.8,
+      "span_coverage_at_k": 0.79825395,
+      "stage_duration_ms": {
+        "dense": {
+          "p50": 9,
+          "p95": 13,
+          "p99": 15
+        },
+        "embedding": {
+          "p50": 12,
+          "p95": 15,
+          "p99": 18
+        }
+      },
+      "useful_context_line_ratio": 0.0550936,
+      "useful_hit_density_mean": 0.0775
+    },
+    "solr-hybrid": {
+      "candidates_examined_mean": 36.9,
+      "candidates_returned_mean": 20,
+      "context_yield": {
+        "100": 0.38873015,
+        "1000": 0.78873015,
+        "250": 0.68873015,
+        "500": 0.77623015
+      },
+      "dense_acquired_mean": 80,
+      "dense_admitted_mean": 20,
+      "duration_ms": {
+        "p50": 38,
+        "p95": 50,
+        "p99": 60
+      },
+      "end_to_end_ms": {
+        "p50": 39.36918399995193,
+        "p95": 52.174741998896934,
+        "p99": 61.70248399939737
+      },
+      "evidence_ndcg_at_k": 0.5742017,
+      "evidence_recall_at_k": 0.8,
+      "evidence_reciprocal_rank": 0.5219345,
+      "lexical_acquired_mean": 80,
+      "lexical_admitted_mean": 20,
+      "returned_chars_mean": 26974.85,
+      "returned_line_count_mean": 689.15,
+      "span_coverage_at_k": 0.8220635000000001,
+      "stage_duration_ms": {
+        "dense": {
+          "p50": 8,
+          "p95": 11,
+          "p99": 12
+        },
+        "embedding": {
+          "p50": 12,
+          "p95": 14,
+          "p99": 16
+        },
+        "fusion": {
+          "p50": 0,
+          "p95": 1,
+          "p99": 2
+        },
+        "lexical": {
+          "p50": 10,
+          "p95": 14,
+          "p99": 18
+        }
+      },
+      "useful_context_line_ratio": 0.04168615,
+      "useful_hit_density_mean": 0.075
+    }
+  },
+  "artifact_fingerprint": "sha256:1ffef8789576e5c1c1e2193f1fe581fe059d028e073c9909df91ad8e9408d98b",
+  "backend_artifact_sha256": {
+    "opensearch": "dfe9731a0ddff0c202485db6d598cf3eca2d64efab1cf9e9ca5d6e43455c8f85",
+    "qdrant": "037fcbbebd79b6e05aaf0a435104e67794960afbc47af96ed0f9be6f7eea4d22",
+    "solr": "1d86be757cf138ffeddc2414a66a30036b582abf9a5e7b1f3449cc1baf93e530"
+  },
+  "identity": {
+    "confirmation_fingerprint": "cd49ea670a092206c4eb0638f853893dc58f9761ebee860bd39dd85cee260cee",
+    "context_yield_metrics_fingerprint": "sha256:f021672682b6cee1ae420636b567924321ab65ab894580be738ab0241d17b693",
+    "corpus": {
+      "repository": "oalangomes/NeuroTrack_MS",
+      "revision": "74ce3244956a65baed61f1dae6f498cb2be4f3b7"
+    },
+    "effective_config_fingerprint": "sha256:033b8e8c817510ae1a30be30a0511e785b114699004302ea0582dad5b86d96a7",
+    "ground_truth_fingerprint": "sha256:a03733d1601097afcba5e32dc4b04834471758919300457fb88925fce481c29a",
+    "historical_reference_fingerprint": "bac54fbc24c4bdfd4c4b6841305f4ae77adace2f995197a5f5fea43ef9d9748e",
+    "metrics_fingerprint": "sha256:3adba6b1021b0f16624d4759e642fcb1616cd00469aba8abcf7e5d2d0281e894",
+    "query_fingerprint": "sha256:3c41c6a64b9c87033321f968fed6ccc30c0bcc216d779ceffb8d9e8e1ba3a9e7",
+    "runtime": {
+      "dirty": false,
+      "revision": "4a7af87429310fc6169856583c37085702f5cb20",
+      "runner_fingerprint": "4d9332bf28c4b294e935bec1d09401bf5bd17ac6f56fad3b8cdbe330d7f4518d",
+      "runtime_fingerprint": "sha256:22d9f11a973960224f274ab51a18ae3bab4177c85df6da6dafb2fca410609104"
+    }
+  },
+  "measurement": {
+    "acquisition_window": 80,
+    "k": 20,
+    "queries": 20,
+    "repetitions": 20,
+    "warmups": 1
+  },
+  "performance_comparable": false,
+  "performance_reason": "No independently attested exclusive measurement window; config alone is insufficient.",
+  "protocol": "fetchcore.hybrid-fusion-v1",
+  "raw_artifact_sha256": "0b05a891b2483c195ecf98620173d6751e31fa55307789d2c92b39351b3d5ffa",
+  "schema_version": 1,
+  "snapshot_errors": {},
+  "stage": "public-report",
+  "status": "complete"
+}

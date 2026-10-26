@@ -1,116 +1,117 @@
 # Hybrid fusion benchmark (#84)
 
-Decision: **PENDING / NOT PROMOTED**. A later control-only run completed against
-the current corpus and produced 400 observations for each of six dense/hybrid
-arms. The private control artifact is valid, but the subsequent hybrid acquisition
-capture is missing from private storage. No replay comparisons, finalist analysis
-or independent confirmation can be made without it. This is an incomplete
-experiment, not evidence that a fusion variant failed.
+Decision: **experiment complete; no promotion**. The three backends completed
+control, hybrid capture, offline replay and joint real confirmation, including
+the frozen ten-query holdout. The replay selected `rrf-30`; quality confirmation
+found no lost Ground Truth evidence. Performance remains non-comparable because
+there is no independent exclusive-host attestation, so every promotion gate
+remains closed. Offline replay duration is not retrieval latency.
 
-## Hypothesis and fixed protocol
+## Frozen protocol and run identity
 
-Functional canonical lexical acquisition can displace useful dense evidence after
-RRF fusion. Independently varying fusion admission windows and RRF k might improve
-useful evidence ordering without losing recovered requirements.
+The run preserved the reviewed corpus and query sets, SearchIntent, Ground Truth,
+embedding identity, K=20, one warmup, 20 measured repetitions, 80 acquired
+candidates per channel and the existing backend-specific admission defaults.
+Each of the 20 canonical queries therefore contributes 400 measured observations
+per backend hybrid arm. The additional ten frozen, source-reviewed queries were
+used only for independent confirmation after `rrf-30` had been selected.
 
-The frozen historical reference is SearchIntent v2 evidence V0.2: 20 queries,
-42 requirements, K=20, one warmup and 20 repetitions, NeuroTrack_MS at
-`74ce3244956a65baed61f1dae6f498cb2be4f3b7`, embeddinggemma/768. Historical files
-remain unchanged and are pinned by
-[checksums](../../../benchmarks/hybrid-fusion/artifacts/historical-checksums.json).
-The [protocol](../../../benchmarks/hybrid-fusion/README.md) contains exact commands,
-selection rules, diagnostics and publication constraints.
-
-Historical Solr/OpenSearch hybrid used 20 candidates from each 80-candidate
-acquisition; Qdrant fused its eligible sparse/dense acquisition window. The
-implementation retains these differences without explicit configuration.
-
-## Identity and observed blocker
-
-The isolated implementation branch was based on
-`6cd089db8591f481e6488fed1bd49f2a412fbdda`. An earlier unchanged-control attempt
-failed snapshot attestation before retrieval and is preserved in
-[the blocked control artifact](../../../benchmarks/hybrid-fusion/artifacts/blocked-control.json).
-A later control run on PR head `a0d490afb5655a1748bb5a43b8379c4e45f72a57`
-passed current snapshot attestation and completed all six arms. Its sanitized,
-source-free report is [control-report.json](../../../benchmarks/hybrid-fusion/artifacts/control-report.json).
-The private source-bearing control artifact remains outside the repository.
-
-| Identity | Observed |
+| Identity | Value |
 | --- | --- |
-| Control artifact | `control-fixed.json.gz`, private SHA-256 `6f4f0cff35dd655473e28782cab9b095544ebc54e21c33d152fd10d065ac9cb7` |
-| Artifact integrity | gzip and runner schema/fingerprint valid; identity matches current inputs |
-| Snapshot attestation | 6 arms passed; 0 snapshot errors |
-| Control observations | 400 per arm × 6 arms; 2,400 total |
-| Capture artifact | Missing; no complete or partial capture found in the supplied private directory or either worktree |
-| Performance comparable | false; no independently attested exclusive measurement window |
-| Promotion | none; replay and confirmation pending |
+| Execution revision | `4a7af87429310fc6169856583c37085702f5cb20` |
+| Runner fingerprint | `4d9332bf28c4b294e935bec1d09401bf5bd17ac6f56fad3b8cdbe330d7f4518d` |
+| Runtime fingerprint | `sha256:22d9f11a973960224f274ab51a18ae3bab4177c85df6da6dafb2fca410609104` |
+| Corpus revision | `74ce3244956a65baed61f1dae6f498cb2be4f3b7` |
+| Effective configuration fingerprint | `sha256:033b8e8c817510ae1a30be30a0511e785b114699004302ea0582dad5b86d96a7` |
+| Ground Truth fingerprint | `sha256:a03733d1601097afcba5e32dc4b04834471758919300457fb88925fce481c29a` |
+| Model | `embeddinggemma`, 768 dimensions; digest recorded in private artifacts |
 
-### Completed control baseline
+The former control and incomplete confirmation are preserved as historical
+evidence. They were not reused because their runner fingerprints do not match
+this run. No frozen historical artifact, Ground Truth, query set, snapshot,
+default or projection was modified.
 
-Metrics below are the runner's aggregated control results. Durations are observed
-control timings, but are **not comparable performance evidence** because host
-isolation was not independently attested. They must not be compared to historical
-timings as a promotion result.
+## Completion and integrity
 
-| Backend | Arm | EvidenceRecall@20 | SpanCoverage@20 | EvidenceMRR | EvidenceNDCG@20 | ContextYield@100/250/500/1000 | p50 end-to-end (ms) |
-| --- | --- | ---: | ---: | ---: | ---: | --- | ---: |
-| Solr | Dense | 0.766667 | 0.798254 | 0.709402 | 0.714747 | 0.548254 / 0.749444 / 0.785754 / 0.798254 | 31.108 |
-| Solr | Hybrid | 0.800000 | 0.822064 | 0.521935 | 0.574202 | 0.388730 / 0.688730 / 0.776230 / 0.788730 | 50.804 |
-| OpenSearch | Dense | 0.841667 | 0.873254 | 0.728846 | 0.751517 | 0.548254 / 0.749444 / 0.860754 / 0.873254 | 35.926 |
-| OpenSearch | Hybrid | 0.800000 | 0.822064 | 0.550476 | 0.592443 | 0.355397 / 0.730397 / 0.792897 / 0.822064 | 60.089 |
-| Qdrant | Dense | 0.841667 | 0.873254 | 0.728700 | 0.751316 | 0.548254 / 0.749444 / 0.860754 / 0.873254 | 820.707 |
-| Qdrant | Hybrid | 0.900000 | 0.908889 | 0.737976 | 0.754087 | 0.410079 / 0.608889 / 0.842222 / 0.896389 | 1185.325 |
+| Phase | Result |
+| --- | --- |
+| Control | Complete: 400 observations in each of six dense/hybrid arms (2,400 total); all three per-backend controls and consolidated control validated |
+| Capture | Complete: 400 measured acquisitions per hybrid backend; 20 validated query shards per backend; source provenance and real/offline fusion fingerprints validated |
+| Replay | Complete: all 13 variants evaluated per backend: nine `{20,40,80} × {20,40,80}` windows at RRF k=60, plus RRF k `{10,30,60,120}`; 20 checksummed replay shards per backend |
+| Confirmation | Complete: selected `rrf-30` versus the same control on all three backends; 60 main-query and 30 holdout checkpoints validated; no candidate-acquisition or provenance mismatch |
+| Public report | Complete: official report and diagnostics allowlist generated and reviewed; raw captures and private configuration remain outside the repository |
 
-There are no candidate-allocation or RRF-parameter deltas, per-query regressions,
-candidate contribution diagnostics or eligible finalists yet. Do not infer a
-winner from these control-only values.
+The consolidated artifact SHA-256 values are control
+`0b05a891b2483c195ecf98620173d6751e31fa55307789d2c92b39351b3d5ffa`, capture
+`6e1fe9d8f831729ec6a76f94ac1d45abbce00e0a67d20b58fd41e9fd05f74c4a`, replay
+`351b196e0354164550f18ffd29d86cda2712a3a02a377eec67aba5e36b789f47`, and
+confirmation `8d8e422276a7c99c87c2f684fc0937e62a497a0302ad524f88bfe124c8ae243c`.
+The public, source-free reports and diagnostics are in
+[`artifacts/runs/4d9332bf/`](../../../benchmarks/hybrid-fusion/artifacts/runs/4d9332bf/).
+The original historical reports and checksums remain unchanged.
 
-Docker project ownership, volume labels and endpoint bindings were inspected before
-starting only the existing dedicated BENCH containers. No container was recreated,
-no volume removed, no snapshot rewritten and no rebuild initiated. OPERATIONAL
-resources were not changed. The canonical query, models, serializers and projection
-fingerprint implementation were not modified by this change.
+## Control baseline and selected variant
 
-The historical [blocked control attestation](../../../benchmarks/hybrid-fusion/artifacts/blocked-control.json)
-records the earlier typed mismatches. The current sanitized control report records
-safe runtime identities and the private raw artifact checksum. Raw configuration,
-inspection records and source-bearing observations remain in local private BENCH
-storage.
+Quality metrics below are means over 20 queries × 20 measured repetitions.
+ContextYield columns are ordered @100/@250/@500/@1000 lines. Acquired/admitted
+columns show lexical/dense candidates per retrieval; returned is top K=20.
+Latency values are real online retrieval timings, but are descriptive only and
+must not be compared as performance evidence without an exclusive measurement
+window.
 
-## Results and validity
+| Backend / variant | EvidenceRecall@20 | SpanCoverage@20 | EvidenceMRR | nDCG@20 | UsefulContextLineRatio | Useful-hit density | ContextYield @100/@250/@500/@1000 | Acquired L/D | Admitted L/D | Examined / returned | Confirmation p50/p95/p99 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |
+| Solr control | 0.8000 | 0.8221 | 0.5219 | 0.5742 | 0.04169 | 0.0750 | 0.3887 / 0.6887 / 0.7762 / 0.7887 | 80 / 80 | 20 / 20 | 36.90 / 20 | — |
+| Solr `rrf-30` | 0.8000 | 0.8221 | 0.5219 | 0.5742 | 0.04169 | 0.0750 | 0.3887 / 0.6887 / 0.7762 / 0.7887 | 80 / 80 | 20 / 20 | 36.90 / 20 | 66.30 / 130.05 / 153.70 |
+| OpenSearch control | 0.8000 | 0.8221 | 0.5505 | 0.5924 | 0.04222 | 0.0750 | 0.3554 / 0.7304 / 0.7929 / 0.8221 | 80 / 80 | 20 / 20 | 36.45 / 20 | — |
+| OpenSearch `rrf-30` | 0.8000 | 0.8221 | 0.5505 | 0.5924 | 0.04222 | 0.0750 | 0.3554 / 0.7304 / 0.7929 / 0.8221 | 80 / 80 | 20 / 20 | 36.45 / 20 | 83.32 / 158.59 / 170.79 |
+| Qdrant control | 0.9000 | 0.9089 | 0.7380 | 0.7538 | 0.02971 | 0.0775 | 0.4101 / 0.6089 / 0.8422 / 0.8714 | 80 / 80 | 80 / 80 | 144.25 / 20 | — |
+| Qdrant `rrf-30` | 0.9000 | 0.9221 | 0.7475 | 0.7600 | 0.03092 | 0.0850 | 0.4101 / 0.6589 / 0.8554 / 0.8846 | 80 / 80 | 80 / 80 | 144.25 / 20 | 1250.94 / 1384.38 / 1440.27 |
 
-| Experiment | Status | Quality / latency / per-query deltas |
-| --- | --- | --- |
-| Allocation: nine window pairs, k=60 | Not executed; capture missing | Unavailable |
-| RRF: k=10/30/60/120, legacy windows | Not executed; capture missing | Unavailable |
-| Real finalist confirmation | Not executed; no eligible replay finalist | Unavailable |
-| Ten frozen additional queries | Source-reviewed, not executed | Unavailable |
+On the reviewed set, `rrf-30` is quality-equivalent to control on Solr and
+OpenSearch. On Qdrant it leaves EvidenceRecall unchanged and improves
+SpanCoverage by 0.01317, MRR by 0.00952, nDCG by 0.00622 and ContextYield at
+@250 by 0.05. No backend loses a Ground Truth item. This is a corpus-specific
+offline selection, not a production default recommendation.
 
-No variant gains or regressions can be inferred without replay. Offline
-unit/adapter fixtures validate admission, replay and compatibility; they are not
-benchmark quality or performance evidence. Unchanged defaults and fail-closed
-behavior remain the only product conclusions established here.
+## Independent holdout and promotion gates
 
-The current snapshots passed the control attestation. Resume only after locating
-or otherwise recovering a valid capture compatible with this exact control; if it
-cannot be recovered, assess a fresh capture as a new artifact without overwriting
-anything. No compatibility check may be bypassed to make historical projections
-readable by the current runtime. Retain the original snapshots and historical
-artifacts. Any newly prepared snapshot creates a separately identified current
-control; it does not retroactively reproduce the historical snapshot.
+The ten-query holdout was not used for tuning or selection. The selected variant
+had zero lost evidence on every backend and passed the quality non-regression
+check. Solr and OpenSearch were metric-equivalent to control. On Qdrant, holdout
+EvidenceRecall and SpanCoverage remained 1.0; MRR improved by 0.03167 and nDCG by
+0.02725. ContextYield@500 increased by 0.10. UsefulContextLineRatio decreased by
+0.0000835, a small recorded change that did not trigger the frozen non-regression
+gate.
 
-## Implementation and validation
+| Backend | Holdout EvidenceRecall@20 | SpanCoverage@20 | MRR | nDCG@20 | ContextYield @100/@250/@500/@1000 | Lost evidence | Quality gate |
+| --- | ---: | ---: | ---: | ---: | --- | ---: | --- |
+| Solr | 0.9000 | 0.9000 | 0.4119 | 0.5095 | 0.55 / 0.65 / 0.90 / 0.90 | 0 | Passed |
+| OpenSearch | 0.9000 | 0.9000 | 0.4143 | 0.5127 | 0.55 / 0.65 / 0.90 / 0.90 | 0 | Passed |
+| Qdrant | 1.0000 | 1.0000 | 0.7083 | 0.7823 | 0.50 / 0.90 / 1.00 / 1.00 | 0 | Passed |
 
-Changes are limited to optional `HybridRetrievalConfig` fields, shared bounded
-admission/capture contracts, thin adapter integration, benchmark orchestration,
-source-reviewed confirmation data, compatibility/protocol tests and documentation.
-There is no second RRF implementation, backend addition, reranking, adaptive
-allocation, query rewriting or change to persisted identities.
+All three promotion gates remain **failed/pending** because the BENCH
+configuration did not attest an exclusive host. Consequently the measured p50,
+p95 and p99 values above are not comparable performance results; no latency or
+cost claim and no configuration promotion is made. Confirmation output records
+`pending-performance-comparability`. This experiment completes Issue #84's
+benchmark execution but does not authorize changing retrieval defaults.
 
-Tests cover invalid/direct/mapping configuration, legacy serialization, rejection
-before I/O, budget versus result availability, original sparse ranks after
-eligibility, acquisition/admission/output separation, source spans/checksums,
-deduplication, all three adapters' control/replay equivalence, deterministic
-fingerprints, artifact integrity/completeness and quality/cost gate failures.
-The PR records executed checks and their final results.
+## Operational and resource record
+
+The backends ran sequentially in a detached tmux session using the repository
+`.venv` Python 3.11.16. Provisioning remained `reuse_only`; no index rebuild,
+container restart, volume operation or OPERATIONAL mutation occurred. The host
+did not provide an exclusive measurement window. Confirmation completed in
+58:15.25, with process peak RSS 460,260 KiB. The highest process RSS observed
+across this execution was 1,738,332 KiB during Qdrant replay; peak capture RSS
+was 1,165,356 KiB. Swap remained essentially unused. No execution was interrupted
+and no query observation was rerun from a validated checkpoint.
+
+## Historical and implementation context
+
+The original V0.2 evidence, checksums, blocked pre-capture attempt and prior
+control report are preserved as historical artifacts. Earlier documentation
+that described capture/replay/confirmation as missing referred to that prior
+fingerprint and is superseded by this completed run; it is not retroactively
+reclassified. The implementation and validation history remains in PR #232.
