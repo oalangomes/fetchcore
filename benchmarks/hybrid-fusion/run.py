@@ -1461,6 +1461,14 @@ def consolidate(args):
         raise ValueError("only control, capture, or replay artifacts can be consolidated")
     if any(a["stage"] != stage for a in artifacts):
         raise ValueError("backend artifact stages differ")
+    for artifact in artifacts:
+        query_ids = artifact.get("query_ids", [])
+        if (
+            artifact.get("measurement") != FULL_MEASUREMENT
+            or len(query_ids) != FULL_MEASUREMENT["queries"]
+            or len(set(query_ids)) != len(query_ids)
+        ):
+            raise ValueError("backend artifact has incomplete measurement/query manifest")
     if any(a["identity"] != artifacts[0]["identity"] for a in artifacts[1:]):
         raise ValueError("backend artifact runner/input fingerprints differ")
     for field in ("measurement", "measurement_kind", "query_ids"):
@@ -1514,6 +1522,8 @@ def consolidate(args):
                 raise ValueError("backend observation arms are missing or incompatible")
             if set(artifact.get("aggregates", {})) != expected_arms:
                 raise ValueError("backend aggregate arms are missing or incompatible")
+            if stage == "control" and set(artifact.get("snapshots", {})) != expected_arms:
+                raise ValueError("backend snapshot arms are missing or incompatible")
             for arm in sorted(expected_arms):
                 rows = artifact["observations"][arm]
                 validate_rows(rows, artifact["query_ids"], 20)

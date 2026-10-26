@@ -375,6 +375,10 @@ def test_capture_consolidation_binds_control_snapshots_and_validates_query_shard
     ))
     result = BENCH.read(output, stage="capture")
     assert result["consolidated_backends"] == list(BENCH.BACKENDS)
+    assert len(result["aggregates"]) == 3
+    for artifact in artifacts:
+        for arm, aggregate in BENCH.read(artifact)["aggregates"].items():
+            assert result["aggregates"][arm] == aggregate
     assert all(len(result["captures"][BENCH.arm_id(b, "hybrid")]) == 20 for b in BENCH.BACKENDS)
 
     altered = BENCH.read(qdrant_capture_path, stage="capture")
@@ -830,6 +834,7 @@ def test_control_consolidation_preserves_all_six_arms_and_is_order_independent(t
 @pytest.mark.parametrize('fault', [
     'missing_arm', 'missing_aggregate', 'missing_row', 'duplicate_row', 'duplicate_backend',
     'fingerprint', 'aggregate', 'corruption', 'foreign_arm', 'snapshot_collision',
+    'missing_query', 'duplicate_query', 'missing_snapshot',
 ])
 def test_control_consolidation_rejects_invalid_inputs_atomically(tmp_path, fault):
     from types import SimpleNamespace
@@ -848,6 +853,12 @@ def test_control_consolidation_rejects_invalid_inputs_atomically(tmp_path, fault
         altered['observations'][arm][-1] = altered['observations'][arm][0]
     elif fault == 'duplicate_backend':
         paths[1] = paths[0]
+    elif fault == 'missing_query':
+        altered['query_ids'].pop()
+    elif fault == 'duplicate_query':
+        altered['query_ids'][-1] = altered['query_ids'][0]
+    elif fault == 'missing_snapshot':
+        del altered['snapshots'][arm]
     elif fault == 'fingerprint':
         altered['identity']['runner_fingerprint'] = 'incompatible'
     elif fault == 'aggregate':
@@ -865,3 +876,28 @@ def test_control_consolidation_rejects_invalid_inputs_atomically(tmp_path, fault
     with pytest.raises(ValueError):
         BENCH.consolidate(SimpleNamespace(output=output, backend_artifact=paths))
     assert not output.exists()
+
+
+def test_published_reports_validate_seals_and_preserve_flagged_historical_files():
+    directory = ROOT / 'benchmarks/hybrid-fusion/artifacts/runs/4d9332bf'
+    checksums = {
+        name: checksum
+        for checksum, name in (
+            line.split() for line in (directory / 'SHA256SUMS').read_text().splitlines()
+        )
+    }
+    assert set(checksums) == {path.name for path in directory.glob('*.json')}
+    assert all(BENCH.digest(directory / name) == checksum for name, checksum in checksums.items())
+    historical = {
+        'control-report.json': 'dc22cc40462e65daeb30e3602bef8a59d770c6eb6af7427b4e6edf0e52cf883a',
+        'control-diagnostics.json': 'b0d7704ea7b329d6d8207b957e5722c54a398374775787bf233bc75c4ab8e1ce',
+    }
+    for path in directory.glob('*.json'):
+        if path.name in historical:
+            assert BENCH.digest(path) == historical[path.name]
+            with pytest.raises(ValueError, match='artifact checksum mismatch'):
+                BENCH.read(path)
+        elif 'artifact_fingerprint' in json.loads(path.read_text()):
+            BENCH.read(path, complete=False)
+    for name in ('control-consolidated-v1-report.json', 'control-consolidated-v1-diagnostics.json'):
+        assert len(BENCH.read(directory / name)['aggregates']) == 6

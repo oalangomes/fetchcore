@@ -1,0 +1,78 @@
+{
+  "bench_resource_reservations": {
+    "cpu_quota": false,
+    "cpuset": false,
+    "memory_limit": false
+  },
+  "concurrent_services": {
+    "categories": [
+      "BENCH",
+      "SHARED",
+      "OPERATIONAL",
+      "OPERATIONAL MCP/API/Lab"
+    ],
+    "containers_running": 12,
+    "other_agent_processes": true,
+    "runners_active": [
+      "fetchcore",
+      "ai-ops-alan"
+    ]
+  },
+  "configuration_matches": true,
+  "cpu_logical": 8,
+  "dedicated": true,
+  "embedding_digest_matches": true,
+  "embedding_identity_matches": true,
+  "exclusive_host": false,
+  "exclusive_interval": null,
+  "host_samples": [
+    {
+      "available_memory_mib": 10379,
+      "load_average": [
+        1.04,
+        0.73,
+        0.57
+      ],
+      "observed_utc": "2026-10-26T21:43:01Z",
+      "used_swap_mib": 38
+    },
+    {
+      "cpu_pressure_some_avg10": 0.02,
+      "load_average": [
+        0.62,
+        0.63,
+        0.55
+      ],
+      "memory_pressure_some_avg10": 0.0,
+      "observed_utc": "2026-10-26T21:46:54Z"
+    }
+  ],
+  "memory_total_mib": 20001,
+  "observed_utc": "2026-10-26T21:48:48.257425+00:00",
+  "online_confirmation_executed": false,
+  "ownership_endpoints_volumes_validated": true,
+  "runner_fingerprint_matches": false,
+  "runtime_fingerprint_matches": false,
+  "service_versions_match": true,
+  "snapshots": {
+    "opensearch-dense": {
+      "equal_to_frozen": true
+    },
+    "opensearch-hybrid": {
+      "equal_to_frozen": true
+    },
+    "qdrant-dense": {
+      "equal_to_frozen": true
+    },
+    "qdrant-hybrid": {
+      "equal_to_frozen": true
+    },
+    "solr-dense": {
+      "equal_to_frozen": true
+    },
+    "solr-hybrid": {
+      "equal_to_frozen": true
+    }
+  },
+  "status": "pending-performance-comparability"
+}

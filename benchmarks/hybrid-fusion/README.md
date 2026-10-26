@@ -272,3 +272,10 @@ bindings. Generate a separately named corrected control and public report with
 measurement. A changed runner/runtime fingerprint cannot resume historical
 online measurements. No control, capture or replay rerun is required for this
 repair.
+
+The [technical follow-up](../../docs/benchmarks/results/hybrid-fusion-follow-up.md)
+contains offline channel attribution, corrected aggregate reports and the
+explicit historical public-seal exceptions. `analyze.py` validates the frozen
+captures and writes source-free per-query provenance and rank contributions;
+it performs no backend retrieval. The only proposed next experiment is tracked
+in [#234](https://github.com/oalangomes/fetchcore/issues/234).

@@ -115,3 +115,10 @@ control report are preserved as historical artifacts. Earlier documentation
 that described capture/replay/confirmation as missing referred to that prior
 fingerprint and is superseded by this completed run; it is not retroactively
 reclassified. The implementation and validation history remains in PR #232.
+
+The [technical follow-up](hybrid-fusion-follow-up.md) repairs consolidated
+control/capture aggregate presentation without relabeling measurements, explains
+the per-query dense/hybrid rank inversions, records the self-dogfood repair and
+current performance limitation, and links the bounded follow-up experiment.
+Its separate corrected report includes all six control arms; the historical
+files and checksums above remain unchanged.
