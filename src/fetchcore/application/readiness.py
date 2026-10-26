@@ -163,6 +163,73 @@ def inspect_readiness(inspector: RuntimeInspectionService) -> ReadinessReport:
             config.backend, config.repository, config.revision, None,
             mode, checks, fingerprints,
         )
+    if config.backend == "mongodb-search":
+        from fetchcore.application.index_operations import prepare_repository_index_runtime
+        from fetchcore.adapters.retrieval.mongodb.indexing import (
+            MongoDBIndexStore, MongoDBOperationalIndex,
+        )
+        from fetchcore.adapters.retrieval.mongodb.settings import MongoDBSettings
+        from fetchcore.adapters.retrieval.mongodb.transport import PyMongoTransport
+        from fetchcore.retrieval.embedding import validate_vector_dimensions
+
+        mongo_transport = None
+        try:
+            mongo_settings = MongoDBSettings.from_mapping(config.backend_settings)
+            mongo_transport = PyMongoTransport(mongo_settings)
+            mongo_provider = None
+            if mode in {"dense", "hybrid"} and config.retrieval is not None:
+                requested = config.retrieval.dense.embedding
+                if requested.dimensions not in {None, mongo_settings.vector_dimensions}:
+                    raise KnowledgeSearchError("MongoDB dimensions mismatch", category="schema_mismatch")
+                mongo_provider = inspector.providers.create(
+                    requested, backend_id=config.backend, backend_name="MongoDB",
+                )
+            mongo_store = MongoDBIndexStore(
+                mongo_transport, mongo_settings, embedding_provider=mongo_provider,
+            )
+            mongo_store.validate_schema(require_vectors=mode in {"dense", "hybrid"})
+            mongo_snapshot = mongo_store.load_snapshot(config.repository)
+            indexed_revision = mongo_snapshot.revision
+            runtime_mongo = prepare_repository_index_runtime(
+                config.workspace, repository=config.repository, branch=None, revision=config.revision,
+            )
+            status_mongo = MongoDBOperationalIndex(mongo_store, runtime_mongo).run("status")
+            checks["snapshot"] = ReadinessFact("ready")
+            checks["indexing_fingerprint"] = (
+                ReadinessFact("ready") if mongo_snapshot.indexing_fingerprint == runtime_mongo.fingerprint
+                else ReadinessFact("incompatible", "indexing_contract_changed")
+            )
+            checks["currentness"] = (
+                ReadinessFact("ready") if status_mongo["currentness"] == "current"
+                else ReadinessFact("stale", "changes_pending")
+            )
+            if config.revision is None:
+                checks["currentness"] = ReadinessFact("unknown", "revision_unbound")
+            fingerprints.update(
+                projection=mongo_snapshot.projection_fingerprint,
+                indexing=mongo_snapshot.indexing_fingerprint,
+                expected_indexing=runtime_mongo.fingerprint,
+            )
+            if mongo_provider is not None:
+                if not mongo_store.embedding_snapshot_matches(mongo_snapshot):
+                    checks["embedding"] = ReadinessFact("incompatible", "embedding_identity_changed")
+                else:
+                    vectors = mongo_provider.embed(("fetchcore readiness",))
+                    checks["embedding"] = (
+                        ReadinessFact("ready")
+                        if len(vectors) == 1 and validate_vector_dimensions(vectors) == mongo_settings.vector_dimensions
+                        else ReadinessFact("incompatible", "vector_dimensions_mismatch")
+                    )
+            observations["search_consistency"] = "eventual"
+        except (KnowledgeSearchError, OSError, ValueError) as exc:
+            checks["snapshot"] = _failed(_category(exc))
+        finally:
+            if mongo_transport is not None:
+                mongo_transport.close()
+        return ReadinessReport(
+            config.backend, config.repository, config.revision, indexed_revision,
+            mode, checks, fingerprints, observations,
+        )
 
     try:
         from fetchcore.adapters.retrieval.solr.backend import (

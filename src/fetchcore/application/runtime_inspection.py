@@ -25,6 +25,9 @@ from fetchcore.adapters.retrieval.solr.backend import (
     SolrSettings,
     UrllibSolrTransport,
 )
+from fetchcore.adapters.retrieval.mongodb.indexing import MongoDBIndexStore
+from fetchcore.adapters.retrieval.mongodb.settings import MongoDBSettings
+from fetchcore.adapters.retrieval.mongodb.transport import PyMongoTransport
 from fetchcore.application.composition import BackendRegistry, EmbeddingProviderRegistry
 from fetchcore.application.indexing import indexing_capabilities
 from fetchcore.application.runtime_config import (
@@ -83,6 +86,8 @@ def _connection_category(error: Exception) -> str:
 
 def _secret_key(key: str) -> bool:
     normalized = key.casefold().replace("-", "_")
+    if normalized == "uri":
+        return True
     return any(
         part in normalized
         for part in ("api_key", "apikey", "password", "secret", "token", "authorization", "credential")
@@ -202,6 +207,8 @@ class RuntimeInspectionService:
 
     def _resolved_backend_settings(self) -> dict[str, object]:
         settings = dict(self.config.backend_settings)
+        if self.config.backend == "mongodb-search":
+            return asdict(MongoDBSettings.from_mapping(settings))
         if self.config.backend == "solr":
             return asdict(SolrSettings.from_mapping(settings))
         if self.config.backend == "opensearch":
@@ -339,6 +346,33 @@ class RuntimeInspectionService:
             )
         if backend_id == "solr":
             return self._probe_solr()
+        if backend_id == "mongodb-search":
+            mongo_transport = None
+            try:
+                mongo_settings = MongoDBSettings.from_mapping(self.config.backend_settings)
+                mongo_transport = PyMongoTransport(mongo_settings)
+                mongo_transport.health()
+                try:
+                    MongoDBIndexStore(mongo_transport, mongo_settings).validate_schema(
+                        require_vectors=self._required_embedding() is not None,
+                    )
+                except KnowledgeSearchError as exc:
+                    return (
+                        RuntimeCheck("backend_connectivity", "ok"),
+                        RuntimeCheck("schema_compatibility", "failed", exc.category),
+                    )
+            except (KnowledgeSearchError, ValueError, OSError) as exc:
+                return (
+                    RuntimeCheck("backend_connectivity", "failed", _connection_category(exc)),
+                    RuntimeCheck("schema_compatibility", "not_checked"),
+                )
+            finally:
+                if mongo_transport is not None:
+                    mongo_transport.close()
+            return (
+                RuntimeCheck("backend_connectivity", "ok"),
+                RuntimeCheck("schema_compatibility", "ok"),
+            )
         if backend_id == "opensearch":
             settings = OpenSearchSettings.from_mapping(dict(self.config.backend_settings))
             store = OpenSearchIndexStore(

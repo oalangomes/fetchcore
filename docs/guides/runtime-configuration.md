@@ -100,7 +100,12 @@ self-dogfood indexing workflow; this serving runtime file is not required for
 benchmark or indexing reproduction.
 
 The built-in backend catalog (`local-semantic`, `solr`, `opensearch`,
-`qdrant-vector`) and embedding provider catalog (`ollama`) stay in code.
+`qdrant-vector`, `mongodb-search`) and embedding provider catalog (`ollama`) stay in code.
+The experimental [MongoDB adapter](mongodb-search.md) adds
+`FETCHCORE_MONGODB_URI`, `FETCHCORE_MONGODB_DATABASE`,
+`FETCHCORE_MONGODB_COLLECTION`, `FETCHCORE_MONGODB_SEARCH_INDEX`,
+`FETCHCORE_MONGODB_VECTOR_INDEX`, and `FETCHCORE_MONGODB_VECTOR_DIMENSIONS`.
+The entire MongoDB URI is masked by resolved configuration inspection.
 Provider and backend factories can be injected for tests or SDK composition;
 factory identity mismatches fail explicitly.
 

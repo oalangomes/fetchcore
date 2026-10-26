@@ -23,6 +23,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mongodb = [
+  "pymongo>=4.10,<5",
+]
 mcp = [
   "mcp>=2,<3",
 ]
@@ -55,6 +58,7 @@ markers = [
   "solr_integration: requires the opt-in local Docker Solr service",
   "opensearch_integration: requires the opt-in local Docker OpenSearch service",
   "qdrant_integration: requires the opt-in local Docker Qdrant service",
+  "mongodb_integration: requires an opt-in MongoDB deployment with Search and Vector Search",
 ]
 
 [tool.ruff]
