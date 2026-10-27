@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 _C_LIKE_IDENTIFIER = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 _LEXICALLY_SUPPORTED_LANGUAGES = frozenset(
-    {"python", "javascript", "typescript", "java", "groovy", "dart"}
+    {"python", "javascript", "typescript", "java", "groovy", "dart", "go"}
 )
 _JS_CONTROL_PAREN_KEYWORDS = frozenset(
     {"catch", "for", "if", "switch", "while", "with"}

@@ -281,9 +281,9 @@ def test_persisted_identities_version_projection_route_semantics() -> None:
         RepositoryIndexConfig(),
         symbol_extractors=default_structural_symbol_extractors(),
     )
-    # Expanded API admission changes canonical evidence; rebuild explicitly.
+    # Adding a structural extractor changes indexing identity; rebuild explicitly.
     assert indexing_contract_fingerprint(indexer) == (
-        "sha256:0e32e408c447392ded84bc01ea0709b5c43f7eb93875cb6e850476360efc028b"
+        "sha256:ce415dafb15df7ce245afcf97351c00180b4f1d1963ecb22f184ee60e64460b3"
     )
 
 

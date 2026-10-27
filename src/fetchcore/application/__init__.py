@@ -32,3 +32,6 @@ from .readiness import (
     ReadinessFact as ReadinessFact,
     ReadinessReport as ReadinessReport,
 )
+from .navigation import (
+    RepositoryKnowledgeNavigationService as RepositoryKnowledgeNavigationService,
+)

@@ -410,6 +410,7 @@ def default_structural_symbol_extractors() -> dict[str, SymbolExtractor]:
     # Local import avoids a module cycle: the Groovy extractor reuses the
     # canonical SourceStructure/StructuralSymbolSpan contracts defined here.
     from fetchcore.repository.extractors.languages.dart import DartStructuralExtractor
+    from fetchcore.repository.extractors.languages.go import GoStructuralExtractor
     from fetchcore.repository.extractors.languages.groovy import GroovyStructuralExtractor
 
     return {
@@ -419,6 +420,7 @@ def default_structural_symbol_extractors() -> dict[str, SymbolExtractor]:
         "java": JavaStructuralExtractor(),
         "groovy": GroovyStructuralExtractor(),
         "dart": DartStructuralExtractor(),
+        "go": GoStructuralExtractor(),
     }
 
 
