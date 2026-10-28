@@ -177,7 +177,8 @@ def test_observed_python_member_call_is_navigable_without_resolution_inference(
     related = navigation.get_related(caller)
 
     assert len(related) == 1
-    assert related[0].kind == "member_call"
+    assert related[0].kind == "calls"
+    assert related[0].subtype == "member_call"
     assert related[0].target == "service.refresh"
     assert related[0].resolution == "syntax"
     assert related[0].source_ref == caller.source_ref

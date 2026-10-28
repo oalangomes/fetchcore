@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 
-from fetchcore.repository.lexical import mask_c_like_non_code
+from fetchcore.repository.lexical import mask_go_non_code
 from fetchcore.repository.structure import (
     SourceStructure,
     StructuralSymbolSpan,
@@ -46,7 +46,8 @@ _IMPORT_LINE = re.compile(
 class GoStructuralExtractor:
     """Extract declarations and imports visible in Go syntax, without resolution."""
 
-    indexing_contract_version = "1"
+    indexing_contract_version = "2"
+    structural_capabilities = ("declarations", "imports")
 
     def extract(self, content: str) -> tuple[StructuralSymbolSpan, ...]:
         """Return non-overlapping top-level Go declarations for source chunking."""
@@ -62,7 +63,7 @@ class GoStructuralExtractor:
         """Extract package, imports, types, functions, and methods observed in source."""
 
         del path
-        masked = mask_c_like_non_code(content)
+        masked = mask_go_non_code(content)
         depths = _brace_depths(masked)
         package_match = re.search(
             rf"(?m)^[ \t]*package[ \t]+(?P<name>{_IDENTIFIER})\b",
@@ -131,8 +132,6 @@ class GoStructuralExtractor:
             name = match.group("name")
             receiver = match.group("receiver")
             container = _receiver_type(receiver) if receiver else None
-            if container and type_names and container not in type_names:
-                continue
             symbol = StructuralSymbolSpan(
                 name=name,
                 symbol_type="method" if container else "function",
@@ -146,8 +145,7 @@ class GoStructuralExtractor:
                 signature=_line_signature(content, match.start(), body_open + 1),
             )
             symbols.append(symbol)
-            if container is None:
-                chunks.append(symbol)
+            chunks.append(symbol)
 
         return SourceStructure(
             language="go",
@@ -208,9 +206,13 @@ def _receiver_type(receiver: str | None) -> str | None:
 
 def _go_imports(content: str) -> tuple[str, ...]:
     imports: set[str] = set()
+    masked = mask_go_non_code(content)
     for single_match in _SINGLE_IMPORT.finditer(content):
-        imports.add(_import_path(single_match.group("path")))
+        if masked[single_match.start():single_match.end()].lstrip().startswith("import"):
+            imports.add(_import_path(single_match.group("path")))
     for block_match in _IMPORT_BLOCK.finditer(content):
+        if not masked[block_match.start():block_match.end()].lstrip().startswith("import"):
+            continue
         for line in block_match.group("body").splitlines():
             line_match = _IMPORT_LINE.fullmatch(line)
             if line_match:

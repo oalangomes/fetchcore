@@ -18,6 +18,9 @@
 | `EvidenceObservation` | `fetchcore.retrieval.evidence` | Validated source-derived category/subtype/value and source trace. |
 | `QueryMatchEvidence` | `fetchcore.retrieval.evidence` | Signal, match type, channels, values, source and bounded contribution details. |
 | `KnowledgeEvidence`, `SectionEvidence`, `MarkdownReferenceEvidence` | `fetchcore.knowledge.evidence` | Canonical source facts; Markdown sections may include heading ancestry, FetchCore section/fragment locators, declared fence languages and safe link destinations marked as observed rather than resolved. |
+| `SymbolEvidence` | `fetchcore.knowledge.evidence` | Observed declaration syntax/span with optional logical identity and parent identity; canonical `declarations` preserves members independently of chunk roots. |
+| `DeclarationIdentity`, `ExtractionCapabilities`, `StructuralCoverage` | `fetchcore.knowledge.structure` | Revision-independent symbol keys, producer/version and verified capability vocabulary, and explicit supported/partial/unsupported/unknown source coverage. |
+| `SymbolDefinition`, `RelatedEvidence` | `fetchcore.repository.navigation` | Serializable exact-navigation results with source provenance, directed relation kind/subtype, original resolution and normalized epistemic status. See [canonical structure](../architecture/repository-knowledge.md#canonical-declaration-and-relation-contracts). |
 | `EmbeddingProvider` | `fetchcore.retrieval.embedding` | Provider ID and embedding operations independent of Ollama transport. |
 | `RetrievalConfig` | `fetchcore.retrieval.config` | Targeted early-return policy, dense, hybrid, reranking and LTR settings; effective mode is lexical, dense or hybrid. |
 | `RetrievalBackendCapabilities` | `fetchcore.retrieval.config` | Advertised lexical, dense, hybrid, LTR, direct canonical-query and lexical requirement support. The serialized reranking flag is retained for compatibility; reranking is post-acquisition. |

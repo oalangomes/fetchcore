@@ -87,7 +87,10 @@ def analyze_lexical_source(
         masked, observed = _analyze_python(content, line_offsets)
         non_code_newlines: frozenset[int] = frozenset()
     else:
-        if language == "dart":
+        if language == "go":
+            masked = mask_go_non_code(content)
+            non_code_newlines = frozenset()
+        elif language == "dart":
             from fetchcore.repository.dart_lexical import analyze_dart_non_code
 
             masked, non_code_newlines = analyze_dart_non_code(content)
@@ -141,6 +144,18 @@ def mask_c_like_non_code(content: str) -> str:
 
     masked, _ = _analyze_c_like(content)
     return masked
+
+
+def mask_go_non_code(content: str) -> str:
+    """Mask Go comments and literals without interpreting raw strings as templates."""
+
+    pattern = re.compile(r'//[^\n]*|/\*[\s\S]*?(?:\*/|$)|`[^`]*(?:`|$)|'
+                         r'"(?:\\[\s\S]|[^"\\])*(?:"|$)|'
+                         r"'(?:\\[\s\S]|[^'\\])*(?:'|$)")
+    return pattern.sub(
+        lambda match: "".join("\n" if char == "\n" else " " for char in match.group()),
+        content,
+    )
 
 
 def _analyze_c_like(content: str) -> tuple[str, frozenset[int]]:

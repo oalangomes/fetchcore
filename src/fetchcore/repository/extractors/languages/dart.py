@@ -39,6 +39,7 @@ class DartStructuralExtractor:
     """Extract conservative Dart structure without compiler/type inference."""
 
     indexing_contract_version = "1"
+    structural_capabilities = ("declarations", "imports")
 
     def extract(self, content: str) -> tuple[SymbolSpan, ...]:
         return tuple(self.extract_structure(content).chunk_symbols)

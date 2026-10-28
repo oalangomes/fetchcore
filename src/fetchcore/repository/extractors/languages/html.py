@@ -66,6 +66,7 @@ class HtmlStructuralExtractor:
     """Extract non-overlapping, stable HTML container symbols."""
 
     indexing_contract_version = "1"
+    structural_capabilities = ("declarations", "imports")
 
     def extract(self, content: str) -> tuple[SymbolSpan, ...]:
         return tuple(self.extract_structure(content).chunk_symbols)

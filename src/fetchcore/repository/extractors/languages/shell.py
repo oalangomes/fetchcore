@@ -53,6 +53,7 @@ class ShellStructuralExtractor:
     """Extract statically provable shell functions, assignments, includes and exports."""
 
     indexing_contract_version = "1"
+    structural_capabilities = ("declarations", "imports")
 
     def extract(self, content: str) -> tuple[SymbolSpan, ...]:
         return tuple(self.extract_structure(content).chunk_symbols)

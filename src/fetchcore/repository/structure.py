@@ -103,6 +103,9 @@ class PythonStructuralExtractor:
     """Extract Python declarations with the standard-library AST."""
 
     indexing_contract_version = "3"
+    structural_capabilities = (
+        "declarations", "imports", "calls_observed", "references_observed", "tests_observed",
+    )
 
     def extract(self, content: str) -> tuple[SymbolSpan, ...]:
         """Extract non-overlapping Python symbols for repository chunking."""
@@ -177,6 +180,10 @@ class JavaScriptTypeScriptStructuralExtractor:
     literals, proves top-level brace depth, then records declaration syntax that
     is directly observable in the file.
     """
+
+    structural_capabilities = (
+        "declarations", "imports", "calls_observed", "references_observed", "tests_observed",
+    )
 
     def __init__(self, language: str) -> None:
         """Initialize extraction for JavaScript or TypeScript."""
@@ -313,6 +320,10 @@ class JavaScriptTypeScriptStructuralExtractor:
 
 class JavaStructuralExtractor:
     """Extract Java package/import/type/method declarations without inference."""
+
+    structural_capabilities = (
+        "declarations", "imports", "calls_observed", "references_observed", "tests_observed",
+    )
 
     def extract(self, content: str) -> tuple[SymbolSpan, ...]:
         """Extract non-overlapping Java symbols for repository chunking."""

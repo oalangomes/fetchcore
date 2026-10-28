@@ -272,7 +272,7 @@ def test_top_level_module_import_graph_is_acyclic() -> None:
 
 def test_persisted_identities_version_projection_route_semantics() -> None:
     assert projection_contract_fingerprint() == (
-        "sha256:80d19b9400141cd7bb73f7ba7f64de414cd5a896b87c2dc1713959804696cef2"
+        "sha256:4390897bae3636a7d79fb5318e80d79358053c8e4de0cfb6f295b884fd4c7a20"
     )
     assert vector_embedding_serializer_fingerprint(ProjectionEmbeddingMode.PROJECTION_V3) == (
         "sha256:5f859289b8b3a594e924545edb1c3ae6178b77ea22cf3ff224d43c5ec7aeb43a"
@@ -281,9 +281,9 @@ def test_persisted_identities_version_projection_route_semantics() -> None:
         RepositoryIndexConfig(),
         symbol_extractors=default_structural_symbol_extractors(),
     )
-    # Adding a structural extractor changes indexing identity; rebuild explicitly.
+    # Persisting canonical declaration identities changes indexing; rebuild explicitly.
     assert indexing_contract_fingerprint(indexer) == (
-        "sha256:ce415dafb15df7ce245afcf97351c00180b4f1d1963ecb22f184ee60e64460b3"
+        "sha256:94145db7c427d5fb38849bac97570cd2cef2d4b82e631a4017f8aa5ae678ff21"
     )
 
 

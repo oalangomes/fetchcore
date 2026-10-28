@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
 from typing import Protocol, cast
 from urllib.parse import urlsplit
+
+from fetchcore.knowledge.structure import DeclarationIdentity, ExtractionCapabilities
 
 from fetchcore.repository.calls import (
     CallEvidence,
@@ -64,6 +66,19 @@ class SymbolEvidence:
     modifiers: tuple[str, ...] = ()
     annotations: tuple[str, ...] = ()
     decorators: tuple[str, ...] = ()
+    identity: DeclarationIdentity | None = None
+    parent_identity: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.identity is not None:
+            if (
+                self.identity.kind != self.kind
+                or self.identity.qualified_name != (self.qualified_name or self.name)
+                or self.line_start < 1 or self.line_end < self.line_start
+            ):
+                raise ValueError("declaration identity or span conflicts with symbol evidence")
+            if self.parent_identity == self.identity.key:
+                raise ValueError("declaration cannot be its own parent")
 
     def to_mapping(self) -> dict[str, object]:
         """Serialize observed symbol evidence."""
@@ -81,12 +96,20 @@ class SymbolEvidence:
             "decorators": list(self.decorators),
             "line_start": self.line_start,
             "line_end": self.line_end,
+            **(
+                {"identity": self.identity.to_mapping(), "parent_identity": self.parent_identity}
+                if self.identity is not None
+                else {}
+            ),
         }
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> SymbolEvidence:
         """Hydrate symbol evidence from its canonical mapping."""
 
+        raw_identity = value.get("identity")
+        if raw_identity is not None and not isinstance(raw_identity, Mapping):
+            raise ValueError("symbol identity must be an object")
         return cls(
             name=str(value.get("name", "")),
             kind=str(value.get("kind", "unknown")),
@@ -100,6 +123,11 @@ class SymbolEvidence:
             modifiers=_strings(value.get("modifiers")),
             annotations=_strings(value.get("annotations")),
             decorators=_strings(value.get("decorators")),
+            identity=(
+                DeclarationIdentity.from_mapping(raw_identity)
+                if isinstance(raw_identity, Mapping) else None
+            ),
+            parent_identity=_optional_string(value.get("parent_identity")),
         )
 
 
@@ -505,6 +533,14 @@ class KnowledgeEvidence:
     documentation: tuple[DocumentationEvidence, ...] = ()
     lexical: LexicalEvidence = field(default_factory=LexicalEvidence)
     semantic: tuple[SemanticEvidenceEnvelope, ...] = ()
+    declarations: tuple[SymbolEvidence, ...] = ()
+    extraction: ExtractionCapabilities | None = None
+
+    def __post_init__(self) -> None:
+        if self.declarations and (
+            self.extraction is None or any(item.identity is None for item in self.declarations)
+        ):
+            raise ValueError("canonical declarations require identities and extraction provenance")
 
     def to_mapping(self) -> dict[str, object]:
         """Serialize canonical repository evidence."""
@@ -519,6 +555,13 @@ class KnowledgeEvidence:
             "documentation": [item.to_mapping() for item in self.documentation],
             "lexical": self.lexical.to_mapping(),
             "semantic": [item.to_mapping() for item in self.semantic],
+            **(
+                {
+                    "declarations": [item.to_mapping() for item in self.declarations],
+                    "extraction": self.extraction.to_mapping(),
+                }
+                if self.extraction is not None else {}
+            ),
         }
 
     @classmethod
@@ -533,6 +576,14 @@ class KnowledgeEvidence:
         raw_relations = data.get("relations")
         raw_manifest = data.get("manifest")
         raw_lexical = data.get("lexical")
+        raw_declarations = data.get("declarations", [])
+        raw_extraction = data.get("extraction")
+        if not isinstance(raw_declarations, list) or any(
+            not isinstance(item, Mapping) for item in raw_declarations
+        ):
+            raise ValueError("declarations must be a list of symbol objects")
+        if raw_extraction is not None and not isinstance(raw_extraction, Mapping):
+            raise ValueError("extraction must be an object")
         return cls(
             symbol=(
                 SymbolEvidence.from_mapping(raw_symbol)
@@ -571,7 +622,125 @@ class KnowledgeEvidence:
                 else None
             ),
             semantic=semantic_evidence_from_mapping(data.get("semantic")),
+            declarations=tuple(
+                SymbolEvidence.from_mapping(item) for item in raw_declarations
+            ),
+            extraction=(
+                ExtractionCapabilities.from_mapping(raw_extraction)
+                if isinstance(raw_extraction, Mapping) else None
+            ),
         )
+
+
+def identify_declarations(
+    symbols: tuple[SymbolEvidence, ...],
+    *,
+    repository: str,
+    path: str,
+    language: str | None,
+) -> tuple[SymbolEvidence, ...]:
+    """Assign source-local identities before chunking can duplicate declarations."""
+
+    ordered = sorted(
+        set(symbols),
+        key=lambda item: (
+            item.line_start, item.line_end, item.qualified_name or item.name,
+            item.kind, item.signature or "",
+        ),
+    )
+    groups: dict[tuple[str, str], list[SymbolEvidence]] = {}
+    for symbol in ordered:
+        groups.setdefault((symbol.kind, symbol.qualified_name or symbol.name), []).append(symbol)
+    identified: list[SymbolEvidence] = []
+    for symbol in ordered:
+        group = groups[(symbol.kind, symbol.qualified_name or symbol.name)]
+        discriminator = None
+        if len(group) > 1:
+            matching = [item for item in group if item.signature == symbol.signature]
+            discriminator = f"signature:{symbol.signature or ''}"
+            if len(matching) > 1:
+                discriminator += f":occurrence:{matching.index(symbol) + 1}"
+        identified.append(replace(
+            symbol,
+            identity=DeclarationIdentity(
+                repository, path, language, symbol.kind,
+                symbol.qualified_name or symbol.name, discriminator,
+            ),
+        ))
+    result: list[SymbolEvidence] = []
+    for symbol in identified:
+        parents = [
+            item for item in identified
+            if symbol.container is not None
+            and item.name == symbol.container
+            and item != symbol
+            and (symbol.qualified_name or "").startswith(
+                (item.qualified_name or item.name) + "."
+            )
+        ]
+        parent = parents[0] if len(parents) == 1 else None
+        result.append(replace(
+            symbol,
+            parent_identity=(
+                parent.identity.key if parent is not None and parent.identity is not None else None
+            ),
+        ))
+    return tuple(result)
+
+
+def source_declarations(
+    structure: _StructureObservation | None,
+    *,
+    repository: str,
+    path: str,
+    language: str | None,
+    fallback_symbols: tuple[object, ...] = (),
+) -> tuple[SymbolEvidence, ...]:
+    """Preserve every observed declaration, including members outside chunk roots."""
+
+    return identify_declarations(
+        tuple(
+            evidence for item in (
+                structure.symbols if structure is not None else fallback_symbols
+            )
+            if (evidence := _symbol_evidence(item)) is not None
+        ),
+        repository=repository, path=path, language=language,
+    )
+
+
+def bind_declarations(
+    evidence: KnowledgeEvidence,
+    declarations: tuple[SymbolEvidence, ...],
+    extraction: ExtractionCapabilities,
+    *,
+    line_start: int,
+    line_end: int,
+) -> KnowledgeEvidence:
+    """Attach the canonical source-local declaration view to overlapping chunks."""
+
+    selected = tuple(
+        item for item in declarations
+        if item.line_start <= line_end and item.line_end >= line_start
+    )
+
+    def identified(symbol: SymbolEvidence) -> SymbolEvidence:
+        return next((
+            item for item in selected
+            if item.name == symbol.name and item.kind == symbol.kind
+            and item.line_start == symbol.line_start and item.line_end == symbol.line_end
+        ), symbol)
+
+    return replace(
+        evidence,
+        symbol=identified(evidence.symbol) if evidence.symbol is not None else None,
+        behavior=replace(
+            evidence.behavior,
+            methods=tuple(identified(item) for item in evidence.behavior.methods),
+        ),
+        declarations=selected,
+        extraction=extraction,
+    )
 
 
 class _SymbolObservation(Protocol):
