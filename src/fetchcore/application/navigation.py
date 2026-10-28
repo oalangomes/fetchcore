@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import get_args
+from dataclasses import dataclass
+from typing import get_args, Literal
 
 from fetchcore.knowledge.structure import (
     ExtractionCapabilities, StructuralCapability, StructuralCoverage,
@@ -14,7 +15,98 @@ from fetchcore.repository.navigation import (
     SymbolDefinition,
     find_symbol,
     get_related,
+    StructuralNavigationError,
 )
+
+RELATION_CAPABILITIES: dict[str, StructuralCapability] = {
+    "calls": "calls_observed", "references": "references_observed",
+    "tests": "tests_observed", "imports": "imports", "dependencies": "imports",
+    "extends": "inheritance", "implements": "inheritance",
+}
+
+
+@dataclass(frozen=True)
+class FindSymbolRequest:
+    name: str
+    repository: str | None = None
+    revision: str | None = None
+    language: str | None = None
+    kind: str | None = None
+    path: str | None = None
+    limit: int = 20
+
+
+@dataclass(frozen=True)
+class GetRelatedRequest:
+    source: str
+    repository: str | None = None
+    revision: str | None = None
+    relation_types: tuple[str, ...] = ()
+    direction: str = "outgoing"
+    limit: int = 20
+    depth: int = 1
+    require_resolution: bool = False
+
+
+@dataclass(frozen=True)
+class NavigationResult:
+    repository: str
+    revision: str
+    results: tuple[SymbolDefinition, ...] | tuple[RelatedEvidence, ...]
+    coverage: tuple[StructuralCoverage, ...]
+    status: Literal["success", "not_found", "partial", "unsupported", "unknown"]
+    limit_reached: bool
+    scan_complete: bool = True
+    scan_diagnostics: tuple[str, ...] = ()
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "repository": self.repository, "revision": self.revision,
+            "results": [item.to_mapping() for item in self.results],
+            "coverage": [item.to_mapping() for item in self.coverage],
+            "status": self.status, "limit_reached": self.limit_reached,
+            "scan_complete": self.scan_complete,
+            "scan_diagnostics": list(self.scan_diagnostics),
+        }
+
+
+def validate_navigation_request(request: FindSymbolRequest | GetRelatedRequest) -> None:
+    value = request.name if isinstance(request, FindSymbolRequest) else request.source
+    if not value.strip():
+        raise StructuralNavigationError("navigation identifier must not be empty",
+                                        category="schema_mismatch")
+    if type(request.limit) is not int or not 1 <= request.limit <= 100:
+        raise StructuralNavigationError("navigation limit must be between 1 and 100",
+                                        category="schema_mismatch")
+    if isinstance(request, GetRelatedRequest):
+        if request.direction != "outgoing" or type(request.depth) is not int or request.depth != 1:
+            raise StructuralNavigationError("only outgoing depth-one navigation is supported",
+                                            category="unsupported_capability")
+        if set(request.relation_types) - RELATION_CAPABILITIES.keys():
+            raise StructuralNavigationError("unsupported relation type",
+                                            category="unsupported_capability")
+
+
+def navigation_result(
+    repository: str, revision: str,
+    results: tuple[SymbolDefinition, ...] | tuple[RelatedEvidence, ...],
+    coverage: tuple[StructuralCoverage, ...], limit: int,
+    *, scan_diagnostics: tuple[str, ...] = (),
+) -> NavigationResult:
+    statuses = {item.status for item in coverage}
+    status: Literal["success", "not_found", "partial", "unsupported", "unknown"]
+    if scan_diagnostics or "partial" in statuses or len(statuses) > 1:
+        status = "partial"
+    elif statuses == {"unsupported"}:
+        status = "unsupported"
+    elif statuses == {"unknown"}:
+        status = "unknown"
+    else:
+        status = "success" if results else "not_found"
+    return NavigationResult(
+        repository, revision, results, coverage, status, len(results) >= limit,
+        not scan_diagnostics, scan_diagnostics,
+    )
 
 
 class RepositoryKnowledgeNavigationService:

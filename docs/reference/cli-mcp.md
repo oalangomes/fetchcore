@@ -15,6 +15,8 @@
 | `fetchcore index rebuild <repo>` | Explicit canonical full indexing and projection replacement. |
 | `fetchcore search "<query>" --repo <repo>` | Bounded repository-scoped retrieval through the application service. |
 | `fetchcore source <source-ref>` | Bounded, authorized source read from a search result reference. |
+| `fetchcore find-symbol <name> --repo <repo>` | Exact declaration lookup by name, qualified name or canonical identity. |
+| `fetchcore get-related <identity-or-source-ref> --repo <repo>` | Bounded outgoing structural observations with explicit coverage. |
 | `fetchcore index bootstrap` | Validate the Solr schema contract. |
 | `fetchcore index status` | Report snapshot compatibility and repository freshness. |
 | `fetchcore index dry-run` | Preview indexing changes without persistent writes. |
@@ -22,6 +24,8 @@
 | `fetchcore-mcp` | Start the MCP stdio server. |
 | MCP `search` | Bounded repository-scoped `KnowledgeSearchResponse`. |
 | MCP `get_source` | Bounded authorized source read. |
+| MCP `find_symbol` | Exact canonical symbol lookup with extraction coverage. |
+| MCP `get_related` | Directed observed/resolved relationships, without graph inference. |
 
 All `repo` commands support `--json`; human and JSON output contain the same
 registration and materialization facts. Group options `--cache-root` and
@@ -44,6 +48,66 @@ explicitly. Neither command indexes or synchronizes a repository. Source reads
 remain path-safe and bounded by the serving limits. A mutable local workspace
 reports its observed current revision; registered Git repositories are read at
 their pinned revision through a temporary cached worktree without fetching.
+
+## Exact structural navigation
+
+`find-symbol` and `get-related` share `--repo`, `--revision`, `--limit` (1..100),
+`--config`, `--cache-root`, repeatable `--allowed-root`, and `--json`.
+`find-symbol` also accepts `--language`, `--kind`, and exact `--path`.
+`get-related` accepts repeatable `--relation-type`, `--direction outgoing`,
+`--depth 1`, and `--require-resolution`. Unsupported directions, depths and
+relation types fail explicitly. Supported filters are `calls`, `references`,
+`tests`, `imports`, `dependencies`, `extends`, and `implements`.
+
+These commands materialize the registered source without refresh, then reuse
+canonical extraction in memory, including repository-owned indexing policy and
+KnowledgePacks. They do not read vendor schemas, persist an index, embed, invoke
+search, or require a running backend. This initial implementation extracts the
+bounded canonical view per request; it is not a persisted graph or a latency
+guarantee. Repository path and knowledge-type binding restrictions apply before
+navigation. `--revision` is an exact precondition, never a request to change HEAD.
+
+The SDK exposes `FindSymbolRequest`, `GetRelatedRequest`, and `NavigationResult`
+from `fetchcore.application`. Pass these to `find_symbol` / `get_related` on
+`RetrievalApplicationService` or `RepositoryRetrievalApplicationService`.
+The existing `RepositoryKnowledgeNavigationService` still supports callers
+that already hold canonical documents.
+
+Results preserve identity, repository, revision, path/span, checksum and producer
+provenance. Overloads and homonyms remain distinct, deterministically ordered
+candidates. Select a returned canonical `identity` for symbol-owned relations;
+use its `source_ref` for file-owned imports/dependencies. No string-name matching
+is used to invent call destinations. Source hydration remains the existing
+bounded `source` / `get_source` operation.
+
+Both operations return:
+
+- `results`: at most `limit` typed symbol definitions or directed relations;
+- `coverage`: per-capability source counts, producer declarations and
+  `supported`, `partial`, `unsupported`, or `unknown` coverage;
+- `status`: `success` or `not_found` only under supported coverage; otherwise
+  `partial`, `unsupported`, or `unknown`, including for empty results;
+- `limit_reached`: the returned count reached the requested bound, so more
+  candidates may exist; this is not a claim that an additional candidate exists;
+- `scan_complete` and `scan_diagnostics`: canonical scan blockers, including
+  budget truncation. An incomplete scan always makes the result partial.
+
+Coverage describes the admitted canonical corpus, not every file in the
+repository. Empty scopes are unknown. Missing extraction does not become a
+structural `not_found` or trigger textual/dense search. `require_resolution`
+reports unavailable cross-file resolution explicitly and does not return
+unresolved observations as if resolved. Incoming traversal and multi-hop graph
+queries remain unsupported.
+
+Example (after `fetchcore repo add .`):
+
+```bash
+fetchcore find-symbol 'catalog.Client.Fetch' --repo owner/repo --language go --json
+fetchcore get-related 'repository://owner/repo/client.go' --repo owner/repo \
+  --relation-type imports --json
+fetchcore source 'repository://owner/repo/client.go' --repo owner/repo \
+  --revision <returned-revision> --line-start <returned-start> --line-end <returned-end>
+```
 
 `doctor`, `capabilities`, and `config show` accept `--json` and an optional
 `--config <path>`. Doctor checks resolve the selected backend/provider and use

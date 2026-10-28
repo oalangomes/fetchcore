@@ -34,4 +34,7 @@ from .readiness import (
 )
 from .navigation import (
     RepositoryKnowledgeNavigationService as RepositoryKnowledgeNavigationService,
+    FindSymbolRequest as FindSymbolRequest,
+    GetRelatedRequest as GetRelatedRequest,
+    NavigationResult as NavigationResult,
 )
