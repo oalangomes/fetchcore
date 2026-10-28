@@ -12,6 +12,14 @@ The default structural extractor registry includes Python, JavaScript, TypeScrip
 
 `RepositoryKnowledgeNavigationService` performs exact name or qualified-name lookups over a single repository revision's canonical `KnowledgeDocument` values. It returns homonyms as separate candidates and carries source path, span, revision, checksum, and document identity. Related lookups expose only relations already attributed to that symbol; unresolved observations remain unresolved. The service does not construct an index or load documents from a retrieval backend, so callers must supply the canonical document snapshot they intend to navigate. Text-only files and languages without structural declarations are not reported as definitive symbol misses.
 
+`RetrievalApplicationService` and the registered-repository serving service expose
+the same operations through typed requests. They obtain canonical documents from
+bounded in-memory extraction of the authorized materialization, applying existing
+repository policy and KnowledgePacks. CLI and MCP only translate requests/results.
+No retrieval backend, dense fallback or graph hop is involved. Application results
+report coverage and scan bounds independently of whether candidates were returned;
+see the [navigation reference](../reference/cli-mcp.md#exact-structural-navigation).
+
 ## Canonical declaration and relation contracts
 
 `KnowledgeEvidence.declarations` preserves all observed declarations overlapping a
@@ -63,9 +71,9 @@ Distinct evidence locations, resolution states and target provenance are kept.
 Traversal is outgoing, one hop, bounded to 1-100 results. Reverse traversal is
 explicitly unavailable, not approximated by a name search.
 
-This delivery changes the stored evidence contract: indexing contract 28 and
-Projection v3 contract revision 5 require an explicit rebuild of older snapshots.
+The canonical structural evidence contract uses indexing contract 28 and
+Projection v3 contract revision 5; older snapshots require an explicit rebuild.
 Legacy evidence can still hydrate with missing declarations/capabilities, but is
 not certified as current structural coverage. The embedding serializer is
-unchanged. CLI/MCP wiring remains separate work in #27; this is the canonical
-contract and SDK boundary, not a new retrieval algorithm.
+unchanged. The additive SDK/CLI/MCP navigation boundary does not change these
+persisted identities or the retrieval algorithm.

@@ -32,6 +32,7 @@ from fetchcore.application.runtime_inspection import (
     RuntimeInspectionService,
 )
 from fetchcore.repository.registry import RepositoryRegistryError
+from fetchcore.application.navigation import FindSymbolRequest, GetRelatedRequest, NavigationResult
 
 _RetrievalResult = TypeVar("_RetrievalResult")
 
@@ -240,6 +241,80 @@ def source(
         lambda result: result.to_mapping(),
         _render_source,
     )
+
+
+def _navigation_options(function: Callable[..., None]) -> Callable[..., None]:
+    for option in (
+        click.option("--repo", "repository", required=True),
+        click.option("--revision"),
+        click.option("--limit", type=int, default=20, show_default=True),
+        click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False)),
+        click.option("--cache-root", type=click.Path(path_type=Path, file_okay=False)),
+        click.option("--allowed-root", multiple=True, type=click.Path(path_type=Path, file_okay=False)),
+        click.option("--json", "as_json", is_flag=True, help="Emit deterministic JSON."),
+    ):
+        function = option(function)
+    return function
+
+
+@main.command("find-symbol")
+@click.argument("name")
+@click.option("--language")
+@click.option("--kind")
+@click.option("--path")
+@_navigation_options
+def find_symbol(
+    name: str, language: str | None, kind: str | None, path: str | None,
+    repository: str, revision: str | None, limit: int, config_path: Path | None,
+    cache_root: Path | None, allowed_root: tuple[Path, ...], as_json: bool,
+) -> None:
+    """Find exact declarations, preserving homonyms and extraction coverage."""
+    _run_repository_retrieval(
+        "find_symbol", as_json,
+        lambda: RepositoryRetrievalApplicationService.from_sources(
+            config_path=config_path, cache_root=cache_root, allowed_roots=allowed_root or None,
+        ).find_symbol(FindSymbolRequest(
+            name, repository, revision, language, kind, path, limit,
+        )),
+        lambda result: result.to_mapping(), _render_navigation,
+    )
+
+
+@main.command("get-related")
+@click.argument("source")
+@click.option("--relation-type", "relation_types", multiple=True)
+@click.option("--direction", default="outgoing", show_default=True)
+@click.option("--depth", type=int, default=1, show_default=True)
+@click.option("--require-resolution", is_flag=True)
+@_navigation_options
+def get_related(
+    source: str, relation_types: tuple[str, ...], direction: str, depth: int,
+    require_resolution: bool, repository: str, revision: str | None, limit: int,
+    config_path: Path | None, cache_root: Path | None,
+    allowed_root: tuple[Path, ...], as_json: bool,
+) -> None:
+    """Read directed observations by canonical symbol identity or source reference."""
+    _run_repository_retrieval(
+        "get_related", as_json,
+        lambda: RepositoryRetrievalApplicationService.from_sources(
+            config_path=config_path, cache_root=cache_root, allowed_roots=allowed_root or None,
+        ).get_related(GetRelatedRequest(
+            source, repository, revision, relation_types, direction, limit, depth, require_resolution,
+        )),
+        lambda result: result.to_mapping(), _render_navigation,
+    )
+
+
+def _render_navigation(result: NavigationResult) -> None:
+    click.echo(f"navigation: status={result.status} repository={result.repository}")
+    click.echo(f"revision={result.revision} limit_reached={str(result.limit_reached).lower()}")
+    click.echo(f"scan_complete={str(result.scan_complete).lower()}")
+    for coverage in result.coverage:
+        click.echo(f"capability={coverage.capability} coverage={coverage.status}")
+    for diagnostic in result.scan_diagnostics:
+        click.echo(f"scan_diagnostic={diagnostic}")
+    for item in result.results:
+        click.echo(json.dumps(item.to_mapping(), sort_keys=True))
 
 
 def _run_repo_operation(

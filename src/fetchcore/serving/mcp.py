@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from fetchcore.application import RetrievalApplicationService, SearchRequest, SourceReadRequest
+from fetchcore.application.navigation import FindSymbolRequest, GetRelatedRequest
 from fetchcore.application.runtime_config import load_runtime_config, service_from_runtime_config
 from fetchcore.retrieval.contracts import KnowledgeSearchError, SearchIntent
 
@@ -61,6 +62,46 @@ def create_mcp_server(service: RetrievalApplicationService) -> MCPServer:
         except KnowledgeSearchError as exc:
             raise ToolError(f"FetchCore retrieval failed: {exc.category}") from exc
         return response.to_mapping()
+
+    @server.tool(name="find_symbol")
+    def find_symbol_tool(
+        name: str,
+        repository: str | None = None,
+        revision: str | None = None,
+        language: str | None = None,
+        kind: str | None = None,
+        path: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, object]:
+        """Find exact names, qualified names or canonical identities; report coverage."""
+        try:
+            return service.find_symbol(FindSymbolRequest(
+                name=name, repository=repository, revision=revision,
+                language=language, kind=kind, path=path, limit=limit,
+            )).to_mapping()
+        except KnowledgeSearchError as exc:
+            raise ToolError(f"FetchCore symbol lookup failed: {exc.category}") from exc
+
+    @server.tool(name="get_related")
+    def get_related_tool(
+        source: str,
+        repository: str | None = None,
+        revision: str | None = None,
+        relation_types: list[str] | None = None,
+        direction: str = "outgoing",
+        limit: int = 20,
+        depth: int = 1,
+        require_resolution: bool = False,
+    ) -> dict[str, object]:
+        """Read observed relations by symbol identity or source_ref, without graph inference."""
+        try:
+            return service.get_related(GetRelatedRequest(
+                source=source, repository=repository, revision=revision,
+                relation_types=tuple(relation_types or ()), direction=direction,
+                limit=limit, depth=depth, require_resolution=require_resolution,
+            )).to_mapping()
+        except KnowledgeSearchError as exc:
+            raise ToolError(f"FetchCore related lookup failed: {exc.category}") from exc
 
     @server.tool(name="get_source")
     def get_source_tool(

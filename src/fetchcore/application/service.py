@@ -10,6 +10,14 @@ from urllib.parse import unquote
 from fetchcore.retrieval import RetrievalConfig
 from fetchcore.repository.api_artifact_policy import blocked_api_artifact_kind
 from .targeted import search_with_targeted
+from .navigation import (
+    FindSymbolRequest, GetRelatedRequest, NavigationResult,
+    RELATION_CAPABILITIES, RepositoryKnowledgeNavigationService,
+    navigation_result, validate_navigation_request,
+)
+from fetchcore.repository.navigation import RelatedEvidence, StructuralNavigationError, SymbolDefinition
+from fetchcore.knowledge.structure import StructuralCapability, StructuralCoverage
+from fetchcore.repository.sources import LocalWorkspaceSourceProvider, RepositorySourceRequest
 from fetchcore.retrieval.contracts import (
     KnowledgeSearchError,
     KnowledgeSearchResponse,
@@ -203,6 +211,101 @@ class RetrievalApplicationService:
             })
         return search_with_targeted(backend, intent, scope)
 
+    def find_symbol(self, request: FindSymbolRequest) -> NavigationResult:
+        """Find exact declarations without invoking a retrieval backend."""
+        return self._navigate(request)
+
+    def get_related(self, request: GetRelatedRequest) -> NavigationResult:
+        """Read bounded directed observations by logical identity or source_ref."""
+        return self._navigate(request)
+
+    def _navigate(self, request: FindSymbolRequest | GetRelatedRequest) -> NavigationResult:
+        from .index_operations import prepare_repository_index_runtime
+
+        try:
+            validate_navigation_request(request)
+            binding = self._binding(request.repository)
+            path = request.path if isinstance(request, FindSymbolRequest) else None
+            source = request.source if isinstance(request, GetRelatedRequest) else None
+            if source is not None and not source.startswith("symbol:v1:sha256:"):
+                _, path = self._resolve_source_ref(source, requested_repository=binding.repository)
+                source = f"repository://{binding.repository}/{path}"
+            if path is not None:
+                _, path = self._resolve_source_ref(path, requested_repository=binding.repository)
+            runtime = prepare_repository_index_runtime(
+                binding.workspace, repository=binding.repository, branch=None, revision=None,
+            )
+            indexed = runtime.indexer.index(runtime.workspace)
+            for expected in (binding.revision, request.revision):
+                if expected is not None and expected != indexed.revision:
+                    raise KnowledgeSearchError(
+                        "navigation revision does not match the materialized source",
+                        category="source_revision_mismatch",
+                    )
+            documents = tuple(doc for doc in indexed.documents if (
+                (not binding.knowledge_types or doc.knowledge_type in binding.knowledge_types)
+                and (not binding.repository_paths or any(
+                    doc.path == prefix or doc.path.startswith(prefix.rstrip("/") + "/")
+                    for prefix in binding.repository_paths
+                ))
+            ))
+            navigation = RepositoryKnowledgeNavigationService(documents)
+            results: tuple[SymbolDefinition, ...] | tuple[RelatedEvidence, ...] = ()
+            if isinstance(request, FindSymbolRequest):
+                coverage: tuple[StructuralCoverage, ...] = (
+                    navigation.coverage(language=request.language, path=path),
+                )
+                try:
+                    results = navigation.find_symbol(
+                        request.name, language=request.language, kind=request.kind,
+                        path=path, limit=request.limit,
+                    )
+                except StructuralNavigationError as exc:
+                    if exc.category != "unsupported_capability":
+                        raise
+            else:
+                assert source is not None
+                selected = None
+                if source.startswith("symbol:v1:sha256:"):
+                    definitions = navigation.find_symbol(source, limit=2)
+                    if not definitions:
+                        raise StructuralNavigationError(
+                            "symbol is absent from the selected snapshot", category="source_missing",
+                        )
+                    selected = definitions[0]
+                    path = selected.path
+                capabilities: tuple[StructuralCapability, ...] = tuple(dict.fromkeys(
+                    RELATION_CAPABILITIES[kind] for kind in request.relation_types
+                )) if request.relation_types else (
+                    ("calls_observed", "references_observed", "tests_observed")
+                    if selected else ("imports",)
+                )
+                if request.require_resolution:
+                    capabilities += ("cross_file_resolution",)
+                coverage = tuple(navigation.coverage(capability, path=path)
+                                 for capability in capabilities)
+                try:
+                    results = navigation.get_related(
+                        selected or source, relation_types=request.relation_types,
+                        limit=request.limit, require_resolution=request.require_resolution,
+                    )
+                except StructuralNavigationError as exc:
+                    if exc.category != "unsupported_capability":
+                        raise
+            return navigation_result(
+                binding.repository, indexed.revision, results, coverage, request.limit,
+                scan_diagnostics=indexed.telemetry.removal_detection_blockers,
+            )
+        except StructuralNavigationError as exc:
+            raise KnowledgeSearchError(str(exc), category=exc.category) from exc
+        except KnowledgeSearchError:
+            raise
+        except ValueError as exc:
+            raise KnowledgeSearchError(str(exc), category="schema_mismatch") from exc
+        except OSError as exc:
+            raise KnowledgeSearchError("canonical source could not be read",
+                                       category="source_missing") from exc
+
     def get_source(self, request: SourceReadRequest) -> SourceReadResult:
         if not request.source_ref.strip():
             raise KnowledgeSearchError(
@@ -220,6 +323,19 @@ class RetrievalApplicationService:
             requested_repository=request.repository,
         )
         binding = self._bindings[repository]
+        if binding.revision is None and request.revision is not None:
+            with LocalWorkspaceSourceProvider().materialize(
+                RepositorySourceRequest(binding.workspace, repository=repository)
+            ) as source:
+                revision = source.revision
+            if revision is None:
+                from .index_operations import prepare_repository_index_runtime
+
+                runtime = prepare_repository_index_runtime(
+                    binding.workspace, repository=repository, branch=None, revision=None,
+                )
+                revision = runtime.indexer.index(runtime.workspace).revision
+            binding = replace(binding, revision=revision)
         if blocked_api_artifact_kind(relative_path) is not None:
             raise KnowledgeSearchError(
                 "raw API artifact serving is blocked pending sanitized extraction",

@@ -32,7 +32,7 @@ python -m pip install -e ".[mcp]"
 
 FetchCore targets the current MCP Python SDK v2 line.
 
-## P0 tools
+## Tools
 
 ### `search`
 
@@ -62,6 +62,33 @@ The application service resolves the source only inside an authorized
 source output is bounded. When supplied, `revision` is a precondition on the
 authorized materialization, not an instruction to fetch or check out another
 revision; the returned `SourceReadResult.revision` remains the observed revision.
+
+### `find_symbol` and `get_related`
+
+`find_symbol` accepts `name`, optional `repository`, `revision`, `language`,
+`kind`, exact `path`, and `limit` (1..100). Names, qualified names and returned
+canonical identity keys are exact lookups, not BM25/dense queries.
+
+`get_related` accepts `source` (a returned symbol `identity` or a file
+`source_ref`), optional `repository`, `revision`, `relation_types`, `direction`
+(only `outgoing`), `depth` (only `1`), `limit` (1..100), and
+`require_resolution`. Symbol identities select symbol-owned observations;
+file source references select imports, dependencies and semantic file relations.
+Use `get_source` with the returned source reference, revision and span to hydrate
+the definition safely. An unpinned binding observes the current Git revision
+for this source precondition; for non-Git trees it verifies the canonical tree
+revision when requested.
+
+Both tools delegate to the same application methods as the SDK and CLI.
+They extract a bounded canonical view of the authorized workspace in memory,
+respecting repository indexing policy, without contacting search/vector/graph
+backends or embedding providers. They preserve homonyms, overloads, producer
+capabilities and provenance. Results include explicit extraction coverage,
+scan diagnostics and a `limit_reached` indicator; an empty partial/unsupported
+result is not proof that the repository has no matching symbol or relation.
+Unavailable capabilities never cause an implicit textual/dense fallback.
+See the [structural navigation reference](../reference/cli-mcp.md#exact-structural-navigation)
+for response statuses, filters and bounds.
 
 ## Local stdio server
 
@@ -118,7 +145,8 @@ docker compose -f infra/compose/operational-mcp.yml up -d --build mcp api lab
 
 The Lab is available at `http://127.0.0.1:38767`; its API and MCP process use
 the same configured application runtime. The MCP endpoint is
-`http://127.0.0.1:38766/mcp`. It exposes only `search` and `get_source` through
+`http://127.0.0.1:38766/mcp`. It exposes `search`, `get_source`, `find_symbol`
+and `get_related` through
 the native `fetchcore.serving.mcp` adapter.
 Use `docker compose -f infra/compose/operational-mcp.yml logs mcp` to inspect
 MCP startup failures and `docker compose -f infra/compose/operational-mcp.yml logs api lab`
@@ -195,7 +223,6 @@ than being improvised in this serving slice.
 
 ## Deferred
 
-- `find_symbol`
 - graph-backed `get_related`
 - multi-repository result fusion
 - standalone authenticated Streamable HTTP deployment (distinct from the local Explorer's loopback HTTP transport)

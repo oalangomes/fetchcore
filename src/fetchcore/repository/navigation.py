@@ -179,7 +179,10 @@ def find_symbol(
     definitions: dict[tuple[str, str], SymbolDefinition] = {}
     for document in sorted(scoped, key=lambda item: (item.line_start, item.line_end, item.id)):
         for observed in _document_symbols(document):
-            if name.strip() not in {observed.name, observed.qualified_name or observed.name}:
+            if name.strip() not in {
+                observed.name, observed.qualified_name or observed.name,
+                observed.identity.key if observed.identity else "",
+            }:
                 continue
             if kind is not None and observed.kind != kind:
                 continue
