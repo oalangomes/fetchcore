@@ -18,7 +18,7 @@ from fetchcore.application.composition import BackendRegistry, EmbeddingProvider
 from fetchcore.application.runtime_config import (
     embedding_provider_settings, load_runtime_config,
 )
-from fetchcore.retrieval.config import EmbeddingConfig, RetrievalConfig
+from fetchcore.retrieval.config import EmbeddingConfig
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 
 
