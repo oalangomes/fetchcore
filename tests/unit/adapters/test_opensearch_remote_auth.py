@@ -141,7 +141,7 @@ def test_http_401_does_not_echo_credentials(monkeypatch: pytest.MonkeyPatch) -> 
     })
     with pytest.raises(KnowledgeSearchError) as exc:
         UrllibOpenSearchTransport(settings).request("GET", "_cluster/health")
-    assert exc.value.category == "unavailable"
+    assert exc.value.category == "authentication_denied"
     assert "not-in-error" not in str(exc.value)
     assert exc.value.metadata["http_status"] == 401
 
