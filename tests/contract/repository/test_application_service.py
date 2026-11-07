@@ -58,6 +58,20 @@ class FixtureBackend:
 
 
 def _service(tmp_path: Path, backend: FixtureBackend) -> RetrievalApplicationService:
+    from types import SimpleNamespace
+    from fetchcore.repository.indexing import RepositoryIndexConfig, RepositoryIndexer
+
+    indexed = RepositoryIndexer(
+        RepositoryIndexConfig(repository="owner/repo", revision="rev-1"),
+    ).index(tmp_path)
+
+    class MaterializedStore:
+        def load_snapshot(self, repository: str):
+            return SimpleNamespace(revision=indexed.revision)
+
+        def load_documents(self, repository: str):
+            return indexed.documents
+
     factories: dict[str, BackendFactory] = {"fixture": lambda: backend}
     return RetrievalApplicationService(
         {
@@ -71,6 +85,7 @@ def _service(tmp_path: Path, backend: FixtureBackend) -> RetrievalApplicationSer
             )
         },
         backends=BackendRegistry(factories),
+        navigation_store=lambda _binding: MaterializedStore(),  # type: ignore[arg-type]
     )
 
 
