@@ -17,7 +17,8 @@ from fetchcore.retrieval.embedding import validate_vector_dimensions
 
 
 _RETRY_DELAYS = (0.25, 1.0)
-_RETRYABLE_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+# Let the gateway own 429/load-shedding decisions; do not amplify saturation.
+_RETRYABLE_HTTP_STATUSES = frozenset({408, 500, 502, 503, 504})
 
 
 @dataclass(frozen=True)
