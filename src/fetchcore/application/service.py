@@ -447,7 +447,15 @@ class RetrievalApplicationService:
                 },
             )
 
-        payload = candidate.read_bytes()
+        with candidate.open("rb") as stream:
+            payload = stream.read(self._limits.source_bytes + 1)
+        if len(payload) > self._limits.source_bytes:
+            raise KnowledgeSearchError(
+                "source file exceeds the serving byte limit",
+                category="source_too_large",
+                metadata={"repository": repository, "path": relative_path,
+                          "max_bytes": self._limits.source_bytes},
+            )
         actual_checksum = "sha256:" + hashlib.sha256(payload).hexdigest()
         if authorized_checksums is not None and actual_checksum not in authorized_checksums:
             raise KnowledgeSearchError(

@@ -38,6 +38,9 @@ for identity, persistence, source safety, output fields, and failure categories.
 `--revision`, `--checksum`, `--line-start`, `--line-end`, `--context-lines`, and `--json`.
 Pass the checksum returned by `find_symbol` to `source --checksum` or MCP
 `get_source(checksum=...)` to reject source bytes changed since extraction.
+Repository path and knowledge-type bindings also constrain source reads; a
+symlink cannot escape an authorized path prefix. Materialized navigation rejects
+snapshots whose document count or canonical corpus checksum does not match.
 `--revision` is a precondition against the revision actually materialized; a
 mismatch fails with `source_revision_mismatch` and does not fetch or switch to
 the requested revision. A local workspace is never mutated. Git registrations
