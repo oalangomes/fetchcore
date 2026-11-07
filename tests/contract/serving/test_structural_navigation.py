@@ -429,6 +429,33 @@ def test_binding_scope_applies_to_symbols_and_relations(
     assert caught.value.category == "source_missing"
     with pytest.raises(KnowledgeSearchError):
         restricted.get_related(GetRelatedRequest(hidden.source_ref))
+    with pytest.raises(KnowledgeSearchError) as source_error:
+        restricted.get_source(SourceReadRequest(hidden.source_ref))
+    assert source_error.value.category == "unauthorized_source"
+
+
+def test_source_read_enforces_knowledge_type_scope(
+    application: RetrievalApplicationService, tmp_path: Path,
+) -> None:
+    restricted = RetrievalApplicationService({
+        "owner/repo": RepositoryBinding(
+            "owner/repo", tmp_path, "solr", knowledge_types=("test",),
+        ),
+    }, navigation_store=application._navigation_store)
+    with pytest.raises(KnowledgeSearchError) as caught:
+        restricted.get_source(SourceReadRequest("client.go"))
+    assert caught.value.category == "unauthorized_source"
+
+    allowed = RetrievalApplicationService({
+        "owner/repo": RepositoryBinding(
+            "owner/repo", tmp_path, "solr", knowledge_types=("code",),
+        ),
+    }, navigation_store=application._navigation_store)
+    assert "Fetch" in allowed.get_source(SourceReadRequest("client.go")).content
+    (tmp_path / "client.go").write_text("package catalog\n", encoding="utf-8")
+    with pytest.raises(KnowledgeSearchError) as changed:
+        allowed.get_source(SourceReadRequest("client.go"))
+    assert changed.value.category == "source_revision_mismatch"
 
 
 def test_registry_without_materialized_snapshot_fails_explicitly(

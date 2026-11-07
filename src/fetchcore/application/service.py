@@ -357,6 +357,33 @@ class RetrievalApplicationService:
             requested_repository=request.repository,
         )
         binding = self._bindings[repository]
+        authorized_checksums: set[str] | None = None
+        if binding.repository_paths and not any(
+            relative_path == prefix or relative_path.startswith(prefix.rstrip("/") + "/")
+            for prefix in binding.repository_paths
+        ):
+            raise KnowledgeSearchError(
+                "source path is outside the authorized repository scope",
+                category="unauthorized_source",
+            )
+        if binding.knowledge_types:
+            store = self._navigation_store(binding) if self._navigation_store else self._default_navigation_store(binding)
+            snapshot = store.load_snapshot(repository)
+            authorized_checksums = {
+                document.provenance.source_checksum
+                for document in store.load_documents(repository)
+                if (
+                document.repository == repository
+                and document.revision == snapshot.revision
+                and document.path == relative_path
+                and document.knowledge_type in binding.knowledge_types
+                )
+            }
+            if not authorized_checksums:
+                raise KnowledgeSearchError(
+                    "source type is outside the authorized repository scope",
+                    category="unauthorized_source",
+                )
         if binding.revision is None and request.revision is not None:
             with LocalWorkspaceSourceProvider().materialize(
                 RepositorySourceRequest(binding.workspace, repository=repository)
@@ -406,14 +433,18 @@ class RetrievalApplicationService:
             )
 
         payload = candidate.read_bytes()
-        if request.checksum is not None:
-            actual_checksum = "sha256:" + hashlib.sha256(payload).hexdigest()
-            if request.checksum != actual_checksum:
-                raise KnowledgeSearchError(
-                    "source checksum does not match the requested evidence",
-                    category="source_revision_mismatch",
-                    metadata={"repository": repository, "path": relative_path},
-                )
+        actual_checksum = "sha256:" + hashlib.sha256(payload).hexdigest()
+        if authorized_checksums is not None and actual_checksum not in authorized_checksums:
+            raise KnowledgeSearchError(
+                "source bytes no longer match authorized knowledge",
+                category="source_revision_mismatch",
+            )
+        if request.checksum is not None and request.checksum != actual_checksum:
+            raise KnowledgeSearchError(
+                "source checksum does not match the requested evidence",
+                category="source_revision_mismatch",
+                metadata={"repository": repository, "path": relative_path},
+            )
         text = payload.decode("utf-8", errors="replace")
         if blocked_api_artifact_kind(relative_path, text) is not None:
             raise KnowledgeSearchError(
