@@ -52,9 +52,10 @@ class TreeSitterStructuralExtractor:
             raise ValueError(f"unsupported grammar: {language}")
         self.language = language
         self.structural_capabilities = (
-            ("declarations", "imports") if language in _IMPORT_NODES else ("declarations",)
+            ("declarations", "imports", "calls_observed")
+            if language in _IMPORT_NODES else ("declarations", "calls_observed")
         )
-        contract_version = "3" if language == "csharp" else "2" if language in _IMPORT_NODES else "1"
+        contract_version = "4"
         self.indexing_contract_version = f"{contract_version}:{version('tree-sitter-language-pack')}"
 
     def extract(self, content: str) -> tuple[StructuralSymbolSpan, ...]:

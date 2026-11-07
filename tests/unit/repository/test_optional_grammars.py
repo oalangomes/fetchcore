@@ -2,8 +2,10 @@
 
 import pytest
 
+from fetchcore.repository.calls import extract_call_evidence
 from fetchcore.repository.extractors.languages.tree_sitter import TreeSitterStructuralExtractor
 from fetchcore.repository.indexing import RepositoryIndexConfig, RepositoryIndexer
+from fetchcore.repository.navigation import find_symbol, get_related
 from fetchcore.repository.structure import default_structural_symbol_extractors
 
 
@@ -38,12 +40,37 @@ def test_observed_imports(language: str, content: str, target: str) -> None:
     pytest.importorskip("tree_sitter_language_pack")
     extractor = TreeSitterStructuralExtractor(language)
     assert extractor.extract_structure(content).imports == (target,)
-    assert extractor.structural_capabilities == ("declarations", "imports")
+    assert extractor.structural_capabilities == (
+        "declarations", "imports", "calls_observed",
+    )
+
+
+@pytest.mark.parametrize(("language", "content", "callee"), [
+    ("rust", "fn caller() { service.ping(); ping(); }", "service.ping"),
+    ("csharp", "class C { void Caller() { service.Ping(); Ping(); } }", "service.Ping"),
+    ("kotlin", "fun caller() { service.ping(); ping() }", "service.ping"),
+    ("ruby", "def caller\n service.ping()\n ping()\nend", "service.ping"),
+    ("php", "<?php function caller() { $service->ping(); ping(); }", "$service.ping"),
+    ("swift", "func caller() { service.ping(); ping() }", "service.ping"),
+    ("scala", "def caller(): Unit = { service.ping(); ping() }", "service.ping"),
+])
+def test_parser_observed_calls_are_unresolved(
+    language: str, content: str, callee: str,
+) -> None:
+    pytest.importorskip("tree_sitter_language_pack")
+    calls = extract_call_evidence(
+        language, content, (), source_symbol="caller", line_start=1,
+    )
+    assert callee in {item.callee for item in calls}
+    assert all(item.resolution == "syntax" and item.source is None for item in calls)
 
 
 def test_rust_import_reaches_canonical_evidence(tmp_path) -> None:
     pytest.importorskip("tree_sitter_language_pack")
-    (tmp_path / "lib.rs").write_text("use std::fmt;\nstruct Foo {}\n", encoding="utf-8")
+    (tmp_path / "lib.rs").write_text(
+        "use std::fmt;\nstruct Foo {}\nfn caller() { ping(); }\n",
+        encoding="utf-8",
+    )
     indexed = RepositoryIndexer(
         RepositoryIndexConfig(repository="sample/repo", revision="rev-a"),
         symbol_extractors=default_structural_symbol_extractors(),
@@ -53,3 +80,6 @@ def test_rust_import_reaches_canonical_evidence(tmp_path) -> None:
         for document in indexed.documents
         for imported in document.evidence.structure.imports
     )
+    caller = find_symbol(indexed.documents, "caller")[0]
+    calls = get_related(indexed.documents, caller)
+    assert any(item.target == "ping" and item.resolution == "syntax" for item in calls)

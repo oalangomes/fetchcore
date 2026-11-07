@@ -10,13 +10,22 @@ Canonical documents are independent of Solr, OpenSearch, and Qdrant schemas. The
 
 The default structural extractor registry includes Python, JavaScript, TypeScript, Java, Groovy, Dart, and Go. Go contributes observed package names, imports, type declarations, free functions, and receiver methods to the same canonical symbol and structure evidence as existing extractors. This is declaration/import coverage only: Go call targets, cross-file references, and inheritance/resolution are not inferred.
 
-`RepositoryKnowledgeNavigationService` performs exact name or qualified-name lookups over a single repository revision's canonical `KnowledgeDocument` values. It returns homonyms as separate candidates and carries source path, span, revision, checksum, and document identity. Related lookups expose only relations already attributed to that symbol; unresolved observations remain unresolved. The service does not construct an index or load documents from a retrieval backend, so callers must supply the canonical document snapshot they intend to navigate. Text-only files and languages without structural declarations are not reported as definitive symbol misses.
+With the optional `structure` extra, Rust, C#, Kotlin, Ruby, PHP, Swift and Scala
+contribute grammar-backed declarations and syntax-observed calls. Rust, C#,
+Kotlin, PHP, Swift and Scala also contribute imports; Ruby currently has no
+import claim. Calls retain `syntax` resolution and do not prove a target file or
+cross-file binding. The dedicated CI job installs the extra and requires all
+seven grammars, Go, and the six preexisting language extractors. Changing the
+grammar or adapter contract requires explicit reindexing through the indexing
+fingerprint.
+
+`RepositoryKnowledgeNavigationService` performs exact name or qualified-name lookups over selected canonical `KnowledgeDocument` values. It returns homonyms as separate candidates and carries source path, span, revision, checksum, and document identity. Related lookups expose only relations already attributed to that symbol; unresolved observations remain unresolved. Text-only files and languages without structural declarations are not reported as definitive symbol misses.
 
 `RetrievalApplicationService` and the registered-repository serving service expose
-the same operations through typed requests. They obtain canonical documents from
-bounded in-memory extraction of the authorized materialization, applying existing
-repository policy and KnowledgePacks. CLI and MCP only translate requests/results.
-No retrieval backend, dense fallback or graph hop is involved. Application results
+the same operations through typed requests. They obtain canonical evidence from
+a compatible persisted snapshot and its derived exact lookup keys, applying the
+authorized repository scope. CLI and MCP only translate requests/results. No
+dense fallback or graph hop is involved. Application results
 report coverage and scan bounds independently of whether candidates were returned;
 see the [navigation reference](../reference/cli-mcp.md#exact-structural-navigation).
 
@@ -73,21 +82,21 @@ Distinct evidence locations, resolution states and target provenance are kept.
 Traversal is outgoing, one hop, bounded to 1-100 results. Reverse traversal is
 explicitly unavailable, not approximated by a name search.
 
-The canonical structural evidence contract uses indexing contract 28 and
-Projection v3 contract revision 5; older snapshots require an explicit rebuild.
+The stored evidence contract uses indexing contract 29 and Projection v3
+contract revision 5; older snapshots require an explicit rebuild.
 Legacy evidence can still hydrate with missing declarations/capabilities, but is
 not certified as current structural coverage. The embedding serializer is
-unchanged. The additive SDK/CLI/MCP navigation boundary does not change these
-persisted identities or the retrieval algorithm.
+unchanged. Derived exact lookup keys (names, qualified names and logical
+identities) are computed from canonical declarations during indexing and are
+bound to the indexing fingerprint. They are rebuildable adapter fields, not
+canonical authority or new Projection v3 fields.
 
 ## Optional grammar declarations
 
-The `structure` extra enables grammar-backed declaration extraction for Rust, C#,
-Kotlin, Ruby, PHP, Swift and Scala. These adapters add observed declarations to
-canonical knowledge. Rust, C#, Kotlin, PHP, Swift and Scala also expose
-observed import targets; Ruby currently exposes declarations only. They do not
-claim calls, references, inheritance or cross-file resolution. Grammar package
-version and adapter contract version participate in the indexing fingerprint,
-so changed extraction semantics require an explicit snapshot rebuild. Go uses its existing
-extractor. Without the optional grammar package, these files remain source
-knowledge and structural navigation reports unsupported coverage.
+The `structure` extra enables grammar-backed declarations and syntax-observed
+calls for Rust, C#, Kotlin, Ruby, PHP, Swift and Scala. Rust, C#, Kotlin, PHP,
+Swift and Scala also expose observed import targets; Ruby has no import claim.
+Calls retain unresolved syntax status. These adapters do not claim references,
+inheritance or cross-file resolution. Grammar package and adapter contract
+versions participate in the indexing fingerprint; changed extraction requires
+an explicit snapshot rebuild. Go keeps its declaration/import extractor.

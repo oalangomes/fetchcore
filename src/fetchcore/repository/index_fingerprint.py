@@ -8,10 +8,11 @@ from collections.abc import Mapping
 from dataclasses import asdict
 
 from fetchcore.repository.indexing import RepositoryIndexer
+from fetchcore.repository.structure_lookup import structural_lookup_fingerprint
 
 
 # Canonical declaration identities and extraction coverage require an explicit rebuild.
-INDEXING_CONTRACT_VERSION = "28"
+INDEXING_CONTRACT_VERSION = "29"
 
 
 def indexing_contract_fingerprint(indexer: RepositoryIndexer) -> str:
@@ -45,6 +46,7 @@ def indexing_contract_fingerprint(indexer: RepositoryIndexer) -> str:
         "config": config,
         "extractors": extractors,
         "document_sources": document_contract,
+        "structural_lookup": structural_lookup_fingerprint(),
     }
     rendered = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return "sha256:" + hashlib.sha256(rendered.encode("utf-8")).hexdigest()
