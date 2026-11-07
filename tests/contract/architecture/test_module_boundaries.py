@@ -277,14 +277,20 @@ def test_persisted_identities_version_projection_route_semantics() -> None:
     assert vector_embedding_serializer_fingerprint(ProjectionEmbeddingMode.PROJECTION_V3) == (
         "sha256:5f859289b8b3a594e924545edb1c3ae6178b77ea22cf3ff224d43c5ec7aeb43a"
     )
+    extractors = default_structural_symbol_extractors()
     indexer = RepositoryIndexer(
         RepositoryIndexConfig(),
-        symbol_extractors=default_structural_symbol_extractors(),
+        symbol_extractors={key: value for key, value in extractors.items() if key not in {
+            "rust", "csharp", "kotlin", "ruby", "php", "swift", "scala",
+        }},
     )
     # Persisting canonical declaration identities changes indexing; rebuild explicitly.
     assert indexing_contract_fingerprint(indexer) == (
         "sha256:94145db7c427d5fb38849bac97570cd2cef2d4b82e631a4017f8aa5ae678ff21"
     )
+    if "rust" in extractors:
+        expanded = RepositoryIndexer(RepositoryIndexConfig(), symbol_extractors=extractors)
+        assert indexing_contract_fingerprint(expanded) != indexing_contract_fingerprint(indexer)
 
 
 def test_mcp_entry_point_retains_its_historical_module() -> None:
