@@ -194,14 +194,14 @@ def test_chunk_overlap_deduplicates_declarations_but_keeps_all_relation_observat
 
 
 def test_source_only_is_not_a_structural_miss_and_go_calls_are_unsupported(tmp_path: Path) -> None:
-    (tmp_path / "main.rs").write_text("fn main() {}\n", encoding="utf-8")
+    (tmp_path / "config.json").write_text('{"main": true}\n', encoding="utf-8")
     (tmp_path / "main.go").write_text("package main\nfunc Run() {}\n", encoding="utf-8")
     service = RepositoryKnowledgeNavigationService(_indexer().index(tmp_path).documents)
     with pytest.raises(StructuralNavigationError) as unsupported:
-        service.find_symbol("main", language="rust")
+        service.find_symbol("main", language="json")
     assert unsupported.value.category == "unsupported_capability"
-    assert service.capabilities(language="rust")[0].capabilities == ("source_only",)
-    assert service.coverage(language="rust").status == "unsupported"
+    assert service.capabilities(language="json")[0].capabilities == ("source_only",)
+    assert service.coverage(language="json").status == "unsupported"
     assert service.coverage(language="go").status == "supported"
     assert service.coverage().status == "partial"
     assert service.coverage().sources == 2

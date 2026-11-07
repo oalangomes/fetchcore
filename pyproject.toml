@@ -23,6 +23,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+structure = [
+  "tree-sitter-language-pack>=0.13,<1",
+]
 mcp = [
   "mcp>=2,<3",
 ]
