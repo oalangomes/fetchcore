@@ -256,6 +256,13 @@ class RetrievalApplicationService:
                         category="source_revision_mismatch",
                     )
             materialized = store.load_documents(binding.repository)
+            from fetchcore.projection.core import corpus_checksum
+            if (len(materialized) != snapshot.document_count
+                    or corpus_checksum(materialized) != snapshot.corpus_checksum):
+                raise KnowledgeSearchError(
+                    "navigation documents do not match the active snapshot checksum",
+                    category="schema_mismatch",
+                )
             if any(doc.repository != binding.repository or doc.revision != snapshot.revision
                    for doc in materialized):
                 raise KnowledgeSearchError(
@@ -406,13 +413,21 @@ class RetrievalApplicationService:
         root = binding.workspace.resolve()
         candidate = (root / relative_path).resolve()
         try:
-            candidate.relative_to(root)
+            resolved_relative = candidate.relative_to(root).as_posix()
         except ValueError as exc:
             raise KnowledgeSearchError(
                 "source_ref escapes the authorized repository workspace",
                 category="unauthorized_source",
                 metadata={"repository": repository, "source_ref": request.source_ref},
             ) from exc
+        if binding.repository_paths and not any(
+            resolved_relative == prefix or resolved_relative.startswith(prefix.rstrip("/") + "/")
+            for prefix in binding.repository_paths
+        ):
+            raise KnowledgeSearchError(
+                "resolved source path is outside the authorized repository scope",
+                category="unauthorized_source",
+            )
         if not candidate.is_file():
             raise KnowledgeSearchError(
                 "source_ref does not resolve to a readable file",

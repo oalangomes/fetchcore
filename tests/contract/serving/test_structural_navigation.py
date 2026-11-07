@@ -22,6 +22,7 @@ from fetchcore.retrieval.contracts import KnowledgeSearchError
 from fetchcore.application.index_operations import prepare_repository_index_runtime
 from fetchcore.repository.semantic_indexing import SemanticDocumentRepositoryIndexer
 from fetchcore.adapters.retrieval.solr.backend import SolrDocumentMapper
+from fetchcore.projection.core import corpus_checksum
 
 
 def _git(workspace: Path, *args: str) -> str:
@@ -63,7 +64,11 @@ def application(tmp_path: Path) -> RetrievalApplicationService:
     class MaterializedStore:
         def load_snapshot(self, repository: str):
             assert repository == binding.repository
-            return SimpleNamespace(revision=indexed.revision, indexing_fingerprint=runtime.fingerprint)
+            return SimpleNamespace(
+                revision=indexed.revision, indexing_fingerprint=runtime.fingerprint,
+                document_count=len(indexed.documents),
+                corpus_checksum=corpus_checksum(indexed.documents),
+            )
 
         def load_documents(self, repository: str):
             assert repository == binding.repository
@@ -91,7 +96,11 @@ def _publish(application: RetrievalApplicationService, workspace: Path) -> None:
     class MaterializedStore:
         def load_snapshot(self, repository: str):
             assert repository == "owner/repo"
-            return SimpleNamespace(revision=indexed.revision, indexing_fingerprint=runtime.fingerprint)
+            return SimpleNamespace(
+                revision=indexed.revision, indexing_fingerprint=runtime.fingerprint,
+                document_count=len(indexed.documents),
+                corpus_checksum=corpus_checksum(indexed.documents),
+            )
 
         def load_documents(self, repository: str):
             assert repository == "owner/repo"
@@ -133,6 +142,25 @@ def test_missing_snapshot_is_reported_without_indexing(
     assert caught.value.category == "snapshot_missing"
 
 
+def test_incomplete_materialization_is_rejected(
+    application: RetrievalApplicationService, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_store = application._navigation_store(application._bindings["owner/repo"])
+    original_snapshot = original_store.load_snapshot("owner/repo")
+
+    class IncompleteStore:
+        def load_snapshot(self, repository: str):
+            return original_snapshot
+
+        def load_documents(self, repository: str):
+            return original_store.load_documents(repository)[:-1]
+
+    monkeypatch.setattr(application, "_navigation_store", lambda _binding: IncompleteStore())
+    with pytest.raises(KnowledgeSearchError) as caught:
+        application.find_symbol(FindSymbolRequest("Fetch"))
+    assert caught.value.category == "schema_mismatch"
+
+
 def test_explicit_index_persisted_projection_navigation_and_source(
     application: RetrievalApplicationService, tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -145,6 +173,8 @@ def test_explicit_index_persisted_projection_navigation_and_source(
     artifact.write_text(json.dumps({
         "revision": snapshot.revision,
         "fingerprint": snapshot.indexing_fingerprint,
+        "document_count": snapshot.document_count,
+        "corpus_checksum": snapshot.corpus_checksum,
         "documents": [mapper.to_solr(doc) for doc in original_store.load_documents("owner/repo")],
     }), encoding="utf-8")
 
@@ -153,6 +183,8 @@ def test_explicit_index_persisted_projection_navigation_and_source(
             payload = json.loads(artifact.read_text(encoding="utf-8"))
             return SimpleNamespace(
                 revision=payload["revision"], indexing_fingerprint=payload["fingerprint"],
+                document_count=payload["document_count"],
+                corpus_checksum=payload["corpus_checksum"],
             )
 
         def load_documents(self, repository: str):
@@ -432,6 +464,15 @@ def test_binding_scope_applies_to_symbols_and_relations(
     with pytest.raises(KnowledgeSearchError) as source_error:
         restricted.get_source(SourceReadRequest(hidden.source_ref))
     assert source_error.value.category == "unauthorized_source"
+    (tmp_path / "consumer_alias.py").symlink_to(tmp_path / "other.py")
+    alias_restricted = RetrievalApplicationService({
+        "owner/repo": RepositoryBinding(
+            "owner/repo", tmp_path, "solr", repository_paths=("consumer_alias.py",),
+        ),
+    }, navigation_store=application._navigation_store)
+    with pytest.raises(KnowledgeSearchError) as alias_error:
+        alias_restricted.get_source(SourceReadRequest("consumer_alias.py"))
+    assert alias_error.value.category == "unauthorized_source"
 
 
 def test_source_read_enforces_knowledge_type_scope(
