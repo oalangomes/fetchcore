@@ -89,9 +89,10 @@ are relative to the directory holding `docker-compose.yml`.
 
 - LiteLLM can return HTTP **429 immediately** when all deployment slots
   are in use. Its `max_parallel_requests` counter is per proxy process.
-  The FetchCore adapter has a bounded retry; the **CI job runner**, not
-  FetchCore, owns retries for a failed indexing job. LiteLLM does not
-  provide a durable queue in this setup.
+  FetchCore deliberately **does not retry HTTP 429**: it surfaces the
+  status and stops, avoiding retry amplification on saturation. The **CI
+  job runner**, not FetchCore, owns reattempts of failed indexing jobs.
+  LiteLLM does not provide a durable queue in this setup.
 - Bifrost accepts bursts into its **bounded in-memory provider buffer**
   until capacity is exhausted. Its queue is lost if the process stops;
   the external CI system must own durable work and cancellation.
