@@ -435,7 +435,9 @@ def default_structural_symbol_extractors() -> dict[str, SymbolExtractor]:
         "go": GoStructuralExtractor(),
     }
     try:
-        import tree_sitter_language_pack  # noqa: F401
+        from importlib.util import find_spec
+        if find_spec("tree_sitter_language_pack") is None:
+            return extractors
     except ImportError:
         return extractors
     for language in ("rust", "csharp", "kotlin", "ruby", "php", "swift", "scala"):

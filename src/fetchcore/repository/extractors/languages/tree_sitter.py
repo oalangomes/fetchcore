@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from functools import lru_cache
+from importlib import import_module
 from pathlib import PurePosixPath
 
 from fetchcore.repository.structure import SourceStructure, StructuralSymbolSpan
@@ -25,10 +26,10 @@ _SCOPES = {"mod_item", "namespace_declaration", "file_scoped_namespace_declarati
 @lru_cache(maxsize=8)
 def _parser(language: str):  # type: ignore[no-untyped-def]
     try:
-        from tree_sitter_language_pack import get_parser
+        get_parser = import_module("tree_sitter_language_pack").get_parser
     except ImportError as exc:
         raise RuntimeError("structural grammar unavailable; install fetchcore[structure]") from exc
-    return get_parser(_GRAMMARS.get(language, language))  # type: ignore[arg-type]
+    return get_parser(_GRAMMARS.get(language, language))
 
 
 class TreeSitterStructuralExtractor:
