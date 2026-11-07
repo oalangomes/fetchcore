@@ -58,7 +58,7 @@ class TreeSitterStructuralExtractor:
         def visit(node, parents: tuple[str, ...], inside_declaration: bool) -> None:  # type: ignore[no-untyped-def]
             nonlocal package
             kind = _DECLARATIONS[self.language].get(node.type)
-            if node.type in {"package_header", "package_clause", "namespace_definition"}:
+            if node.type in {"package_header", "package_clause", "namespace_definition", "file_scoped_namespace_declaration"}:
                 value = node.child_by_field_name("name")
                 if value is None:
                     value = next((child for child in node.named_children if child.type in {"identifier", "package_identifier", "namespace_name"}), None)
@@ -99,8 +99,12 @@ class TreeSitterStructuralExtractor:
 
         visit(root, (), False)
         if package:
-            symbols = [replace(item, qualified_name=f"{package}.{item.qualified_name}") for item in symbols]
-            chunks = [replace(item, qualified_name=f"{package}.{item.qualified_name}") for item in chunks]
+            symbols = [replace(item, qualified_name=f"{package}.{item.qualified_name}")
+                       if not (item.symbol_type == "namespace" and item.qualified_name == package)
+                       else item for item in symbols]
+            chunks = [replace(item, qualified_name=f"{package}.{item.qualified_name}")
+                      if not (item.symbol_type == "namespace" and item.qualified_name == package)
+                      else item for item in chunks]
         return SourceStructure(
             language=self.language, package=package,
             module=PurePosixPath(path).stem if path else None,
