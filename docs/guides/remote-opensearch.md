@@ -36,7 +36,9 @@ rejected rather than forwarding Authorization to another host. No
 ## Security gate before any real repository
 
 1. **Data admission:** start with a small synthetic, intentionally public
-   repository. Review the active source policy and scan candidate files for
+   repository. The FetchCore repository itself is **not** approved for a full
+   remote index: [the public-exposure audit](../operations/public-exposure-review-2026-10-22.md)
+   records NO-GO for private-corpus-derived benchmark artifacts pending [#110](https://github.com/oalangomes/fetchcore/issues/110). Review the active source policy and scan candidate files for
    secrets, credentials, personal data, internal endpoints and licensing
    restrictions **before** indexing. A file-extension exclusion alone is not a
    guarantee that source code contains no secrets; do not assume the current
