@@ -32,6 +32,7 @@ from fetchcore.application.runtime_config import (
     RUNTIME_CONFIG_VERSION,
     _runtime_registries_for_config,
     load_runtime_config,
+    embedding_provider_settings,
 )
 from fetchcore.retrieval.config import EmbeddingConfig, validate_backend_retrieval
 from fetchcore.retrieval.contracts import KnowledgeSearchError
@@ -171,7 +172,7 @@ class RuntimeInspectionService:
             "backends": {
                 self.config.backend: self._resolved_backend_settings(),
             },
-            "embedding": {"ollama": self.config.ollama.to_mapping()},
+            "embedding": embedding_provider_settings(self.config),
         }
         if self.config.retrieval is not None:
             values["retrieval"] = self.config.retrieval.to_mapping()
