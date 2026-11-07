@@ -1,0 +1,8 @@
+# A single immutable embedding route: no fallback or model substitution.
+model_list:
+  - model_name: fc-openai-small-1536-v1
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      mode: embedding
