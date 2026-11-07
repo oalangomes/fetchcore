@@ -1,0 +1,46 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "encryption_key": "env.BIFROST_ENCRYPTION_KEY",
+  "client": {
+    "initial_pool_size": 4,
+    "drop_excess_requests": false,
+    "enable_logging": false,
+    "disable_content_logging": true,
+    "allow_per_request_content_storage_override": false
+  },
+  "providers": {
+    "openai": {
+      "keys": [
+        {
+          "name": "fetchcore-openai-embeddings-primary",
+          "value": "env.OPENAI_API_KEY",
+          "models": [
+            "text-embedding-3-small"
+          ],
+          "weight": 1
+        },
+        {
+          "name": "fetchcore-openai-embeddings-secondary",
+          "value": "env.OPENAI_API_KEY_SECONDARY",
+          "models": [
+            "text-embedding-3-small"
+          ],
+          "weight": 1
+        }
+      ],
+      "concurrency_and_buffer_size": {
+        "concurrency": 2,
+        "buffer_size": 8
+      },
+      "network_config": {
+        "default_request_timeout_in_seconds": 25,
+        "max_retries": 1,
+        "retry_backoff_initial": 250,
+        "retry_backoff_max": 2000
+      }
+    }
+  },
+  "config_store": {
+    "enabled": false
+  }
+}
