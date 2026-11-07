@@ -17,8 +17,10 @@ from .navigation import (
     navigation_result, validate_navigation_request,
 )
 from fetchcore.repository.navigation import RelatedEvidence, StructuralNavigationError, SymbolDefinition
+from fetchcore.repository.structure_lookup import structural_coverage_from_summary
 from fetchcore.knowledge.structure import StructuralCapability, StructuralCoverage
 from fetchcore.application.index_store import OperationalIndexStore
+from fetchcore.application.index_store import StructuralSelector
 from fetchcore.repository.sources import LocalWorkspaceSourceProvider, RepositorySourceRequest
 from fetchcore.retrieval.contracts import (
     KnowledgeSearchError,
@@ -249,26 +251,42 @@ class RetrievalApplicationService:
                     category="schema_mismatch",
                     metadata={"rebuild_required": True},
                 )
+            coverage_summary = getattr(snapshot, "structural_coverage", None)
+            if not isinstance(coverage_summary, str):
+                raise KnowledgeSearchError(
+                    "navigation snapshot has no structural coverage projection",
+                    category="schema_mismatch", metadata={"rebuild_required": True},
+                )
             for expected in (binding.revision, request.revision):
                 if expected is not None and expected != snapshot.revision:
                     raise KnowledgeSearchError(
                         "navigation revision does not match the materialized source",
                         category="source_revision_mismatch",
                     )
-            materialized = store.load_documents(binding.repository)
-            from fetchcore.projection.core import corpus_checksum
-            if (len(materialized) != snapshot.document_count
-                    or corpus_checksum(materialized) != snapshot.corpus_checksum):
-                raise KnowledgeSearchError(
-                    "navigation documents do not match the active snapshot checksum",
-                    category="schema_mismatch",
-                )
+            selectors: tuple[tuple[StructuralSelector, str], ...]
+            if isinstance(request, FindSymbolRequest):
+                if path is not None:
+                    selectors = (("source_ref", f"repository://{binding.repository}/{path}"),)
+                elif request.name.startswith("symbol:v1:sha256:"):
+                    selectors = (("identity", request.name),)
+                else:
+                    selectors = (("name", request.name), ("qualified_name", request.name))
+            else:
+                assert source is not None
+                selectors = (("identity", source),) if source.startswith(
+                    "symbol:v1:sha256:"
+                ) else (("source_ref", source),)
+            budget = max(128, request.limit * 4)
+            pages = tuple(store.lookup_structural_documents(
+                binding.repository, snapshot.revision,
+                selector=selector, value=value, limit=budget,
+            ) for selector, value in selectors)
+            materialized = tuple({doc.id: doc for page in pages
+                                  for doc in page.documents}.values())
             if any(doc.repository != binding.repository or doc.revision != snapshot.revision
                    for doc in materialized):
-                raise KnowledgeSearchError(
-                    "navigation documents do not match the active snapshot",
-                    category="schema_mismatch",
-                )
+                raise KnowledgeSearchError("navigation candidate conflicts with active snapshot",
+                                           category="schema_mismatch")
             documents = tuple(doc for doc in materialized if (
                 (not binding.knowledge_types or doc.knowledge_type in binding.knowledge_types)
                 and (not binding.repository_paths or any(
@@ -276,11 +294,18 @@ class RetrievalApplicationService:
                     for prefix in binding.repository_paths
                 ))
             ))
+            scan_diagnostics: tuple[str, ...] = ("structural_candidate_budget_exhausted",) if any(
+                page.has_more for page in pages
+            ) else ()
             navigation = RepositoryKnowledgeNavigationService(documents)
             results: tuple[SymbolDefinition, ...] | tuple[RelatedEvidence, ...] = ()
             if isinstance(request, FindSymbolRequest):
                 coverage: tuple[StructuralCoverage, ...] = (
-                    navigation.coverage(language=request.language, path=path),
+                    structural_coverage_from_summary(
+                        coverage_summary, "declarations", request.language,
+                    ) if path is None else navigation.coverage(
+                        language=request.language, path=path,
+                    ),
                 )
                 try:
                     results = navigation.find_symbol(
@@ -316,26 +341,65 @@ class RetrievalApplicationService:
                         selected or source, relation_types=request.relation_types,
                         limit=request.limit, require_resolution=request.require_resolution,
                     )
-                    allowed_ids = {document.id for document in documents}
-                    allowed_paths = {document.path for document in documents}
-                    allowed_refs = {document.source_ref for document in documents}
-                    results = tuple(
-                        replace(item, target_document_id=None, target_source_ref=None,
-                                target_path=None, target_revision=None, target_checksum=None)
-                        if ((item.target_document_id is not None
-                             and item.target_document_id not in allowed_ids)
-                            or (item.target_path is not None
-                                and item.target_path not in allowed_paths)
-                            or (item.target_source_ref is not None
-                                and item.target_source_ref not in allowed_refs))
-                        else item
-                        for item in results
-                    )
+                    target_ids = tuple(sorted({item.target_document_id for item in results
+                                               if item.target_document_id is not None}))
+                    targets = {doc.id: doc for doc in store.load_structural_targets(
+                        binding.repository, snapshot.revision, target_ids,
+                    )}
+                    if set(target_ids) != targets.keys():
+                        raise KnowledgeSearchError(
+                            "resolved relation target is absent from the snapshot",
+                            category="schema_mismatch",
+                        )
+                    hydrated: list[RelatedEvidence] = []
+                    for item in results:
+                        target = targets.get(item.target_document_id or "")
+                        if target is not None and (
+                            item.target_path not in (None, target.path)
+                            or item.target_source_ref not in (None, target.source_ref)
+                        ):
+                            raise KnowledgeSearchError(
+                                "resolved relation target provenance conflicts",
+                                category="schema_mismatch",
+                            )
+                        target_path = target.path if target is not None else item.target_path
+                        path_allowed = not binding.repository_paths or (
+                            target_path is not None and any(
+                                target_path == prefix
+                                or target_path.startswith(prefix.rstrip("/") + "/")
+                                for prefix in binding.repository_paths
+                            )
+                        )
+                        type_allowed = not binding.knowledge_types or (
+                            target is not None
+                            and target.knowledge_type in binding.knowledge_types
+                        )
+                        if (item.target_path or item.target_source_ref
+                                or item.target_document_id) and not (path_allowed and type_allowed):
+                            item = replace(
+                                item, target_document_id=None, target_source_ref=None,
+                                target_path=None, target_revision=None, target_checksum=None,
+                            )
+                        elif target is not None:
+                            item = replace(item, target_revision=target.revision,
+                                           target_checksum=target.provenance.source_checksum)
+                        hydrated.append(item)
+                    results = tuple(hydrated)
                 except StructuralNavigationError as exc:
                     if exc.category != "unsupported_capability":
                         raise
+            current = store.load_snapshot(binding.repository)
+            if (current.revision != snapshot.revision
+                    or current.corpus_checksum != snapshot.corpus_checksum
+                    or getattr(current, "projection_fingerprint", None)
+                    != getattr(snapshot, "projection_fingerprint", None)):
+                raise KnowledgeSearchError(
+                    "navigation snapshot changed during structural lookup",
+                    category="snapshot_revision_mismatch",
+                )
             return navigation_result(
                 binding.repository, snapshot.revision, results, coverage, request.limit,
+                scan_diagnostics=scan_diagnostics,
             )
         except StructuralNavigationError as exc:
             raise KnowledgeSearchError(str(exc), category=exc.category) from exc
@@ -391,9 +455,30 @@ class RetrievalApplicationService:
         if binding.knowledge_types:
             store = self._navigation_store(binding) if self._navigation_store else self._default_navigation_store(binding)
             snapshot = store.load_snapshot(repository)
+            if not isinstance(getattr(snapshot, "structural_coverage", None), str):
+                raise KnowledgeSearchError(
+                    "source authorization requires a compatible structural projection",
+                    category="schema_mismatch", metadata={"rebuild_required": True},
+                )
+            page = store.lookup_structural_documents(
+                repository, snapshot.revision, selector="source_ref",
+                value=f"repository://{repository}/{relative_path}", limit=512,
+            )
+            if page.has_more:
+                raise KnowledgeSearchError(
+                    "source authorization exceeded the structural candidate budget",
+                    category="candidate_limit_exceeded",
+                )
+            current = store.load_snapshot(repository)
+            if (current.revision != snapshot.revision
+                    or current.corpus_checksum != snapshot.corpus_checksum):
+                raise KnowledgeSearchError(
+                    "source authorization snapshot changed during lookup",
+                    category="snapshot_revision_mismatch",
+                )
             authorized_checksums = {
                 document.provenance.source_checksum
-                for document in store.load_documents(repository)
+                for document in page.documents
                 if (
                 document.repository == repository
                 and document.revision == snapshot.revision

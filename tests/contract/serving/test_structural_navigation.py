@@ -24,6 +24,32 @@ from fetchcore.repository.semantic_indexing import SemanticDocumentRepositoryInd
 from fetchcore.adapters.retrieval.solr.backend import SolrDocumentMapper
 from fetchcore.projection.core import corpus_checksum
 from fetchcore.repository.local_references import LocalReferenceResolver
+from fetchcore.repository.structure_lookup import (
+    structural_coverage_summary, structural_lookup_keys,
+)
+from fetchcore.application.index_store import (
+    STRUCTURAL_SELECTOR_FIELDS, StructuralDocumentPage,
+)
+
+
+def _lookup_index(documents):
+    """Build a fixture key map once, before any structural query."""
+
+    indexed = {}
+    for document in documents:
+        keys = structural_lookup_keys(document).to_mapping()
+        keys["source_ref"] = [document.source_ref]
+        for field, values in keys.items():
+            for value in values:
+                indexed.setdefault((field, value), []).append(document)
+    return indexed
+
+
+def _lookup_page(indexed, repository, revision, selector, value, limit):
+    field = STRUCTURAL_SELECTOR_FIELDS[selector]
+    candidates = tuple(doc for doc in indexed.get((field, value), ())
+                       if doc.repository == repository and doc.revision == revision)
+    return StructuralDocumentPage(candidates[:limit], len(candidates) > limit)
 
 
 def _git(workspace: Path, *args: str) -> str:
@@ -65,6 +91,7 @@ def application(tmp_path: Path) -> RetrievalApplicationService:
         tmp_path, repository=binding.repository, branch=None, revision=None,
     )
     indexed = runtime.indexer.index(tmp_path)
+    lookup_index = _lookup_index(indexed.documents)
 
     class MaterializedStore:
         def load_snapshot(self, repository: str):
@@ -73,11 +100,18 @@ def application(tmp_path: Path) -> RetrievalApplicationService:
                 revision=indexed.revision, indexing_fingerprint=runtime.fingerprint,
                 document_count=len(indexed.documents),
                 corpus_checksum=corpus_checksum(indexed.documents),
+                structural_coverage=structural_coverage_summary(indexed.documents),
             )
 
         def load_documents(self, repository: str):
             assert repository == binding.repository
             return indexed.documents
+
+        def lookup_structural_documents(self, repository, revision, *, selector, value, limit):
+            return _lookup_page(lookup_index, repository, revision, selector, value, limit)
+
+        def load_structural_targets(self, repository, revision, identifiers):
+            return tuple(doc for doc in indexed.documents if doc.id in identifiers)
 
     return RetrievalApplicationService(
         {binding.repository: binding}, backends=BackendRegistry({"solr": forbidden_backend}),
@@ -97,6 +131,7 @@ def _publish(application: RetrievalApplicationService, workspace: Path) -> None:
         workspace, repository="owner/repo", branch=None, revision=None,
     )
     indexed = runtime.indexer.index(workspace)
+    lookup_index = _lookup_index(indexed.documents)
 
     class MaterializedStore:
         def load_snapshot(self, repository: str):
@@ -105,11 +140,18 @@ def _publish(application: RetrievalApplicationService, workspace: Path) -> None:
                 revision=indexed.revision, indexing_fingerprint=runtime.fingerprint,
                 document_count=len(indexed.documents),
                 corpus_checksum=corpus_checksum(indexed.documents),
+                structural_coverage=structural_coverage_summary(indexed.documents),
             )
 
         def load_documents(self, repository: str):
             assert repository == "owner/repo"
             return indexed.documents
+
+        def lookup_structural_documents(self, repository, revision, *, selector, value, limit):
+            return _lookup_page(lookup_index, repository, revision, selector, value, limit)
+
+        def load_structural_targets(self, repository, revision, identifiers):
+            return tuple(doc for doc in indexed.documents if doc.id in identifiers)
 
     application._navigation_store = lambda _binding: MaterializedStore()  # type: ignore[assignment]
 
@@ -147,7 +189,7 @@ def test_missing_snapshot_is_reported_without_indexing(
     assert caught.value.category == "snapshot_missing"
 
 
-def test_incomplete_materialization_is_rejected(
+def test_missing_structural_projection_is_rejected_without_full_scan(
     application: RetrievalApplicationService, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original_store = application._navigation_store(application._bindings["owner/repo"])
@@ -158,7 +200,10 @@ def test_incomplete_materialization_is_rejected(
             return original_snapshot
 
         def load_documents(self, repository: str):
-            return original_store.load_documents(repository)[:-1]
+            pytest.fail("navigation must not load the full corpus")
+
+        def lookup_structural_documents(self, repository, revision, *, selector, value, limit):
+            raise KnowledgeSearchError("structural projection absent", category="schema_mismatch")
 
     monkeypatch.setattr(application, "_navigation_store", lambda _binding: IncompleteStore())
     with pytest.raises(KnowledgeSearchError) as caught:
@@ -180,8 +225,13 @@ def test_explicit_index_persisted_projection_navigation_and_source(
         "fingerprint": snapshot.indexing_fingerprint,
         "document_count": snapshot.document_count,
         "corpus_checksum": snapshot.corpus_checksum,
+        "structural_coverage": snapshot.structural_coverage,
         "documents": [mapper.to_solr(doc) for doc in original_store.load_documents("owner/repo")],
     }), encoding="utf-8")
+    persisted_documents = tuple(
+        mapper.from_solr(item) for item in json.loads(artifact.read_text())["documents"]
+    )
+    lookup_index = _lookup_index(persisted_documents)
 
     class PersistedStore:
         def load_snapshot(self, repository: str):
@@ -190,11 +240,17 @@ def test_explicit_index_persisted_projection_navigation_and_source(
                 revision=payload["revision"], indexing_fingerprint=payload["fingerprint"],
                 document_count=payload["document_count"],
                 corpus_checksum=payload["corpus_checksum"],
+                structural_coverage=payload["structural_coverage"],
             )
 
         def load_documents(self, repository: str):
-            payload = json.loads(artifact.read_text(encoding="utf-8"))
-            return tuple(mapper.from_solr(item) for item in payload["documents"])
+            pytest.fail("navigation must not load the full persisted corpus")
+
+        def lookup_structural_documents(self, repository, revision, *, selector, value, limit):
+            return _lookup_page(lookup_index, repository, revision, selector, value, limit)
+
+        def load_structural_targets(self, repository, revision, identifiers):
+            return tuple(doc for doc in persisted_documents if doc.id in identifiers)
 
     monkeypatch.setattr(application, "_navigation_store", lambda _binding: PersistedStore())
     monkeypatch.setattr(
@@ -486,6 +542,7 @@ def test_related_target_location_respects_binding_scope(
     original_store = application._navigation_store(application._bindings["owner/repo"])
     original_snapshot = original_store.load_snapshot("owner/repo")
     documents = LocalReferenceResolver().resolve(original_store.load_documents("owner/repo"))
+    lookup_index = _lookup_index(documents)
 
     class ResolvedStore:
         def load_snapshot(self, repository: str):
@@ -493,10 +550,17 @@ def test_related_target_location_respects_binding_scope(
                 revision=original_snapshot.revision,
                 indexing_fingerprint=original_snapshot.indexing_fingerprint,
                 document_count=len(documents), corpus_checksum=corpus_checksum(documents),
+                structural_coverage=structural_coverage_summary(documents),
             )
 
         def load_documents(self, repository: str):
             return documents
+
+        def lookup_structural_documents(self, repository, revision, *, selector, value, limit):
+            return _lookup_page(lookup_index, repository, revision, selector, value, limit)
+
+        def load_structural_targets(self, repository, revision, identifiers):
+            return tuple(doc for doc in documents if doc.id in identifiers)
 
     application._navigation_store = lambda _binding: ResolvedStore()  # type: ignore[assignment]
     unrestricted = application.get_related(GetRelatedRequest("source.md"))

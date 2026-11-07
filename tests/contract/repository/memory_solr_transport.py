@@ -45,6 +45,12 @@ class MemoryTransport:
             elif raw_filter.startswith("{!terms f=id}"):
                 ids = set(raw_filter.removeprefix("{!terms f=id}").split(","))
                 docs = [item for item in docs if str(item.get("id")) in ids]
+            elif raw_filter.startswith("{!term f="):
+                field, value = raw_filter.removeprefix("{!term f=").split("}", 1)
+                docs = [item for item in docs if (
+                    value in item.get(field, []) if isinstance(item.get(field), list)
+                    else item.get(field) == value
+                )]
             else:
                 raise AssertionError(f"unexpected filter: {raw_filter}")
         docs.sort(key=lambda item: str(item["id"]))

@@ -7,8 +7,10 @@ outside this port.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Protocol
+from dataclasses import dataclass
+from typing import Literal, Protocol
 
 from fetchcore.repository.indexing import (
     KnowledgeDocument,
@@ -69,6 +71,45 @@ class IndexSyncResult(Protocol):
     def to_mapping(self) -> dict[str, object]: ...
 
 
+StructuralSelector = Literal["name", "qualified_name", "identity", "source_ref"]
+STRUCTURAL_SELECTOR_FIELDS: dict[StructuralSelector, str] = {
+    "name": "structural_names",
+    "qualified_name": "structural_qualified_names",
+    "identity": "structural_identities",
+    "source_ref": "source_ref",
+}
+
+
+@dataclass(frozen=True)
+class StructuralDocumentPage:
+    """Bounded canonical candidates from an exact derived lookup field."""
+
+    documents: tuple[KnowledgeDocument, ...]
+    has_more: bool
+
+
+def structural_candidate_matches(
+    raw: Mapping[str, object], document: KnowledgeDocument,
+    selector: StructuralSelector, value: str,
+) -> bool:
+    """Check stored exact keys against hydrated canonical evidence."""
+
+    from fetchcore.repository.structure_lookup import structural_lookup_keys
+
+    expected = structural_lookup_keys(document).to_mapping()
+    for key, values in expected.items():
+        observed = raw.get(key, [])
+        if not isinstance(observed, list) or any(not isinstance(item, str) for item in observed):
+            return False
+        if not isinstance(values, list) or set(observed) != set(values):
+            return False
+    field = STRUCTURAL_SELECTOR_FIELDS[selector]
+    if field == "source_ref":
+        return document.source_ref == value
+    selected = expected[field]
+    return isinstance(selected, list) and value in selected
+
+
 class OperationalIndexStore(Protocol):
     """Required storage operations; optional features stay in adapter capabilities."""
 
@@ -79,6 +120,15 @@ class OperationalIndexStore(Protocol):
     def load_snapshot(self, repository: str) -> IndexSnapshot: ...
 
     def load_documents(self, repository: str) -> tuple[KnowledgeDocument, ...]: ...
+
+    def lookup_structural_documents(
+        self, repository: str, revision: str, *,
+        selector: StructuralSelector, value: str, limit: int,
+    ) -> StructuralDocumentPage: ...
+
+    def load_structural_targets(
+        self, repository: str, revision: str, identifiers: tuple[str, ...],
+    ) -> tuple[KnowledgeDocument, ...]: ...
 
     def full_rebuild(self, result: RepositoryIndexResult) -> IndexSyncResult: ...
 

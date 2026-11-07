@@ -67,6 +67,9 @@
   <field name="documentation_text" type="text_general" indexed="true" stored="true" multiValued="true"/>
   <field name="structural_tokens" type="identifier_ci" indexed="true" stored="true" multiValued="true"/>
   <field name="canonical_payload" type="string" indexed="false" stored="true"/>
+  <field name="structural_names" type="string" indexed="true" stored="true" multiValued="true"/>
+  <field name="structural_qualified_names" type="string" indexed="true" stored="true" multiValued="true"/>
+  <field name="structural_identities" type="string" indexed="true" stored="true" multiValued="true"/>
   <field name="embedding_vector" type="knn_vector_768" indexed="true" stored="true"/>
   <field name="embedding_provider" type="string" indexed="true" stored="true"/>
   <field name="embedding_model" type="string" indexed="true" stored="true"/>

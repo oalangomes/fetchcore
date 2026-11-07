@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import copy
+import subprocess
 from pathlib import Path
 from typing import cast
 
 import pytest
 
 from fetchcore.search import KnowledgeSearchError
+from fetchcore.application import (
+    FindSymbolRequest, GetRelatedRequest, RepositoryBinding,
+    RetrievalApplicationService, SourceReadRequest,
+)
+from fetchcore.application.index_operations import prepare_repository_index_runtime
 from fetchcore.repository.incremental import GitDeltaPlan
 from fetchcore.repository.incremental_persistence import (
     TargetedGitAwareSolrSynchronizer,
@@ -21,6 +27,10 @@ from fetchcore.repository.indexing import (
     RepositoryIndexConfig,
     RepositoryIndexer,
     RepositoryIndexResult,
+)
+from fetchcore.repository.structure_lookup import (
+    structural_coverage_summary,
+    structural_lookup_keys,
 )
 from fetchcore.backends.solr import (
     SOLR_PROJECTION_VERSION,
@@ -71,7 +81,9 @@ def _seed(
 ) -> SolrIndexSnapshot:
     mapper = SolrDocumentMapper()
     for document in first.documents:
-        transport.documents[document.id] = mapper.to_solr(document)
+        projected = mapper.to_solr(document)
+        projected.update(structural_lookup_keys(document).to_mapping())
+        transport.documents[document.id] = projected
     snapshot = IndexContractSolrSnapshot(
         repository=first.repository,
         branch=first.branch,
@@ -81,9 +93,76 @@ def _seed(
         projection_version=SOLR_PROJECTION_VERSION,
         indexed_at="2026-08-19T16:00:00+00:00",
         indexing_fingerprint=_fingerprint(),
+        structural_coverage=structural_coverage_summary(first.documents),
     )
     transport.documents[snapshot.id] = snapshot.to_solr()
     return snapshot
+
+
+def test_structural_lookup_reads_bounded_candidates_without_corpus_load(tmp_path: Path) -> None:
+    (tmp_path / "first.py").write_text("def exact_name():\n    return 1\n")
+    (tmp_path / "other.py").write_text("def other_name():\n    return 2\n")
+    transport = MemoryTransport()
+    _seed(transport, _indexer().index(tmp_path))
+    persistence = _store(transport)
+    persistence.load_documents = lambda _repository: pytest.fail("full corpus read")  # type: ignore[method-assign]
+    first = persistence.lookup_structural_documents(
+        "example/repo", "rev-a", selector="name", value="exact_name", limit=2,
+    )
+    assert {item.path for item in first.documents} == {"first.py"}
+    assert not first.has_more
+    assert persistence.load_structural_targets(
+        "example/repo", "rev-a", tuple(item.id for item in first.documents),
+    ) == first.documents
+    assert persistence.lookup_structural_documents(
+        "example/repo", "rev-a", selector="source_ref",
+        value="repository://example/repo/first.py", limit=2,
+    ).documents == first.documents
+
+
+def test_persisted_navigation_and_source_use_targeted_solr_reads(tmp_path: Path) -> None:
+    (tmp_path / "module.py").write_text("import os\ndef exact_name():\n    return os.getcwd()\n")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=Test",
+                    "-c", "user.email=test@example.test", "commit", "-qm", "fixture"], check=True)
+    runtime = prepare_repository_index_runtime(
+        tmp_path, repository="example/repo", branch=None, revision=None,
+    )
+    indexed = runtime.indexer.index(tmp_path)
+    transport = MemoryTransport()
+    mapper = SolrDocumentMapper()
+    for document in indexed.documents:
+        projected = mapper.to_solr(document)
+        projected.update(structural_lookup_keys(document).to_mapping())
+        transport.documents[document.id] = projected
+    snapshot = IndexContractSolrSnapshot(
+        repository=indexed.repository, branch=indexed.branch,
+        revision=indexed.revision, corpus_checksum=corpus_checksum(indexed.documents),
+        document_count=len(indexed.documents), projection_version=SOLR_PROJECTION_VERSION,
+        indexed_at="2026-11-07T00:00:00+00:00", indexing_fingerprint=runtime.fingerprint,
+        structural_coverage=structural_coverage_summary(indexed.documents),
+    )
+    transport.documents[snapshot.id] = snapshot.to_solr()
+    persistence = _store(transport)
+    persistence.load_documents = lambda _repository: pytest.fail("full corpus read")  # type: ignore[method-assign]
+    binding = RepositoryBinding(
+        "example/repo", tmp_path, "solr", knowledge_types=("code",),
+    )
+    application = RetrievalApplicationService(
+        {binding.repository: binding}, navigation_store=lambda _binding: persistence,
+    )
+    found = application.find_symbol(FindSymbolRequest("exact_name"))
+    assert found.results and found.results[0].path == "module.py"
+    related = application.get_related(GetRelatedRequest(
+        "repository://example/repo/module.py", relation_types=("imports",),
+    ))
+    assert related.results
+    source = application.get_source(SourceReadRequest(
+        "repository://example/repo/module.py", checksum=found.results[0].checksum,
+    ))
+    assert "def exact_name" in source.content
+    assert application.find_symbol(FindSymbolRequest("exact_name")).results == found.results
 
 
 def test_noop_uses_snapshot_count_without_loading_corpus(tmp_path: Path) -> None:

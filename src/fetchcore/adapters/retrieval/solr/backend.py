@@ -67,6 +67,11 @@ from fetchcore.repository.indexing import (
     RepositoryIndexer,
     RepositoryIndexResult,
 )
+from fetchcore.repository.structure_lookup import structural_lookup_keys
+from fetchcore.application.index_store import (
+    STRUCTURAL_SELECTOR_FIELDS, StructuralDocumentPage, StructuralSelector,
+    structural_candidate_matches,
+)
 from fetchcore.projection import (
     PROJECTION_VERSION,
     ProjectionCompatibilityError,
@@ -230,6 +235,9 @@ _REQUIRED_SCHEMA_FIELDS = frozenset(
         "documentation_text",
         "structural_tokens",
         "canonical_payload",
+        "structural_names",
+        "structural_qualified_names",
+        "structural_identities",
         SOLR_VECTOR_FIELD,
         "embedding_provider",
         "embedding_model",
@@ -280,6 +288,12 @@ _CRITICAL_SCHEMA_FIELD_PROPERTIES: dict[str, dict[str, object]] = {
     "documentation_text": {"type": "text_general"},
     "structural_tokens": {"type": "identifier_ci"},
     "canonical_payload": {"type": "string", "indexed": False, "stored": True},
+    "structural_names": {"type": "string", "indexed": True, "stored": True,
+                         "multiValued": True},
+    "structural_qualified_names": {"type": "string", "indexed": True, "stored": True,
+                                   "multiValued": True},
+    "structural_identities": {"type": "string", "indexed": True, "stored": True,
+                              "multiValued": True},
     SOLR_VECTOR_FIELD: {"type": SOLR_VECTOR_FIELD_TYPE, "indexed": True, "stored": True},
     "vector_dimensions": {"type": "pint"},
     "projection_fingerprint": {"type": "string"},
@@ -1113,6 +1127,54 @@ class SolrIndexStore:
                 break
         return tuple(docs)
 
+    def lookup_structural_documents(
+        self, repository: str, revision: str, *,
+        selector: StructuralSelector, value: str, limit: int,
+    ) -> StructuralDocumentPage:
+        """Retrieve only exact structural candidates from stored keyword fields."""
+
+        field = STRUCTURAL_SELECTOR_FIELDS[selector]
+        response = self._select({
+            "q": "*:*",
+            "fq": ["record_kind:knowledge", _term_filter("repository", repository),
+                   _term_filter("document_revision", revision), _term_filter(field, value)],
+            "rows": limit + 1,
+            "fl": ("record_kind,projection_version,projection_fingerprint,"
+                   "canonical_payload,structural_names,structural_qualified_names,"
+                   "structural_identities,source_ref"),
+            "sort": "id asc",
+        })
+        documents: list[KnowledgeDocument] = []
+        for row in response["docs"][:limit]:
+            document = self.mapper.from_solr(row)
+            if (document.repository != repository or document.revision != revision
+                    or not structural_candidate_matches(row, document, selector, value)):
+                raise KnowledgeSearchError("Solr structural lookup record is inconsistent",
+                                           category="schema_mismatch")
+            documents.append(document)
+        return StructuralDocumentPage(tuple(documents), response["num_found"] > limit)
+
+    def load_structural_targets(
+        self, repository: str, revision: str, identifiers: tuple[str, ...],
+    ) -> tuple[KnowledgeDocument, ...]:
+        if not identifiers:
+            return ()
+        ids_filter = "{!terms f=id}" + ",".join(identifiers)
+        response = self._select({
+            "q": "*:*", "fq": ["record_kind:knowledge",
+                              _term_filter("repository", repository),
+                              _term_filter("document_revision", revision), ids_filter],
+            "rows": len(identifiers),
+            "fl": "record_kind,projection_version,projection_fingerprint,canonical_payload",
+            "sort": "id asc",
+        })
+        documents = tuple(self.mapper.from_solr(row) for row in response["docs"])
+        if any(doc.id not in identifiers or doc.repository != repository
+               or doc.revision != revision for doc in documents):
+            raise KnowledgeSearchError("Solr structural target identity is inconsistent",
+                                       category="schema_mismatch")
+        return documents
+
     def _load_projection_records(self, repository: str) -> tuple[dict[str, object], ...]:
         records: list[dict[str, object]] = []
         start = 0
@@ -1307,6 +1369,8 @@ class SolrIndexStore:
             batch = source[offset : offset + self.settings.batch_size]
             records = tuple(self.compiler.compile(document) for document in batch)
             payloads = [record.to_solr() for record in records]
+            for payload, document in zip(payloads, batch, strict=True):
+                payload.update(structural_lookup_keys(document).to_mapping())
             if self.embedding_provider is not None:
                 assert self.embedding_serializer is not None
                 texts = tuple(

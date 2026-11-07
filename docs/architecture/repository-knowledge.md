@@ -19,7 +19,7 @@ seven grammars, Go, and the six preexisting language extractors. Changing the
 grammar or adapter contract requires explicit reindexing through the indexing
 fingerprint.
 
-`RepositoryKnowledgeNavigationService` performs exact name or qualified-name lookups over selected canonical `KnowledgeDocument` values. It returns homonyms as separate candidates and carries source path, span, revision, checksum, and document identity. Related lookups expose only relations already attributed to that symbol; unresolved observations remain unresolved. Text-only files and languages without structural declarations are not reported as definitive symbol misses.
+`RepositoryKnowledgeNavigationService` performs exact name or qualified-name lookups over selected canonical `KnowledgeDocument` values. Operational stores select these values through persisted exact name, qualified-name, identity, or source-ref fields built at snapshot publication. They hydrate only bounded candidates and check the snapshot identity before returning. These fields are rebuildable projections; they do not replace canonical knowledge. It returns homonyms as separate candidates and carries source path, span, revision, checksum, and document identity. Related lookups expose only relations already attributed to that symbol; unresolved observations remain unresolved. Text-only files and languages without structural declarations are not reported as definitive symbol misses.
 
 `RetrievalApplicationService` and the registered-repository serving service expose
 the same operations through typed requests. They obtain canonical evidence from

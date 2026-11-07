@@ -69,6 +69,13 @@ from fetchcore.repository.indexing import (
     RepositoryIndexer,
 )
 from fetchcore.repository.index_fingerprint import indexing_contract_fingerprint
+from fetchcore.repository.structure_lookup import (
+    structural_coverage_summary, structural_lookup_keys,
+)
+from fetchcore.application.index_store import (
+    STRUCTURAL_SELECTOR_FIELDS, StructuralDocumentPage, StructuralSelector,
+    structural_candidate_matches,
+)
 from fetchcore.retrieval import RetrievalBackendCapabilities
 from fetchcore.telemetry import (
     IndexSyncTelemetry,
@@ -286,6 +293,7 @@ class QdrantVectorSnapshot:
     sparse_modifier: str | None = None
     status: str = "ready"
     indexing_fingerprint: str | None = None
+    structural_coverage: str | None = None
     active_collection: str | None = field(default=None, compare=False, repr=False)
 
     @property
@@ -318,6 +326,7 @@ class QdrantVectorSnapshot:
             "sparse_modifier": self.sparse_modifier,
             "snapshot_status": self.status,
             "indexing_fingerprint": self.indexing_fingerprint,
+            "structural_coverage": self.structural_coverage,
         }
 
     @classmethod
@@ -349,6 +358,7 @@ class QdrantVectorSnapshot:
                 sparse_modifier=_optional_str(value.get("sparse_modifier")),
                 status=str(value["snapshot_status"]),
                 indexing_fingerprint=_optional_str(value.get("indexing_fingerprint")),
+                structural_coverage=_optional_str(value.get("structural_coverage")),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise KnowledgeSearchError(
@@ -722,6 +732,85 @@ class QdrantVectorIndexStore:
             seen_ids.add(document.id)
             documents.append(document)
         return tuple(sorted(documents, key=lambda item: item.id))
+
+    def lookup_structural_documents(
+        self, repository: str, revision: str, *,
+        selector: StructuralSelector, value: str, limit: int,
+    ) -> StructuralDocumentPage:
+        """Use indexed Qdrant payload keywords to scroll bounded exact candidates."""
+
+        collection = self._active_collection(_repository_alias(self.settings, repository))
+        if collection is None:
+            raise KnowledgeSearchError("Qdrant structural snapshot is absent",
+                                       category="snapshot_missing")
+        field = STRUCTURAL_SELECTOR_FIELDS[selector]
+        info = self.transport.request("GET", f"collections/{quote(collection, safe='')}")
+        details = info.get("result")
+        indexes = details.get("payload_schema") if isinstance(details, Mapping) else None
+        if not isinstance(indexes, Mapping) or any(
+            not isinstance(indexes.get(key), Mapping)
+            or indexes[key].get("data_type") != "keyword"
+            for key in (field, "repository", "document_revision")
+        ):
+            raise KnowledgeSearchError("Qdrant structural payload index is incompatible",
+                                       category="schema_mismatch",
+                                       metadata={"rebuild_required": True})
+        body = {
+            "filter": {"must": [
+                {"key": "record_kind", "match": {"value": "knowledge"}},
+                {"key": "repository", "match": {"value": repository}},
+                {"key": "document_revision", "match": {"value": revision}},
+                {"key": field, "match": {"value": value}},
+            ]},
+            "limit": limit + 1, "with_payload": True, "with_vector": False,
+        }
+        response = self.transport.request(
+            "POST", f"collections/{quote(collection, safe='')}/points/scroll", body,
+        )
+        result = response.get("result")
+        rows = result.get("points") if isinstance(result, Mapping) else None
+        if not isinstance(rows, list):
+            raise KnowledgeSearchError("Qdrant structural lookup response is invalid",
+                                       category="response_parsing_failure")
+        documents: list[KnowledgeDocument] = []
+        for row in rows[:limit]:
+            raw = row.get("payload") if isinstance(row, Mapping) else None
+            if not isinstance(raw, Mapping):
+                raise KnowledgeSearchError("Qdrant structural candidate is invalid",
+                                           category="response_parsing_failure")
+            document = self.reader.read(raw)
+            if (document.repository != repository or document.revision != revision
+                    or row.get("id") != _knowledge_point_id(document.id)
+                    or not structural_candidate_matches(raw, document, selector, value)):
+                raise KnowledgeSearchError("Qdrant structural candidate is inconsistent",
+                                           category="schema_mismatch")
+            documents.append(document)
+        return StructuralDocumentPage(tuple(documents), len(rows) > limit)
+
+    def load_structural_targets(
+        self, repository: str, revision: str, identifiers: tuple[str, ...],
+    ) -> tuple[KnowledgeDocument, ...]:
+        if not identifiers:
+            return ()
+        collection = self._active_collection(_repository_alias(self.settings, repository))
+        if collection is None:
+            raise KnowledgeSearchError("Qdrant structural target collection is absent",
+                                       category="snapshot_missing")
+        response = self.transport.request(
+            "POST", f"collections/{quote(collection, safe='')}/points",
+            {"ids": [_knowledge_point_id(item) for item in identifiers],
+             "with_payload": True, "with_vector": False},
+        )
+        rows = response.get("result")
+        if not isinstance(rows, list):
+            raise KnowledgeSearchError("Qdrant structural targets are invalid",
+                                       category="response_parsing_failure")
+        documents = tuple(self.reader.read(row["payload"]) for row in rows)
+        if any(doc.id not in identifiers or doc.repository != repository
+               or doc.revision != revision for doc in documents):
+            raise KnowledgeSearchError("Qdrant structural target identity is inconsistent",
+                                       category="schema_mismatch")
+        return documents
 
     def _scroll_points(
         self,
@@ -1105,10 +1194,18 @@ class QdrantVectorIndexStore:
                 points = [
                     {
                         "id": _knowledge_point_id(str(record.fields["id"])),
-                        "vector": _qdrant_point_vectors(vector, record.to_mapping()),
-                        "payload": record.to_mapping(),
+                        "vector": _qdrant_point_vectors(vector, {
+                            **record.to_mapping(),
+                            **structural_lookup_keys(document).to_mapping(),
+                        }),
+                        "payload": {
+                            **record.to_mapping(),
+                            **structural_lookup_keys(document).to_mapping(),
+                        },
                     }
-                    for record, vector in zip(records, vectors, strict=True)
+                    for record, vector, document in zip(
+                        records, vectors, document_batch, strict=True,
+                    )
                 ]
                 write_started = self.timer()
                 self.transport.request(
@@ -1414,7 +1511,10 @@ class QdrantVectorIndexStore:
             expected = previous_records.get(document.id)
             if (
                 expected is None
-                or expected.to_mapping() != payload
+                or {
+                    **expected.to_mapping(),
+                    **structural_lookup_keys(document).to_mapping(),
+                } != payload
                 or point_id != _knowledge_point_id(document.id)
             ):
                 raise KnowledgeSearchError(
@@ -1488,6 +1588,7 @@ class QdrantVectorIndexStore:
                     category="embedding_failed",
                 )
             payload = record.to_mapping()
+            payload.update(structural_lookup_keys(current_by_id[document_id]).to_mapping())
             updates.append(
                 {
                     "id": _knowledge_point_id(document_id),
@@ -1551,7 +1652,10 @@ class QdrantVectorIndexStore:
                     prior_record = previous_records.get(document.id)
                     if (
                         prior_record is None
-                        or prior_record.to_mapping() != payload
+                        or {
+                            **prior_record.to_mapping(),
+                            **structural_lookup_keys(document).to_mapping(),
+                        } != payload
                         or point["id"] != _knowledge_point_id(document.id)
                         or document.id in copied_ids
                     ):
@@ -1750,6 +1854,7 @@ class QdrantVectorIndexStore:
             sparse_analyzer_fingerprint=SPARSE_ANALYZER_FINGERPRINT,
             sparse_modifier=SPARSE_MODIFIER,
             indexing_fingerprint=self.indexing_fingerprint,
+            structural_coverage=structural_coverage_summary(result.documents),
         )
 
     def _write_snapshot(
@@ -1896,6 +2001,11 @@ class QdrantVectorIndexStore:
                 },
             },
         )
+        for field_name in (*STRUCTURAL_SELECTOR_FIELDS.values(), "repository", "document_revision"):
+            self.transport.request(
+                "PUT", f"collections/{quote(collection, safe='')}/index?wait=true",
+                {"field_name": field_name, "field_schema": "keyword"},
+            )
 
     def _validate_staged(
         self,

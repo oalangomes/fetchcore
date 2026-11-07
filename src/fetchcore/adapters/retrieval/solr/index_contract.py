@@ -9,6 +9,7 @@ from typing import cast
 
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 from fetchcore.repository.index_fingerprint import indexing_contract_fingerprint
+from fetchcore.repository.structure_lookup import structural_coverage_summary
 from fetchcore.repository.indexing import RepositoryIndexer, RepositoryIndexResult
 from fetchcore.adapters.retrieval.solr.backend import (
     SolrIndexSnapshot, SolrIndexStore, corpus_checksum,
@@ -21,12 +22,14 @@ class IndexContractSolrSnapshot(SolrIndexSnapshot):
     """Snapshot carrying the canonical indexing contract in stored payload."""
 
     indexing_fingerprint: str | None = None
+    structural_coverage: str | None = None
 
     def to_solr(self) -> dict[str, object]:
         """Serialize the snapshot with persisted indexing contract metadata."""
         payload = super().to_solr()
         payload["canonical_payload"] = json.dumps(
-            {"indexing_fingerprint": self.indexing_fingerprint},
+            {"indexing_fingerprint": self.indexing_fingerprint,
+             "structural_coverage": self.structural_coverage},
             sort_keys=True,
             separators=(",", ":"),
         )
@@ -36,6 +39,7 @@ class IndexContractSolrSnapshot(SolrIndexSnapshot):
         """Return a stable mapping representation of the index-contract snapshot."""
         payload = super().to_solr()
         payload["indexing_fingerprint"] = self.indexing_fingerprint
+        payload["structural_coverage"] = self.structural_coverage
         return payload
 
     @classmethod
@@ -43,6 +47,7 @@ class IndexContractSolrSnapshot(SolrIndexSnapshot):
         """Rebuild an index-contract snapshot from persisted Solr state."""
         base = SolrIndexSnapshot.from_solr(value)
         fingerprint: str | None = None
+        coverage: str | None = None
         raw_payload = value.get("canonical_payload")
         if raw_payload is not None:
             if not isinstance(raw_payload, str):
@@ -65,6 +70,12 @@ class IndexContractSolrSnapshot(SolrIndexSnapshot):
             raw_fingerprint = decoded.get("indexing_fingerprint")
             if raw_fingerprint is not None:
                 fingerprint = str(raw_fingerprint)
+            raw_coverage = decoded.get("structural_coverage")
+            if raw_coverage is not None:
+                if not isinstance(raw_coverage, str):
+                    raise KnowledgeSearchError("Solr structural coverage is invalid",
+                                               category="response_parsing_failure")
+                coverage = raw_coverage
         return cls(
             repository=base.repository,
             branch=base.branch,
@@ -82,6 +93,7 @@ class IndexContractSolrSnapshot(SolrIndexSnapshot):
             embedding_serializer_fingerprint=base.embedding_serializer_fingerprint,
             projection_fingerprint=base.projection_fingerprint,
             indexing_fingerprint=fingerprint,
+            structural_coverage=coverage,
         )
 
 
@@ -147,6 +159,7 @@ class IndexContractSolrIndexStore(SolrIndexStore):
             ),
             projection_fingerprint=self.projection_fingerprint,
             indexing_fingerprint=self.indexing_fingerprint,
+            structural_coverage=structural_coverage_summary(result.documents),
         )
 
 

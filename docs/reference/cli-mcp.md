@@ -64,15 +64,18 @@ their pinned revision through a temporary cached worktree without fetching.
 relation types fail explicitly. Supported filters are `calls`, `references`,
 `tests`, `imports`, `dependencies`, `extends`, and `implements`.
 
-These commands read the active compatible operational snapshot and its persisted
-canonical documents. Index explicitly with `fetchcore index rebuild <repo>` or
+These commands read the active compatible operational snapshot and bounded
+canonical candidates from persisted exact lookup fields. Index explicitly with `fetchcore index rebuild <repo>` or
 `fetchcore index sync <repo>` before navigation; an absent or incompatible snapshot
-fails without rebuilding during retrieval. Navigation derives its structural view
-from the loaded documents, without parsing source files, embedding, invoking
-search, or requiring a graph database. Loading and validating the canonical
-corpus on each request is not a latency guarantee. Repository path and
+fails without rebuilding during retrieval. The indexer derives the lookup fields
+from canonical declarations when publishing a snapshot; navigation checks its
+fingerprint and revision, then hydrates only bounded candidates. It does not
+parse source files, embed, invoke textual search or require a graph database.
+The exact lookup fields are indexed in Solr, OpenSearch and Qdrant. A candidate
+budget exhaustion is reported explicitly. Repository path and
 knowledge-type binding restrictions apply before navigation; target location
-fields outside that scope are withheld. `--revision` is an exact precondition,
+fields outside that scope are withheld. `get_source` checks knowledge-type scope
+through an exact `source_ref` lookup. `--revision` is an exact precondition,
 never a request to change HEAD.
 
 The SDK exposes `FindSymbolRequest`, `GetRelatedRequest`, and `NavigationResult`
