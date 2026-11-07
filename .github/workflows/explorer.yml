@@ -72,6 +72,13 @@ jobs:
         run: |
           fetchcore index bootstrap
           fetchcore index sync
+      - name: Verify persisted structural lookup against live Solr
+        env:
+          FETCHCORE_INDEX_WORKSPACE: ${{ github.workspace }}/tools/explorer/fixtures/demo-repo
+          FETCHCORE_INDEX_REPOSITORY: demo/catalog
+          FETCHCORE_SOLR_URL: http://127.0.0.1:8983/solr
+          FETCHCORE_SOLR_COLLECTION: fetchcore
+        run: python -m pytest -q tests/integration/test_solr_structural_navigation.py
       - name: Install UI dependencies
         working-directory: tools/explorer/web
         run: npm install --no-audit --no-fund

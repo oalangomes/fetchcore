@@ -131,13 +131,14 @@ def run(count: int, samples: int = 10) -> dict[str, object]:
                     candidates = store.load_documents(REPOSITORY)
                     corpus_checksum(candidates)
                 else:
-                    page = store.lookup_structural_documents(
-                        REPOSITORY, REVISION,
-                        selector="name" if operation == "find_symbol" else "source_ref",
-                        value="needle" if operation == "find_symbol" else
-                        f"repository://{REPOSITORY}/needle.py", limit=128,
-                    )
-                    candidates = page.documents
+                    selectors = (("name", "needle"), ("qualified_name", "needle")) if (
+                        operation == "find_symbol"
+                    ) else (("source_ref", f"repository://{REPOSITORY}/needle.py"),)
+                    pages = tuple(store.lookup_structural_documents(
+                        REPOSITORY, REVISION, selector=selector, value=value, limit=128,
+                    ) for selector, value in selectors)
+                    candidates = tuple({document.id: document for page in pages
+                                        for document in page.documents}.values())
                 navigation = RepositoryKnowledgeNavigationService(candidates)
                 candidates_examined += len(candidates)
                 if operation == "find_symbol":
@@ -168,5 +169,5 @@ def run(count: int, samples: int = 10) -> dict[str, object]:
 
 
 if __name__ == "__main__":
-    print(json.dumps({"method": "simulated keyword index, real OpenSearch adapter hydration",
+    print(json.dumps({"method": "simulated keyword index, real OpenSearch adapter hydration; snapshot reads excluded",
                       "scales": [run(1_000), run(10_000)]}, indent=2))
