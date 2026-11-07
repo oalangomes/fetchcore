@@ -10,6 +10,7 @@ from fetchcore.repository.extractors.languages.tree_sitter import TreeSitterStru
     [
         ("rust", "mod demo { struct Foo {} }", "demo.Foo"),
         ("csharp", "namespace Demo { class Foo {} }", "Demo.Foo"),
+        ("csharp", "namespace Demo;\nclass Foo { void Bar() {} }", "Demo.Foo.Bar"),
         ("kotlin", "package demo\nclass Foo { fun bar() {} }", "demo.Foo"),
         ("ruby", "module Demo\n class Foo\n end\nend", "Demo.Foo"),
         ("php", "<?php namespace Demo; class Foo {}", "Demo.Foo"),
