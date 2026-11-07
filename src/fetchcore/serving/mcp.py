@@ -111,6 +111,7 @@ def create_mcp_server(service: RetrievalApplicationService) -> MCPServer:
         line_start: int | None = None,
         line_end: int | None = None,
         context_lines: int = 0,
+        checksum: str | None = None,
     ) -> dict[str, object]:
         """Read bounded source; optional revision is an exact materialized precondition."""
         try:
@@ -122,6 +123,7 @@ def create_mcp_server(service: RetrievalApplicationService) -> MCPServer:
                     line_start=line_start,
                     line_end=line_end,
                     context_lines=context_lines,
+                    checksum=checksum,
                 )
             )
         except KnowledgeSearchError as exc:

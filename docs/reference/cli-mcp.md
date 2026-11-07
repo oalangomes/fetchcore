@@ -35,7 +35,9 @@ for identity, persistence, source safety, output fields, and failure categories.
 
 `search` requires `--repo` and accepts `--limit` (1..100), repeatable
 `--knowledge-type`, and `--json`. `source` accepts `--repo` for a relative `source_ref`, optional
-`--revision`, `--line-start`, `--line-end`, `--context-lines`, and `--json`.
+`--revision`, `--checksum`, `--line-start`, `--line-end`, `--context-lines`, and `--json`.
+Pass the checksum returned by `find_symbol` to `source --checksum` or MCP
+`get_source(checksum=...)` to reject source bytes changed since extraction.
 `--revision` is a precondition against the revision actually materialized; a
 mismatch fails with `source_revision_mismatch` and does not fetch or switch to
 the requested revision. A local workspace is never mutated. Git registrations

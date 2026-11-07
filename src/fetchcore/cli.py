@@ -201,6 +201,7 @@ def search(
 @click.argument("source_ref")
 @click.option("--repo", "repository", help="Canonical identity or unique repository name.")
 @click.option("--revision", help="Require the materialized source to match this revision.")
+@click.option("--checksum", help="Require source bytes to match this evidence checksum.")
 @click.option("--line-start", type=int)
 @click.option("--line-end", type=int)
 @click.option("--context-lines", type=int, default=0, show_default=True)
@@ -212,6 +213,7 @@ def source(
     source_ref: str,
     repository: str | None,
     revision: str | None,
+    checksum: str | None,
     line_start: int | None,
     line_end: int | None,
     context_lines: int,
@@ -233,6 +235,7 @@ def source(
                 source_ref=source_ref,
                 repository=repository,
                 revision=revision,
+                checksum=checksum,
                 line_start=line_start,
                 line_end=line_end,
                 context_lines=context_lines,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+import hashlib
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote
@@ -109,6 +110,7 @@ class SourceReadRequest:
     line_end: int | None = None
     context_lines: int = 0
     revision: str | None = None
+    checksum: str | None = None
 
 
 @dataclass(frozen=True)
@@ -403,7 +405,16 @@ class RetrievalApplicationService:
                 },
             )
 
-        text = candidate.read_text(encoding="utf-8", errors="replace")
+        payload = candidate.read_bytes()
+        if request.checksum is not None:
+            actual_checksum = "sha256:" + hashlib.sha256(payload).hexdigest()
+            if request.checksum != actual_checksum:
+                raise KnowledgeSearchError(
+                    "source checksum does not match the requested evidence",
+                    category="source_revision_mismatch",
+                    metadata={"repository": repository, "path": relative_path},
+                )
+        text = payload.decode("utf-8", errors="replace")
         if blocked_api_artifact_kind(relative_path, text) is not None:
             raise KnowledgeSearchError(
                 "raw API artifact serving is blocked pending sanitized extraction",

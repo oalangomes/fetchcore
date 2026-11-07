@@ -21,6 +21,7 @@ from fetchcore.mcp_server import create_mcp_server
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 from fetchcore.application.index_operations import prepare_repository_index_runtime
 from fetchcore.repository.semantic_indexing import SemanticDocumentRepositoryIndexer
+from fetchcore.adapters.retrieval.solr.backend import SolrDocumentMapper
 
 
 def _git(workspace: Path, *args: str) -> str:
@@ -115,6 +116,69 @@ def test_repeated_navigation_uses_materialized_documents(
         assert related.results[0].target == "net/http"
 
 
+def test_missing_snapshot_is_reported_without_indexing(
+    application: RetrievalApplicationService, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class MissingStore:
+        def load_snapshot(self, repository: str) -> None:
+            raise KnowledgeSearchError("snapshot absent", category="snapshot_missing")
+
+    monkeypatch.setattr(application, "_navigation_store", lambda _binding: MissingStore())
+    monkeypatch.setattr(
+        SemanticDocumentRepositoryIndexer, "index",
+        lambda *_args, **_kwargs: pytest.fail("navigation must not index"),
+    )
+    with pytest.raises(KnowledgeSearchError) as caught:
+        application.find_symbol(FindSymbolRequest("Fetch"))
+    assert caught.value.category == "snapshot_missing"
+
+
+def test_explicit_index_persisted_projection_navigation_and_source(
+    application: RetrievalApplicationService, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Persist canonical documents through Projection v3 before repeated reads."""
+    original_store = application._navigation_store(application._bindings["owner/repo"])
+    snapshot = original_store.load_snapshot("owner/repo")
+    mapper = SolrDocumentMapper()
+    artifact = tmp_path.parent / "canonical-snapshot.json"
+    artifact.write_text(json.dumps({
+        "revision": snapshot.revision,
+        "fingerprint": snapshot.indexing_fingerprint,
+        "documents": [mapper.to_solr(doc) for doc in original_store.load_documents("owner/repo")],
+    }), encoding="utf-8")
+
+    class PersistedStore:
+        def load_snapshot(self, repository: str):
+            payload = json.loads(artifact.read_text(encoding="utf-8"))
+            return SimpleNamespace(
+                revision=payload["revision"], indexing_fingerprint=payload["fingerprint"],
+            )
+
+        def load_documents(self, repository: str):
+            payload = json.loads(artifact.read_text(encoding="utf-8"))
+            return tuple(mapper.from_solr(item) for item in payload["documents"])
+
+    monkeypatch.setattr(application, "_navigation_store", lambda _binding: PersistedStore())
+    monkeypatch.setattr(
+        SemanticDocumentRepositoryIndexer, "index",
+        lambda *_args, **_kwargs: pytest.fail("query attempted reindexing"),
+    )
+    for _ in range(2):
+        found = application.find_symbol(FindSymbolRequest("catalog.Client.Fetch"))
+        definition = found.results[0]
+        related = application.get_related(GetRelatedRequest(
+            definition.source_ref, relation_types=("imports",),
+        ))
+        assert related.results[0].target == "net/http"
+        source = application.get_source(SourceReadRequest(
+            definition.source_ref, revision=definition.revision,
+            line_start=definition.line_start, line_end=definition.line_end,
+            checksum=definition.checksum,
+        ))
+        assert "Fetch" in source.content
+
+
 def _cli(monkeypatch: pytest.MonkeyPatch, application: RetrievalApplicationService,
          args: list[str]) -> dict[str, object]:
     monkeypatch.setattr(
@@ -161,6 +225,7 @@ def test_end_to_end_and_adapter_parity(
     text = application.get_source(SourceReadRequest(
         definition.source_ref, revision=definition.revision,
         line_start=definition.line_start, line_end=definition.line_end,
+        checksum=definition.checksum,
     ))
     assert text.path == path
     assert text.revision == definition.revision
@@ -168,9 +233,11 @@ def test_end_to_end_and_adapter_parity(
     assert _payload(server, "get_source", {
         "source_ref": definition.source_ref, "revision": definition.revision,
         "line_start": definition.line_start, "line_end": definition.line_end,
+        "checksum": definition.checksum,
     }) == text.to_mapping()
     assert _cli(monkeypatch, application, [
         "source", definition.source_ref, "--revision", definition.revision,
+        "--checksum", definition.checksum,
         "--line-start", str(definition.line_start), "--line-end", str(definition.line_end),
     ]) == text.to_mapping()
 
@@ -314,6 +381,11 @@ def test_rename_removal_and_revision_preconditions(
 ) -> None:
     original = application.find_symbol(FindSymbolRequest("fetch", path="other.py")).results[0]
     (tmp_path / "other.py").write_text("def renamed():\n    pass\n", encoding="utf-8")
+    with pytest.raises(KnowledgeSearchError) as stale_source:
+        application.get_source(SourceReadRequest(
+            original.source_ref, revision=original.revision, checksum=original.checksum,
+        ))
+    assert stale_source.value.category == "source_revision_mismatch"
     assert application.find_symbol(FindSymbolRequest("fetch", path="other.py")).results[0] == original
     assert application.get_related(GetRelatedRequest(original.identity)).status == "not_found"
     _git(tmp_path, "add", ".")
