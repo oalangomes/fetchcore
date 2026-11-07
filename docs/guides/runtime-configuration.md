@@ -93,27 +93,6 @@ a `KnowledgeSearchError` with the attempt count and a safe cause type and errno.
 
 Historical `FETCHCORE_MCP_*` names remain accepted when the canonical runtime
 name is absent. `OLLAMA_URL` is the fallback for `FETCHCORE_OLLAMA_URL`.
-## Authenticated remote OpenSearch
-
-For an OpenSearch service that requires HTTP Basic authentication (such as
-Aiven), configure `backends.opensearch.url` with an **HTTPS endpoint that has
-no embedded userinfo** and supply `FETCHCORE_OPENSEARCH_USERNAME` and
-`FETCHCORE_OPENSEARCH_PASSWORD` through the operator's environment/secret
-injection. Both values must be provided together. Missing, malformed or
-incomplete credentials, credential-bearing URLs, and authenticated HTTP
-endpoints fail closed; there is no fallback to unauthenticated requests.
-The transport verifies TLS using Python's normal trust store and rejects
-redirects carrying credentials.
-
-The fields are also accepted by the typed operator settings for SDK
-composition, but never commit secrets into a repository-owned YAML file.
-`config show` masks the password and preserves its source attribution.
-`doctor` reports authenticated service denials as
-`authentication_denied`, without revealing credential values. Do not confuse
-a healthy connection with compatible Projection v3 / hybrid retrieval readiness.
-The [remote OpenSearch pilot runbook](remote-opensearch.md) covers the data
-admission gate and isolated first deployment.
-
 `FETCHCORE_MCP_BACKEND_SETTINGS` and `FETCHCORE_MCP_RETRIEVAL` remain JSON
 compatibility inputs for existing MCP and dogfood invocations. A present
 canonical name takes precedence over its legacy counterpart. The indexing CLI
@@ -141,6 +120,26 @@ source workspace instead come from the canonical repository registry; a
 conflicting configured repository or revision fails rather than silently
 selecting another binding. These commands never trigger indexing or refresh.
 
+## Authenticated remote OpenSearch
+
+For an OpenSearch service that requires HTTP Basic authentication (such as
+Aiven), configure `backends.opensearch.url` with an **HTTPS endpoint that has
+no embedded userinfo** and supply `FETCHCORE_OPENSEARCH_USERNAME` and
+`FETCHCORE_OPENSEARCH_PASSWORD` through the operator's environment/secret
+injection. Both values must be provided together. Missing, malformed or
+incomplete credentials, credential-bearing URLs, and authenticated HTTP
+endpoints fail closed; there is no fallback to unauthenticated requests.
+The transport verifies TLS using Python's normal trust store and rejects
+redirects carrying credentials.
+
+The fields are also accepted by the typed operator settings for SDK
+composition, but never commit secrets into a repository-owned YAML file.
+`config show` masks the password and preserves its source attribution.
+`doctor` reports authenticated service denials as
+`authentication_denied`, without revealing credential values. Do not confuse
+a healthy connection with compatible Projection v3 / hybrid retrieval readiness.
+The [remote OpenSearch pilot runbook](remote-opensearch.md) covers the data
+admission gate and isolated first deployment.
 
 ## Operational readiness (issue #134)
 
