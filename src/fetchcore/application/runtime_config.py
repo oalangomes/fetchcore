@@ -438,7 +438,7 @@ def load_runtime_config(
     ollama = OllamaRuntimeSettings.from_mapping(
         _mapping(embedding.get("ollama", {}), "embedding.ollama")
     )
-    gateways = {
+    gateways: dict[str, GatewayRuntimeSettings] = {
         gateway: GatewayRuntimeSettings.from_mapping(
             gateway, _mapping(embedding[gateway], f"embedding.{gateway}")
         )
