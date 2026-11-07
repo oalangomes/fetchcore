@@ -139,6 +139,17 @@ jobs:
           echo "FETCHCORE_PYTHON_IMAGE=$image" >> "$GITHUB_ENV"
       - name: Validate Compose contract
         run: make compose-config
+      - name: Validate optional embedding gateway Compose configurations
+        env:
+          OPENAI_API_KEY: ci-placeholder
+          LITELLM_MASTER_KEY: sk-ci-placeholder
+          BIFROST_ENCRYPTION_KEY: ci-placeholder
+        run: |
+          docker compose -f infra/embedding-gateways/docker-compose.yml config --quiet
+          OPENAI_API_KEY_SECONDARY=ci-secondary \
+          LITELLM_CONFIG_FILE=./litellm-pool.yaml \
+          BIFROST_CONFIG_FILE=./bifrost-pool.json \
+          docker compose -f infra/embedding-gateways/docker-compose.yml config --quiet
       - name: Build FetchCore image
         run: docker build --build-arg PYTHON_IMAGE="$FETCHCORE_PYTHON_IMAGE" --tag fetchcore:ci .
       - name: Smoke FetchCore image
