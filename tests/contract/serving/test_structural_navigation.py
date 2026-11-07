@@ -23,6 +23,7 @@ from fetchcore.application.index_operations import prepare_repository_index_runt
 from fetchcore.repository.semantic_indexing import SemanticDocumentRepositoryIndexer
 from fetchcore.adapters.retrieval.solr.backend import SolrDocumentMapper
 from fetchcore.projection.core import corpus_checksum
+from fetchcore.repository.local_references import LocalReferenceResolver
 
 
 def _git(workspace: Path, *args: str) -> str:
@@ -43,6 +44,10 @@ def application(tmp_path: Path) -> RetrievalApplicationService:
     )
     (tmp_path / "other.py").write_text("def fetch():\n    pass\n", encoding="utf-8")
     (tmp_path / "unknown.json").write_text('{"fetch": true}\n', encoding="utf-8")
+    (tmp_path / "source.md").write_text(
+        "# Source\n\n[read target](target.md)\n", encoding="utf-8",
+    )
+    (tmp_path / "target.md").write_text("# Hidden target\n", encoding="utf-8")
     _git(tmp_path, "init")
     _git(tmp_path, "config", "user.name", "FetchCore Tests")
     _git(tmp_path, "config", "user.email", "fetchcore@example.test")
@@ -473,6 +478,45 @@ def test_binding_scope_applies_to_symbols_and_relations(
     with pytest.raises(KnowledgeSearchError) as alias_error:
         alias_restricted.get_source(SourceReadRequest("consumer_alias.py"))
     assert alias_error.value.category == "unauthorized_source"
+
+
+def test_related_target_location_respects_binding_scope(
+    application: RetrievalApplicationService, tmp_path: Path,
+) -> None:
+    original_store = application._navigation_store(application._bindings["owner/repo"])
+    original_snapshot = original_store.load_snapshot("owner/repo")
+    documents = LocalReferenceResolver().resolve(original_store.load_documents("owner/repo"))
+
+    class ResolvedStore:
+        def load_snapshot(self, repository: str):
+            return SimpleNamespace(
+                revision=original_snapshot.revision,
+                indexing_fingerprint=original_snapshot.indexing_fingerprint,
+                document_count=len(documents), corpus_checksum=corpus_checksum(documents),
+            )
+
+        def load_documents(self, repository: str):
+            return documents
+
+    application._navigation_store = lambda _binding: ResolvedStore()  # type: ignore[assignment]
+    unrestricted = application.get_related(GetRelatedRequest("source.md"))
+    relation = next(item for item in unrestricted.results if item.kind == "markdown_reference")
+    assert relation.target_path == "target.md"
+    assert relation.target_source_ref == "repository://owner/repo/target.md"
+
+    restricted = RetrievalApplicationService({
+        "owner/repo": RepositoryBinding(
+            "owner/repo", tmp_path, "solr", repository_paths=("source.md",),
+        ),
+    }, navigation_store=application._navigation_store)
+    observed = restricted.get_related(GetRelatedRequest("source.md"))
+    hidden = next(item for item in observed.results if item.kind == "markdown_reference")
+    assert hidden.target == relation.target
+    assert hidden.target_path is None
+    assert hidden.target_source_ref is None
+    assert hidden.target_document_id is None
+    assert hidden.target_revision is None
+    assert hidden.target_checksum is None
 
 
 def test_source_read_enforces_knowledge_type_scope(

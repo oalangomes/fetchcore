@@ -316,6 +316,21 @@ class RetrievalApplicationService:
                         selected or source, relation_types=request.relation_types,
                         limit=request.limit, require_resolution=request.require_resolution,
                     )
+                    allowed_ids = {document.id for document in documents}
+                    allowed_paths = {document.path for document in documents}
+                    allowed_refs = {document.source_ref for document in documents}
+                    results = tuple(
+                        replace(item, target_document_id=None, target_source_ref=None,
+                                target_path=None, target_revision=None, target_checksum=None)
+                        if ((item.target_document_id is not None
+                             and item.target_document_id not in allowed_ids)
+                            or (item.target_path is not None
+                                and item.target_path not in allowed_paths)
+                            or (item.target_source_ref is not None
+                                and item.target_source_ref not in allowed_refs))
+                        else item
+                        for item in results
+                    )
                 except StructuralNavigationError as exc:
                     if exc.category != "unsupported_capability":
                         raise

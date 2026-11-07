@@ -65,8 +65,10 @@ imports, dependencies and semantic relations are not falsely attributed to every
 symbol in that file. `RelatedEvidence.status` is separately `observed`, `resolved`,
 `unresolved`, `ambiguous` or `unsupported`: syntax/import bindings do not prove a
 cross-file definition. Exact resolver-supplied target IDs/references/paths are
-preserved; target revision/checksum are attached only when that exact document
-exists in the same canonical snapshot. No target is guessed by matching names.
+preserved when the target is inside the authorized serving scope; target location
+fields outside that scope are withheld. Target revision/checksum are attached
+only when that exact document exists in the same canonical snapshot. No target
+is guessed by matching names.
 Distinct evidence locations, resolution states and target provenance are kept.
 Traversal is outgoing, one hop, bounded to 1-100 results. Reverse traversal is
 explicitly unavailable, not approximated by a name search.

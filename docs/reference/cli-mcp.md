@@ -64,13 +64,16 @@ their pinned revision through a temporary cached worktree without fetching.
 relation types fail explicitly. Supported filters are `calls`, `references`,
 `tests`, `imports`, `dependencies`, `extends`, and `implements`.
 
-These commands materialize the registered source without refresh, then reuse
-canonical extraction in memory, including repository-owned indexing policy and
-KnowledgePacks. They do not read vendor schemas, persist an index, embed, invoke
-search, or require a running backend. This initial implementation extracts the
-bounded canonical view per request; it is not a persisted graph or a latency
-guarantee. Repository path and knowledge-type binding restrictions apply before
-navigation. `--revision` is an exact precondition, never a request to change HEAD.
+These commands read the active compatible operational snapshot and its persisted
+canonical documents. Index explicitly with `fetchcore index rebuild <repo>` or
+`fetchcore index sync <repo>` before navigation; an absent or incompatible snapshot
+fails without rebuilding during retrieval. Navigation derives its structural view
+from the loaded documents, without parsing source files, embedding, invoking
+search, or requiring a graph database. Loading and validating the canonical
+corpus on each request is not a latency guarantee. Repository path and
+knowledge-type binding restrictions apply before navigation; target location
+fields outside that scope are withheld. `--revision` is an exact precondition,
+never a request to change HEAD.
 
 The SDK exposes `FindSymbolRequest`, `GetRelatedRequest`, and `NavigationResult`
 from `fetchcore.application`. Pass these to `find_symbol` / `get_related` on
@@ -104,7 +107,7 @@ reports unavailable cross-file resolution explicitly and does not return
 unresolved observations as if resolved. Incoming traversal and multi-hop graph
 queries remain unsupported.
 
-Example (after `fetchcore repo add .`):
+Example (after `fetchcore repo add .` and explicit `fetchcore index rebuild <repo>`):
 
 ```bash
 fetchcore find-symbol 'catalog.Client.Fetch' --repo owner/repo --language go --json
