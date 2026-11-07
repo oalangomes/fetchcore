@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -119,6 +120,52 @@ class OllamaRuntimeSettings:
         return {"url": self.url}
 
 
+@dataclass(frozen=True)
+class GatewayRuntimeSettings:
+    """Operator-owned gateway endpoint and explicit source-disclosure permission."""
+
+    base_url: str
+    api_key_env: str | None = None
+    allow_source_upload: bool = False
+
+    @classmethod
+    def from_mapping(cls, gateway: str, value: Mapping[str, object]) -> GatewayRuntimeSettings:
+        if gateway not in {"litellm", "bifrost"}:
+            raise ValueError("unsupported embedding gateway")
+        path = f"embedding.{gateway}"
+        data = _mapping(value, path)
+        _fields(data, {"base_url", "api_key_env", "allow_source_upload"}, path)
+        default_url = "http://localhost:4000/v1" if gateway == "litellm" else "http://localhost:8080/v1"
+        base_url = _url(data.get("base_url", default_url), f"{path}.base_url")
+        if not base_url.endswith("/v1"):
+            raise ValueError(f"{path}.base_url must end in /v1")
+        api_key_env = data.get("api_key_env")
+        if api_key_env is not None and (
+            not isinstance(api_key_env, str)
+            or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", api_key_env) is None
+        ):
+            raise ValueError(f"{path}.api_key_env must be an environment variable name")
+        allow = data.get("allow_source_upload", False)
+        if type(allow) is not bool:
+            raise ValueError(f"{path}.allow_source_upload must be boolean")
+        return cls(base_url=base_url, api_key_env=api_key_env, allow_source_upload=allow)
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "base_url": self.base_url,
+            **({"api_key_env": self.api_key_env} if self.api_key_env else {}),
+            "allow_source_upload": self.allow_source_upload,
+        }
+
+
+def embedding_provider_settings(config: FetchCoreRuntimeConfig) -> dict[str, Mapping[str, object]]:
+    """Return operator-approved provider settings for indexing and serving."""
+    return {
+        "ollama": config.ollama.to_mapping(),
+        **{gateway: settings.to_mapping() for gateway, settings in config.gateways.items()},
+    }
+
+
 def ollama_settings_from_environment(
     environ: Mapping[str, str] | None = None,
 ) -> OllamaRuntimeSettings:
@@ -136,6 +183,7 @@ class FetchCoreRuntimeConfig:
     backend_settings: Mapping[str, object] = field(default_factory=dict)
     retrieval: RetrievalConfig | None = None
     ollama: OllamaRuntimeSettings = OllamaRuntimeSettings()
+    gateways: Mapping[str, GatewayRuntimeSettings] = field(default_factory=dict)
     workspace: Path = field(default_factory=Path.cwd)
     repository: str | None = None
     revision: str | None = None
@@ -153,6 +201,8 @@ class FetchCoreRuntimeConfig:
             )
         validate_backend_settings(self.backend, self.backend_settings)
         OllamaRuntimeSettings.from_mapping(self.ollama.to_mapping())
+        for gateway, settings in self.gateways.items():
+            GatewayRuntimeSettings.from_mapping(gateway, settings.to_mapping())
         if self.repository is not None:
             _string(self.repository, "runtime.repository")
 
@@ -281,6 +331,19 @@ def _env_overlay(env: Mapping[str, str], default_backend: str) -> dict[str, obje
     ollama_url = pick("FETCHCORE_OLLAMA_URL", "OLLAMA_URL")
     if ollama_url is not None:
         embedding["ollama"] = {"url": ollama_url}
+    for gateway in ("litellm", "bifrost"):
+        gateway_settings: dict[str, object] = {}
+        for suffix, field_name in (("BASE_URL", "base_url"), ("API_KEY_ENV", "api_key_env")):
+            name = f"FETCHCORE_{gateway.upper()}_{suffix}"
+            if name in env:
+                gateway_settings[field_name] = env[name]
+        consent_name = f"FETCHCORE_{gateway.upper()}_ALLOW_SOURCE_UPLOAD"
+        if consent_name in env:
+            if env[consent_name] not in {"true", "false"}:
+                raise ValueError(f"{consent_name} must be true or false")
+            gateway_settings["allow_source_upload"] = env[consent_name] == "true"
+        if gateway_settings:
+            embedding[gateway] = gateway_settings
     for field_name in ("TIMEOUT_SECONDS", "REQUEST_BATCH_SIZE"):
         name = f"FETCHCORE_OLLAMA_{field_name}"
         if name in env:
@@ -375,6 +438,12 @@ def load_runtime_config(
     ollama = OllamaRuntimeSettings.from_mapping(
         _mapping(embedding.get("ollama", {}), "embedding.ollama")
     )
+    gateways = {
+        gateway: GatewayRuntimeSettings.from_mapping(
+            gateway, _mapping(embedding[gateway], f"embedding.{gateway}")
+        )
+        for gateway in ("litellm", "bifrost") if gateway in embedding
+    }
     if backend == "qdrant-vector" and envelope_env and not explicit_retrieval:
         # Qdrant is dense by construction. Preserve its legacy model when ENV
         # supplies only the neutral embedding execution envelope.
@@ -407,7 +476,11 @@ def load_runtime_config(
     if backend == "qdrant-vector":
         # Translate compatibility fields at bootstrap; the adapter's historical
         # settings shape remains available to existing direct callers.
-        if "embedding_url" in selected_settings and "ollama" not in embedding:
+        if (
+            "embedding_url" in selected_settings
+            and "ollama" not in embedding
+            and (retrieval is None or retrieval.dense.embedding.provider == "ollama")
+        ):
             ollama = OllamaRuntimeSettings.from_mapping(
                 {"url": selected_settings["embedding_url"]}
             )
@@ -429,6 +502,7 @@ def load_runtime_config(
         backend_settings=selected_settings,
         retrieval=retrieval,
         ollama=ollama,
+        gateways=gateways,
         workspace=workspace,
         repository=repository,
         revision=revision,
@@ -476,7 +550,7 @@ def _runtime_registries_for_config(
     from .composition import BackendRegistry, EmbeddingProviderRegistry
 
     resolved_providers = providers or EmbeddingProviderRegistry(
-        settings={"ollama": config.ollama.to_mapping()}
+        settings=embedding_provider_settings(config)
     )
     resolved_backends = backends or BackendRegistry(providers=resolved_providers)
     return resolved_backends, resolved_providers
