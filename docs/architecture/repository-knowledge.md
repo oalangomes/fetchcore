@@ -72,9 +72,13 @@ Distinct evidence locations, resolution states and target provenance are kept.
 Traversal is outgoing, one hop, bounded to 1-100 results. Reverse traversal is
 explicitly unavailable, not approximated by a name search.
 
-This delivery changes the stored evidence contract: indexing contract 28 and
+This delivery changes the stored evidence contract: indexing contract 29 and
 Projection v3 contract revision 5 require an explicit rebuild of older snapshots.
 Legacy evidence can still hydrate with missing declarations/capabilities, but is
 not certified as current structural coverage. The embedding serializer is
-unchanged. CLI/MCP wiring remains separate work in #27; this is the canonical
-contract and SDK boundary, not a new retrieval algorithm.
+unchanged. Derived exact lookup keys (names, qualified names and logical
+identities) are computed from canonical declarations during indexing and are
+bound to the indexing fingerprint. They are rebuildable adapter fields, not
+canonical authority or new Projection v3 fields. CLI/MCP wiring remains
+separate work in #27; this is the canonical contract and SDK boundary, not a
+new retrieval algorithm.

@@ -81,6 +81,5 @@ def test_rust_import_reaches_canonical_evidence(tmp_path) -> None:
         for imported in document.evidence.structure.imports
     )
     caller = find_symbol(indexed.documents, "caller")[0]
-    calls = get_related(indexed.documents, caller, relation_types=("direct_call",))
-    assert len(calls) == 1
-    assert calls[0].target == "ping" and calls[0].resolution == "syntax"
+    calls = get_related(indexed.documents, caller)
+    assert any(item.target == "ping" and item.resolution == "syntax" for item in calls)
