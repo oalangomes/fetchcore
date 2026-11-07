@@ -115,7 +115,7 @@ class GatewayEmbeddingProvider:
             raise KnowledgeSearchError("embedding gateway returned no response", category="embedding_failed")
         try:
             decoded = json.loads(response_bytes)
-        except (ValueError, UnicodeError) as exc:
+        except (ValueError, UnicodeError):
             raise KnowledgeSearchError("embedding gateway returned invalid JSON", category="response_parsing_failure") from None
         if not isinstance(decoded, dict) or not isinstance(decoded.get("data"), list):
             raise KnowledgeSearchError("embedding gateway returned invalid data", category="response_parsing_failure")
