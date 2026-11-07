@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from functools import lru_cache
 from importlib import import_module
+from importlib.metadata import version
 from pathlib import PurePosixPath
 
 from fetchcore.repository.structure import SourceStructure, StructuralSymbolSpan
@@ -42,6 +43,7 @@ class TreeSitterStructuralExtractor:
         if language not in _DECLARATIONS:
             raise ValueError(f"unsupported grammar: {language}")
         self.language = language
+        self.indexing_contract_version = f"1:{version('tree-sitter-language-pack')}"
 
     def extract(self, content: str) -> tuple[StructuralSymbolSpan, ...]:
         return self.extract_structure(content).chunk_symbols
