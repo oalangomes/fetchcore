@@ -77,3 +77,12 @@ Legacy evidence can still hydrate with missing declarations/capabilities, but is
 not certified as current structural coverage. The embedding serializer is
 unchanged. The additive SDK/CLI/MCP navigation boundary does not change these
 persisted identities or the retrieval algorithm.
+## Optional grammar declarations
+
+The `structure` extra enables grammar-backed declaration extraction for Rust, C#,
+Kotlin, Ruby, PHP, Swift and Scala. These adapters add observed declarations to
+canonical knowledge. Their declared structural capability is `declarations`;
+imports are retained where observed, but calls, references, inheritance and
+cross-file resolution are not claimed by these adapters. Go uses its existing
+extractor. Without the optional grammar package, these files remain source
+knowledge and structural navigation reports unsupported coverage.

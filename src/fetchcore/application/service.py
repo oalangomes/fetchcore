@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote
@@ -17,6 +17,7 @@ from .navigation import (
 )
 from fetchcore.repository.navigation import RelatedEvidence, StructuralNavigationError, SymbolDefinition
 from fetchcore.knowledge.structure import StructuralCapability, StructuralCoverage
+from fetchcore.application.index_store import OperationalIndexStore
 from fetchcore.repository.sources import LocalWorkspaceSourceProvider, RepositorySourceRequest
 from fetchcore.retrieval.contracts import (
     KnowledgeSearchError,
@@ -147,6 +148,7 @@ class RetrievalApplicationService:
         *,
         backends: BackendRegistry | None = None,
         limits: ServingLimits | None = None,
+        navigation_store: Callable[[RepositoryBinding], OperationalIndexStore] | None = None,
     ) -> None:
         if not bindings:
             raise ValueError("at least one repository binding is required")
@@ -156,6 +158,7 @@ class RetrievalApplicationService:
                 raise ValueError("repository binding key must equal binding.repository")
         self._backends = backends or BackendRegistry()
         self._limits = limits or ServingLimits()
+        self._navigation_store = navigation_store
 
     @property
     def repositories(self) -> tuple[str, ...]:
@@ -235,14 +238,29 @@ class RetrievalApplicationService:
             runtime = prepare_repository_index_runtime(
                 binding.workspace, repository=binding.repository, branch=None, revision=None,
             )
-            indexed = runtime.indexer.index(runtime.workspace)
+            store = self._navigation_store(binding) if self._navigation_store else self._default_navigation_store(binding)
+            snapshot = store.load_snapshot(binding.repository)
+            observed_fingerprint = getattr(snapshot, "indexing_fingerprint", None)
+            if observed_fingerprint != runtime.fingerprint:
+                raise KnowledgeSearchError(
+                    "navigation snapshot indexing contract is incompatible",
+                    category="schema_mismatch",
+                    metadata={"rebuild_required": True},
+                )
             for expected in (binding.revision, request.revision):
-                if expected is not None and expected != indexed.revision:
+                if expected is not None and expected != snapshot.revision:
                     raise KnowledgeSearchError(
                         "navigation revision does not match the materialized source",
                         category="source_revision_mismatch",
                     )
-            documents = tuple(doc for doc in indexed.documents if (
+            materialized = store.load_documents(binding.repository)
+            if any(doc.repository != binding.repository or doc.revision != snapshot.revision
+                   for doc in materialized):
+                raise KnowledgeSearchError(
+                    "navigation documents do not match the active snapshot",
+                    category="schema_mismatch",
+                )
+            documents = tuple(doc for doc in materialized if (
                 (not binding.knowledge_types or doc.knowledge_type in binding.knowledge_types)
                 and (not binding.repository_paths or any(
                     doc.path == prefix or doc.path.startswith(prefix.rstrip("/") + "/")
@@ -293,8 +311,7 @@ class RetrievalApplicationService:
                     if exc.category != "unsupported_capability":
                         raise
             return navigation_result(
-                binding.repository, indexed.revision, results, coverage, request.limit,
-                scan_diagnostics=indexed.telemetry.removal_detection_blockers,
+                binding.repository, snapshot.revision, results, coverage, request.limit,
             )
         except StructuralNavigationError as exc:
             raise KnowledgeSearchError(str(exc), category=exc.category) from exc
@@ -305,6 +322,21 @@ class RetrievalApplicationService:
         except OSError as exc:
             raise KnowledgeSearchError("canonical source could not be read",
                                        category="source_missing") from exc
+
+    @staticmethod
+    def _default_navigation_store(binding: RepositoryBinding) -> OperationalIndexStore:
+        from .indexing import build_index_context
+        from fetchcore.adapters.retrieval.solr.index_contract import bind_indexing_contract_store
+        from fetchcore.adapters.retrieval.solr.backend import SolrIndexStore
+
+        context = build_index_context(
+            workspace=binding.workspace, repository=binding.repository,
+            branch=None, revision=None, backend=binding.backend,
+            backend_settings=binding.settings, retrieval=binding.retrieval,
+        )
+        if isinstance(context.store, SolrIndexStore):
+            return bind_indexing_contract_store(context.store, context.runtime.indexer)
+        return context.store
 
     def get_source(self, request: SourceReadRequest) -> SourceReadResult:
         if not request.source_ref.strip():
@@ -329,12 +361,8 @@ class RetrievalApplicationService:
             ) as source:
                 revision = source.revision
             if revision is None:
-                from .index_operations import prepare_repository_index_runtime
-
-                runtime = prepare_repository_index_runtime(
-                    binding.workspace, repository=repository, branch=None, revision=None,
-                )
-                revision = runtime.indexer.index(runtime.workspace).revision
+                store = self._navigation_store(binding) if self._navigation_store else self._default_navigation_store(binding)
+                revision = store.load_snapshot(repository).revision
             binding = replace(binding, revision=revision)
         if blocked_api_artifact_kind(relative_path) is not None:
             raise KnowledgeSearchError(

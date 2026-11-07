@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,8 @@ from fetchcore.application import (
 from fetchcore.application.repositories import RepositoryApplicationService
 from fetchcore.mcp_server import create_mcp_server
 from fetchcore.retrieval.contracts import KnowledgeSearchError
+from fetchcore.application.index_operations import prepare_repository_index_runtime
+from fetchcore.repository.semantic_indexing import SemanticDocumentRepositoryIndexer
 
 
 def _git(workspace: Path, *args: str) -> str:
@@ -51,8 +54,23 @@ def application(tmp_path: Path) -> RetrievalApplicationService:
     binding = RepositoryBinding(
         "owner/repo", tmp_path, "solr", revision=_git(tmp_path, "rev-parse", "HEAD"),
     )
+    runtime = prepare_repository_index_runtime(
+        tmp_path, repository=binding.repository, branch=None, revision=None,
+    )
+    indexed = runtime.indexer.index(tmp_path)
+
+    class MaterializedStore:
+        def load_snapshot(self, repository: str):
+            assert repository == binding.repository
+            return SimpleNamespace(revision=indexed.revision, indexing_fingerprint=runtime.fingerprint)
+
+        def load_documents(self, repository: str):
+            assert repository == binding.repository
+            return indexed.documents
+
     return RetrievalApplicationService(
         {binding.repository: binding}, backends=BackendRegistry({"solr": forbidden_backend}),
+        navigation_store=lambda _binding: MaterializedStore(),  # type: ignore[arg-type]
     )
 
 
@@ -60,6 +78,22 @@ def _payload(server, name: str, arguments: dict[str, object]) -> dict[str, objec
     outcome = asyncio.run(server.call_tool(name, arguments))
     assert not outcome.is_error
     return outcome.structured_content
+
+
+def test_repeated_navigation_uses_materialized_documents(
+    application: RetrievalApplicationService, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden_index(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("navigation must not index a repository")
+
+    monkeypatch.setattr(SemanticDocumentRepositoryIndexer, "index", forbidden_index)
+    for _ in range(2):
+        found = application.find_symbol(FindSymbolRequest("catalog.Client.Fetch"))
+        assert found.results
+        related = application.get_related(GetRelatedRequest(
+            found.results[0].source_ref, relation_types=("imports",),
+        ))
+        assert related.results[0].target == "net/http"
 
 
 def _cli(monkeypatch: pytest.MonkeyPatch, application: RetrievalApplicationService,
