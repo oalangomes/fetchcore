@@ -1,0 +1,23 @@
+# Operator-owned config (Qdrant must be deployed separately).
+version: 1
+runtime:
+  backend: qdrant-vector
+backends:
+  qdrant-vector:
+    url: http://localhost:6333
+    collection: fetchcore-litellm
+    vector_dimensions: 1536
+retrieval:
+  dense:
+    enabled: true
+    embedding:
+      provider: litellm
+      model: fc-openai-small-1536-v1
+      dimensions: 1536
+      timeout_seconds: 30
+      request_batch_size: 16
+embedding:
+  litellm:
+    base_url: http://localhost:4000/v1
+    api_key_env: LITELLM_MASTER_KEY
+    allow_source_upload: true

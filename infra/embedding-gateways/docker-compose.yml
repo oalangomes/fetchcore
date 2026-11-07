@@ -1,0 +1,29 @@
+# Optional local proof only. Never expose these gateway ports beyond localhost.
+services:
+  litellm:
+    image: ${LITELLM_IMAGE:-docker.litellm.ai/berriai/litellm:1.108.2}
+    command: ["--config", "/app/config.yaml"]
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY}
+      # Optional second key: required only for *-pool configs.
+      OPENAI_API_KEY_SECONDARY: ${OPENAI_API_KEY_SECONDARY:-}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY}
+    volumes:
+      - ${LITELLM_CONFIG_FILE:-./litellm.yaml}:/app/config.yaml:ro
+    ports:
+      - "127.0.0.1:4000:4000"
+    restart: unless-stopped
+
+  bifrost:
+    image: ${BIFROST_IMAGE:-maximhq/bifrost:v2.3.2}
+    environment:
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8080"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY}
+      OPENAI_API_KEY_SECONDARY: ${OPENAI_API_KEY_SECONDARY:-}
+      BIFROST_ENCRYPTION_KEY: ${BIFROST_ENCRYPTION_KEY:?Set BIFROST_ENCRYPTION_KEY}
+    volumes:
+      - ${BIFROST_CONFIG_FILE:-./bifrost.json}:/app/data/config.json:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped

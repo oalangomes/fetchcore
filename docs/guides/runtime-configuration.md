@@ -100,7 +100,10 @@ self-dogfood indexing workflow; this serving runtime file is not required for
 benchmark or indexing reproduction.
 
 The built-in backend catalog (`local-semantic`, `solr`, `opensearch`,
-`qdrant-vector`) and embedding provider catalog (`ollama`) stay in code.
+`qdrant-vector`) and embedding provider catalog (`ollama`, `litellm`, `bifrost`) stay in code.
+LiteLLM and Bifrost share a single OpenAI-compatible embedding adapter, but
+are configured independently. See [embedding gateways](embedding-gateways.md).
+The operator must explicitly authorize source upload to an external gateway.
 Provider and backend factories can be injected for tests or SDK composition;
 factory identity mismatches fail explicitly.
 

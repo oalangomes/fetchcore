@@ -9,6 +9,7 @@
 | `opensearch` | `adapters/retrieval/opensearch` | OpenSearch retrieval and operational index synchronization. |
 | `qdrant-vector` | `adapters/retrieval/qdrant` | Qdrant dense and hybrid vector/sparse acquisition and operational index synchronization. |
 | `ollama` | `adapters/embedding/ollama` | Embedding provider, separate from retrieval backends. |
+| `litellm` / `bifrost` | `adapters/embedding/openai_compatible` | Optional external OpenAI-compatible embedding gateways (explicit source-upload opt-in). |
 
 Inspect each adapter's `retrieval_capabilities` for exact mode support. An unsupported requested mode raises a typed error; there is no implicit dense/lexical substitution. See [retrieval configuration](configuration.md).
 

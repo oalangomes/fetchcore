@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from fetchcore.application.runtime_config import embedding_provider_settings
+
 import json
 from pathlib import Path
 from collections.abc import Callable
@@ -591,7 +593,7 @@ def _dispatch_index(ctx: click.Context, operation: str, reference: str | None,
                         path=options["config_path"], overrides=overrides,
                     )
                 providers = EmbeddingProviderRegistry(
-                    settings={"ollama": runtime.ollama.to_mapping()}
+                    settings=embedding_provider_settings(runtime)
                 )
                 service = RepositoryIndexApplicationService(
                     RepositoryApplicationService(cache_root=options["cache_root"],
@@ -633,7 +635,7 @@ def _dispatch_index(ctx: click.Context, operation: str, reference: str | None,
             backend_settings=dict(runtime.backend_settings),
             retrieval=runtime.retrieval,
             providers=EmbeddingProviderRegistry(
-                settings={"ollama": runtime.ollama.to_mapping()}
+                settings=embedding_provider_settings(runtime)
             ),
         )
     except (KnowledgeSearchError, RepositoryIndexPolicyError, OSError, ValueError) as exc:

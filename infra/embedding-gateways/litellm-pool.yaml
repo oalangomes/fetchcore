@@ -1,0 +1,39 @@
+# Optional two-credential capacity pool.
+# Both deployments MUST be exactly the same embedding space.
+# Requires OPENAI_API_KEY and OPENAI_API_KEY_SECONDARY as distinct upstream keys.
+# Do not use a different model, dimensions, task mode or serializer under this alias.
+model_list:
+  - model_name: fc-openai-small-1536-v1
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: os.environ/OPENAI_API_KEY
+      max_parallel_requests: 2
+      rpm: 30
+      tpm: 30000
+      timeout: 25
+      num_retries: 1
+    model_info:
+      mode: embedding
+  - model_name: fc-openai-small-1536-v1
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: os.environ/OPENAI_API_KEY_SECONDARY
+      max_parallel_requests: 2
+      rpm: 30
+      tpm: 30000
+      timeout: 25
+      num_retries: 1
+    model_info:
+      mode: embedding
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  disable_fallbacks_on_per_model_rate_limits: true
+
+router_settings:
+  routing_strategy: least-busy
+  default_max_parallel_requests: 2
+  num_retries: 1
+  cooldown_time: 5
+  fallbacks: []
+  context_window_fallbacks: []
