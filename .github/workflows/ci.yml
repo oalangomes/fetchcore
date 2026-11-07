@@ -59,7 +59,9 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev]"
       - name: Run tests with coverage
-        run: python -m coverage run -m pytest -q
+        # The required grammar suite runs below with the structure extra on 3.11.
+        # Other matrix environments intentionally test the core/dev install.
+        run: python -m coverage run -m pytest -q --ignore=tests/unit/repository/test_multilingual_structure_ci.py
       - name: Report coverage
         run: python -m coverage report
       - name: Re-evaluate frozen baseline ContextYield
