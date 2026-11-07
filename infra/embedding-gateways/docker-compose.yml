@@ -20,6 +20,7 @@ services:
       APP_HOST: "0.0.0.0"
       APP_PORT: "8080"
       OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY}
+      OPENAI_API_KEY_SECONDARY: ${OPENAI_API_KEY_SECONDARY:-}
       BIFROST_ENCRYPTION_KEY: ${BIFROST_ENCRYPTION_KEY:?Set BIFROST_ENCRYPTION_KEY}
     volumes:
       - ${BIFROST_CONFIG_FILE:-./bifrost.json}:/app/data/config.json:ro
