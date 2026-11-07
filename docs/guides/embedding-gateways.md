@@ -42,6 +42,89 @@ Do not try to use 1536-dimensional vectors with those schemas. To use a
 768-dimensional encoder, configure a suitable model with a separate, immutable
 gateway route and matching FetchCore dimensions.
 
+## Gateway-owned capacity, retries, and model identity
+
+The checked-in configs intentionally bind to **one upstream embedding model**,
+OpenAI `text-embedding-3-small` (default 1536 dimensions). The immutable
+LiteLLM alias is `fc-openai-small-1536-v1`; Bifrost uses its
+provider-qualified `openai/text-embedding-3-small` name. They may have
+different gateway IDs in FetchCore; never treat their indexes as
+interchangeable merely because the numeric vectors have the same dimensions.
+
+**Simple profiles** (used by default):
+
+- `litellm.yaml`: one deployment, `max_parallel_requests=2`,
+  `rpm=30`, `tpm=30000`, one gateway retry, no cross-model fallbacks,
+  and `least-busy` routing (useful when more deployments are configured).
+- `bifrost.json`: provider concurrency `2`, in-memory queue buffer `8`,
+  one provider retry, bounded timeout and backoff. Content logging disabled.
+  The buffer is **not** a persistent job queue.
+
+**Capacity pool profiles** (optional):
+
+- `litellm-pool.yaml` provides **two deployments** under the exact same
+  `model_name` and `litellm_params.model`, with different upstream keys.
+  LiteLLM chooses a compatible deployment.
+- `bifrost-pool.json` provides **two keys** restricted to the same
+  `text-embedding-3-small` model. Bifrost selects from those keys.
+- Different keys do **not** imply independent quotas or higher throughput.
+  If both keys belong to the same provider organization, account-wide limits
+  may still apply. Never use these profiles to bypass provider limits.
+
+To exercise both pool profiles locally, choose the alternate config mounts
+and provide **a second authorized upstream credential**:
+
+~~~sh
+export OPENAI_API_KEY_SECONDARY='your-second-authorized-key'
+export LITELLM_CONFIG_FILE=./litellm-pool.yaml
+export BIFROST_CONFIG_FILE=./bifrost-pool.json
+docker compose -f infra/embedding-gateways/docker-compose.yml up -d --force-recreate
+~~~
+
+To restore the simple profiles, unset `LITELLM_CONFIG_FILE` and
+`BIFROST_CONFIG_FILE` and recreate the services. The alternate compose paths
+are relative to the directory holding `docker-compose.yml`.
+
+**Overload is different per gateway:**
+
+- LiteLLM can return HTTP **429 immediately** when all deployment slots
+  are in use. Its `max_parallel_requests` counter is per proxy process.
+  The FetchCore adapter has a bounded retry; the **CI job runner**, not
+  FetchCore, owns retries for a failed indexing job. LiteLLM does not
+  provide a durable queue in this setup.
+- Bifrost accepts bursts into its **bounded in-memory provider buffer**
+  until capacity is exhausted. Its queue is lost if the process stops;
+  the external CI system must own durable work and cancellation.
+- Two gateway services are **independent**. These configs do not build a
+  meta-router across LiteLLM and Bifrost, and a failed service is never
+  silently replaced with another model.
+- Online queries and large indexing batches contend for the same configured
+  gateway budget. Tune the batch size, index-job concurrency and upstream
+  quota using measured p95/429 rates; do not treat the example numbers as
+  capacity recommendations.
+- The Compose examples run each gateway as one process. Multi-replica
+  LiteLLM requires shared coordination (e.g. Redis) for global limits.
+
+**Costs and access:** the basic LiteLLM no-database example cannot enforce
+a reliable cumulative spending cap. Apply budgets at the upstream provider,
+or deploy LiteLLM with its database-backed virtual-key governance. The
+Bifrost file-only example is trusted localhost only; production requires
+authentication and scoped virtual keys for allowlisting models and applying
+budgets/rate limits. Both examples bind to 127.0.0.1 and do not include TLS.
+
+**Ollama / different models:** add a separate model route and separate
+projection for any embedding model that differs from the upstream above.
+The gateway may route to multiple **equivalent deployments** of the same
+model, but must never rewrite a vector request to a different embedding
+space simply because that provider is available. Source-code sharing with
+remote providers requires explicit authorization.
+
+This behavior is documented by [LiteLLM router settings](https://docs.litellm.ai/docs/router/api_reference/configuration),
+[LiteLLM concurrency behavior](https://docs.litellm.ai/docs/routing),
+[Bifrost provider concurrency](https://github.com/maximhq/bifrost/blob/dev/docs/quickstart/gateway/provider-configuration.mdx),
+[Bifrost client queues](https://github.com/maximhq/bifrost/blob/dev/docs/deployment-guides/config-json/client.mdx),
+and [Bifrost retry policy](https://github.com/maximhq/bifrost/blob/dev/docs/features/retries-and-fallbacks.mdx).
+
 ## Runtime configuration contract
 
 ~~~yaml
@@ -92,7 +175,9 @@ an embedding identity change requires reconstruction. A green doctor alone
 does not prove model equivalence or current snapshot correctness.
 
 Local evaluation uses the LiteLLM master key; use scoped virtual keys and
-pinned container image versions in production. No live gateway, provider
+pinned image digests, or explicitly reviewed version tags, in production.
+The Compose defaults were checked against official Bifrost v2.3.2 and LiteLLM
+1.108.2 release documentation; deployment behavior still requires live validation. No live gateway, provider
 account, API secret or repository content is provisioned by FetchCore.
 
 Reference documentation:
