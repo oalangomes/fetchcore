@@ -1,0 +1,25 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "encryption_key": "env.BIFROST_ENCRYPTION_KEY",
+  "client": {
+    "drop_excess_requests": false,
+    "enable_logging": false
+  },
+  "providers": {
+    "openai": {
+      "keys": [
+        {
+          "name": "fetchcore-openai-embeddings",
+          "value": "env.OPENAI_API_KEY",
+          "models": [
+            "text-embedding-3-small"
+          ],
+          "weight": 1
+        }
+      ]
+    }
+  },
+  "config_store": {
+    "enabled": false
+  }
+}
