@@ -197,8 +197,8 @@ class OpenSearchSettings:
             signal_type_boosts=controls.signal_type_boosts,
             batch_size=batch_size,
             diagnostic_candidate_window=controls.diagnostic_candidate_window,
-            username=data.get("username"),  # type: ignore[arg-type]
-            password=data.get("password"),  # type: ignore[arg-type]
+            username=cast(str | None, data.get("username")),
+            password=cast(str | None, data.get("password"))
         )
 
 
@@ -272,7 +272,9 @@ class UrllibOpenSearchTransport:
                 raw = response.read()
         except HTTPError as exc:
             category = (
-                "index_missing"
+                "authentication_denied"
+                if exc.code in {401, 403}
+                else "index_missing"
                 if exc.code == 404
                 else "schema_mismatch"
                 if exc.code in {400, 409, 422}
