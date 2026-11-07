@@ -35,6 +35,7 @@ class TreeSitterStructuralExtractor:
     """Observe declarations from a grammar; never claim reference resolution."""
 
     indexing_contract_version = "1"
+    structural_capabilities = ("declarations",)
 
     def __init__(self, language: str) -> None:
         if language not in _DECLARATIONS:
