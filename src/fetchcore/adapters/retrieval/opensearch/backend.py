@@ -258,7 +258,7 @@ class UrllibOpenSearchTransport:
         headers = {"Accept": "application/json", "Content-Type": content_type}
         if self.settings.username is not None:
             assert self.settings.password is not None
-            credentials = f"{self.settings.username}:{self.settings.password}".encode("utf-8")
+            credentials = f"{self.settings.username}:{self.settings.password}".encode()
             token = base64.b64encode(credentials).decode("ascii")
             headers["Authorization"] = f"Basic {token}"
         request = Request(url, data=body, method=method, headers=headers)
