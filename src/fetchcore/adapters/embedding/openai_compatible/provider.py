@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 from dataclasses import dataclass
 from time import sleep
 from urllib.error import HTTPError, URLError
