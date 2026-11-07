@@ -10,4 +10,13 @@ Canonical documents are independent of Solr, OpenSearch, and Qdrant schemas. The
 
 The default structural extractor registry includes Python, JavaScript, TypeScript, Java, Groovy, Dart, and Go. Go contributes observed package names, imports, type declarations, free functions, and receiver methods to the same canonical symbol and structure evidence as existing extractors. This is declaration/import coverage only: Go call targets, cross-file references, and inheritance/resolution are not inferred.
 
+With the optional `structure` extra, Rust, C#, Kotlin, Ruby, PHP, Swift and Scala
+contribute grammar-backed declarations and syntax-observed calls. Rust, C#,
+Kotlin, PHP, Swift and Scala also contribute imports; Ruby currently has no
+import claim. Calls retain `syntax` resolution and do not prove a target file or
+cross-file binding. The dedicated CI job installs the extra and requires all
+seven grammars, Go, and the six preexisting language extractors. Changing the
+grammar or adapter contract requires explicit reindexing through the indexing
+fingerprint.
+
 `RepositoryKnowledgeNavigationService` performs exact name or qualified-name lookups over a single repository revision's canonical `KnowledgeDocument` values. It returns homonyms as separate candidates and carries source path, span, revision, checksum, and document identity. Related lookups expose only relations already attributed to that symbol; unresolved observations remain unresolved. The service does not construct an index or load documents from a retrieval backend, so callers must supply the canonical document snapshot they intend to navigate. Text-only files and languages without structural declarations are not reported as definitive symbol misses.

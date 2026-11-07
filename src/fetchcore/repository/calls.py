@@ -27,6 +27,15 @@ _C_LIKE_CALL = re.compile(
 )
 _NEW_BEFORE = re.compile(r"\bnew\s*$")
 _RUNTIME_JS_IMPORT_KINDS = frozenset({"default", "named", "namespace", "require"})
+_GRAMMAR_CALL_NODES = {
+    "rust": frozenset({"call_expression"}),
+    "csharp": frozenset({"invocation_expression"}),
+    "kotlin": frozenset({"call_expression"}),
+    "ruby": frozenset({"call"}),
+    "php": frozenset({"function_call_expression", "member_call_expression"}),
+    "swift": frozenset({"call_expression"}),
+    "scala": frozenset({"call_expression"}),
+}
 _JS_BINDING_ASSIGNMENT = re.compile(
     rf"(?<![A-Za-z0-9_$?.])(?P<binding>{_IDENTIFIER})\s*"
     r"(?P<operator>\*\*=|&&=|\|\|=|\?\?=|[+\-*/%]=|=(?!=|>))"
@@ -126,6 +135,8 @@ def extract_call_evidence(
 
     if not content:
         return ()
+    if language in _GRAMMAR_CALL_NODES:
+        return _grammar_calls(language, content, source_symbol, line_start, scopes)
     bindings = _binding_table(language, imports)
     if language == "python":
         observed = _python_calls(
@@ -224,6 +235,50 @@ def extract_call_evidence(
                 resolution=resolution,
             )
         )
+    return _ordered(values)
+
+
+def _grammar_calls(
+    language: str, content: str, source_symbol: str, line_start: int,
+    scopes: tuple[CallScope, ...],
+) -> tuple[CallEvidence, ...]:
+    """Observe parser-proven call expressions without guessing their targets."""
+
+    from fetchcore.repository.extractors.languages.tree_sitter import _parser
+
+    data = content.encode("utf-8")
+    root = _parser(language).parse(data).root_node
+    values: list[CallEvidence] = []
+
+    def visit(node) -> None:  # type: ignore[no-untyped-def]
+        if node.type in _GRAMMAR_CALL_NODES[language]:
+            function = node.child_by_field_name("function")
+            receiver = node.child_by_field_name("receiver") or node.child_by_field_name("object")
+            method = node.child_by_field_name("method") or node.child_by_field_name("name")
+            if function is not None:
+                callee = data[function.start_byte:function.end_byte].decode("utf-8")
+            elif receiver is not None and method is not None:
+                callee = (
+                    data[receiver.start_byte:receiver.end_byte].decode("utf-8")
+                    + "." + data[method.start_byte:method.end_byte].decode("utf-8")
+                )
+            elif node.named_children:
+                first = node.named_children[0]
+                callee = data[first.start_byte:first.end_byte].decode("utf-8")
+            else:
+                callee = ""
+            if callee and len(callee) <= 200 and "\n" not in callee:
+                line = line_start + node.start_point.row
+                values.append(CallEvidence(
+                    source_symbol=_caller_for_line(source_symbol, line, scopes),
+                    callee=callee, target=callee, source=None,
+                    kind="member_call" if "." in callee else "direct_call",
+                    line=line, resolution="syntax",
+                ))
+        for child in node.named_children:
+            visit(child)
+
+    visit(root)
     return _ordered(values)
 
 

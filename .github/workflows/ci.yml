@@ -71,6 +71,22 @@ jobs:
           cat "$RUNNER_TEMP/context-yield.md"
           cat "$RUNNER_TEMP/context-yield.md" >> "$GITHUB_STEP_SUMMARY"
 
+  structural-languages:
+    name: structural languages (Python 3.11)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev,structure]"
+      - name: Require optional grammars and run multilingual contracts
+        run: |
+          python -c 'import tree_sitter_language_pack'
+          python -m pytest -q tests/unit/repository/test_optional_grammars.py tests/unit/repository/test_structured_navigation.py tests/unit/repository/test_multilingual_structure_ci.py
+
   build:
     name: build
     runs-on: ubuntu-latest
