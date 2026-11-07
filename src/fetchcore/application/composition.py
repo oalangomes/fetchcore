@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 BackendFactory = Callable[[], KnowledgeSearchBackend]
 EmbeddingFactory = Callable[[EmbeddingConfig, Mapping[str, object]], EmbeddingProvider]
 BUILTIN_BACKEND_IDS = frozenset({"local-semantic", "solr", "opensearch", "qdrant-vector"})
-BUILTIN_EMBEDDING_PROVIDER_IDS = frozenset({"ollama"})
+BUILTIN_EMBEDDING_PROVIDER_IDS = frozenset({"ollama", "litellm", "bifrost"})
 
 
 def _ollama_factory(
@@ -38,8 +38,43 @@ def _ollama_factory(
     )
 
 
+def _gateway_factory(
+    gateway: str, embedding: EmbeddingConfig, settings: Mapping[str, object],
+) -> EmbeddingProvider:
+    import os
+
+    from fetchcore.adapters.embedding.openai_compatible.provider import (
+        GatewayEmbeddingProvider,
+        GatewayEmbeddingSettings,
+    )
+    from .runtime_config import GatewayRuntimeSettings
+
+    runtime = GatewayRuntimeSettings.from_mapping(gateway, settings)
+    token = os.environ.get(runtime.api_key_env) if runtime.api_key_env else None
+    if runtime.api_key_env and not token:
+        raise KnowledgeSearchError(
+            "embedding gateway API key environment variable is not configured",
+            category="schema_mismatch",
+            metadata={"provider": gateway},
+        )
+    return GatewayEmbeddingProvider(GatewayEmbeddingSettings(
+        provider_id=gateway,
+        base_url=runtime.base_url,
+        model=embedding.model,
+        api_key=token,
+        allow_source_upload=runtime.allow_source_upload,
+        timeout_seconds=embedding.timeout_seconds or 30.0,
+        request_batch_size=embedding.request_batch_size or 32,
+        dimensions=embedding.dimensions,
+    ))
+
+
 def builtin_embedding_provider_factories() -> dict[str, EmbeddingFactory]:
-    return {"ollama": _ollama_factory}
+    return {
+        "ollama": _ollama_factory,
+        "litellm": lambda embedding, settings: _gateway_factory("litellm", embedding, settings),
+        "bifrost": lambda embedding, settings: _gateway_factory("bifrost", embedding, settings),
+    }
 
 
 class EmbeddingProviderRegistry:
