@@ -118,7 +118,7 @@ def test_gateway_retries_transient_errors_only(monkeypatch: pytest.MonkeyPatch) 
         nonlocal attempts
         attempts += 1
         if attempts == 1:
-            raise HTTPError("http://localhost:4000/v1/embeddings", 429, "Rate limit", None, None)
+            raise HTTPError("http://localhost:4000/v1/embeddings", 503, "Unavailable", None, None)
         return Response({"data": [{"index": 0, "embedding": [1.0]}]})
     monkeypatch.setattr(gateway_module, "urlopen", flaky)
     monkeypatch.setattr(gateway_module, "sleep", sleeps.append)
@@ -129,6 +129,33 @@ def test_gateway_retries_transient_errors_only(monkeypatch: pytest.MonkeyPatch) 
     assert provider.embed(("hello",)) == ((1.0,),)
     assert attempts == 2
     assert sleeps == [0.25]
+
+
+@pytest.mark.parametrize("gateway", ["litellm", "bifrost"])
+def test_gateway_returns_saturation_without_client_side_retries(
+    monkeypatch: pytest.MonkeyPatch, gateway: str,
+) -> None:
+    calls = 0
+    sleeps: list[float] = []
+
+    def saturated(*_args: object, **_kwargs: object) -> object:
+        nonlocal calls
+        calls += 1
+        raise HTTPError("http://localhost:4000/v1/embeddings", 429, "Too many requests", None, None)
+
+    monkeypatch.setattr(gateway_module, "urlopen", saturated)
+    monkeypatch.setattr(gateway_module, "sleep", sleeps.append)
+    provider = GatewayEmbeddingProvider(GatewayEmbeddingSettings(
+        provider_id=gateway, base_url="http://localhost:4000/v1",
+        model="pinned", api_key=None, allow_source_upload=True,
+    ))
+    with pytest.raises(KnowledgeSearchError) as captured:
+        provider.embed(("hello",))
+    assert captured.value.category == "embedding_failed"
+    assert captured.value.metadata["http_status"] == 429
+    assert captured.value.metadata["attempt"] == 1
+    assert calls == 1
+    assert sleeps == []
 
 
 @pytest.mark.parametrize("gateway,port", [("litellm", 4000), ("bifrost", 8080)])
