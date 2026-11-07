@@ -412,8 +412,9 @@ def default_structural_symbol_extractors() -> dict[str, SymbolExtractor]:
     from fetchcore.repository.extractors.languages.dart import DartStructuralExtractor
     from fetchcore.repository.extractors.languages.go import GoStructuralExtractor
     from fetchcore.repository.extractors.languages.groovy import GroovyStructuralExtractor
+    from fetchcore.repository.extractors.languages.tree_sitter import TreeSitterStructuralExtractor
 
-    return {
+    extractors: dict[str, SymbolExtractor] = {
         "python": PythonStructuralExtractor(),
         "javascript": JavaScriptTypeScriptStructuralExtractor("javascript"),
         "typescript": JavaScriptTypeScriptStructuralExtractor("typescript"),
@@ -422,6 +423,13 @@ def default_structural_symbol_extractors() -> dict[str, SymbolExtractor]:
         "dart": DartStructuralExtractor(),
         "go": GoStructuralExtractor(),
     }
+    try:
+        import tree_sitter_language_pack  # noqa: F401
+    except ImportError:
+        return extractors
+    for language in ("rust", "csharp", "kotlin", "ruby", "php", "swift", "scala"):
+        extractors[language] = TreeSitterStructuralExtractor(language)
+    return extractors
 
 
 def _python_class_symbol(node: ast.ClassDef, *, module: str | None) -> StructuralSymbolSpan:
