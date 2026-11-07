@@ -40,7 +40,7 @@ def application(tmp_path: Path) -> RetrievalApplicationService:
         encoding="utf-8",
     )
     (tmp_path / "other.py").write_text("def fetch():\n    pass\n", encoding="utf-8")
-    (tmp_path / "unknown.rs").write_text("fn fetch() {}\n", encoding="utf-8")
+    (tmp_path / "unknown.json").write_text('{"fetch": true}\n', encoding="utf-8")
     _git(tmp_path, "init")
     _git(tmp_path, "config", "user.name", "FetchCore Tests")
     _git(tmp_path, "config", "user.email", "fetchcore@example.test")
@@ -78,6 +78,25 @@ def _payload(server, name: str, arguments: dict[str, object]) -> dict[str, objec
     outcome = asyncio.run(server.call_tool(name, arguments))
     assert not outcome.is_error
     return outcome.structured_content
+
+
+def _publish(application: RetrievalApplicationService, workspace: Path) -> None:
+    """Explicitly replace the test's materialized canonical snapshot."""
+    runtime = prepare_repository_index_runtime(
+        workspace, repository="owner/repo", branch=None, revision=None,
+    )
+    indexed = runtime.indexer.index(workspace)
+
+    class MaterializedStore:
+        def load_snapshot(self, repository: str):
+            assert repository == "owner/repo"
+            return SimpleNamespace(revision=indexed.revision, indexing_fingerprint=runtime.fingerprint)
+
+        def load_documents(self, repository: str):
+            assert repository == "owner/repo"
+            return indexed.documents
+
+    application._navigation_store = lambda _binding: MaterializedStore()  # type: ignore[assignment]
 
 
 def test_repeated_navigation_uses_materialized_documents(
@@ -175,7 +194,7 @@ def test_homonyms_scopes_and_bounds(application: RetrievalApplicationService) ->
 def test_partial_and_unsupported_are_not_false_misses(
     application: RetrievalApplicationService,
 ) -> None:
-    unsupported = application.find_symbol(FindSymbolRequest("fetch", language="rust"))
+    unsupported = application.find_symbol(FindSymbolRequest("fetch", language="json"))
     assert unsupported.status == "unsupported"
     assert unsupported.results == ()
     partial = application.find_symbol(FindSymbolRequest("absent"))
@@ -195,15 +214,15 @@ def test_partial_and_unsupported_are_not_false_misses(
 def test_unsupported_adapter_parity_and_human_output(
     application: RetrievalApplicationService, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    expected = application.find_symbol(FindSymbolRequest("fetch", language="rust")).to_mapping()
+    expected = application.find_symbol(FindSymbolRequest("fetch", language="json")).to_mapping()
     assert _payload(create_mcp_server(application), "find_symbol", {
-        "name": "fetch", "language": "rust",
+        "name": "fetch", "language": "json",
     }) == expected
     assert _cli(monkeypatch, application, [
-        "find-symbol", "fetch", "--language", "rust",
+        "find-symbol", "fetch", "--language", "json",
     ]) == expected
     human = CliRunner().invoke(cli.main, [
-        "find-symbol", "fetch", "--language", "rust", "--repo", "owner/repo",
+        "find-symbol", "fetch", "--language", "json", "--repo", "owner/repo",
     ])
     assert human.exit_code == 0
     assert "status=unsupported" in human.output
@@ -217,6 +236,7 @@ def test_related_output_bound_and_adapter_parity(
         "def many(service):\n    service.first()\n    service.second()\n    service.third()\n",
         encoding="utf-8",
     )
+    _publish(application, tmp_path)
     definition = application.find_symbol(FindSymbolRequest("many")).results[0]
     request = GetRelatedRequest(definition.identity, relation_types=("calls",), limit=1)
     related = application.get_related(request)
@@ -276,7 +296,7 @@ def test_mcp_and_cli_errors_preserve_category(
     assert json.loads(outcome.output)["error"]["category"] == "unsupported_capability"
 
 
-def test_scan_truncation_is_explicit(
+def test_changed_index_policy_requires_explicit_snapshot_rebuild(
     application: RetrievalApplicationService, tmp_path: Path,
 ) -> None:
     policy = tmp_path / ".fetchcore"
@@ -284,10 +304,9 @@ def test_scan_truncation_is_explicit(
     (policy / "indexing.yaml").write_text(
         "version: 1\nlimits:\n  max_files: 1\n", encoding="utf-8",
     )
-    found = application.find_symbol(FindSymbolRequest("missing"))
-    assert found.status == "partial"
-    assert not found.scan_complete
-    assert found.scan_diagnostics
+    with pytest.raises(KnowledgeSearchError) as caught:
+        application.find_symbol(FindSymbolRequest("missing"))
+    assert caught.value.category == "schema_mismatch"
 
 
 def test_rename_removal_and_revision_preconditions(
@@ -295,19 +314,18 @@ def test_rename_removal_and_revision_preconditions(
 ) -> None:
     original = application.find_symbol(FindSymbolRequest("fetch", path="other.py")).results[0]
     (tmp_path / "other.py").write_text("def renamed():\n    pass\n", encoding="utf-8")
-    assert application.find_symbol(FindSymbolRequest("fetch", path="other.py")).status == "not_found"
-    with pytest.raises(KnowledgeSearchError) as caught:
-        application.get_related(GetRelatedRequest(original.identity))
-    assert caught.value.category == "source_missing"
+    assert application.find_symbol(FindSymbolRequest("fetch", path="other.py")).results[0] == original
+    assert application.get_related(GetRelatedRequest(original.identity)).status == "not_found"
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-m", "rename")
+    _publish(application, tmp_path)
     with pytest.raises(KnowledgeSearchError) as caught:
         application.find_symbol(FindSymbolRequest("renamed"))
     assert caught.value.category == "source_revision_mismatch"
 
 
 @pytest.mark.parametrize("versioned", [True, False])
-def test_unpinned_binding_can_hydrate_navigation_revision(tmp_path: Path, versioned: bool) -> None:
+def test_unpinned_binding_without_operational_snapshot_is_explicit(tmp_path: Path, versioned: bool) -> None:
     (tmp_path / "simple.py").write_text("def example():\n    pass\n", encoding="utf-8")
     if versioned:
         _git(tmp_path, "init")
@@ -317,13 +335,9 @@ def test_unpinned_binding_can_hydrate_navigation_revision(tmp_path: Path, versio
     application = RetrievalApplicationService({
         "owner/repo": RepositoryBinding("owner/repo", tmp_path, "local-semantic"),
     })
-    definition = application.find_symbol(FindSymbolRequest("example")).results[0]
-    source = application.get_source(SourceReadRequest(
-        definition.source_ref, revision=definition.revision,
-        line_start=definition.line_start, line_end=definition.line_end,
-    ))
-    assert source.revision == definition.revision
-    assert "def example" in source.content
+    with pytest.raises(KnowledgeSearchError) as caught:
+        application.find_symbol(FindSymbolRequest("example"))
+    assert caught.value.category == "unsupported_backend"
 
 
 def test_binding_scope_applies_to_symbols_and_relations(
@@ -334,7 +348,7 @@ def test_binding_scope_applies_to_symbols_and_relations(
         "owner/repo": RepositoryBinding(
             "owner/repo", tmp_path, "solr", repository_paths=("consumer.py",),
         ),
-    })
+    }, navigation_store=application._navigation_store)
     found = restricted.find_symbol(FindSymbolRequest("fetch"))
     assert len(found.results) == 1
     assert found.results[0].path == "consumer.py"
@@ -345,7 +359,7 @@ def test_binding_scope_applies_to_symbols_and_relations(
         restricted.get_related(GetRelatedRequest(hidden.source_ref))
 
 
-def test_real_registry_and_cli_without_backend(
+def test_registry_without_materialized_snapshot_fails_explicitly(
     application: RetrievalApplicationService, tmp_path: Path,
 ) -> None:
     cache = tmp_path / "cache"
@@ -354,11 +368,11 @@ def test_real_registry_and_cli_without_backend(
     registered = RepositoryRetrievalApplicationService(
         repositories, FetchCoreRuntimeConfig(backend="solr"),
     )
-    expected = registered.find_symbol(FindSymbolRequest(
-        "catalog.Client.Fetch", repository="repo", path="client.go",
-    ))
-    assert expected.repository == "owner/repo"
-    assert expected.status == "success"
+    with pytest.raises(KnowledgeSearchError) as caught:
+        registered.find_symbol(FindSymbolRequest(
+            "catalog.Client.Fetch", repository="repo", path="client.go",
+        ))
+    assert caught.value.category == "unavailable"
     config = tmp_path / "operator.yaml"
     config.write_text("version: 1\nruntime:\n  backend: solr\n", encoding="utf-8")
     outcome = CliRunner().invoke(cli.main, [
@@ -366,15 +380,5 @@ def test_real_registry_and_cli_without_backend(
         "--cache-root", str(cache), "--allowed-root", str(tmp_path),
         "--config", str(config), "--json",
     ])
-    assert outcome.exit_code == 0, outcome.output
-    assert json.loads(outcome.output)["result"] == expected.to_mapping()
-    definition = expected.results[0]
-    related = registered.get_related(GetRelatedRequest(
-        definition.source_ref, relation_types=("imports",),
-    ))
-    assert related.results[0].target == "net/http"
-    source = registered.get_source(SourceReadRequest(
-        definition.source_ref, revision=definition.revision,
-        line_start=definition.line_start, line_end=definition.line_end,
-    ))
-    assert "Fetch" in source.content
+    assert outcome.exit_code == 1
+    assert json.loads(outcome.output)["error"]["category"] == "unavailable"
