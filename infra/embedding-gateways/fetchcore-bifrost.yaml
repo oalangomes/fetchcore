@@ -1,0 +1,23 @@
+# Operator-owned config (Qdrant must be deployed separately).
+# Bifrost example has no gateway API authentication; localhost ONLY.
+version: 1
+runtime:
+  backend: qdrant-vector
+backends:
+  qdrant-vector:
+    url: http://localhost:6333
+    collection: fetchcore-bifrost
+    vector_dimensions: 1536
+retrieval:
+  dense:
+    enabled: true
+    embedding:
+      provider: bifrost
+      model: openai/text-embedding-3-small
+      dimensions: 1536
+      timeout_seconds: 30
+      request_batch_size: 16
+embedding:
+  bifrost:
+    base_url: http://localhost:8080/v1
+    allow_source_upload: true
