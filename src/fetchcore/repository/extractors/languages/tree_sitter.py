@@ -42,7 +42,8 @@ class TreeSitterStructuralExtractor:
         if language not in _DECLARATIONS:
             raise ValueError(f"unsupported grammar: {language}")
         self.language = language
-        self.indexing_contract_version = f"1:{version('tree-sitter-language-pack')}"
+        contract_version = "2" if language == "csharp" else "1"
+        self.indexing_contract_version = f"{contract_version}:{version('tree-sitter-language-pack')}"
 
     def extract(self, content: str) -> tuple[StructuralSymbolSpan, ...]:
         return self.extract_structure(content).chunk_symbols
