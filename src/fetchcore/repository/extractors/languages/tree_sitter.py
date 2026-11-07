@@ -12,6 +12,14 @@ from fetchcore.repository.structure import SourceStructure, StructuralSymbolSpan
 
 
 _GRAMMARS: dict[str, str] = {}
+_IMPORT_NODES: dict[str, frozenset[str]] = {
+    "rust": frozenset({"use_declaration"}),
+    "csharp": frozenset({"using_directive"}),
+    "kotlin": frozenset({"import_header"}),
+    "php": frozenset({"namespace_use_declaration"}),
+    "swift": frozenset({"import_declaration"}),
+    "scala": frozenset({"import_declaration"}),
+}
 _DECLARATIONS: dict[str, dict[str, str]] = {
     "rust": {"mod_item": "module", "struct_item": "struct", "enum_item": "enum", "trait_item": "trait", "function_item": "function", "impl_item": "implementation"},
     "csharp": {"namespace_declaration": "namespace", "file_scoped_namespace_declaration": "namespace", "class_declaration": "class", "struct_declaration": "struct", "interface_declaration": "interface", "enum_declaration": "enum", "method_declaration": "method", "constructor_declaration": "constructor"},
@@ -42,7 +50,10 @@ class TreeSitterStructuralExtractor:
         if language not in _DECLARATIONS:
             raise ValueError(f"unsupported grammar: {language}")
         self.language = language
-        contract_version = "2" if language == "csharp" else "1"
+        self.structural_capabilities = (
+            ("declarations", "imports") if language in _IMPORT_NODES else ("declarations",)
+        )
+        contract_version = "3" if language == "csharp" else "2" if language in _IMPORT_NODES else "1"
         self.indexing_contract_version = f"{contract_version}:{version('tree-sitter-language-pack')}"
 
     def extract(self, content: str) -> tuple[StructuralSymbolSpan, ...]:
@@ -65,8 +76,11 @@ class TreeSitterStructuralExtractor:
                     value = next((child for child in node.named_children if child.type in {"identifier", "package_identifier", "namespace_name"}), None)
                 if value is not None:
                     package = data[value.start_byte:value.end_byte].decode("utf-8")
-            if node.type in {"import_statement", "import_declaration", "import_header", "use_declaration", "using_directive"}:
-                imports.add(data[node.start_byte:node.end_byte].decode("utf-8").strip())
+            if node.type in _IMPORT_NODES.get(self.language, ()):
+                observed = data[node.start_byte:node.end_byte].decode("utf-8").strip()
+                target = observed.split(maxsplit=1)
+                if len(target) == 2 and target[1].rstrip(";").strip():
+                    imports.add(target[1].rstrip(";").strip())
             next_parents = parents
             next_inside = inside_declaration
             if kind is not None:
