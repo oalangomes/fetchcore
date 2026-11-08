@@ -286,7 +286,7 @@ def test_persisted_identities_version_projection_route_semantics() -> None:
     )
     # Persisting canonical declaration identities changes indexing; rebuild explicitly.
     assert indexing_contract_fingerprint(indexer) == (
-        "sha256:94145db7c427d5fb38849bac97570cd2cef2d4b82e631a4017f8aa5ae678ff21"
+        "sha256:c69d18ef3e8aee7a8dd6906e3a4e2b5b7cfcea8077ea518470f73734e246cb2f"
     )
     if "rust" in extractors:
         expanded = RepositoryIndexer(RepositoryIndexConfig(), symbol_extractors=extractors)

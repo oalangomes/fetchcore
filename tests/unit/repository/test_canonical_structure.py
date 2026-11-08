@@ -271,6 +271,7 @@ def test_schema_and_capability_changes_fail_closed(tmp_path: Path) -> None:
 def test_optional_extractor_adapter_normalizes_without_application_language_branches(
     tmp_path: Path,
 ) -> None:
+    pytest.importorskip("tree_sitter_language_pack")
     class OptionalAdapter:
         indexing_contract_version = "adapter-v1"
         structural_capabilities = ("declarations",)
