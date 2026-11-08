@@ -87,7 +87,7 @@ jobs:
       - name: Require optional grammars and run multilingual contracts
         run: |
           python -c 'import tree_sitter_language_pack'
-          python -m pytest -q tests/unit/repository/test_optional_grammars.py tests/unit/repository/test_structured_navigation.py tests/unit/repository/test_multilingual_structure_ci.py
+          python -m pytest -q tests/unit/repository/test_optional_grammars.py tests/unit/repository/test_structured_navigation.py tests/unit/repository/test_multilingual_structure_ci.py tests/unit/repository/test_canonical_structure.py
 
   build:
     name: build
