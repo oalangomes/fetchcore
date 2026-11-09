@@ -1,0 +1,9 @@
+# Live structural navigation benchmark protocol
+
+Run `python -m scripts.bench.live_structural_lookup --backend solr|opensearch|qdrant --output result.json` after starting the matching existing `infra/compose/<backend>.yml` service. PR #235 runs the same command in the `structural live` CI matrix and uploads one JSON artifact per backend. The script creates separate 1,000 and 10,000 document snapshots with the same canonical Python caller and target plus synthetic technical-text noise. The scale tests exact acquisition cost; it is not a representative production traffic mix.
+
+Each scale explicitly publishes a canonical snapshot through the real adapter and HTTP transport, then measures one cold request and 20 repeated requests for `find_symbol`, outgoing `get_related`, and incoming `get_related`. It records p50/p95 wall time, backend transport time, remaining application time, backend calls, knowledge documents transferred, traced Python memory, and total projection/publication time and telemetry. The synchronous API returns its first candidate with the completed response, so `time_to_first_candidate_upper_bound_ms` is the whole query time, not an independently measured streaming latency. Snapshot and compatibility requests are included in transport time; they are not isolated as a separate stage.
+
+The benchmark uses a deterministic four-dimensional test embedder for Qdrant so external model latency does not affect structural lookup measurements. This does not represent normal embedding cost. The CI runner is shared, so p95 is observational and not a production latency gate. Compare the 1k and 10k counts and transferred documents to detect a return to corpus-wide acquisition; do not compare these numbers directly with the earlier simulated transport results in [the client-cost check](structural-lookup-2026-11-07.md).
+
+Results belong in the workflow artifacts for the exact PR head. A missing artifact or failed job is not a measured success.

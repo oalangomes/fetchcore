@@ -96,7 +96,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        backend: [opensearch, qdrant]
+        backend: [solr, opensearch, qdrant]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -122,9 +122,23 @@ jobs:
           raise SystemExit("Qdrant did not become ready")
           PY
       - name: Explicit index and live structural navigation
+        if: ${{ matrix.backend != 'solr' }}
         env:
           FETCHCORE_LIVE_STRUCTURAL_BACKEND: ${{ matrix.backend }}
         run: python -m pytest -q tests/integration/test_structural_live_backends.py
+      - name: Benchmark live structural acquisition at 1k and 10k chunks
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 235 }}
+        run: |
+          python -m scripts.bench.live_structural_lookup \
+            --backend ${{ matrix.backend }} --samples 20 \
+            --output "$RUNNER_TEMP/structural-live-${{ matrix.backend }}.json"
+      - name: Upload real structural benchmark evidence
+        if: ${{ always() && github.event_name == 'pull_request' && github.event.pull_request.number == 235 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: structural-live-${{ matrix.backend }}-${{ github.sha }}
+          path: ${{ runner.temp }}/structural-live-${{ matrix.backend }}.json
+          if-no-files-found: warn
       - name: Stop backend Compose service
         if: ${{ always() }}
         run: docker compose -p fc-structural-${{ matrix.backend }} -f infra/compose/${{ matrix.backend }}.yml down -v
