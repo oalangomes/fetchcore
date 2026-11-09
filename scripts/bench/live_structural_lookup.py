@@ -1,8 +1,8 @@
-"""Measure structural navigation through a live OpenSearch or Qdrant service.
+"""Measure structural navigation through a live Solr, OpenSearch, or Qdrant service.
 
 Run with ``python -m scripts.bench.live_structural_lookup --backend opensearch``
 after starting the corresponding existing ``infra/compose`` service. The corpus
-is synthetic code plus technical-text noise; report it as such.
+is synthetic Python source, indexed by the normal canonical indexer.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ import statistics
 import tempfile
 import time
 import tracemalloc
-from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -34,9 +33,7 @@ from fetchcore.application import (
     FindSymbolRequest, GetRelatedRequest, RepositoryBinding, RetrievalApplicationService,
 )
 from fetchcore.repository.index_fingerprint import indexing_contract_fingerprint
-from fetchcore.repository.indexing import RepositoryIndexChanges
 from fetchcore.application.index_operations import prepare_repository_index_runtime
-from scripts.bench.structural_lookup import _documents
 
 
 class _Embedder:
@@ -133,24 +130,24 @@ def run(backend: str, url: str, size: int, samples: int) -> dict[str, object]:
     revision = "rev-1"
     with tempfile.TemporaryDirectory() as directory:
         workspace = Path(directory)
-        (workspace / "target.py").write_text("def run():\n    return 1\n", encoding="utf-8")
+        target_path = workspace / "target.py"
+        target_path.write_text("def run():\n    return 1\n", encoding="utf-8")
         (workspace / "caller.py").write_text(
             "from target import run as execute\ndef invoke():\n    execute()\n",
             encoding="utf-8",
         )
+        for number in range(997):
+            functions = 1 if size == 1_000 else 10 + (number >= 970)
+            (workspace / f"work_{number:03}.py").write_text("".join(
+                f"def task_{number}_{item}(value):\n    return value + {item}\n\n"
+                for item in range(functions)
+            ), encoding="utf-8")
         runtime = prepare_repository_index_runtime(
             workspace, repository=repository, branch=None, revision=revision,
         )
         indexer = runtime.indexer
-        base = indexer.index(workspace)
-        noise = _documents(size - len(base.documents) + 1)[1:]
-        documents = (*base.documents, *noise)
-        assert len(documents) == size
-        result = replace(
-            base, documents=documents,
-            changes=RepositoryIndexChanges(added=documents),
-            telemetry=replace(base.telemetry, documents_produced=size, added=size),
-        )
+        result = indexer.index(workspace)
+        assert len(result.documents) == size
         store = _store(backend, url)
         if backend == "solr":
             store = bind_indexing_contract_store(store, indexer)
@@ -219,6 +216,26 @@ def run(backend: str, url: str, size: int, samples: int) -> dict[str, object]:
                 "time_to_first_candidate_upper_bound_ms": _percentiles(repeated),
                 "peak_tracemalloc_mib": round(peak / (1024 * 1024), 2),
             }
+        target_path.write_text("def replacement():\n    return 2\n", encoding="utf-8")
+        started = time.perf_counter()
+        updated = indexer.index(workspace, previous_documents=result.documents)
+        canonical_update_ms = (time.perf_counter() - started) * 1_000
+        started = time.perf_counter()
+        incremental = store.incremental_sync(updated)
+        projection_update_ms = (time.perf_counter() - started) * 1_000
+        assert not app.find_symbol(FindSymbolRequest("target.run", repository)).results
+        assert app.find_symbol(FindSymbolRequest("replacement", repository)).results
+        assert not app.get_related(GetRelatedRequest(
+            caller.identity, repository, relation_types=("calls",),
+            require_resolution=True,
+        )).results
+        output["incremental_update"] = {
+            "canonical_reindex_ms": round(canonical_update_ms, 2),
+            "projection_and_publication_ms": round(projection_update_ms, 2),
+            "changed_documents": updated.telemetry.to_mapping(),
+            "publication_telemetry": incremental.telemetry.to_mapping(),
+            "stale_symbol_and_relation_removed": True,
+        }
         return output
 
 
@@ -237,7 +254,7 @@ if __name__ == "__main__":
         "qdrant": "http://127.0.0.1:6333",
     }[args.backend]
     payload = {
-        "method": "live server and HTTP transport; synthetic source-derived code plus text noise",
+        "method": "live server and HTTP transport; synthetic Python source indexed canonically",
         "backend": args.backend,
         "samples": args.samples,
         "scales": [run(args.backend, effective_url, size, args.samples)
