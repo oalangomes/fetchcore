@@ -154,14 +154,21 @@ jobs:
           PY
           container="$(docker compose -p fc-structural-solr -f infra/compose/solr.yml ps -q solr)"
           test -n "$container"
+          docker exec -u 0 "$container" sh -c \
+            'mkdir -p /var/solr/data/configsets && chown solr:solr /var/solr/data/configsets'
           docker cp "$RUNNER_TEMP/fetchcore-reconcile-old-configset" \
             "$container:/var/solr/data/configsets/fetchcore-reconcile-old"
+          docker cp infra/solr/configset \
+            "$container:/var/solr/data/configsets/fetchcore-reconcile-current"
+          docker exec -u 0 "$container" chown -R solr:solr \
+            /var/solr/data/configsets/fetchcore-reconcile-old \
+            /var/solr/data/configsets/fetchcore-reconcile-current
       - name: Live backend reconciliation and failure recovery
         env:
           FETCHCORE_LIVE_RECONCILE_BACKEND: ${{ matrix.backend }}
           FETCHCORE_SOLR_URL: http://127.0.0.1:8983/solr
           FETCHCORE_SOLR_OLD_CONFIGSET: fetchcore-reconcile-old
-          FETCHCORE_SOLR_RECONCILE_CONFIGSET: fetchcore
+          FETCHCORE_SOLR_RECONCILE_CONFIGSET: fetchcore-reconcile-current
           FETCHCORE_OPENSEARCH_URL: http://127.0.0.1:9200
           FETCHCORE_QDRANT_URL: http://127.0.0.1:6333
         run: |
