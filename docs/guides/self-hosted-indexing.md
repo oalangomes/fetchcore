@@ -302,6 +302,8 @@ create_if_missing: true
 
 That path selects a free loopback port, creates a uniquely named ephemeral
 container from the digest-pinned Solr image, and records it as owned by the run.
+The owned startup probe retries a temporary HTTP 503 while the container starts;
+other server errors still fail the preflight explicitly.
 Cleanup removes only that exact owned container. It never deletes a pre-existing
 container or volume. `managed_solr: true` remains as a deprecated compatibility
 alias for this opt-in policy. Nonempty `solr_port` and `solr_volume` inputs fail
