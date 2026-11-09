@@ -613,16 +613,32 @@ class OpenSearchIndexStore:
         expected_properties = expected["properties"] if isinstance(expected, dict) else {}
         if not isinstance(mappings, dict) or not isinstance(properties, dict) or not isinstance(expected_properties, dict):
             raise KnowledgeSearchError("OpenSearch mapping is invalid", category="schema_mismatch")
+        incompatible_fields: list[dict[str, object]] = []
+        missing_fields: list[str] = []
         if mappings.get("dynamic") != "strict":
-            raise KnowledgeSearchError("OpenSearch mapping must be strict", category="schema_mismatch")
+            incompatible_fields.append({"field": "_mapping.dynamic", "expected": "strict",
+                                        "actual": mappings.get("dynamic")})
         for name, field_spec in expected_properties.items():
             actual = properties.get(name)
-            if not isinstance(actual, dict) or not isinstance(field_spec, dict) or actual.get("type") != field_spec.get("type"):
-                raise KnowledgeSearchError("OpenSearch Projection v3 mapping is incompatible", category="schema_mismatch", metadata={"field": name, "rebuild_required": True})
+            if actual is None:
+                missing_fields.append(name)
+                continue
+            if not isinstance(actual, dict) or not isinstance(field_spec, dict):
+                incompatible_fields.append({"field": name, "expected": field_spec,
+                                            "actual": actual})
+                continue
+            if actual.get("type") != field_spec.get("type"):
+                incompatible_fields.append({"field": name, "property": "type",
+                                            "expected": field_spec.get("type"),
+                                            "actual": actual.get("type")})
             if "normalizer" in field_spec and actual.get("normalizer") != field_spec["normalizer"]:
-                raise KnowledgeSearchError("OpenSearch identifier normalizer is incompatible", category="schema_mismatch", metadata={"field": name, "rebuild_required": True})
+                incompatible_fields.append({"field": name, "property": "normalizer",
+                                            "expected": field_spec["normalizer"],
+                                            "actual": actual.get("normalizer")})
             if name == OPENSEARCH_VECTOR_FIELD and actual.get("dimension") != OPENSEARCH_VECTOR_DIMENSIONS:
-                raise KnowledgeSearchError("OpenSearch vector dimensions are incompatible", category="schema_mismatch", metadata={"rebuild_required": True})
+                incompatible_fields.append({"field": name, "property": "dimension",
+                                            "expected": OPENSEARCH_VECTOR_DIMENSIONS,
+                                            "actual": actual.get("dimension")})
             if name == OPENSEARCH_VECTOR_FIELD:
                 expected_method = field_spec.get("method")
                 actual_method = actual.get("method")
@@ -631,7 +647,17 @@ class OpenSearchIndexStore:
                 if not isinstance(expected_method, dict) or actual_method not in (
                     expected_method, {**expected_method, "parameters": {}},
                 ):
-                    raise KnowledgeSearchError("OpenSearch vector method is incompatible", category="schema_mismatch", metadata={"rebuild_required": True})
+                    incompatible_fields.append({"field": name, "property": "method",
+                                                "expected": expected_method,
+                                                "actual": actual_method})
+        if missing_fields or incompatible_fields:
+            raise KnowledgeSearchError(
+                "OpenSearch Projection v3 mapping is incompatible",
+                category="schema_mismatch",
+                metadata={"missing_fields": missing_fields,
+                          "incompatible_fields": incompatible_fields,
+                          "rebuild_required": True},
+            )
         settings_payload = self.transport.request("GET", f"{quote(indexes[0], safe='')}/_settings")
         settings_root = settings_payload.get(indexes[0])
         settings_outer = settings_root.get("settings") if isinstance(settings_root, dict) else None

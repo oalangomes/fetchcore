@@ -16,6 +16,7 @@ import time
 
 from fetchcore.application.composition import EmbeddingProviderRegistry
 from fetchcore.application.index_store import OperationalIndexDriver, OperationalIndexStore
+from fetchcore.application.runtime_config import ReconciliationSettings
 from fetchcore.application.index_operations import (
     RepositoryIndexRuntime, dry_run_repository_index, prepare_repository_index_runtime,
     repository_index_status,
@@ -406,15 +407,17 @@ class RepositoryIndexApplicationService:
     def __init__(self, repositories: RepositoryApplicationService, *, backend: str = "solr",
                  backend_settings: Mapping[str, object] | None = None,
                  retrieval: RetrievalConfig | None = None,
-                 providers: EmbeddingProviderRegistry | None = None) -> None:
+                 providers: EmbeddingProviderRegistry | None = None,
+                 reconciliation: ReconciliationSettings | None = None) -> None:
         self.repositories = repositories
         self.backend = backend
         self.backend_settings = dict(backend_settings or {})
         self.retrieval = retrieval
         self.providers = providers
+        self.reconciliation = reconciliation or ReconciliationSettings()
 
     def run(self, operation: str, reference: str) -> dict[str, object]:
-        if operation not in {"plan", "status", "sync", "rebuild"}:
+        if operation not in {"plan", "status", "sync", "rebuild", "reconcile"}:
             raise ValueError("Unsupported indexing operation")
         capabilities = indexing_capabilities(self.backend)
         if operation == "sync" and not capabilities.incremental:
@@ -441,6 +444,13 @@ class RepositoryIndexApplicationService:
                 revision=source.revision, backend=self.backend, backend_settings=self.backend_settings,
                 retrieval=self.retrieval, providers=self.providers,
             )
+            if operation == "reconcile":
+                from fetchcore.application.reconciliation import reconcile_index_context
+                return {
+                    "repository": source.repository, "provider": source.provider,
+                    "source_ref": source.source_ref, "target_revision": source.revision,
+                    **reconcile_index_context(context, self.reconciliation),
+                }
             if context.driver is not None:
                 return {
                     "repository": source.repository, "provider": source.provider,

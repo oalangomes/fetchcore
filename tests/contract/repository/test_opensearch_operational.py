@@ -17,6 +17,10 @@ from fetchcore.adapters.retrieval.opensearch.backend import (
 )
 from fetchcore.adapters.retrieval.opensearch.backend import _prepare_dense_query
 from fetchcore.application import indexing
+from fetchcore.application.indexing import IndexContext
+from fetchcore.application.reconciliation import reconcile_index_context
+from fetchcore.application.runtime_config import ReconciliationSettings
+from fetchcore.adapters.retrieval.opensearch.operational import OpenSearchOperationalIndex
 from fetchcore.application import (
     FindSymbolRequest, GetRelatedRequest, RepositoryBinding,
     RetrievalApplicationService, SourceReadRequest,
@@ -195,6 +199,41 @@ def store(transport: MemoryOpenSearch) -> OpenSearchIndexStore:
     result.repository = "acme/widgets"
     result.indexing_fingerprint = "test-indexing-contract"
     return result
+
+
+def test_safe_auto_rebuilds_old_mapping_and_keeps_previous_index(tmp_path: Path) -> None:
+    (tmp_path / "service.py").write_text("def exact_name():\n    return 1\n")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=Test",
+                    "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture"],
+                   check=True)
+    revision = subprocess.check_output(["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+                                       text=True).strip()
+    runtime = prepare_repository_index_runtime(
+        tmp_path, repository="acme/widgets", branch=None, revision=revision,
+    )
+    transport = MemoryOpenSearch()
+    persistence = store(transport)
+    driver = OpenSearchOperationalIndex(persistence, runtime)
+    persistence.full_rebuild(runtime.indexer.index(tmp_path))
+    alias = next(iter(transport.aliases))
+    previous = transport.aliases[alias]
+    cast_mapping = transport.mappings[previous]["properties"]
+    assert isinstance(cast_mapping, dict)
+    cast_mapping.pop("structural_names")
+    context = IndexContext(tmp_path, "opensearch", runtime, persistence, driver=driver)
+    policy = ReconciliationSettings(mode="safe-auto", managed=True)
+    report = reconcile_index_context(context, policy)
+    assert report["action"] == "rebuild"
+    assert report["ready"] is True
+    assert report["schema_differences"]["missing_fields"] == ["structural_names"]
+    assert transport.aliases[alias] != previous
+    assert previous in transport.indices
+    writes = len(transport.writes)
+    repeated = reconcile_index_context(context, policy)
+    assert repeated["action"] == "none"
+    assert len(transport.writes) == writes
 
 
 def test_initial_incremental_delete_noop_and_provenance(tmp_path: Path) -> None:
