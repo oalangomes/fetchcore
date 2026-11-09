@@ -21,6 +21,7 @@ from fetchcore.repository.indexing import (
     _source_ref,
     _utc_now,
 )
+from fetchcore.repository.cross_file_relations import ImportBoundRelationResolver
 from fetchcore.repository.safe_scan import SafeSource
 
 
@@ -186,10 +187,23 @@ class SemanticDocumentRepositoryIndexer(DocumentRepositoryIndexer):
         if (
             self.source_interpreters
             or self.semantic_enrichers
-            or self.corpus_resolvers
+            or any(not isinstance(item, ImportBoundRelationResolver)
+                   for item in self.corpus_resolvers)
         ) and (changed_paths or removed_paths):
             return True
         return super().requires_full_scan_for_paths(changed_paths, removed_paths)
+
+    def resolve_delta_corpus(
+        self, documents: tuple[KnowledgeDocument, ...],
+    ) -> tuple[KnowledgeDocument, ...]:
+        """Recompute dependent edges after a safe source-only Git delta."""
+
+        current = documents
+        for resolver in self.corpus_resolvers:
+            current = _validate_corpus_resolution(
+                current, resolver.resolve(current), resolver=resolver,
+            )
+        return current
 
     def index(
         self,

@@ -457,6 +457,7 @@ def _index_mapping(*, include_vectors: bool = False) -> dict[str, object]:
         "structural_names",
         "structural_qualified_names",
         "structural_identities",
+        "structural_incoming_identities",
         "checksum",
         "source_checksum",
         "identifiers_exact",
@@ -695,12 +696,13 @@ class OpenSearchIndexStore:
         """Read bounded exact candidates from keyword fields on the active alias."""
 
         field = STRUCTURAL_SELECTOR_FIELDS[selector]
+        if self.load_snapshot(repository).revision != revision:
+            raise KnowledgeSearchError("OpenSearch structural snapshot changed", category="snapshot_revision_mismatch")
         body = {
             "size": limit + 1,
             "query": {"bool": {"filter": [
                 {"term": {"record_kind": "knowledge"}},
                 {"term": {"repository": repository}},
-                {"term": {"document_revision": revision}},
                 {"term": {field: value}},
             ]}},
             "sort": [{"id": "asc"}],
@@ -719,7 +721,7 @@ class OpenSearchIndexStore:
                 raise KnowledgeSearchError("OpenSearch structural candidate is invalid",
                                            category="response_parsing_failure")
             document = self.reader.read(raw)
-            if (document.repository != repository or document.revision != revision
+            if (document.repository != repository
                     or not structural_candidate_matches(raw, document, selector, value)):
                 raise KnowledgeSearchError("OpenSearch structural candidate is inconsistent",
                                            category="schema_mismatch")
@@ -731,10 +733,11 @@ class OpenSearchIndexStore:
     ) -> tuple[KnowledgeDocument, ...]:
         if not identifiers:
             return ()
+        if self.load_snapshot(repository).revision != revision:
+            raise KnowledgeSearchError("OpenSearch structural snapshot changed", category="snapshot_revision_mismatch")
         body = {"size": len(identifiers), "query": {"bool": {"filter": [
             {"term": {"record_kind": "knowledge"}},
             {"term": {"repository": repository}},
-            {"term": {"document_revision": revision}},
             {"terms": {"id": list(identifiers)}},
         ]}}, "_source": {"excludes": [OPENSEARCH_VECTOR_FIELD]}}
         payload = self.transport.request(
@@ -746,8 +749,7 @@ class OpenSearchIndexStore:
             raise KnowledgeSearchError("OpenSearch structural targets are invalid",
                                        category="response_parsing_failure")
         documents = tuple(self.reader.read(row["_source"]) for row in hits)
-        if any(doc.id not in identifiers or doc.repository != repository
-               or doc.revision != revision for doc in documents):
+        if any(doc.id not in identifiers or doc.repository != repository for doc in documents):
             raise KnowledgeSearchError("OpenSearch structural target identity is inconsistent",
                                        category="schema_mismatch")
         return documents

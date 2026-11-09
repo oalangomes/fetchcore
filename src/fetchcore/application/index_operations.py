@@ -17,6 +17,7 @@ from pathlib import Path
 
 from fetchcore.adapters.retrieval.solr.backend import SolrIndexSnapshot, SolrIndexStore
 from fetchcore.repository.corpus_diagnostics import analyze_corpus_duplication
+from fetchcore.repository.cross_file_relations import ImportBoundRelationResolver
 from fetchcore.repository.default_knowledge_packs import (
     default_repository_knowledge_packs,
 )
@@ -156,7 +157,10 @@ def prepare_repository_index_runtime(
         document_policy=document_policy,
         source_interpreters=source_interpreters_from_packs(packs),
         semantic_enrichers=semantic_enrichers_from_packs(packs),
-        corpus_resolvers=corpus_resolvers_from_packs(packs),
+        corpus_resolvers=(
+            *corpus_resolvers_from_packs(packs),
+            ImportBoundRelationResolver(),
+        ),
     )
     if policy.enabled_extractors is not None:
         # RepositoryIndexer keeps a legacy Python fallback when callers do not

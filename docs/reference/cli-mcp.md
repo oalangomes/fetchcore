@@ -59,7 +59,7 @@ their pinned revision through a temporary cached worktree without fetching.
 `find-symbol` and `get-related` share `--repo`, `--revision`, `--limit` (1..100),
 `--config`, `--cache-root`, repeatable `--allowed-root`, and `--json`.
 `find-symbol` also accepts `--language`, `--kind`, and exact `--path`.
-`get-related` accepts repeatable `--relation-type`, `--direction outgoing`,
+`get-related` accepts repeatable `--relation-type`, `--direction outgoing|incoming`,
 `--depth 1`, and `--require-resolution`. Unsupported directions, depths and
 relation types fail explicitly. Supported filters are `calls`, `references`,
 `tests`, `imports`, `dependencies`, `extends`, and `implements`.
@@ -107,8 +107,10 @@ Coverage describes the admitted canonical corpus, not every file in the
 repository. Empty scopes are unknown. Missing extraction does not become a
 structural `not_found` or trigger textual/dense search. `require_resolution`
 reports unavailable cross-file resolution explicitly and does not return
-unresolved observations as if resolved. Incoming traversal and multi-hop graph
-queries remain unsupported.
+unresolved observations as if resolved. Incoming traversal requires a canonical
+symbol identity and includes only edges with a uniquely resolved target. Other
+languages and relation families retain their observed or unsupported status.
+Multi-hop graph queries remain unsupported.
 
 Example (after `fetchcore repo add .` and explicit `fetchcore index rebuild <repo>`):
 

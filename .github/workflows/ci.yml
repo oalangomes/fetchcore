@@ -89,6 +89,46 @@ jobs:
           python -c 'import tree_sitter_language_pack'
           python -m pytest -q tests/unit/repository/test_optional_grammars.py tests/unit/repository/test_structured_navigation.py tests/unit/repository/test_multilingual_structure_ci.py tests/unit/repository/test_canonical_structure.py
 
+  structural-live-backends:
+    name: structural live (${{ matrix.backend }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [opensearch, qdrant]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Start existing backend Compose service
+        run: docker compose -p fc-structural-${{ matrix.backend }} -f infra/compose/${{ matrix.backend }}.yml up -d --wait --wait-timeout 180
+      - name: Wait for Qdrant readiness
+        if: ${{ matrix.backend == 'qdrant' }}
+        run: |
+          python - <<'PY'
+          import time
+          from urllib.request import urlopen
+          for _ in range(60):
+              try:
+                  with urlopen("http://127.0.0.1:6333/readyz", timeout=2) as response:
+                      if response.status == 200:
+                          raise SystemExit(0)
+              except OSError:
+                  time.sleep(2)
+          raise SystemExit("Qdrant did not become ready")
+          PY
+      - name: Explicit index and live structural navigation
+        env:
+          FETCHCORE_LIVE_STRUCTURAL_BACKEND: ${{ matrix.backend }}
+        run: python -m pytest -q tests/integration/test_structural_live_backends.py
+      - name: Stop backend Compose service
+        if: ${{ always() }}
+        run: docker compose -p fc-structural-${{ matrix.backend }} -f infra/compose/${{ matrix.backend }}.yml down -v
+
   build:
     name: build
     runs-on: ubuntu-latest

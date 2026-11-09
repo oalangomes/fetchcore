@@ -156,6 +156,9 @@ class SemanticRelationEvidence:
     target_document_id: str | None = None
     target_source_ref: str | None = None
     target_path: str | None = None
+    source_identity: str | None = None
+    target_identity: str | None = None
+    line: int | None = None
 
     def __post_init__(self) -> None:
         """Normalize generic relation identity and optional target provenance."""
@@ -178,6 +181,15 @@ class SemanticRelationEvidence:
         object.__setattr__(self, "target_document_id", _clean_optional(self.target_document_id))
         object.__setattr__(self, "target_source_ref", _clean_optional(self.target_source_ref))
         object.__setattr__(self, "target_path", _clean_optional(self.target_path))
+        object.__setattr__(self, "source_identity", _clean_optional(self.source_identity))
+        object.__setattr__(self, "target_identity", _clean_optional(self.target_identity))
+        if self.line is not None and (type(self.line) is not int or self.line < 1):
+            raise ValueError("semantic relation line must be positive")
+        if self.target_identity is not None and (
+            resolution not in {"resolved", "exact-unique"}
+            or self.target_document_id is None
+        ):
+            raise ValueError("resolved target identity requires a resolved document")
 
     def to_mapping(self) -> dict[str, object]:
         """Serialize the relation without backend or graph concepts."""
@@ -189,6 +201,9 @@ class SemanticRelationEvidence:
             "target_document_id": self.target_document_id,
             "target_source_ref": self.target_source_ref,
             "target_path": self.target_path,
+            "source_identity": self.source_identity,
+            "target_identity": self.target_identity,
+            "line": self.line,
         }
 
     @classmethod
@@ -202,6 +217,9 @@ class SemanticRelationEvidence:
             target_document_id=_optional_mapping_string(value, "target_document_id"),
             target_source_ref=_optional_mapping_string(value, "target_source_ref"),
             target_path=_optional_mapping_string(value, "target_path"),
+            source_identity=_optional_mapping_string(value, "source_identity"),
+            target_identity=_optional_mapping_string(value, "target_identity"),
+            line=_optional_positive_int(value, "line"),
         )
 
 
@@ -266,6 +284,15 @@ def _optional_mapping_string(value: Mapping[str, object], key: str) -> str | Non
     raw = value[key]
     if not isinstance(raw, str):
         raise ValueError(f"semantic relation {key} must be a string or null")
+    return raw
+
+
+def _optional_positive_int(value: Mapping[str, object], key: str) -> int | None:
+    raw = value.get(key)
+    if raw is None:
+        return None
+    if type(raw) is not int or raw < 1:
+        raise ValueError(f"semantic relation {key} must be a positive integer or null")
     return raw
 
 

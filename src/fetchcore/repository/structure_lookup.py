@@ -14,9 +14,10 @@ from fetchcore.knowledge.structure import (
 from fetchcore.repository.indexing import KnowledgeDocument
 
 
-STRUCTURAL_LOOKUP_VERSION = "1"
+STRUCTURAL_LOOKUP_VERSION = "2"
 STRUCTURAL_LOOKUP_FIELDS = (
     "structural_names", "structural_qualified_names", "structural_identities",
+    "structural_incoming_identities",
 )
 
 
@@ -37,12 +38,14 @@ class StructuralLookupKeys:
     names: tuple[str, ...]
     qualified_names: tuple[str, ...]
     identities: tuple[str, ...]
+    incoming_identities: tuple[str, ...] = ()
 
     def to_mapping(self) -> dict[str, object]:
         return {
             "structural_names": list(self.names),
             "structural_qualified_names": list(self.qualified_names),
             "structural_identities": list(self.identities),
+            "structural_incoming_identities": list(self.incoming_identities),
         }
 
 
@@ -70,6 +73,10 @@ def structural_lookup_keys(document: KnowledgeDocument) -> StructuralLookupKeys:
         names=tuple(sorted({item.name for item in declarations})),
         qualified_names=tuple(sorted({item.qualified_name or item.name for item in declarations})),
         identities=tuple(sorted({item.identity.key for item in declarations if item.identity})),
+        incoming_identities=tuple(sorted({
+            item.target_identity for item in document.evidence.relations.semantic
+            if item.target_identity is not None and item.resolution in {"resolved", "exact-unique"}
+        })),
     )
 
 

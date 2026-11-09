@@ -238,6 +238,7 @@ _REQUIRED_SCHEMA_FIELDS = frozenset(
         "structural_names",
         "structural_qualified_names",
         "structural_identities",
+        "structural_incoming_identities",
         SOLR_VECTOR_FIELD,
         "embedding_provider",
         "embedding_model",
@@ -294,6 +295,8 @@ _CRITICAL_SCHEMA_FIELD_PROPERTIES: dict[str, dict[str, object]] = {
                                    "multiValued": True},
     "structural_identities": {"type": "string", "indexed": True, "stored": True,
                               "multiValued": True},
+    "structural_incoming_identities": {"type": "string", "indexed": True,
+                                        "stored": True, "multiValued": True},
     SOLR_VECTOR_FIELD: {"type": SOLR_VECTOR_FIELD_TYPE, "indexed": True, "stored": True},
     "vector_dimensions": {"type": "pint"},
     "projection_fingerprint": {"type": "string"},
@@ -1134,20 +1137,22 @@ class SolrIndexStore:
         """Retrieve only exact structural candidates from stored keyword fields."""
 
         field = STRUCTURAL_SELECTOR_FIELDS[selector]
+        if self.load_snapshot(repository).revision != revision:
+            raise KnowledgeSearchError("Solr structural snapshot changed", category="snapshot_revision_mismatch")
         response = self._select({
             "q": "*:*",
             "fq": ["record_kind:knowledge", _term_filter("repository", repository),
-                   _term_filter("document_revision", revision), _term_filter(field, value)],
+                   _term_filter(field, value)],
             "rows": limit + 1,
             "fl": ("record_kind,projection_version,projection_fingerprint,"
                    "canonical_payload,structural_names,structural_qualified_names,"
-                   "structural_identities,source_ref"),
+                   "structural_identities,structural_incoming_identities,source_ref"),
             "sort": "id asc",
         })
         documents: list[KnowledgeDocument] = []
         for row in response["docs"][:limit]:
             document = self.mapper.from_solr(row)
-            if (document.repository != repository or document.revision != revision
+            if (document.repository != repository
                     or not structural_candidate_matches(row, document, selector, value)):
                 raise KnowledgeSearchError("Solr structural lookup record is inconsistent",
                                            category="schema_mismatch")
@@ -1159,18 +1164,19 @@ class SolrIndexStore:
     ) -> tuple[KnowledgeDocument, ...]:
         if not identifiers:
             return ()
+        if self.load_snapshot(repository).revision != revision:
+            raise KnowledgeSearchError("Solr structural snapshot changed", category="snapshot_revision_mismatch")
         ids_filter = "{!terms f=id}" + ",".join(identifiers)
         response = self._select({
             "q": "*:*", "fq": ["record_kind:knowledge",
                               _term_filter("repository", repository),
-                              _term_filter("document_revision", revision), ids_filter],
+                              ids_filter],
             "rows": len(identifiers),
             "fl": "record_kind,projection_version,projection_fingerprint,canonical_payload",
             "sort": "id asc",
         })
         documents = tuple(self.mapper.from_solr(row) for row in response["docs"])
-        if any(doc.id not in identifiers or doc.repository != repository
-               or doc.revision != revision for doc in documents):
+        if any(doc.id not in identifiers or doc.repository != repository for doc in documents):
             raise KnowledgeSearchError("Solr structural target identity is inconsistent",
                                        category="schema_mismatch")
         return documents

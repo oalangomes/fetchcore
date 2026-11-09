@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 import hashlib
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
+from typing import cast
 from urllib.parse import unquote
 
 from fetchcore.retrieval import RetrievalConfig
@@ -16,7 +17,8 @@ from .navigation import (
     RELATION_CAPABILITIES, RepositoryKnowledgeNavigationService,
     navigation_result, validate_navigation_request,
 )
-from fetchcore.repository.navigation import RelatedEvidence, StructuralNavigationError, SymbolDefinition
+from fetchcore.repository.navigation import NavigationDirection, RelatedEvidence, StructuralNavigationError, SymbolDefinition
+from fetchcore.repository.indexing import KnowledgeDocument
 from fetchcore.repository.structure_lookup import structural_coverage_from_summary
 from fetchcore.knowledge.structure import StructuralCapability, StructuralCoverage
 from fetchcore.application.index_store import OperationalIndexStore
@@ -33,6 +35,17 @@ from fetchcore.retrieval.contracts import (
 
 MAX_SEARCH_LIMIT = 100
 MAX_SOURCE_LINES = 400
+
+
+def _at_snapshot_revision(document: KnowledgeDocument, revision: str) -> KnowledgeDocument:
+    """Expose unchanged source evidence at the verified active corpus revision."""
+
+    if document.revision == revision:
+        return document
+    return replace(
+        document, revision=revision,
+        provenance=replace(document.provenance, revision=revision),
+    )
 MAX_SOURCE_BYTES = 1_000_000
 
 
@@ -273,6 +286,11 @@ class RetrievalApplicationService:
                     selectors = (("name", request.name), ("qualified_name", request.name))
             else:
                 assert source is not None
+                if request.direction == "incoming" and not source.startswith("symbol:v1:sha256:"):
+                    raise StructuralNavigationError(
+                        "incoming navigation requires a symbol identity",
+                        category="unsupported_capability",
+                    )
                 selectors = (("identity", source),) if source.startswith(
                     "symbol:v1:sha256:"
                 ) else (("source_ref", source),)
@@ -283,10 +301,12 @@ class RetrievalApplicationService:
             ) for selector, value in selectors)
             materialized = tuple({doc.id: doc for page in pages
                                   for doc in page.documents}.values())
-            if any(doc.repository != binding.repository or doc.revision != snapshot.revision
+            if any(doc.repository != binding.repository
                    for doc in materialized):
                 raise KnowledgeSearchError("navigation candidate conflicts with active snapshot",
                                            category="schema_mismatch")
+            materialized = tuple(_at_snapshot_revision(doc, snapshot.revision)
+                                 for doc in materialized)
             documents = tuple(doc for doc in materialized if (
                 (not binding.knowledge_types or doc.knowledge_type in binding.knowledge_types)
                 and (not binding.repository_paths or any(
@@ -334,16 +354,43 @@ class RetrievalApplicationService:
                 )
                 if request.require_resolution:
                     capabilities += ("cross_file_resolution",)
-                coverage = tuple(navigation.coverage(capability, path=path)
-                                 for capability in capabilities)
+                if request.direction == "incoming":
+                    assert selected is not None
+                    incoming_page = store.lookup_structural_documents(
+                        binding.repository, snapshot.revision,
+                        selector="incoming_identity", value=selected.identity, limit=budget,
+                    )
+                    if incoming_page.has_more:
+                        scan_diagnostics += ("structural_candidate_budget_exhausted",)
+                    if any(doc.repository != binding.repository for doc in incoming_page.documents):
+                        raise KnowledgeSearchError("incoming candidate conflicts with repository",
+                                                   category="schema_mismatch")
+                    incoming_documents = tuple(_at_snapshot_revision(doc, snapshot.revision)
+                                               for doc in incoming_page.documents if (
+                        doc.repository == binding.repository
+                        and (not binding.knowledge_types or doc.knowledge_type in binding.knowledge_types)
+                        and (not binding.repository_paths or any(
+                            doc.path == prefix or doc.path.startswith(prefix.rstrip("/") + "/")
+                            for prefix in binding.repository_paths
+                        ))
+                    ))
+                    navigation = RepositoryKnowledgeNavigationService(incoming_documents)
+                    coverage = (structural_coverage_from_summary(
+                        coverage_summary, "cross_file_resolution",
+                    ),)
+                else:
+                    coverage = tuple(navigation.coverage(capability, path=path)
+                                     for capability in capabilities)
                 try:
                     results = navigation.get_related(
                         selected or source, relation_types=request.relation_types,
-                        limit=request.limit, require_resolution=request.require_resolution,
+                        direction=cast(NavigationDirection, request.direction), limit=request.limit,
+                        require_resolution=request.require_resolution,
                     )
                     target_ids = tuple(sorted({item.target_document_id for item in results
                                                if item.target_document_id is not None}))
-                    targets = {doc.id: doc for doc in store.load_structural_targets(
+                    targets = {doc.id: _at_snapshot_revision(doc, snapshot.revision)
+                               for doc in store.load_structural_targets(
                         binding.repository, snapshot.revision, target_ids,
                     )}
                     if set(target_ids) != targets.keys():

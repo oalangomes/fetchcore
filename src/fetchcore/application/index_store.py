@@ -71,11 +71,12 @@ class IndexSyncResult(Protocol):
     def to_mapping(self) -> dict[str, object]: ...
 
 
-StructuralSelector = Literal["name", "qualified_name", "identity", "source_ref"]
+StructuralSelector = Literal["name", "qualified_name", "identity", "incoming_identity", "source_ref"]
 STRUCTURAL_SELECTOR_FIELDS: dict[StructuralSelector, str] = {
     "name": "structural_names",
     "qualified_name": "structural_qualified_names",
     "identity": "structural_identities",
+    "incoming_identity": "structural_incoming_identities",
     "source_ref": "source_ref",
 }
 

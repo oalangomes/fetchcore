@@ -172,6 +172,45 @@ def test_repeated_navigation_uses_materialized_documents(
         assert related.results[0].target == "net/http"
 
 
+def test_cross_file_reverse_navigation_has_sdk_cli_mcp_parity(
+    application: RetrievalApplicationService, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "target.py").write_text("def run():\n    return 1\n", encoding="utf-8")
+    (tmp_path / "caller.py").write_text(
+        "from target import run as execute\ndef invoke():\n    execute()\n",
+        encoding="utf-8",
+    )
+    _publish(application, tmp_path)
+    target = application.find_symbol(FindSymbolRequest("target.run")).results[0]
+    caller = application.find_symbol(FindSymbolRequest("caller.invoke")).results[0]
+    outgoing = application.get_related(GetRelatedRequest(
+        caller.identity, relation_types=("calls",), require_resolution=True,
+    ))
+    assert len(outgoing.results) == 1
+    assert outgoing.results[0].target_identity == target.identity
+    reverse = application.get_related(GetRelatedRequest(
+        target.identity, relation_types=("calls",), direction="incoming",
+    ))
+    assert reverse.status == "partial"  # The fixture also contains languages without resolution.
+    assert len(reverse.results) == 1
+    assert reverse.results[0].source_identity == caller.identity
+    assert reverse.results[0].checksum == caller.checksum
+    assert reverse.results[0].target_checksum == target.checksum
+    assert _payload(create_mcp_server(application), "get_related", {
+        "source": target.identity, "relation_types": ["calls"],
+        "direction": "incoming",
+    }) == reverse.to_mapping()
+    assert _cli(monkeypatch, application, [
+        "get-related", target.identity, "--relation-type", "calls",
+        "--direction", "incoming",
+    ]) == reverse.to_mapping()
+    source = application.get_source(SourceReadRequest(
+        target.source_ref, revision=target.revision, checksum=target.checksum,
+    ))
+    assert "def run" in source.content
+
+
 def test_missing_snapshot_is_reported_without_indexing(
     application: RetrievalApplicationService, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

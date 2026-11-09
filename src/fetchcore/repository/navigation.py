@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
-from typing import Literal, get_args
+from typing import Literal, cast, get_args
 
 from fetchcore.knowledge.evidence import SymbolEvidence, identify_declarations
 from fetchcore.knowledge.structure import (
@@ -17,7 +17,7 @@ from fetchcore.knowledge.structure import (
 from fetchcore.repository.indexing import KnowledgeDocument
 
 
-NavigationDirection = Literal["outgoing"]
+NavigationDirection = Literal["outgoing", "incoming"]
 _MAX_NAVIGATION_RESULTS = 100
 
 
@@ -109,12 +109,13 @@ class RelatedEvidence:
     direction: NavigationDirection = "outgoing"
     target_revision: str | None = None
     target_checksum: str | None = None
+    target_identity: str | None = None
 
     def __post_init__(self) -> None:
         if self.status not in get_args(ResolutionStatus):
             raise ValueError("invalid relation resolution status")
-        if self.direction != "outgoing":
-            raise ValueError("only outgoing relation evidence is supported")
+        if self.direction not in get_args(NavigationDirection):
+            raise ValueError("invalid relation direction")
 
     def to_mapping(self) -> dict[str, object]:
         return {
@@ -127,8 +128,9 @@ class RelatedEvidence:
         status = required_text(value, "status")
         if status not in get_args(ResolutionStatus):
             raise ValueError("invalid relation resolution status")
-        if value.get("direction") != "outgoing":
-            raise ValueError("only outgoing relation evidence is supported")
+        direction = value.get("direction")
+        if direction not in get_args(NavigationDirection):
+            raise ValueError("invalid relation direction")
         return cls(
             source_identity=required_text(value, "source_identity"),
             kind=required_text(value, "kind"),
@@ -150,6 +152,8 @@ class RelatedEvidence:
             extraction=_read_extraction(value),
             target_revision=optional_text(value, "target_revision"),
             target_checksum=optional_text(value, "target_checksum"),
+            target_identity=optional_text(value, "target_identity"),
+            direction=cast(NavigationDirection, direction),
         )
 
 
@@ -240,10 +244,16 @@ def get_related(
 ) -> tuple[RelatedEvidence, ...]:
     """Read symbol-owned calls/references or file-owned imports and semantic relations."""
 
+    if direction == "incoming":
+        if not isinstance(symbol, SymbolDefinition):
+            raise StructuralNavigationError(
+                "incoming navigation requires a symbol identity",
+                category="unsupported_capability",
+            )
+        _validate_limit(limit)
+        return _incoming_relations(documents, symbol, relation_types, limit)
     if direction != "outgoing":
-        raise StructuralNavigationError(
-            "reverse traversal is not supported", category="unsupported_capability",
-        )
+        raise StructuralNavigationError("invalid navigation direction", category="unsupported_capability")
     _validate_limit(limit)
     scoped = tuple(document for document in documents if (
         document.source_ref == symbol if isinstance(symbol, str) else
@@ -278,7 +288,9 @@ def get_related(
     values: list[RelatedEvidence] = []
     for document in scoped:
         values.extend(_relations(document, symbol))
-    selected = [item for item in values if not allowed or item.kind in allowed]
+    selected = [item for item in values
+                if (not allowed or item.kind in allowed)
+                and (not require_resolution or item.status == "resolved")]
     required = {
         "calls": "calls_observed", "references": "references_observed",
         "tests": "tests_observed", "imports": "imports", "dependencies": "imports",
@@ -341,7 +353,7 @@ def _relations(
         kind: str, target: str, resolution: str, line: int | None = None,
         *, subtype: str | None = None, evidence_basis: str = "source",
         target_document_id: str | None = None, target_source_ref: str | None = None,
-        target_path: str | None = None,
+        target_path: str | None = None, target_identity: str | None = None,
     ) -> None:
         result.append(RelatedEvidence(
             source_identity=source if isinstance(source, str) else source.identity,
@@ -353,37 +365,110 @@ def _relations(
             repository=document.repository, path=document.path, line_end=line,
             extraction=document.evidence.extraction,
             target_document_id=target_document_id, target_source_ref=target_source_ref,
-            target_path=target_path,
+            target_path=target_path, target_identity=target_identity,
         ))
 
     relations = document.evidence.relations
     if isinstance(source, str):
         for imported in document.evidence.structure.imports:
+            if any(item.kind == "imports" and item.source_identity == source
+                   and item.line == imported.line and item.target == imported.source
+                   and item.resolution in {"resolved", "exact-unique"}
+                   for item in relations.semantic):
+                continue
             add("imports", imported.source, "observed", imported.line, subtype=imported.kind)
         for dependency in relations.dependencies:
             add("dependencies", dependency, "observed")
         for semantic in relations.semantic:
+            if semantic.source_identity not in (None, source):
+                continue
             add(
                 semantic.kind, semantic.target, semantic.resolution,
+                semantic.line,
                 evidence_basis=semantic.evidence_basis,
                 target_document_id=semantic.target_document_id,
                 target_source_ref=semantic.target_source_ref, target_path=semantic.target_path,
+                target_identity=semantic.target_identity,
             )
     else:
         for call in relations.calls:
             if _owns(source, call.source_symbol, call.line, document):
+                if any(item.kind == "calls" and item.source_identity == source.identity
+                       and item.line == call.line and item.target == call.target
+                       and item.target_identity is not None for item in relations.semantic):
+                    continue
                 add("calls", call.target, call.resolution, call.line, subtype=call.kind)
         for reference in relations.references:
             if _owns(source, reference.source_symbol, reference.line, document):
+                if any(item.kind == "references" and item.source_identity == source.identity
+                       and item.line == reference.line and item.target == reference.target
+                       and item.target_identity is not None for item in relations.semantic):
+                    continue
                 add(
                     "references", reference.target, reference.resolution, reference.line,
                     subtype=reference.kind,
                 )
         for test in relations.test_targets:
             if test.call_line is not None and source.line_start <= test.call_line <= source.line_end:
+                if any(item.kind == "tests" and item.source_identity == source.identity
+                       and item.line == test.call_line
+                       and item.target_identity is not None for item in relations.semantic):
+                    continue
                 add("tests", test.target_source, test.resolution, test.call_line,
                     subtype=test.target_symbol)
+        for semantic in relations.semantic:
+            if semantic.source_identity == source.identity:
+                add(
+                    semantic.kind, semantic.target, semantic.resolution, semantic.line,
+                    evidence_basis=semantic.evidence_basis,
+                    target_document_id=semantic.target_document_id,
+                    target_source_ref=semantic.target_source_ref,
+                    target_path=semantic.target_path,
+                    target_identity=semantic.target_identity,
+                )
     return tuple(result)
+
+
+def _incoming_relations(
+    documents: tuple[KnowledgeDocument, ...], target: SymbolDefinition,
+    relation_types: tuple[str, ...], limit: int,
+) -> tuple[RelatedEvidence, ...]:
+    """Read only source documents selected by the reverse exact-key index."""
+
+    allowed = set(relation_types)
+    observed: set[RelatedEvidence] = set()
+    for document in documents:
+        if document.repository != target.repository or document.revision != target.revision:
+            raise StructuralNavigationError(
+                "incoming candidate conflicts with target snapshot", category="schema_mismatch",
+            )
+        for relation in document.evidence.relations.semantic:
+            if (relation.target_identity != target.identity
+                    or relation.resolution not in {"resolved", "exact-unique"}
+                    or (allowed and relation.kind not in allowed)):
+                continue
+            if relation.target_path != target.path or relation.target_source_ref != target.source_ref:
+                raise StructuralNavigationError(
+                    "incoming target provenance conflicts with canonical declaration",
+                    category="schema_mismatch",
+                )
+            observed.add(RelatedEvidence(
+                source_identity=relation.source_identity or document.source_ref,
+                kind=relation.kind, target=relation.target,
+                resolution=relation.resolution, status="resolved",
+                evidence_basis=relation.evidence_basis,
+                source_ref=document.source_ref, revision=document.revision,
+                checksum=document.provenance.source_checksum, line=relation.line,
+                repository=document.repository, path=document.path, line_end=relation.line,
+                extraction=document.evidence.extraction, direction="incoming",
+                target_document_id=relation.target_document_id,
+                target_source_ref=target.source_ref, target_path=target.path,
+                target_identity=target.identity, target_revision=target.revision,
+                target_checksum=target.checksum,
+            ))
+    return tuple(sorted(observed, key=lambda item: (
+        item.path or "", item.line or 0, item.kind, item.source_identity,
+    ))[:limit])
 
 
 def _owns(

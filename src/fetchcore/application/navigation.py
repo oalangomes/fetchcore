@@ -79,8 +79,8 @@ def validate_navigation_request(request: FindSymbolRequest | GetRelatedRequest) 
         raise StructuralNavigationError("navigation limit must be between 1 and 100",
                                         category="schema_mismatch")
     if isinstance(request, GetRelatedRequest):
-        if request.direction != "outgoing" or type(request.depth) is not int or request.depth != 1:
-            raise StructuralNavigationError("only outgoing depth-one navigation is supported",
+        if request.direction not in {"outgoing", "incoming"} or type(request.depth) is not int or request.depth != 1:
+            raise StructuralNavigationError("only depth-one outgoing or incoming navigation is supported",
                                             category="unsupported_capability")
         if set(request.relation_types) - RELATION_CAPABILITIES.keys():
             raise StructuralNavigationError("unsupported relation type",

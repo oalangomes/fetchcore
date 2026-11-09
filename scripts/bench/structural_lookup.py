@@ -14,6 +14,7 @@ import time
 import tracemalloc
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from fetchcore.adapters.retrieval.opensearch.backend import OpenSearchIndexStore, OpenSearchSettings
@@ -38,7 +39,8 @@ class IndexedTransport:
         postings: dict[tuple[str, str], list[dict[str, object]]] = {}
         for row in self.records:
             for field in ("structural_names", "structural_qualified_names",
-                          "structural_identities", "source_ref"):
+                          "structural_identities", "structural_incoming_identities",
+                          "source_ref"):
                 raw = row.get(field, ())
                 values = raw if isinstance(raw, list) else (raw,)
                 for value in values:
@@ -56,7 +58,8 @@ class IndexedTransport:
         filters = payload["query"]["bool"]["filter"]
         terms = {key: value for clause in filters for key, value in clause["term"].items()}
         selector = next((field for field in ("structural_names", "structural_qualified_names",
-                                               "structural_identities", "source_ref")
+                                               "structural_identities", "structural_incoming_identities",
+                                               "source_ref")
                          if field in terms), None)
         rows = self.records if selector is None else self.by_field.get(
             (selector, str(terms[selector])), (),
@@ -116,6 +119,8 @@ def run(count: int, samples: int = 10) -> dict[str, object]:
     projection_ms = (time.perf_counter() - projected_start) * 1000
     transport = IndexedTransport(records)
     store.transport = transport  # type: ignore[assignment]
+    # This historical client-cost experiment deliberately excludes snapshot reads.
+    store.load_snapshot = lambda _repository: SimpleNamespace(revision=REVISION)  # type: ignore[method-assign]
     results: dict[str, object] = {"documents": count,
                                   "projection_build_ms": round(projection_ms, 2),
                                   "keyword_postings_build_ms": round(transport.build_ms, 2)}

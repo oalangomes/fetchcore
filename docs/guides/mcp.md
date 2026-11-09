@@ -71,9 +71,11 @@ canonical identity keys are exact lookups, not BM25/dense queries.
 
 `get_related` accepts `source` (a returned symbol `identity` or a file
 `source_ref`), optional `repository`, `revision`, `relation_types`, `direction`
-(only `outgoing`), `depth` (only `1`), `limit` (1..100), and
+(`outgoing` or `incoming`), `depth` (only `1`), `limit` (1..100), and
 `require_resolution`. Symbol identities select symbol-owned observations;
 file source references select imports, dependencies and semantic file relations.
+Incoming navigation requires a returned symbol identity and follows only
+resolved target identities from the active canonical snapshot.
 Use `get_source` with the returned source reference, revision and span to hydrate
 the definition safely. An unpinned binding observes the current Git revision
 for this source precondition; for non-Git trees it verifies the canonical tree

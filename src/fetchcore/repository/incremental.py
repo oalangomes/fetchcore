@@ -99,6 +99,9 @@ def index_repository_delta(
         (*retained, *delta_documents),
         key=lambda item: (item.path, item.line_start, item.line_end, item.chunk_ref),
     ))
+    resolver = getattr(indexer, "resolve_delta_corpus", None)
+    if callable(resolver):
+        documents = resolver(documents)
     changes = _diff_documents(documents, previous)
     repository = indexer.config.repository or indexer.resolve_repository_identity(workspace)
     revision = plan.current_revision or indexer.config.revision or "unknown"

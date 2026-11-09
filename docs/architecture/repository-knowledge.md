@@ -53,7 +53,11 @@ relations disappear. Stale source checksums/revisions cannot be used for navigat
 `KnowledgeEvidence.extraction` persists the language, producer identity/version and
 verified fact capabilities. Producers declare `declarations`, `imports`,
 `calls_observed`, `references_observed`, `tests_observed`, `inheritance`, or
-`cross_file_resolution` only when implemented. An unregistered/undeclared producer
+`cross_file_resolution` only when implemented. The import-bound corpus resolver
+adds that capability for Python and JavaScript/TypeScript during explicit indexing;
+it resolves calls and proven test targets only when an import identifies one
+repository-local file and one declaration. Dynamic or ambiguous targets remain
+unresolved. An unregistered/undeclared producer
 is `source_only`; legacy documents retain unknown coverage, not invented metadata.
 New adapters normalize into these same contracts before projection; no parser,
 SCIP index, tags tool or graph database is required.
@@ -79,15 +83,20 @@ fields outside that scope are withheld. Target revision/checksum are attached
 only when that exact document exists in the same canonical snapshot. No target
 is guessed by matching names.
 Distinct evidence locations, resolution states and target provenance are kept.
-Traversal is outgoing, one hop, bounded to 1-100 results. Reverse traversal is
-explicitly unavailable, not approximated by a name search.
+Traversal is one hop, bounded to 1-100 results. `incoming` accepts a canonical
+symbol identity and reads only the reverse exact-key index derived from resolved
+target identities. It does not infer `called_by` from a textual name. The source
+line, source identity, target identity, checksum and resolution evidence remain
+attached. Removing or changing a target recomputes dependent edges during
+explicit indexing, including the Git delta path. Queries never rebuild them.
 
 The stored evidence contract uses indexing contract 29 and Projection v3
 contract revision 5; older snapshots require an explicit rebuild.
 Legacy evidence can still hydrate with missing declarations/capabilities, but is
 not certified as current structural coverage. The embedding serializer is
 unchanged. Derived exact lookup keys (names, qualified names and logical
-identities) are computed from canonical declarations during indexing and are
+identities and resolved incoming identities) are computed from canonical declarations
+and relations during indexing (structural lookup layout v2) and are
 bound to the indexing fingerprint. They are rebuildable adapter fields, not
 canonical authority or new Projection v3 fields.
 

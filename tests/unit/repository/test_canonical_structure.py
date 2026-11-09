@@ -366,8 +366,7 @@ def test_navigation_output_limits_scope_and_unsupported_direction(tmp_path: Path
             service.find_symbol("run", limit=limit)
         with pytest.raises(ValueError):
             service.get_related(definition, limit=limit)
-    with pytest.raises(StructuralNavigationError):
-        service.get_related(definition, direction="incoming")  # type: ignore[arg-type]
+    assert service.get_related(definition, direction="incoming") == ()
     with pytest.raises(StructuralNavigationError):
         service.get_related(replace(definition, repository="other/repo"))
     with pytest.raises(ValueError):

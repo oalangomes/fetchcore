@@ -743,6 +743,8 @@ class QdrantVectorIndexStore:
         if collection is None:
             raise KnowledgeSearchError("Qdrant structural snapshot is absent",
                                        category="snapshot_missing")
+        if self.load_snapshot(repository).revision != revision:
+            raise KnowledgeSearchError("Qdrant structural snapshot changed", category="snapshot_revision_mismatch")
         field = STRUCTURAL_SELECTOR_FIELDS[selector]
         info = self.transport.request("GET", f"collections/{quote(collection, safe='')}")
         details = info.get("result")
@@ -759,7 +761,6 @@ class QdrantVectorIndexStore:
             "filter": {"must": [
                 {"key": "record_kind", "match": {"value": "knowledge"}},
                 {"key": "repository", "match": {"value": repository}},
-                {"key": "document_revision", "match": {"value": revision}},
                 {"key": field, "match": {"value": value}},
             ]},
             "limit": limit + 1, "with_payload": True, "with_vector": False,
@@ -779,7 +780,7 @@ class QdrantVectorIndexStore:
                 raise KnowledgeSearchError("Qdrant structural candidate is invalid",
                                            category="response_parsing_failure")
             document = self.reader.read(raw)
-            if (document.repository != repository or document.revision != revision
+            if (document.repository != repository
                     or row.get("id") != _knowledge_point_id(document.id)
                     or not structural_candidate_matches(raw, document, selector, value)):
                 raise KnowledgeSearchError("Qdrant structural candidate is inconsistent",
@@ -796,6 +797,8 @@ class QdrantVectorIndexStore:
         if collection is None:
             raise KnowledgeSearchError("Qdrant structural target collection is absent",
                                        category="snapshot_missing")
+        if self.load_snapshot(repository).revision != revision:
+            raise KnowledgeSearchError("Qdrant structural snapshot changed", category="snapshot_revision_mismatch")
         response = self.transport.request(
             "POST", f"collections/{quote(collection, safe='')}/points",
             {"ids": [_knowledge_point_id(item) for item in identifiers],
@@ -806,8 +809,7 @@ class QdrantVectorIndexStore:
             raise KnowledgeSearchError("Qdrant structural targets are invalid",
                                        category="response_parsing_failure")
         documents = tuple(self.reader.read(row["payload"]) for row in rows)
-        if any(doc.id not in identifiers or doc.repository != repository
-               or doc.revision != revision for doc in documents):
+        if any(doc.id not in identifiers or doc.repository != repository for doc in documents):
             raise KnowledgeSearchError("Qdrant structural target identity is inconsistent",
                                        category="schema_mismatch")
         return documents
