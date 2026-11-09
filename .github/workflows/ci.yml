@@ -126,6 +126,65 @@ jobs:
         env:
           FETCHCORE_LIVE_STRUCTURAL_BACKEND: ${{ matrix.backend }}
         run: python -m pytest -q tests/integration/test_structural_live_backends.py
+      - name: Prepare disposable old Solr schema
+        if: ${{ matrix.backend == 'solr' }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import shutil
+          from pathlib import Path
+          from xml.etree import ElementTree
+
+          old = Path(os.environ["RUNNER_TEMP"]) / "fetchcore-reconcile-old-configset"
+          shutil.copytree("infra/solr/configset", old)
+          schema = old / "conf" / "schema.xml"
+          root = ElementTree.parse(schema).getroot()
+          removed = 0
+          for field in list(root.findall("field")):
+              if field.get("name") in {
+                  "structural_names", "structural_qualified_names",
+                  "structural_identities", "structural_incoming_identities",
+              }:
+                  root.remove(field)
+                  removed += 1
+          if removed != 4:
+              raise SystemExit(f"expected four old-schema fields, removed {removed}")
+          ElementTree.ElementTree(root).write(schema, encoding="unicode", xml_declaration=True)
+          PY
+          container="$(docker compose -p fc-structural-solr -f infra/compose/solr.yml ps -q solr)"
+          test -n "$container"
+          docker exec -u 0 "$container" sh -c \
+            'mkdir -p /var/solr/data/configsets && chown solr:solr /var/solr/data/configsets'
+          docker cp "$RUNNER_TEMP/fetchcore-reconcile-old-configset" \
+            "$container:/var/solr/data/configsets/fetchcore-reconcile-old"
+          docker cp infra/solr/configset \
+            "$container:/var/solr/data/configsets/fetchcore-reconcile-current"
+          docker exec -u 0 "$container" chown -R solr:solr \
+            /var/solr/data/configsets/fetchcore-reconcile-old \
+            /var/solr/data/configsets/fetchcore-reconcile-current
+      - name: Live backend reconciliation and failure recovery
+        env:
+          FETCHCORE_LIVE_RECONCILE_BACKEND: ${{ matrix.backend }}
+          FETCHCORE_SOLR_URL: http://127.0.0.1:8983/solr
+          FETCHCORE_SOLR_OLD_CONFIGSET: fetchcore-reconcile-old
+          FETCHCORE_SOLR_RECONCILE_CONFIGSET: fetchcore-reconcile-current
+          FETCHCORE_OPENSEARCH_URL: http://127.0.0.1:9200
+          FETCHCORE_QDRANT_URL: http://127.0.0.1:6333
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/integration/test_reconciliation_live_backends.py \
+            --junitxml="$RUNNER_TEMP/reconciliation-${{ matrix.backend }}.xml" \
+            2>&1 | tee "$RUNNER_TEMP/reconciliation-${{ matrix.backend }}.log"
+      - name: Upload live reconciliation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconciliation-live-${{ matrix.backend }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/reconciliation-${{ matrix.backend }}.xml
+            ${{ runner.temp }}/reconciliation-${{ matrix.backend }}.log
+          if-no-files-found: warn
       - name: Benchmark live structural acquisition at 1k and 10k chunks
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 235 }}
         run: |

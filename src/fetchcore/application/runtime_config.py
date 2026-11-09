@@ -119,6 +119,30 @@ class OllamaRuntimeSettings:
         return {"url": self.url}
 
 
+@dataclass(frozen=True)
+class ReconciliationSettings:
+    """Operator authority for explicit indexing operations only."""
+
+    mode: Literal["inspect", "safe-auto", "explicit-rebuild"] = "inspect"
+    managed: bool = False
+    solr_configset: str | None = None
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, object]) -> ReconciliationSettings:
+        data = _mapping(value, "reconciliation")
+        _fields(data, {"mode", "managed", "solr_configset"}, "reconciliation")
+        mode = data.get("mode", "inspect")
+        if mode not in {"inspect", "safe-auto", "explicit-rebuild"}:
+            raise ValueError("reconciliation.mode is invalid")
+        managed = data.get("managed", False)
+        if type(managed) is not bool:
+            raise ValueError("reconciliation.managed must be boolean")
+        configset = data.get("solr_configset")
+        if configset is not None:
+            configset = _string(configset, "reconciliation.solr_configset")
+        return cls(mode=mode, managed=managed, solr_configset=configset)
+
+
 def ollama_settings_from_environment(
     environ: Mapping[str, str] | None = None,
 ) -> OllamaRuntimeSettings:
@@ -136,6 +160,7 @@ class FetchCoreRuntimeConfig:
     backend_settings: Mapping[str, object] = field(default_factory=dict)
     retrieval: RetrievalConfig | None = None
     ollama: OllamaRuntimeSettings = OllamaRuntimeSettings()
+    reconciliation: ReconciliationSettings = ReconciliationSettings()
     workspace: Path = field(default_factory=Path.cwd)
     repository: str | None = None
     revision: str | None = None
@@ -324,10 +349,10 @@ def load_runtime_config(
         loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         data = _mapping(loaded, "runtime config")
         _record_sources(data, source="config_file", sources=sources)
-        _fields(data, {"version", "runtime", "retrieval", "backends", "embedding"}, "runtime config")
+        _fields(data, {"version", "runtime", "retrieval", "backends", "embedding", "reconciliation"}, "runtime config")
         if type(data.get("version")) is not int or data["version"] != RUNTIME_CONFIG_VERSION:
             raise ValueError("unsupported runtime config version")
-        for section in ("runtime", "backends", "embedding", "retrieval"):
+        for section in ("runtime", "backends", "embedding", "retrieval", "reconciliation"):
             if section in data:
                 _mapping(data[section], section)
     explicit_retrieval = (
@@ -350,7 +375,7 @@ def load_runtime_config(
         explicit = _mapping(overrides, "runtime overrides")
         _merge(data, explicit)
         _record_sources(explicit, source="explicit", sources=sources)
-    _fields(data, {"version", "runtime", "retrieval", "backends", "embedding"}, "runtime config")
+    _fields(data, {"version", "runtime", "retrieval", "backends", "embedding", "reconciliation"}, "runtime config")
     if "version" in data and (
         type(data["version"]) is not int or data["version"] != RUNTIME_CONFIG_VERSION
     ):
@@ -429,6 +454,9 @@ def load_runtime_config(
         backend_settings=selected_settings,
         retrieval=retrieval,
         ollama=ollama,
+        reconciliation=ReconciliationSettings.from_mapping(
+            _mapping(data.get("reconciliation", {}), "reconciliation")
+        ),
         workspace=workspace,
         repository=repository,
         revision=revision,

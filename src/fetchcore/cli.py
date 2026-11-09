@@ -678,6 +678,7 @@ def _dispatch_index(ctx: click.Context, operation: str, reference: str | None,
                     backend_settings=runtime.backend_settings,
                     retrieval=runtime.retrieval,
                     providers=providers,
+                    reconciliation=runtime.reconciliation,
                 )
                 return service.run(operation, reference)
             except RepositoryRegistryError:
@@ -716,14 +717,31 @@ def _dispatch_index(ctx: click.Context, operation: str, reference: str | None,
         )
     except (KnowledgeSearchError, RepositoryIndexPolicyError, OSError, ValueError) as exc:
         raise click.ClickException(_error_message(exc)) from exc
-    _run_operation(operation, context, lambda: context.legacy(operation))
+    if operation == "reconcile" or (
+        operation == "bootstrap" and runtime.reconciliation.mode != "inspect"
+    ):
+        from fetchcore.application.reconciliation import reconcile_index_context
+        _run_operation(operation, context, lambda: reconcile_index_context(
+            context, runtime.reconciliation,
+        ))
+    else:
+        _run_operation(operation, context, lambda: context.legacy(operation))
 
 
 @index_group.command("bootstrap")
 @click.pass_context
 def index_bootstrap(ctx: click.Context) -> None:
-    """Validate the explicit backend schema contract (legacy CI surface)."""
+    """Validate schema; reconcile when the operator configuration authorizes it."""
     _dispatch_index(ctx, "bootstrap", None, True)
+
+
+@index_group.command("reconcile")
+@click.argument("repository", required=False)
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def index_reconcile(ctx: click.Context, repository: str | None, as_json: bool) -> None:
+    """Inspect or execute the configured backend reconciliation policy."""
+    _dispatch_index(ctx, "reconcile", repository, as_json)
 
 
 @index_group.command("status")

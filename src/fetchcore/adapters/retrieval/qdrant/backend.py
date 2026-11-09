@@ -614,6 +614,77 @@ class QdrantVectorIndexStore:
             collection,
             expected_dimensions=self.settings.vector_dimensions,
         )
+        missing, incompatible = self.payload_index_differences(collection)
+        if missing or incompatible:
+            raise KnowledgeSearchError(
+                "Qdrant structural payload indexes are incompatible",
+                category="schema_mismatch",
+                metadata={"missing_payload_indexes": missing,
+                          "incompatible_payload_indexes": incompatible,
+                          "rebuild_required": bool(incompatible)},
+            )
+
+    def payload_index_differences(
+        self, collection: str,
+    ) -> tuple[list[str], list[dict[str, object]]]:
+        """Compare live payload indexes with bounded exact lookup requirements."""
+        response = self.transport.request(
+            "GET", f"collections/{quote(collection, safe='')}",
+        )
+        result = response.get("result")
+        schema = result.get("payload_schema") if isinstance(result, Mapping) else None
+        if not isinstance(schema, Mapping):
+            raise KnowledgeSearchError("Qdrant payload schema is unavailable",
+                                       category="response_parsing_failure")
+        required = set(STRUCTURAL_SELECTOR_FIELDS.values()) | {"repository", "document_revision"}
+        missing = sorted(required - schema.keys())
+        incompatible = [
+            {"field": field, "expected": "keyword", "actual": (
+                schema[field].get("data_type") if isinstance(schema[field], Mapping) else None
+            )}
+            for field in sorted(required & schema.keys())
+            if not isinstance(schema[field], Mapping) or schema[field].get("data_type") != "keyword"
+        ]
+        return missing, incompatible
+
+    def add_missing_payload_indexes(self, repository: str) -> list[str]:
+        """Add indexes only when every active payload already has canonical keys."""
+        alias = _repository_alias(self.settings, repository)
+        collection = self._active_collection(alias)
+        if collection is None:
+            raise KnowledgeSearchError("Qdrant active collection is absent",
+                                       category="index_missing")
+        self._validate_rebuild_target(repository, alias, collection)
+        missing, incompatible = self.payload_index_differences(collection)
+        if incompatible:
+            raise KnowledgeSearchError("Qdrant payload index type is incompatible",
+                                       category="schema_mismatch",
+                                       metadata={"incompatible_payload_indexes": incompatible})
+        snapshot = self.load_snapshot(repository)
+        documents = self.load_documents(repository, collection=collection)
+        if len(documents) != snapshot.document_count or corpus_checksum(documents) != snapshot.corpus_checksum:
+            raise KnowledgeSearchError("Qdrant payload corpus differs from snapshot",
+                                       category="index_stale")
+        for point in self._scroll_points(collection, repository, with_vector=False):
+            payload = cast(dict[str, object], point["payload"])
+            document = self.reader.read(payload)
+            expected = structural_lookup_keys(document).to_mapping()
+            if any(payload.get(field) != expected.get(field) for field in missing if field in expected):
+                raise KnowledgeSearchError("Qdrant payload keys require reprojection",
+                                           category="rebuild_required")
+        with self._writer_lock(repository):
+            if self._active_collection(alias) != collection or self.load_snapshot(repository) != snapshot:
+                raise KnowledgeSearchError("Qdrant collection changed before payload repair",
+                                           category="concurrent_write")
+            for field in missing:
+                self.transport.request(
+                    "PUT", f"collections/{quote(collection, safe='')}/index?wait=true",
+                    {"field_name": field, "field_schema": "keyword"},
+                )
+            if self.payload_index_differences(collection) != ([], []):
+                raise KnowledgeSearchError("Qdrant payload index repair is incomplete",
+                                           category="schema_mismatch")
+        return missing
 
     def _validate_collection_schema(
         self,
@@ -1334,11 +1405,25 @@ class QdrantVectorIndexStore:
         """Stage a repository delta and publish it under the server writer lock."""
         return self._incremental_sync(result, expected_snapshot=expected_snapshot)
 
+    def reconcile_projection(
+        self, result: RepositoryIndexResult, *, expected_snapshot: QdrantVectorSnapshot,
+    ) -> QdrantVectorIndexSyncResult:
+        """Republish a changed indexing contract while retaining proven vector identities.
+
+        The ordinary incremental gate remains strict. This operation reprojects every
+        payload, verifies each old vector against its canonical document and embedding
+        input, and uses the same staged generation and atomic alias promotion.
+        """
+        return self._incremental_sync(
+            result, expected_snapshot=expected_snapshot, allow_indexing_upgrade=True,
+        )
+
     def _incremental_sync(
         self,
         result: RepositoryIndexResult,
         *,
         expected_snapshot: QdrantVectorSnapshot | None,
+        allow_indexing_upgrade: bool = False,
     ) -> QdrantVectorIndexSyncResult:
         self._ensure_complete(result)
         self._validate_result(result)
@@ -1354,7 +1439,7 @@ class QdrantVectorIndexStore:
                 category="concurrent_write",
                 metadata={"repository": result.repository},
             )
-        if snapshot.indexing_fingerprint != self.indexing_fingerprint:
+        if snapshot.indexing_fingerprint != self.indexing_fingerprint and not allow_indexing_upgrade:
             raise KnowledgeSearchError(
                 "Qdrant indexing contract changed; explicit rebuild required",
                 category="rebuild_required",
@@ -1409,6 +1494,7 @@ class QdrantVectorIndexStore:
             snapshot.revision == result.revision
             and snapshot.branch == result.branch
             and snapshot.corpus_checksum == current_checksum
+            and not allow_indexing_upgrade
         ):
             if not _same_snapshot_generation(
                 snapshot,
@@ -1469,11 +1555,15 @@ class QdrantVectorIndexStore:
                 != current_by_id[document_id].branch
             )
         }
+        if allow_indexing_upgrade:
+            # Old structural lookup keys may be absent even when canonical content
+            # and its embedding input are identical. Rebuild every derived payload.
+            updated_ids.update(set(previous_by_id) & set(current_by_id))
         unchanged_ids = (
             set(previous_by_id) & set(current_by_id)
         ) - updated_ids
         changed_ids = added_ids | updated_ids
-        if not changed_ids and snapshot.branch == result.branch:
+        if not changed_ids and snapshot.branch == result.branch and current_checksum != previous_checksum:
             raise KnowledgeSearchError(
                 "Qdrant content checksum changed without a document-level delta",
                 category="unsafe_snapshot",
@@ -1513,10 +1603,13 @@ class QdrantVectorIndexStore:
             expected = previous_records.get(document.id)
             if (
                 expected is None
-                or {
-                    **expected.to_mapping(),
-                    **structural_lookup_keys(document).to_mapping(),
-                } != payload
+                or (
+                    expected.to_mapping() != {key: payload.get(key) for key in expected.to_mapping()}
+                    if allow_indexing_upgrade else {
+                        **expected.to_mapping(),
+                        **structural_lookup_keys(document).to_mapping(),
+                    } != payload
+                )
                 or point_id != _knowledge_point_id(document.id)
             ):
                 raise KnowledgeSearchError(
@@ -1654,10 +1747,15 @@ class QdrantVectorIndexStore:
                     prior_record = previous_records.get(document.id)
                     if (
                         prior_record is None
-                        or {
-                            **prior_record.to_mapping(),
-                            **structural_lookup_keys(document).to_mapping(),
-                        } != payload
+                        or (
+                            prior_record.to_mapping() != {
+                                key: payload.get(key) for key in prior_record.to_mapping()
+                            }
+                            if allow_indexing_upgrade else {
+                                **prior_record.to_mapping(),
+                                **structural_lookup_keys(document).to_mapping(),
+                            } != payload
+                        )
                         or point["id"] != _knowledge_point_id(document.id)
                         or document.id in copied_ids
                     ):

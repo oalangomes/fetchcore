@@ -290,6 +290,56 @@ The second and later runs preserve `noop` and incremental behavior. `sync` never
 falls back to rebuilding: an absent snapshot fails with `snapshot_missing`, and
 an incompatible snapshot fails with `rebuild_required`.
 
+### Opt-in backend reconciliation
+
+`fetchcore index reconcile REPOSITORY --json` reads the same operator runtime YAML
+as indexing and reports schema differences, persisted fingerprints, source
+currentness, the proposed action, and whether it can run. The default policy is
+`inspect` and makes no writes. For a repository-bound local command, omit the
+positional repository and pass the existing `index --workspace`, `--repository`,
+`--revision`, `--backend`, and `--backend-settings` options.
+
+```yaml
+reconciliation:
+  mode: safe-auto          # inspect | safe-auto | explicit-rebuild
+  managed: true            # explicit opt-in for this dedicated resource
+  solr_configset: fetchcore-structural-v3
+```
+
+Run the command from a clean materialized Git source whose HEAD equals the
+requested revision. Each mutating reconciliation indexes from a private,
+temporary Git clone checked out at that commit; it creates no persistent Git
+worktree. The source is checked again before publication, so a concurrent
+working-tree change blocks the operation. `safe-auto` refuses unowned or shared
+resources and dirty or unverifiable source revisions. `explicit-rebuild` uses
+the same source and snapshot checks. A configured `safe-auto` policy also applies to `index
+bootstrap` in the local command surface; search, structural navigation, source
+reads, and serving never invoke reconciliation.
+
+OpenSearch and Qdrant stage a new repository generation, validate count,
+checksum, fingerprint and snapshot, then switch the alias. Qdrant reuses vectors
+only when provider, model, serializer, dimensions and the serialized embedding
+input match; missing payload indexes can be added in place when every existing
+payload already has the required keys. Existing generations remain available
+for recovery. Every Solr reconstruction, including an additive structural-field
+upgrade, stages a separate core from the named, server-side versioned configset.
+Standalone uses CoreAdmin `SWAP` after validation. A complete interrupted stage
+can be reused after restart; an incomplete stage and a retained prior core are
+never overwritten. A failed post-cutover validation restores the prior core
+when its identity can be proven. SolrCloud has no
+automatic cutover in this command and requires operator action.
+
+For the Docker/WSL Standalone stack, install the current `infra/solr/configset`
+under a **new** name in the Solr server's configset directory before enabling
+`safe-auto`. Keep the existing configset and volume intact. The named configset
+must expose the exact current schema; a staged core fails validation before any
+cutover if it does not. The operator YAML should point at the host-reachable
+backend and embedding endpoints, for example `http://localhost:38983/solr` and
+`http://host.docker.internal:11434` in this environment. Inspect first, then
+set `mode: safe-auto` and run `fetchcore index reconcile` or `index bootstrap`.
+The result lists the changed resource and retained prior generation. Repeat the
+command to verify an idempotent `action: none` result.
+
 ### Optional owned provisioning
 
 If no service exists at a loopback HTTP endpoint, provisioning is available only
@@ -468,10 +518,12 @@ index_lifecycle: sync
 evaluate: false
 ```
 
-An absent resource, absent snapshot, or incompatible fingerprint is not repaired
-or rebuilt automatically. Initial persistent bootstrap/rebuild is an explicit
-operator action through the reusable indexing workflow. Subsequent master runs
-must resolve to measured incremental work or no-op when compatible.
+The existing CI workflow retains its fail-closed sync gate: it does not enable
+the opt-in reconciliation policy above. An absent resource, absent snapshot, or
+incompatible fingerprint stops that workflow. Operators may run the separate
+reconciliation command after provisioning the versioned configset and verifying
+the exact source revision. Subsequent master runs then resolve to measured
+incremental work or no-op when compatible.
 
 The operational caller checks persisted snapshot presence, indexing fingerprint
 and status (`ready` or `changes_pending`) after resource preflight and before
