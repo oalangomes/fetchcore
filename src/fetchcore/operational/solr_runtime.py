@@ -145,6 +145,10 @@ class UrllibJsonClient:
                 raise SolrRuntimeError(
                     "authentication_required", "Solr endpoint rejected authentication",
                 ) from exc
+            if exc.code == 503:
+                raise SolrRuntimeError(
+                    "service_unavailable", "Solr endpoint returned HTTP 503",
+                ) from exc
             if 500 <= exc.code <= 599:
                 raise SolrRuntimeError(
                     "service_error", f"Solr endpoint returned HTTP {exc.code}",
@@ -408,7 +412,9 @@ def _wait_for_service(
             return service
         except SolrRuntimeError as exc:
             last_error = exc
-            if exc.category not in {"connection_refused", "connection_failure", "timeout"}:
+            if exc.category not in {
+                "connection_refused", "connection_failure", "timeout", "service_unavailable",
+            }:
                 raise
             if attempt + 1 < config.startup_attempts:
                 sleep(config.startup_interval_seconds)

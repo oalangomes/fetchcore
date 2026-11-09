@@ -8,11 +8,11 @@ from collections.abc import Mapping
 from dataclasses import asdict
 
 from fetchcore.repository.indexing import RepositoryIndexer
+from fetchcore.repository.structure_lookup import structural_lookup_fingerprint
 
 
-# API detection now accepts the scanner's existing per-file ceiling. Existing
-# snapshots must explicitly rebuild to adopt the expanded admission contract.
-INDEXING_CONTRACT_VERSION = "27"
+# Canonical declaration identities and extraction coverage require an explicit rebuild.
+INDEXING_CONTRACT_VERSION = "29"
 
 
 def indexing_contract_fingerprint(indexer: RepositoryIndexer) -> str:
@@ -31,6 +31,7 @@ def indexing_contract_fingerprint(indexer: RepositoryIndexer) -> str:
         language: {
             "type": f"{type(extractor).__module__}.{type(extractor).__qualname__}",
             "version": str(getattr(extractor, "indexing_contract_version", "1")),
+            "capabilities": list(getattr(extractor, "structural_capabilities", ("source_only",))),
         }
         for language, extractor in sorted(indexer.symbol_extractors.items())
     }
@@ -45,6 +46,7 @@ def indexing_contract_fingerprint(indexer: RepositoryIndexer) -> str:
         "config": config,
         "extractors": extractors,
         "document_sources": document_contract,
+        "structural_lookup": structural_lookup_fingerprint(),
     }
     rendered = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return "sha256:" + hashlib.sha256(rendered.encode("utf-8")).hexdigest()

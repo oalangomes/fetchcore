@@ -132,7 +132,7 @@ def _validate_evidence_representation(raw: object, canonical: object, field: str
 
 
 PROJECTION_VERSION = "3"
-_PROJECTION_CONTRACT_REVISION = "4"
+_PROJECTION_CONTRACT_REVISION = "5"
 _PROJECTED_KNOWLEDGE_FIELDS = (
     "branch",
     "canonical_payload",
@@ -188,6 +188,8 @@ _KNOWN_EVIDENCE_FIELDS = frozenset(
         "documentation",
         "lexical",
         "semantic",
+        "declarations",
+        "extraction",
     }
 )
 

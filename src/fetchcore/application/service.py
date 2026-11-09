@@ -2,14 +2,28 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+import hashlib
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
+from typing import cast
 from urllib.parse import unquote
 
 from fetchcore.retrieval import RetrievalConfig
 from fetchcore.repository.api_artifact_policy import blocked_api_artifact_kind
 from .targeted import search_with_targeted
+from .navigation import (
+    FindSymbolRequest, GetRelatedRequest, NavigationResult,
+    RELATION_CAPABILITIES, RepositoryKnowledgeNavigationService,
+    navigation_result, validate_navigation_request,
+)
+from fetchcore.repository.navigation import NavigationDirection, RelatedEvidence, StructuralNavigationError, SymbolDefinition
+from fetchcore.repository.indexing import KnowledgeDocument
+from fetchcore.repository.structure_lookup import structural_coverage_from_summary
+from fetchcore.knowledge.structure import StructuralCapability, StructuralCoverage
+from fetchcore.application.index_store import OperationalIndexStore
+from fetchcore.application.index_store import StructuralSelector
+from fetchcore.repository.sources import LocalWorkspaceSourceProvider, RepositorySourceRequest
 from fetchcore.retrieval.contracts import (
     KnowledgeSearchError,
     KnowledgeSearchResponse,
@@ -21,6 +35,17 @@ from fetchcore.retrieval.contracts import (
 
 MAX_SEARCH_LIMIT = 100
 MAX_SOURCE_LINES = 400
+
+
+def _at_snapshot_revision(document: KnowledgeDocument, revision: str) -> KnowledgeDocument:
+    """Expose unchanged source evidence at the verified active corpus revision."""
+
+    if document.revision == revision:
+        return document
+    return replace(
+        document, revision=revision,
+        provenance=replace(document.provenance, revision=revision),
+    )
 MAX_SOURCE_BYTES = 1_000_000
 
 
@@ -100,6 +125,7 @@ class SourceReadRequest:
     line_end: int | None = None
     context_lines: int = 0
     revision: str | None = None
+    checksum: str | None = None
 
 
 @dataclass(frozen=True)
@@ -139,6 +165,7 @@ class RetrievalApplicationService:
         *,
         backends: BackendRegistry | None = None,
         limits: ServingLimits | None = None,
+        navigation_store: Callable[[RepositoryBinding], OperationalIndexStore] | None = None,
     ) -> None:
         if not bindings:
             raise ValueError("at least one repository binding is required")
@@ -148,6 +175,7 @@ class RetrievalApplicationService:
                 raise ValueError("repository binding key must equal binding.repository")
         self._backends = backends or BackendRegistry()
         self._limits = limits or ServingLimits()
+        self._navigation_store = navigation_store
 
     @property
     def repositories(self) -> tuple[str, ...]:
@@ -203,6 +231,248 @@ class RetrievalApplicationService:
             })
         return search_with_targeted(backend, intent, scope)
 
+    def find_symbol(self, request: FindSymbolRequest) -> NavigationResult:
+        """Find exact declarations without invoking a retrieval backend."""
+        return self._navigate(request)
+
+    def get_related(self, request: GetRelatedRequest) -> NavigationResult:
+        """Read bounded directed observations by logical identity or source_ref."""
+        return self._navigate(request)
+
+    def _navigate(self, request: FindSymbolRequest | GetRelatedRequest) -> NavigationResult:
+        from .index_operations import prepare_repository_index_runtime
+
+        try:
+            validate_navigation_request(request)
+            binding = self._binding(request.repository)
+            path = request.path if isinstance(request, FindSymbolRequest) else None
+            source = request.source if isinstance(request, GetRelatedRequest) else None
+            if source is not None and not source.startswith("symbol:v1:sha256:"):
+                _, path = self._resolve_source_ref(source, requested_repository=binding.repository)
+                source = f"repository://{binding.repository}/{path}"
+            if path is not None:
+                _, path = self._resolve_source_ref(path, requested_repository=binding.repository)
+            runtime = prepare_repository_index_runtime(
+                binding.workspace, repository=binding.repository, branch=None, revision=None,
+            )
+            store = self._navigation_store(binding) if self._navigation_store else self._default_navigation_store(binding)
+            snapshot = store.load_snapshot(binding.repository)
+            observed_fingerprint = getattr(snapshot, "indexing_fingerprint", None)
+            if observed_fingerprint != runtime.fingerprint:
+                raise KnowledgeSearchError(
+                    "navigation snapshot indexing contract is incompatible",
+                    category="schema_mismatch",
+                    metadata={"rebuild_required": True},
+                )
+            coverage_summary = getattr(snapshot, "structural_coverage", None)
+            if not isinstance(coverage_summary, str):
+                raise KnowledgeSearchError(
+                    "navigation snapshot has no structural coverage projection",
+                    category="schema_mismatch", metadata={"rebuild_required": True},
+                )
+            for expected in (binding.revision, request.revision):
+                if expected is not None and expected != snapshot.revision:
+                    raise KnowledgeSearchError(
+                        "navigation revision does not match the materialized source",
+                        category="source_revision_mismatch",
+                    )
+            selectors: tuple[tuple[StructuralSelector, str], ...]
+            if isinstance(request, FindSymbolRequest):
+                if path is not None:
+                    selectors = (("source_ref", f"repository://{binding.repository}/{path}"),)
+                elif request.name.startswith("symbol:v1:sha256:"):
+                    selectors = (("identity", request.name),)
+                else:
+                    selectors = (("name", request.name), ("qualified_name", request.name))
+            else:
+                assert source is not None
+                if request.direction == "incoming" and not source.startswith("symbol:v1:sha256:"):
+                    raise StructuralNavigationError(
+                        "incoming navigation requires a symbol identity",
+                        category="unsupported_capability",
+                    )
+                selectors = (("identity", source),) if source.startswith(
+                    "symbol:v1:sha256:"
+                ) else (("source_ref", source),)
+            budget = max(128, request.limit * 4)
+            pages = tuple(store.lookup_structural_documents(
+                binding.repository, snapshot.revision,
+                selector=selector, value=value, limit=budget,
+            ) for selector, value in selectors)
+            materialized = tuple({doc.id: doc for page in pages
+                                  for doc in page.documents}.values())
+            if any(doc.repository != binding.repository
+                   for doc in materialized):
+                raise KnowledgeSearchError("navigation candidate conflicts with active snapshot",
+                                           category="schema_mismatch")
+            materialized = tuple(_at_snapshot_revision(doc, snapshot.revision)
+                                 for doc in materialized)
+            documents = tuple(doc for doc in materialized if (
+                (not binding.knowledge_types or doc.knowledge_type in binding.knowledge_types)
+                and (not binding.repository_paths or any(
+                    doc.path == prefix or doc.path.startswith(prefix.rstrip("/") + "/")
+                    for prefix in binding.repository_paths
+                ))
+            ))
+            scan_diagnostics: tuple[str, ...] = ("structural_candidate_budget_exhausted",) if any(
+                page.has_more for page in pages
+            ) else ()
+            navigation = RepositoryKnowledgeNavigationService(documents)
+            results: tuple[SymbolDefinition, ...] | tuple[RelatedEvidence, ...] = ()
+            if isinstance(request, FindSymbolRequest):
+                coverage: tuple[StructuralCoverage, ...] = (
+                    structural_coverage_from_summary(
+                        coverage_summary, "declarations", request.language,
+                    ) if path is None else navigation.coverage(
+                        language=request.language, path=path,
+                    ),
+                )
+                try:
+                    results = navigation.find_symbol(
+                        request.name, language=request.language, kind=request.kind,
+                        path=path, limit=request.limit,
+                    )
+                except StructuralNavigationError as exc:
+                    if exc.category != "unsupported_capability":
+                        raise
+            else:
+                assert source is not None
+                selected = None
+                if source.startswith("symbol:v1:sha256:"):
+                    definitions = navigation.find_symbol(source, limit=2)
+                    if not definitions:
+                        raise StructuralNavigationError(
+                            "symbol is absent from the selected snapshot", category="source_missing",
+                        )
+                    selected = definitions[0]
+                    path = selected.path
+                capabilities: tuple[StructuralCapability, ...] = tuple(dict.fromkeys(
+                    RELATION_CAPABILITIES[kind] for kind in request.relation_types
+                )) if request.relation_types else (
+                    ("calls_observed", "references_observed", "tests_observed")
+                    if selected else ("imports",)
+                )
+                if request.require_resolution:
+                    capabilities += ("cross_file_resolution",)
+                if request.direction == "incoming":
+                    assert selected is not None
+                    incoming_page = store.lookup_structural_documents(
+                        binding.repository, snapshot.revision,
+                        selector="incoming_identity", value=selected.identity, limit=budget,
+                    )
+                    if incoming_page.has_more:
+                        scan_diagnostics += ("structural_candidate_budget_exhausted",)
+                    if any(doc.repository != binding.repository for doc in incoming_page.documents):
+                        raise KnowledgeSearchError("incoming candidate conflicts with repository",
+                                                   category="schema_mismatch")
+                    incoming_documents = tuple(_at_snapshot_revision(doc, snapshot.revision)
+                                               for doc in incoming_page.documents if (
+                        doc.repository == binding.repository
+                        and (not binding.knowledge_types or doc.knowledge_type in binding.knowledge_types)
+                        and (not binding.repository_paths or any(
+                            doc.path == prefix or doc.path.startswith(prefix.rstrip("/") + "/")
+                            for prefix in binding.repository_paths
+                        ))
+                    ))
+                    navigation = RepositoryKnowledgeNavigationService(incoming_documents)
+                    coverage = (structural_coverage_from_summary(
+                        coverage_summary, "cross_file_resolution",
+                    ),)
+                else:
+                    coverage = tuple(navigation.coverage(capability, path=path)
+                                     for capability in capabilities)
+                try:
+                    results = navigation.get_related(
+                        selected or source, relation_types=request.relation_types,
+                        direction=cast(NavigationDirection, request.direction), limit=request.limit,
+                        require_resolution=request.require_resolution,
+                    )
+                    target_ids = tuple(sorted({item.target_document_id for item in results
+                                               if item.target_document_id is not None}))
+                    targets = {doc.id: _at_snapshot_revision(doc, snapshot.revision)
+                               for doc in store.load_structural_targets(
+                        binding.repository, snapshot.revision, target_ids,
+                    )}
+                    if set(target_ids) != targets.keys():
+                        raise KnowledgeSearchError(
+                            "resolved relation target is absent from the snapshot",
+                            category="schema_mismatch",
+                        )
+                    hydrated: list[RelatedEvidence] = []
+                    for item in results:
+                        target = targets.get(item.target_document_id or "")
+                        if target is not None and (
+                            item.target_path not in (None, target.path)
+                            or item.target_source_ref not in (None, target.source_ref)
+                        ):
+                            raise KnowledgeSearchError(
+                                "resolved relation target provenance conflicts",
+                                category="schema_mismatch",
+                            )
+                        target_path = target.path if target is not None else item.target_path
+                        path_allowed = not binding.repository_paths or (
+                            target_path is not None and any(
+                                target_path == prefix
+                                or target_path.startswith(prefix.rstrip("/") + "/")
+                                for prefix in binding.repository_paths
+                            )
+                        )
+                        type_allowed = not binding.knowledge_types or (
+                            target is not None
+                            and target.knowledge_type in binding.knowledge_types
+                        )
+                        if (item.target_path or item.target_source_ref
+                                or item.target_document_id) and not (path_allowed and type_allowed):
+                            item = replace(
+                                item, target_document_id=None, target_source_ref=None,
+                                target_path=None, target_revision=None, target_checksum=None,
+                            )
+                        elif target is not None:
+                            item = replace(item, target_revision=target.revision,
+                                           target_checksum=target.provenance.source_checksum)
+                        hydrated.append(item)
+                    results = tuple(hydrated)
+                except StructuralNavigationError as exc:
+                    if exc.category != "unsupported_capability":
+                        raise
+            current = store.load_snapshot(binding.repository)
+            if (current.revision != snapshot.revision
+                    or current.corpus_checksum != snapshot.corpus_checksum
+                    or getattr(current, "projection_fingerprint", None)
+                    != getattr(snapshot, "projection_fingerprint", None)):
+                raise KnowledgeSearchError(
+                    "navigation snapshot changed during structural lookup",
+                    category="snapshot_revision_mismatch",
+                )
+            return navigation_result(
+                binding.repository, snapshot.revision, results, coverage, request.limit,
+                scan_diagnostics=scan_diagnostics,
+            )
+        except StructuralNavigationError as exc:
+            raise KnowledgeSearchError(str(exc), category=exc.category) from exc
+        except KnowledgeSearchError:
+            raise
+        except ValueError as exc:
+            raise KnowledgeSearchError(str(exc), category="schema_mismatch") from exc
+        except OSError as exc:
+            raise KnowledgeSearchError("canonical source could not be read",
+                                       category="source_missing") from exc
+
+    @staticmethod
+    def _default_navigation_store(binding: RepositoryBinding) -> OperationalIndexStore:
+        from .indexing import build_index_context
+        from fetchcore.adapters.retrieval.solr.index_contract import bind_indexing_contract_store
+        from fetchcore.adapters.retrieval.solr.backend import SolrIndexStore
+
+        context = build_index_context(
+            workspace=binding.workspace, repository=binding.repository,
+            branch=None, revision=None, backend=binding.backend,
+            backend_settings=binding.settings, retrieval=binding.retrieval,
+        )
+        if isinstance(context.store, SolrIndexStore):
+            return bind_indexing_contract_store(context.store, context.runtime.indexer)
+        return context.store
+
     def get_source(self, request: SourceReadRequest) -> SourceReadResult:
         if not request.source_ref.strip():
             raise KnowledgeSearchError(
@@ -220,6 +490,63 @@ class RetrievalApplicationService:
             requested_repository=request.repository,
         )
         binding = self._bindings[repository]
+        authorized_checksums: set[str] | None = None
+        if binding.repository_paths and not any(
+            relative_path == prefix or relative_path.startswith(prefix.rstrip("/") + "/")
+            for prefix in binding.repository_paths
+        ):
+            raise KnowledgeSearchError(
+                "source path is outside the authorized repository scope",
+                category="unauthorized_source",
+            )
+        if binding.knowledge_types:
+            store = self._navigation_store(binding) if self._navigation_store else self._default_navigation_store(binding)
+            snapshot = store.load_snapshot(repository)
+            if not isinstance(getattr(snapshot, "structural_coverage", None), str):
+                raise KnowledgeSearchError(
+                    "source authorization requires a compatible structural projection",
+                    category="schema_mismatch", metadata={"rebuild_required": True},
+                )
+            page = store.lookup_structural_documents(
+                repository, snapshot.revision, selector="source_ref",
+                value=f"repository://{repository}/{relative_path}", limit=512,
+            )
+            if page.has_more:
+                raise KnowledgeSearchError(
+                    "source authorization exceeded the structural candidate budget",
+                    category="candidate_limit_exceeded",
+                )
+            current = store.load_snapshot(repository)
+            if (current.revision != snapshot.revision
+                    or current.corpus_checksum != snapshot.corpus_checksum):
+                raise KnowledgeSearchError(
+                    "source authorization snapshot changed during lookup",
+                    category="snapshot_revision_mismatch",
+                )
+            authorized_checksums = {
+                document.provenance.source_checksum
+                for document in page.documents
+                if (
+                document.repository == repository
+                and document.revision == snapshot.revision
+                and document.path == relative_path
+                and document.knowledge_type in binding.knowledge_types
+                )
+            }
+            if not authorized_checksums:
+                raise KnowledgeSearchError(
+                    "source type is outside the authorized repository scope",
+                    category="unauthorized_source",
+                )
+        if binding.revision is None and request.revision is not None:
+            with LocalWorkspaceSourceProvider().materialize(
+                RepositorySourceRequest(binding.workspace, repository=repository)
+            ) as source:
+                revision = source.revision
+            if revision is None:
+                store = self._navigation_store(binding) if self._navigation_store else self._default_navigation_store(binding)
+                revision = store.load_snapshot(repository).revision
+            binding = replace(binding, revision=revision)
         if blocked_api_artifact_kind(relative_path) is not None:
             raise KnowledgeSearchError(
                 "raw API artifact serving is blocked pending sanitized extraction",
@@ -233,13 +560,21 @@ class RetrievalApplicationService:
         root = binding.workspace.resolve()
         candidate = (root / relative_path).resolve()
         try:
-            candidate.relative_to(root)
+            resolved_relative = candidate.relative_to(root).as_posix()
         except ValueError as exc:
             raise KnowledgeSearchError(
                 "source_ref escapes the authorized repository workspace",
                 category="unauthorized_source",
                 metadata={"repository": repository, "source_ref": request.source_ref},
             ) from exc
+        if binding.repository_paths and not any(
+            resolved_relative == prefix or resolved_relative.startswith(prefix.rstrip("/") + "/")
+            for prefix in binding.repository_paths
+        ):
+            raise KnowledgeSearchError(
+                "resolved source path is outside the authorized repository scope",
+                category="unauthorized_source",
+            )
         if not candidate.is_file():
             raise KnowledgeSearchError(
                 "source_ref does not resolve to a readable file",
@@ -259,7 +594,28 @@ class RetrievalApplicationService:
                 },
             )
 
-        text = candidate.read_text(encoding="utf-8", errors="replace")
+        with candidate.open("rb") as stream:
+            payload = stream.read(self._limits.source_bytes + 1)
+        if len(payload) > self._limits.source_bytes:
+            raise KnowledgeSearchError(
+                "source file exceeds the serving byte limit",
+                category="source_too_large",
+                metadata={"repository": repository, "path": relative_path,
+                          "max_bytes": self._limits.source_bytes},
+            )
+        actual_checksum = "sha256:" + hashlib.sha256(payload).hexdigest()
+        if authorized_checksums is not None and actual_checksum not in authorized_checksums:
+            raise KnowledgeSearchError(
+                "source bytes no longer match authorized knowledge",
+                category="source_revision_mismatch",
+            )
+        if request.checksum is not None and request.checksum != actual_checksum:
+            raise KnowledgeSearchError(
+                "source checksum does not match the requested evidence",
+                category="source_revision_mismatch",
+                metadata={"repository": repository, "path": relative_path},
+            )
+        text = payload.decode("utf-8", errors="replace")
         if blocked_api_artifact_kind(relative_path, text) is not None:
             raise KnowledgeSearchError(
                 "raw API artifact serving is blocked pending sanitized extraction",

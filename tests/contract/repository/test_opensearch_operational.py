@@ -17,6 +17,11 @@ from fetchcore.adapters.retrieval.opensearch.backend import (
 )
 from fetchcore.adapters.retrieval.opensearch.backend import _prepare_dense_query
 from fetchcore.application import indexing
+from fetchcore.application import (
+    FindSymbolRequest, GetRelatedRequest, RepositoryBinding,
+    RetrievalApplicationService, SourceReadRequest,
+)
+from fetchcore.application.index_operations import prepare_repository_index_runtime
 from fetchcore.application.repositories import RepositoryApplicationService
 from fetchcore.repository.indexing import RepositoryIndexConfig, RepositoryIndexer
 from fetchcore.retrieval.contracts import KnowledgeSearchError
@@ -150,11 +155,16 @@ class MemoryOpenSearch:
             if index not in self.indices:
                 raise KnowledgeSearchError("missing index", category="index_missing")
             filters = payload["query"]["bool"]["filter"]
-            terms = {key: value for item in filters for key, value in item["term"].items()}
+            terms = {key: value for item in filters for key, value in item.get("term", {}).items()}
+            allowed = {key: value for item in filters for key, value in item.get("terms", {}).items()}
             rows = [
                 copy.deepcopy(item)
                 for item in self.indices[index].values()
-                if all(item.get(key) == value for key, value in terms.items())
+                if all(
+                    value in item.get(key, []) if isinstance(item.get(key), list)
+                    else item.get(key) == value
+                    for key, value in terms.items()
+                ) and all(item.get(key) in values for key, values in allowed.items())
             ]
             rows.sort(key=lambda item: str(item["id"]))
             after = payload.get("search_after")
@@ -222,6 +232,62 @@ def test_initial_incremental_delete_noop_and_provenance(tmp_path: Path) -> None:
     assert {item.path for item in after} == {"first.py", "renamed.py"}
     assert persistence.load_snapshot("acme/widgets").revision == "rev-2"
     assert all(item.provenance.repository == "acme/widgets" for item in after)
+
+
+def test_structural_lookup_reads_bounded_candidates_without_corpus_load(tmp_path: Path) -> None:
+    transport = MemoryOpenSearch()
+    persistence = store(transport)
+    (tmp_path / "first.py").write_text("def exact_name():\n    return 1\n")
+    (tmp_path / "other.py").write_text("def other_name():\n    return 2\n")
+    persistence.full_rebuild(indexer("rev-1").index(tmp_path))
+    persistence.load_documents = lambda _repository: pytest.fail("full corpus read")  # type: ignore[method-assign]
+    first = persistence.lookup_structural_documents(
+        "acme/widgets", "rev-1", selector="name", value="exact_name", limit=2,
+    )
+    assert {item.path for item in first.documents} == {"first.py"}
+    assert not first.has_more
+    found = persistence.load_structural_targets(
+        "acme/widgets", "rev-1", tuple(item.id for item in first.documents),
+    )
+    assert found == first.documents
+    assert persistence.lookup_structural_documents(
+        "acme/widgets", "rev-1", selector="source_ref",
+        value="repository://acme/widgets/first.py", limit=2,
+    ).documents == first.documents
+
+
+def test_persisted_navigation_and_source_use_targeted_opensearch_reads(tmp_path: Path) -> None:
+    (tmp_path / "module.py").write_text("import os\ndef exact_name():\n    return os.getcwd()\n")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=Test",
+                    "-c", "user.email=test@example.test", "commit", "-qm", "fixture"], check=True)
+    runtime = prepare_repository_index_runtime(
+        tmp_path, repository="acme/widgets", branch=None, revision=None,
+    )
+    transport = MemoryOpenSearch()
+    persistence = store(transport)
+    persistence.indexing_fingerprint = runtime.fingerprint
+    persistence.full_rebuild(runtime.indexer.index(tmp_path))
+    persistence.load_documents = lambda _repository: pytest.fail("full corpus read")  # type: ignore[method-assign]
+    binding = RepositoryBinding(
+        "acme/widgets", tmp_path, "opensearch", knowledge_types=("code",),
+    )
+    application = RetrievalApplicationService(
+        {binding.repository: binding}, navigation_store=lambda _binding: persistence,
+    )
+    found = application.find_symbol(FindSymbolRequest("exact_name"))
+    assert found.results and found.results[0].path == "module.py"
+    related = application.get_related(GetRelatedRequest(
+        "repository://acme/widgets/module.py", relation_types=("imports",),
+    ))
+    assert related.results
+    source = application.get_source(SourceReadRequest(
+        "repository://acme/widgets/module.py",
+        checksum=found.results[0].checksum,
+    ))
+    assert "def exact_name" in source.content
+    assert application.find_symbol(FindSymbolRequest("exact_name")).results == found.results
 
 
 def test_bulk_failure_keeps_alias_and_retry_is_deterministic(tmp_path: Path) -> None:

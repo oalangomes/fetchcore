@@ -18,6 +18,7 @@ from fetchcore.retrieval.contracts import KnowledgeSearchError, KnowledgeSearchR
 
 from .composition import BackendRegistry, EmbeddingProviderRegistry
 from .repositories import RepositoryApplicationService
+from .navigation import FindSymbolRequest, GetRelatedRequest, NavigationResult
 from .runtime_config import (
     FetchCoreRuntimeConfig,
     load_runtime_config,
@@ -81,6 +82,30 @@ class RepositoryRetrievalApplicationService:
 
     def resolve_repository(self, reference: str) -> RegisteredRepository:
         """Resolve a canonical identity or unique leaf through the existing registry."""
+        return self._resolve_repository(reference)
+
+    def find_symbol(self, request: FindSymbolRequest) -> NavigationResult:
+        registered = self._navigation_repository(request.repository)
+        with self._retrieval_service(
+            registered, materialize=True, expected_revision=request.revision,
+        ) as service:
+            return service.find_symbol(replace(request, repository=registered.repository))
+
+    def get_related(self, request: GetRelatedRequest) -> NavigationResult:
+        registered = (
+            self._navigation_repository(request.repository)
+            if request.repository is not None or request.source.startswith("symbol:")
+            else self._resolve_source_repository(SourceReadRequest(request.source))
+        )
+        with self._retrieval_service(
+            registered, materialize=True, expected_revision=request.revision,
+        ) as service:
+            return service.get_related(replace(request, repository=registered.repository))
+
+    def _navigation_repository(self, reference: str | None) -> RegisteredRepository:
+        if reference is None:
+            raise KnowledgeSearchError("repository must be specified for navigation",
+                                       category="repository_scope_required")
         return self._resolve_repository(reference)
 
     def get_source(self, request: SourceReadRequest) -> SourceReadResult:

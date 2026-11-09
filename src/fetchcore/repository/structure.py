@@ -103,6 +103,9 @@ class PythonStructuralExtractor:
     """Extract Python declarations with the standard-library AST."""
 
     indexing_contract_version = "3"
+    structural_capabilities = (
+        "declarations", "imports", "calls_observed", "references_observed", "tests_observed",
+    )
 
     def extract(self, content: str) -> tuple[SymbolSpan, ...]:
         """Extract non-overlapping Python symbols for repository chunking."""
@@ -177,6 +180,10 @@ class JavaScriptTypeScriptStructuralExtractor:
     literals, proves top-level brace depth, then records declaration syntax that
     is directly observable in the file.
     """
+
+    structural_capabilities = (
+        "declarations", "imports", "calls_observed", "references_observed", "tests_observed",
+    )
 
     def __init__(self, language: str) -> None:
         """Initialize extraction for JavaScript or TypeScript."""
@@ -314,6 +321,10 @@ class JavaScriptTypeScriptStructuralExtractor:
 class JavaStructuralExtractor:
     """Extract Java package/import/type/method declarations without inference."""
 
+    structural_capabilities = (
+        "declarations", "imports", "calls_observed", "references_observed", "tests_observed",
+    )
+
     def extract(self, content: str) -> tuple[SymbolSpan, ...]:
         """Extract non-overlapping Java symbols for repository chunking."""
 
@@ -410,16 +421,28 @@ def default_structural_symbol_extractors() -> dict[str, SymbolExtractor]:
     # Local import avoids a module cycle: the Groovy extractor reuses the
     # canonical SourceStructure/StructuralSymbolSpan contracts defined here.
     from fetchcore.repository.extractors.languages.dart import DartStructuralExtractor
+    from fetchcore.repository.extractors.languages.go import GoStructuralExtractor
     from fetchcore.repository.extractors.languages.groovy import GroovyStructuralExtractor
+    from fetchcore.repository.extractors.languages.tree_sitter import TreeSitterStructuralExtractor
 
-    return {
+    extractors: dict[str, SymbolExtractor] = {
         "python": PythonStructuralExtractor(),
         "javascript": JavaScriptTypeScriptStructuralExtractor("javascript"),
         "typescript": JavaScriptTypeScriptStructuralExtractor("typescript"),
         "java": JavaStructuralExtractor(),
         "groovy": GroovyStructuralExtractor(),
         "dart": DartStructuralExtractor(),
+        "go": GoStructuralExtractor(),
     }
+    try:
+        from importlib.util import find_spec
+        if find_spec("tree_sitter_language_pack") is None:
+            return extractors
+    except ImportError:
+        return extractors
+    for language in ("rust", "csharp", "kotlin", "ruby", "php", "swift", "scala"):
+        extractors[language] = TreeSitterStructuralExtractor(language)
+    return extractors
 
 
 def _python_class_symbol(node: ast.ClassDef, *, module: str | None) -> StructuralSymbolSpan:

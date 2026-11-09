@@ -79,6 +79,13 @@ from fetchcore.repository.indexing import (
     RepositoryIndexer,
     RepositoryIndexResult,
 )
+from fetchcore.repository.structure_lookup import (
+    structural_coverage_summary, structural_lookup_keys,
+)
+from fetchcore.application.index_store import (
+    STRUCTURAL_SELECTOR_FIELDS, StructuralDocumentPage, StructuralSelector,
+    structural_candidate_matches,
+)
 from fetchcore.retrieval.contracts import (
     KnowledgeSearchError,
     KnowledgeSearchResponse,
@@ -279,6 +286,7 @@ class OpenSearchIndexSnapshot:
         default_factory=projection_contract_fingerprint
     )
     indexing_fingerprint: str | None = None
+    structural_coverage: str | None = None
 
     @property
     def id(self) -> str:
@@ -328,6 +336,7 @@ class OpenSearchIndexSnapshot:
             ),
             "projection_fingerprint": self.projection_fingerprint,
             "indexing_fingerprint": self.indexing_fingerprint,
+            "structural_coverage": self.structural_coverage,
             "projection_version": self.projection_version,
             "snapshot_indexed_at": self.indexed_at,
             "snapshot_status": self.status,
@@ -385,6 +394,10 @@ class OpenSearchIndexSnapshot:
                     None if value.get("indexing_fingerprint") is None
                     else str(value["indexing_fingerprint"])
                 ),
+                structural_coverage=(
+                    None if value.get("structural_coverage") is None
+                    else str(value["structural_coverage"])
+                ),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise KnowledgeSearchError(
@@ -441,6 +454,10 @@ def _index_mapping(*, include_vectors: bool = False) -> dict[str, object]:
         "symbols",
         "symbol_types",
         "symbol_tokens",
+        "structural_names",
+        "structural_qualified_names",
+        "structural_identities",
+        "structural_incoming_identities",
         "checksum",
         "source_checksum",
         "identifiers_exact",
@@ -468,6 +485,7 @@ def _index_mapping(*, include_vectors: bool = False) -> dict[str, object]:
         "embedding_serializer_version",
         "embedding_serializer_fingerprint",
         "indexing_fingerprint",
+        "structural_coverage",
     }
     properties: dict[str, object] = {
         name: {"type": "keyword"} for name in sorted(keyword_fields)
@@ -481,6 +499,7 @@ def _index_mapping(*, include_vectors: bool = False) -> dict[str, object]:
     properties["document_count"] = {"type": "integer"}
     properties["vector_dimensions"] = {"type": "integer"}
     properties["canonical_payload"] = {"type": "text", "index": False}
+    properties["structural_coverage"] = {"type": "text", "index": False}
     settings: dict[str, object] = {
         "analysis": {
             "normalizer": {
@@ -669,6 +688,71 @@ class OpenSearchIndexStore:
             if not isinstance(after, list):
                 raise KnowledgeSearchError("OpenSearch pagination cursor is invalid", category="response_parsing_failure")
         return tuple(documents)
+
+    def lookup_structural_documents(
+        self, repository: str, revision: str, *,
+        selector: StructuralSelector, value: str, limit: int,
+    ) -> StructuralDocumentPage:
+        """Read bounded exact candidates from keyword fields on the active alias."""
+
+        field = STRUCTURAL_SELECTOR_FIELDS[selector]
+        if self.load_snapshot(repository).revision != revision:
+            raise KnowledgeSearchError("OpenSearch structural snapshot changed", category="snapshot_revision_mismatch")
+        body = {
+            "size": limit + 1,
+            "query": {"bool": {"filter": [
+                {"term": {"record_kind": "knowledge"}},
+                {"term": {"repository": repository}},
+                {"term": {field: value}},
+            ]}},
+            "sort": [{"id": "asc"}],
+            "_source": {"excludes": [OPENSEARCH_VECTOR_FIELD]},
+        }
+        payload = self.transport.request("POST", f"{_repository_alias(self.settings, repository)}/_search", body)
+        hits = payload.get("hits")
+        rows = hits.get("hits") if isinstance(hits, dict) else None
+        if not isinstance(rows, list):
+            raise KnowledgeSearchError("OpenSearch structural lookup response is invalid",
+                                       category="response_parsing_failure")
+        documents: list[KnowledgeDocument] = []
+        for row in rows[:limit]:
+            raw = row.get("_source") if isinstance(row, dict) else None
+            if not isinstance(raw, dict):
+                raise KnowledgeSearchError("OpenSearch structural candidate is invalid",
+                                           category="response_parsing_failure")
+            document = self.reader.read(raw)
+            if (document.repository != repository
+                    or not structural_candidate_matches(raw, document, selector, value)):
+                raise KnowledgeSearchError("OpenSearch structural candidate is inconsistent",
+                                           category="schema_mismatch")
+            documents.append(document)
+        return StructuralDocumentPage(tuple(documents), len(rows) > limit)
+
+    def load_structural_targets(
+        self, repository: str, revision: str, identifiers: tuple[str, ...],
+    ) -> tuple[KnowledgeDocument, ...]:
+        if not identifiers:
+            return ()
+        if self.load_snapshot(repository).revision != revision:
+            raise KnowledgeSearchError("OpenSearch structural snapshot changed", category="snapshot_revision_mismatch")
+        body = {"size": len(identifiers), "query": {"bool": {"filter": [
+            {"term": {"record_kind": "knowledge"}},
+            {"term": {"repository": repository}},
+            {"terms": {"id": list(identifiers)}},
+        ]}}, "_source": {"excludes": [OPENSEARCH_VECTOR_FIELD]}}
+        payload = self.transport.request(
+            "POST", f"{_repository_alias(self.settings, repository)}/_search", body,
+        )
+        rows = payload.get("hits")
+        hits = rows.get("hits") if isinstance(rows, dict) else None
+        if not isinstance(hits, list):
+            raise KnowledgeSearchError("OpenSearch structural targets are invalid",
+                                       category="response_parsing_failure")
+        documents = tuple(self.reader.read(row["_source"]) for row in hits)
+        if any(doc.id not in identifiers or doc.repository != repository for doc in documents):
+            raise KnowledgeSearchError("OpenSearch structural target identity is inconsistent",
+                                       category="schema_mismatch")
+        return documents
 
     def load_snapshot(self, repository: str) -> OpenSearchIndexSnapshot:
         """Load and validate the active repository snapshot."""
@@ -1030,6 +1114,8 @@ class OpenSearchIndexStore:
             batch = source[offset : offset + self.settings.batch_size]
             records = tuple(self.compiler.compile(document) for document in batch)
             payloads = [record.to_mapping() for record in records]
+            for payload, document in zip(payloads, batch, strict=True):
+                payload.update(structural_lookup_keys(document).to_mapping())
             if self.embedding_provider is not None:
                 assert self.embedding_serializer is not None
                 texts = tuple(
@@ -1095,6 +1181,7 @@ class OpenSearchIndexStore:
             ),
             projection_fingerprint=self.projection_fingerprint,
             indexing_fingerprint=self.indexing_fingerprint,
+            structural_coverage=structural_coverage_summary(result.documents),
         )
 
     def _bulk_upsert(

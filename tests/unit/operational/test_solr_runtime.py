@@ -177,6 +177,31 @@ def test_provision_if_missing_uses_free_owned_port_and_exact_cleanup(tmp_path: P
     assert docker.calls[-1] == ("rm", "-f", "fetchcore-solr-123-1")
 
 
+def test_owned_solr_waits_through_startup_http_503(tmp_path: Path) -> None:
+    class StartingSolr(FakeSolr):
+        probes = 0
+
+        def request(self, *args: Any, **kwargs: Any) -> Mapping[str, object]:
+            if args[1].endswith("/admin/info/system"):
+                self.probes += 1
+                if self.probes == 1:
+                    raise SolrRuntimeError("connection_refused", "not listening yet")
+                if self.probes == 2:
+                    raise SolrRuntimeError("service_unavailable", "Solr endpoint returned HTTP 503")
+            return super().request(*args, **kwargs)
+
+    solr = StartingSolr(resources={"fetchcore-self-dogfood"})
+    docker = FakeDocker()
+    state = prepare_solr_runtime(
+        config(tmp_path, provision_mode=ProvisionMode.PROVISION_IF_MISSING,
+               create_if_missing=True),
+        client=solr, docker=docker, choose_port=lambda: 49125, sleep=lambda _: None,
+    )
+    assert state.instance == "provisioned"
+    assert solr.probes == 3
+    assert len(docker.calls) == 1
+
+
 def test_owned_provisioning_defaults_to_bundled_configset(tmp_path: Path) -> None:
     source_configset = Path(__file__).parents[3] / "infra" / "solr" / "configset" / "conf"
     bundled = Path(solr_runtime.__file__).parent / "configset" / "conf"
@@ -362,7 +387,7 @@ def test_unknown_repository_binding_fails_closed(tmp_path: Path) -> None:
     [
         (HTTPError("https://redacted.invalid", 401, "", Message(), io.BytesIO()), "authentication_required"),
         (HTTPError("https://redacted.invalid", 403, "", Message(), io.BytesIO()), "authentication_required"),
-        (HTTPError("https://redacted.invalid", 503, "", Message(), io.BytesIO()), "service_error"),
+        (HTTPError("https://redacted.invalid", 503, "", Message(), io.BytesIO()), "service_unavailable"),
         (URLError(ConnectionRefusedError()), "connection_refused"),
         (URLError(TimeoutError()), "timeout"),
     ],

@@ -272,19 +272,25 @@ def test_top_level_module_import_graph_is_acyclic() -> None:
 
 def test_persisted_identities_version_projection_route_semantics() -> None:
     assert projection_contract_fingerprint() == (
-        "sha256:80d19b9400141cd7bb73f7ba7f64de414cd5a896b87c2dc1713959804696cef2"
+        "sha256:4390897bae3636a7d79fb5318e80d79358053c8e4de0cfb6f295b884fd4c7a20"
     )
     assert vector_embedding_serializer_fingerprint(ProjectionEmbeddingMode.PROJECTION_V3) == (
         "sha256:5f859289b8b3a594e924545edb1c3ae6178b77ea22cf3ff224d43c5ec7aeb43a"
     )
+    extractors = default_structural_symbol_extractors()
     indexer = RepositoryIndexer(
         RepositoryIndexConfig(),
-        symbol_extractors=default_structural_symbol_extractors(),
+        symbol_extractors={key: value for key, value in extractors.items() if key not in {
+            "rust", "csharp", "kotlin", "ruby", "php", "swift", "scala",
+        }},
     )
-    # Expanded API admission changes canonical evidence; rebuild explicitly.
+    # Persisting canonical declaration identities changes indexing; rebuild explicitly.
     assert indexing_contract_fingerprint(indexer) == (
-        "sha256:0e32e408c447392ded84bc01ea0709b5c43f7eb93875cb6e850476360efc028b"
+        "sha256:c8d87dc111f495f2cf742dadce99f4483f493d16ddfcbf418e74161c6d6be7e4"
     )
+    if "rust" in extractors:
+        expanded = RepositoryIndexer(RepositoryIndexConfig(), symbol_extractors=extractors)
+        assert indexing_contract_fingerprint(expanded) != indexing_contract_fingerprint(indexer)
 
 
 def test_mcp_entry_point_retains_its_historical_module() -> None:

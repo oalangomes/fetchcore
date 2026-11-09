@@ -38,6 +38,7 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Review typed knowledge canonical validation | [Typed knowledge canonical result](benchmarks/results/typed-knowledge-canonical.md) |
 | Review typed knowledge retrieval validation | [Typed knowledge retrieval result](benchmarks/results/typed-knowledge-retrieval.md) |
 | Explore benchmarks, acquisition tests and studies | [Experiment convention](benchmarks/protocol.md), [baseline v1 protocol](benchmarks/baseline-v1.md), [Markdown acceptance test](../tests/acceptance/acquisition/markdown/README.md), [Local-relations acceptance test](../tests/acceptance/acquisition/local-relations/README.md), [SearchIntent v2 experiment](benchmarks/search-intent-v2.md), and [repository-learning consumer study](../studies/repository-learning/STUDY.md) |
+| Review bounded structural lookup cost | [Structural lookup acquisition check](benchmarks/structural-lookup-2026-11-07.md) |
 | Understand a durable decision | [ADR index](adr/README.md) |
 | Follow a migration or inspect extraction provenance | [Namespace migration](migrations/fetchcore-namespace.md) and [historical extraction](history/extraction/README.md) |
 
@@ -50,3 +51,4 @@ Use this index to find the current contract. Historical extraction notes and ind
 Use lowercase kebab-case filenames (except numbered ADRs), one H1 per page, relative internal links, explicit status labels for historical or proposed behavior, portable text diagrams, and copyable commands. Architecture records boundaries; concepts define vocabulary; guides give tasks; reference states current contracts; benchmarks preserve reproducible evidence; ADRs record durable decisions and alternatives. Keep marketing language out of reference pages and avoid duplicating a canonical explanation.
 
 - [Targeted exact retrieval](concepts/targeted-retrieval.md)
+- [Live structural navigation benchmark protocol](benchmarks/structural-live-2026-11-09.md)

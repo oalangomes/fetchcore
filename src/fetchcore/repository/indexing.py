@@ -10,7 +10,7 @@ import subprocess
 import time
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, cast
@@ -29,8 +29,11 @@ from fetchcore.knowledge.evidence import (
     SectionEvidence,
     _StructureObservation,
     build_knowledge_evidence,
+    bind_declarations,
     extract_source_structure,
+    source_declarations,
 )
+from fetchcore.knowledge.structure import extraction_capabilities
 from fetchcore.knowledge.chunking import (
     DEFAULT_MARKDOWN_MAX_CHARS,
     chunks_for_knowledge,
@@ -762,6 +765,11 @@ class RepositoryIndexer:
             )
         lexical_source = analyze_lexical_source(language, source.content)
         source_ref = _source_ref(repository, source.relative)
+        declarations = source_declarations(
+            structure, repository=repository, path=source.relative, language=language,
+            fallback_symbols=symbols,
+        )
+        extraction = extraction_capabilities(extractor, language)
         documents: list[KnowledgeDocument] = []
         for chunk in chunks:
             lexical = (
@@ -787,7 +795,13 @@ class RepositoryIndexer:
                 structure=structure,
                 lexical=lexical,
             )
-            documents.append(document)
+            documents.append(replace(
+                document,
+                evidence=bind_declarations(
+                    document.evidence, declarations, extraction,
+                    line_start=chunk.line_start, line_end=chunk.line_end,
+                ),
+            ))
         return tuple(documents)
 
     def _document(

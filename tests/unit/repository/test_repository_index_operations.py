@@ -189,7 +189,9 @@ def test_runtime_explicit_empty_pack_registry_is_generic_only(
     assert runtime.to_mapping()["knowledge_packs"] == []
     assert runtime.indexer.source_interpreters == ()
     assert runtime.indexer.semantic_enrichers == ()
-    assert runtime.indexer.corpus_resolvers == ()
+    assert tuple(item.indexing_contract_id for item in runtime.indexer.corpus_resolvers) == (
+        "fetchcore.import-bound-relations",
+    )
 
 
 def test_runtime_explicit_pack_registry_activates_only_matching_packs(

@@ -1079,3 +1079,13 @@ consumers decide meaning and authority
 FetchCore should remain a **small, strong, measurable and reusable repository knowledge and retrieval layer**.
 
 The project succeeds when consumers can change retrieval technology underneath a stable contract without changing what repository evidence means.
+
+---
+
+# Local Codex development continuity
+
+- Use this checkout and its existing `.venv` when compatible. Do not create worktrees for ordinary issue work; preserve every existing worktree.
+- At session start, read this file, run `git status --short --branch`, `git worktree list`, and inspect current remote branches and PRs before switching branches.
+- Use `make lint`, `make typecheck`, `make test`, and focused `.venv/bin/python -m pytest` commands as appropriate. Indexing is an explicit operation; retrieval must not rebuild snapshots.
+- Read `.codex/task-state.md` when it exists, then verify its branch, HEAD, PRs and test claims against current Git and code before resuming. This local file is operational state, not product architecture.
+- Keep credentials and machine paths out of versioned files. Do not force push, merge PRs, delete worktrees or rewrite history without explicit authorization.

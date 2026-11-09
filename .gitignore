@@ -1,6 +1,7 @@
 **/__pycache__/**
 **.egg-info**
 .venv/
+.codex/
 
 
 .env
@@ -11,3 +12,4 @@ tools/explorer/web/node_modules/
 tools/explorer/web/dist/
 tools/explorer/web/test-results/
 dist/
+.codex/

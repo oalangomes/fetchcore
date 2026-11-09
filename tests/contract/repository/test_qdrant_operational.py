@@ -20,6 +20,10 @@ from fetchcore.adapters.retrieval.qdrant.backend import (
     QdrantVectorSettings,
 )
 from fetchcore.application import indexing as indexing_application
+from fetchcore.application import (
+    FindSymbolRequest, GetRelatedRequest, RepositoryBinding,
+    RetrievalApplicationService, SourceReadRequest,
+)
 from fetchcore.application.composition import EmbeddingProviderRegistry
 from fetchcore.application.index_operations import prepare_repository_index_runtime
 from fetchcore.application.repositories import RepositoryApplicationService
@@ -125,6 +129,7 @@ class MemoryQdrant:
                     raise KnowledgeSearchError("collection missing", category="index_missing")
                 return {
                     "result": {
+                        "payload_schema": copy.deepcopy(item.get("payload_schema", {})),
                         "config": {
                             "params": {
                                 "vectors": copy.deepcopy(item["vectors"]),
@@ -141,6 +146,7 @@ class MemoryQdrant:
                     self.collections[name] = {
                         "vectors": copy.deepcopy(payload["vectors"]),
                         "sparse_vectors": copy.deepcopy(payload.get("sparse_vectors", {})),
+                        "payload_schema": {},
                         "points": {},
                     }
                 return {"result": True}
@@ -152,6 +158,12 @@ class MemoryQdrant:
                 raise KnowledgeSearchError("collection missing", category="index_missing")
             points = cast(dict[str, dict[str, object]], item["points"])
             suffix = "/".join(parts[2:])
+
+            if method == "PUT" and suffix == "index?wait=true":
+                assert isinstance(payload, dict)
+                schema = cast(dict[str, object], item["payload_schema"])
+                schema[str(payload["field_name"])] = {"data_type": payload["field_schema"]}
+                return {"result": True}
 
             if method == "POST" and suffix == "points/count":
                 assert isinstance(payload, dict)
@@ -281,7 +293,9 @@ class MemoryQdrant:
                 point
                 for point in points.values()
                 if all(
-                    cast(dict[str, object], point["payload"]).get(key) == value
+                    (value in cast(list[object], cast(dict[str, object], point["payload"])[key])
+                     if isinstance(cast(dict[str, object], point["payload"]).get(key), list)
+                     else cast(dict[str, object], point["payload"]).get(key) == value)
                     for key, value in filters.items()
                 )
             ),
@@ -506,6 +520,62 @@ def test_full_rebuild_is_explicit_and_keeps_prior_generation_on_failure(
     assert complete.snapshot.revision == "rev-2"
     assert transport.aliases[alias] != prior_collection
     assert prior_collection in transport.collections
+
+
+def test_structural_lookup_reads_bounded_candidates_without_embed_or_scan(tmp_path: Path) -> None:
+    transport = MemoryQdrant()
+    index, embedder = store(transport)
+    (tmp_path / "first.py").write_text("def exact_name():\n    return 1\n")
+    (tmp_path / "other.py").write_text("def other_name():\n    return 2\n")
+    index.full_rebuild(index_result(tmp_path, "rev-1"))
+    indexed_texts = len(embedder.texts)
+    index.load_documents = lambda _repository: pytest.fail("full corpus read")  # type: ignore[method-assign]
+    first = index.lookup_structural_documents(
+        _REPOSITORY, "rev-1", selector="name", value="exact_name", limit=2,
+    )
+    assert {item.path for item in first.documents} == {"first.py"}
+    assert not first.has_more
+    assert index.load_structural_targets(
+        _REPOSITORY, "rev-1", tuple(item.id for item in first.documents),
+    ) == first.documents
+    assert index.lookup_structural_documents(
+        _REPOSITORY, "rev-1", selector="source_ref",
+        value=f"repository://{_REPOSITORY}/first.py", limit=2,
+    ).documents == first.documents
+    assert len(embedder.texts) == indexed_texts
+
+
+def test_persisted_navigation_and_source_use_targeted_qdrant_reads(tmp_path: Path) -> None:
+    (tmp_path / "module.py").write_text("import os\ndef exact_name():\n    return os.getcwd()\n")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=Test",
+                    "-c", "user.email=test@example.test", "commit", "-qm", "fixture"], check=True)
+    runtime = prepare_repository_index_runtime(
+        tmp_path, repository=_REPOSITORY, branch=None, revision=None,
+    )
+    transport = MemoryQdrant()
+    persistence, embedder = store(transport)
+    persistence.indexing_fingerprint = runtime.fingerprint
+    persistence.full_rebuild(runtime.indexer.index(tmp_path))
+    embedded = len(embedder.texts)
+    persistence.load_documents = lambda _repository: pytest.fail("full corpus read")  # type: ignore[method-assign]
+    binding = RepositoryBinding(_REPOSITORY, tmp_path, "qdrant-vector", knowledge_types=("code",))
+    application = RetrievalApplicationService(
+        {binding.repository: binding}, navigation_store=lambda _binding: persistence,
+    )
+    found = application.find_symbol(FindSymbolRequest("exact_name"))
+    assert found.results and found.results[0].path == "module.py"
+    related = application.get_related(GetRelatedRequest(
+        f"repository://{_REPOSITORY}/module.py", relation_types=("imports",),
+    ))
+    assert related.results
+    source = application.get_source(SourceReadRequest(
+        f"repository://{_REPOSITORY}/module.py", checksum=found.results[0].checksum,
+    ))
+    assert "def exact_name" in source.content
+    assert application.find_symbol(FindSymbolRequest("exact_name")).results == found.results
+    assert len(embedder.texts) == embedded
 
 
 def test_explicit_rebuild_accepts_owned_empty_prepared_resource(tmp_path: Path) -> None:

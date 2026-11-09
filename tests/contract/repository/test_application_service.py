@@ -58,6 +58,29 @@ class FixtureBackend:
 
 
 def _service(tmp_path: Path, backend: FixtureBackend) -> RetrievalApplicationService:
+    from types import SimpleNamespace
+    from fetchcore.application.index_store import StructuralDocumentPage
+    from fetchcore.repository.indexing import RepositoryIndexConfig, RepositoryIndexer
+
+    indexed = RepositoryIndexer(
+        RepositoryIndexConfig(repository="owner/repo", revision="rev-1"),
+    ).index(tmp_path)
+
+    class MaterializedStore:
+        def load_snapshot(self, repository: str):
+            return SimpleNamespace(
+                revision=indexed.revision, structural_coverage="{}", corpus_checksum="fixture",
+            )
+
+        def lookup_structural_documents(
+            self, repository: str, revision: str, *, selector: str, value: str,
+            limit: int,
+        ) -> StructuralDocumentPage:
+            assert repository == "owner/repo" and revision == indexed.revision
+            assert selector == "source_ref"
+            candidates = tuple(doc for doc in indexed.documents if doc.source_ref == value)
+            return StructuralDocumentPage(candidates[:limit], len(candidates) > limit)
+
     factories: dict[str, BackendFactory] = {"fixture": lambda: backend}
     return RetrievalApplicationService(
         {
@@ -71,6 +94,7 @@ def _service(tmp_path: Path, backend: FixtureBackend) -> RetrievalApplicationSer
             )
         },
         backends=BackendRegistry(factories),
+        navigation_store=lambda _binding: MaterializedStore(),  # type: ignore[arg-type]
     )
 
 
