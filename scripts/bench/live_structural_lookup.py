@@ -52,9 +52,17 @@ class _MeasuredTransport:
         self.backend_ms = 0.0
         self.documents = 0
 
-    def request(self, method: str, path: str, payload: object | None = None) -> dict[str, object]:
+    def request(
+        self, method: str, path: str, payload: object | bytes | None = None,
+        *, content_type: str | None = None,
+    ) -> dict[str, object]:
         started = time.perf_counter()
-        response: dict[str, object] = self.inner.request(method, path, payload)
+        response: dict[str, object] = (
+            self.inner.request(method, path, payload)
+            if content_type is None else self.inner.request(
+                method, path, payload, content_type=content_type,
+            )
+        )
         self._observe(response, started)
         return response
 
