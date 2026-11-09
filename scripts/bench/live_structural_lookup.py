@@ -32,6 +32,7 @@ from fetchcore.adapters.retrieval.qdrant.backend import (
 from fetchcore.application import (
     FindSymbolRequest, GetRelatedRequest, RepositoryBinding, RetrievalApplicationService,
 )
+from fetchcore.application import index_operations
 from fetchcore.repository.index_fingerprint import indexing_contract_fingerprint
 from fetchcore.application.index_operations import prepare_repository_index_runtime
 
@@ -103,6 +104,42 @@ class _MeasuredTransport:
         self.documents = 0
 
 
+class _MeasuredStages:
+    def __init__(self, transport: _MeasuredTransport) -> None:
+        self.transport = transport
+        self.wall_ms: dict[str, float] = {}
+        self.backend_ms: dict[str, float] = {}
+        self.originals: list[tuple[object, str, object]] = []
+
+    def wrap(self, owner: object, method_name: str, stage: str) -> None:
+        original = getattr(owner, method_name)
+        self.originals.append((owner, method_name, original))
+
+        def measured(*args: object, **kwargs: object) -> object:
+            backend_before = self.transport.backend_ms
+            started = time.perf_counter()
+            try:
+                return original(*args, **kwargs)
+            finally:
+                self.wall_ms[stage] = self.wall_ms.get(stage, 0.0) + (
+                    time.perf_counter() - started
+                ) * 1_000
+                self.backend_ms[stage] = self.backend_ms.get(stage, 0.0) + (
+                    self.transport.backend_ms - backend_before
+                )
+
+        setattr(owner, method_name, measured)
+
+    def reset(self) -> None:
+        self.wall_ms.clear()
+        self.backend_ms.clear()
+
+    def restore(self) -> None:
+        for owner, method_name, original in reversed(self.originals):
+            setattr(owner, method_name, original)
+        self.originals.clear()
+
+
 def _store(backend: str, url: str):
     token = uuid4().hex[:10]
     clock = lambda: datetime.now(UTC).isoformat()
@@ -165,6 +202,11 @@ def run(backend: str, url: str, size: int, samples: int) -> dict[str, object]:
         build_ms = round((time.perf_counter() - started) * 1_000, 2)
         measured = _MeasuredTransport(store.transport)
         store.transport = measured  # type: ignore[assignment]
+        stages = _MeasuredStages(measured)
+        stages.wrap(index_operations, "prepare_repository_index_runtime", "contract_prepare")
+        stages.wrap(store, "load_snapshot", "snapshot_read")
+        stages.wrap(store, "lookup_structural_documents", "candidate_acquisition")
+        stages.wrap(store, "load_structural_targets", "target_acquisition")
         app = RetrievalApplicationService(
             {repository: RepositoryBinding(
                 repository, workspace,
@@ -197,9 +239,15 @@ def run(backend: str, url: str, size: int, samples: int) -> dict[str, object]:
             app_only = []
             calls = []
             transferred = []
+            stage_wall: dict[str, list[float]] = {name: [] for name in (
+                "contract_prepare", "snapshot_read", "candidate_acquisition",
+                "target_acquisition",
+            )}
+            stage_backend: dict[str, list[float]] = {name: [] for name in stage_wall}
             tracemalloc.start()
             for index in range(samples + 1):
                 measured.reset()
+                stages.reset()
                 started = time.perf_counter()
                 response = (app.find_symbol(request) if isinstance(request, FindSymbolRequest)
                             else app.get_related(request))
@@ -211,6 +259,9 @@ def run(backend: str, url: str, size: int, samples: int) -> dict[str, object]:
                     app_only.append(max(0.0, elapsed - measured.backend_ms))
                     calls.append(measured.calls)
                     transferred.append(measured.documents)
+                    for name, values in stage_wall.items():
+                        values.append(stages.wall_ms.get(name, 0.0))
+                        stage_backend[name].append(stages.backend_ms.get(name, 0.0))
             _, peak = tracemalloc.get_traced_memory()
             tracemalloc.stop()
             output[operation] = {
@@ -218,6 +269,10 @@ def run(backend: str, url: str, size: int, samples: int) -> dict[str, object]:
                 "repeated": _percentiles(repeated),
                 "backend_transport": _percentiles(backend_times),
                 "application_hydration": _percentiles(app_only),
+                "stages": {name: {
+                    "wall": _percentiles(values),
+                    "backend_transport": _percentiles(stage_backend[name]),
+                } for name, values in stage_wall.items()},
                 "backend_calls_per_query": sorted(set(calls)),
                 "knowledge_documents_transferred_per_query": sorted(set(transferred)),
                 "candidate_count": 1,
@@ -244,6 +299,7 @@ def run(backend: str, url: str, size: int, samples: int) -> dict[str, object]:
             "publication_telemetry": incremental.telemetry.to_mapping(),
             "stale_symbol_and_relation_removed": True,
         }
+        stages.restore()
         return output
 
 
