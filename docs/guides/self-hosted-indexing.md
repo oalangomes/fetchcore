@@ -307,9 +307,12 @@ reconciliation:
 ```
 
 Run the command from a clean materialized Git source whose HEAD equals the
-requested revision. `safe-auto` refuses unowned or shared resources and dirty or
-unverifiable source revisions. `explicit-rebuild` uses the same source and
-snapshot checks. A configured `safe-auto` policy also applies to `index
+requested revision. Each mutating reconciliation indexes from a private,
+temporary Git clone checked out at that commit; it creates no persistent Git
+worktree. The source is checked again before publication, so a concurrent
+working-tree change blocks the operation. `safe-auto` refuses unowned or shared
+resources and dirty or unverifiable source revisions. `explicit-rebuild` uses
+the same source and snapshot checks. A configured `safe-auto` policy also applies to `index
 bootstrap` in the local command surface; search, structural navigation, source
 reads, and serving never invoke reconciliation.
 
@@ -318,10 +321,12 @@ checksum, fingerprint and snapshot, then switch the alias. Qdrant reuses vectors
 only when provider, model, serializer, dimensions and the serialized embedding
 input match; missing payload indexes can be added in place when every existing
 payload already has the required keys. Existing generations remain available
-for recovery. Solr with a mutable managed schema can add the four structural
-lookup fields and rebuild. A Standalone core with classic `schema.xml` stages
-from the named, server-side versioned configset and uses CoreAdmin `SWAP` after
-validation; the former core remains under the staging name. SolrCloud has no
+for recovery. Every Solr reconstruction, including an additive structural-field
+upgrade, stages a separate core from the named, server-side versioned configset.
+Standalone uses CoreAdmin `SWAP` after validation. A complete interrupted stage
+can be reused after restart; an incomplete stage and a retained prior core are
+never overwritten. A failed post-cutover validation restores the prior core
+when its identity can be proven. SolrCloud has no
 automatic cutover in this command and requires operator action.
 
 For the Docker/WSL Standalone stack, install the current `infra/solr/configset`

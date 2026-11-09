@@ -15,7 +15,9 @@ from fetchcore.adapters.retrieval.solr.backend import (
 )
 from fetchcore.adapters.retrieval.solr.reconciliation import inspect_ownership
 from fetchcore.application.indexing import IndexContext
-from fetchcore.application.reconciliation import _resource_lock, _source_state
+from fetchcore.application.reconciliation import (
+    _ownership_issue, _resource_lock, _source_state,
+)
 from fetchcore.application.runtime_config import ReconciliationSettings
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 
@@ -52,6 +54,11 @@ def test_solr_ownership_requires_one_matching_snapshot() -> None:
     rows.pop()
     with pytest.raises(KnowledgeSearchError, match="ownership"):
         inspect_ownership(store, "acme/widgets")  # type: ignore[arg-type]
+    context = cast(IndexContext, SimpleNamespace(
+        backend="solr", runtime=SimpleNamespace(repository="acme/widgets"),
+        store=store,
+    ))
+    assert _ownership_issue(context, {}) == "ownership_unproven"
 
 
 def test_reconciliation_source_must_be_clean_and_pinned(tmp_path: Path) -> None:

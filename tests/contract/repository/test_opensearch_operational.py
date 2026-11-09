@@ -42,6 +42,8 @@ class MemoryOpenSearch:
         self.writes: list[tuple[str, str]] = []
         self.fail_bulk_once = False
         self.fail_alias_after_once = False
+        self.fail_alias_call_before: int | None = None
+        self.alias_calls = 0
         self.fail_bulk_call: int | None = None
         self.bulk_calls = 0
         self.last_reindex: dict[str, object] = {}
@@ -125,6 +127,9 @@ class MemoryOpenSearch:
             return {"completed": True, "response": self.last_reindex}
         if method == "POST" and path == "_aliases":
             assert isinstance(payload, dict)
+            self.alias_calls += 1
+            if self.fail_alias_call_before == self.alias_calls:
+                raise KnowledgeSearchError("alias update rejected", category="unavailable")
             for action in payload["actions"]:
                 if "remove" in action:
                     self.aliases.pop(action["remove"]["alias"])
@@ -345,6 +350,9 @@ def test_bulk_failure_keeps_alias_and_retry_is_deterministic(tmp_path: Path) -> 
     assert persistence.load_snapshot("acme/widgets").revision == "rev-1"
     persistence.incremental_sync(changed)
     assert persistence.load_snapshot("acme/widgets").revision == "rev-2"
+    assert {item.content for item in persistence.load_documents("acme/widgets")} == {
+        item.content for item in changed.documents
+    }
 
 
 def test_writer_lock_rejects_competing_writer(tmp_path: Path) -> None:
@@ -385,10 +393,108 @@ def test_ambiguous_alias_response_can_be_recovered_by_read(tmp_path: Path) -> No
     transport.fail_alias_after_once = True
     with pytest.raises(KnowledgeSearchError):
         persistence.incremental_sync(changed)
+    assert persistence.load_snapshot("acme/widgets").revision == "rev-1"
+    assert transport.aliases[next(iter(transport.aliases))] in transport.indices
+    persistence.incremental_sync(changed)
     assert persistence.load_snapshot("acme/widgets").revision == "rev-2"
-    assert {item.content for item in persistence.load_documents("acme/widgets")} == {
-        item.content for item in changed.documents
-    }
+
+
+def test_post_promotion_validation_failure_restores_prior_alias(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = MemoryOpenSearch()
+    persistence = store(transport)
+    (tmp_path / "file.py").write_text("value = 1\n")
+    persistence.full_rebuild(indexer("rev-1").index(tmp_path))
+    alias, prior = next(iter(transport.aliases.items()))
+    (tmp_path / "file.py").write_text("value = 2\n")
+    original = persistence.load_snapshot
+
+    def fail_new(repository: str):
+        if transport.aliases[alias] != prior:
+            raise KnowledgeSearchError("post-promotion validation failed",
+                                       category="index_update_failure")
+        return original(repository)
+
+    monkeypatch.setattr(persistence, "load_snapshot", fail_new)
+    with pytest.raises(KnowledgeSearchError, match="post-promotion"):
+        persistence.full_rebuild(indexer("rev-2").index(tmp_path))
+    monkeypatch.setattr(persistence, "load_snapshot", original)
+    assert transport.aliases[alias] == prior
+    assert persistence.load_snapshot("acme/widgets").revision == "rev-1"
+    assert len(transport.indices) >= 2  # prior and failed stage are retained
+
+
+def test_failed_alias_rollback_is_explicitly_indeterminate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = MemoryOpenSearch()
+    persistence = store(transport)
+    (tmp_path / "file.py").write_text("value = 1\n")
+    persistence.full_rebuild(indexer("rev-1").index(tmp_path))
+    alias, prior = next(iter(transport.aliases.items()))
+    (tmp_path / "file.py").write_text("value = 2\n")
+    original = persistence.load_snapshot
+
+    def fail_new(repository: str):
+        if transport.aliases[alias] != prior:
+            raise KnowledgeSearchError("post-promotion validation failed",
+                                       category="index_update_failure")
+        return original(repository)
+
+    monkeypatch.setattr(persistence, "load_snapshot", fail_new)
+    transport.fail_alias_call_before = transport.alias_calls + 2
+    with pytest.raises(KnowledgeSearchError) as failed:
+        persistence.full_rebuild(indexer("rev-2").index(tmp_path))
+    monkeypatch.setattr(persistence, "load_snapshot", original)
+    assert failed.value.category == "publication_indeterminate"
+    assert transport.aliases[alias] != prior
+    assert prior in transport.indices
+    assert persistence.load_snapshot("acme/widgets").revision == "rev-2"
+
+
+def test_competing_alias_change_blocks_rollback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = MemoryOpenSearch()
+    persistence = store(transport)
+    (tmp_path / "file.py").write_text("value = 1\n")
+    persistence.full_rebuild(indexer("rev-1").index(tmp_path))
+    alias, prior = next(iter(transport.aliases.items()))
+    (tmp_path / "file.py").write_text("value = 2\n")
+    foreign = "external-concurrent-generation"
+    original = persistence.load_snapshot
+
+    def change_alias(repository: str):
+        if transport.aliases[alias] != prior:
+            transport.aliases[alias] = foreign
+            raise KnowledgeSearchError("concurrent alias change", category="concurrent_write")
+        return original(repository)
+
+    monkeypatch.setattr(persistence, "load_snapshot", change_alias)
+    with pytest.raises(KnowledgeSearchError) as failed:
+        persistence.full_rebuild(indexer("rev-2").index(tmp_path))
+    assert failed.value.category == "publication_indeterminate"
+    assert transport.aliases[alias] == foreign
+    assert prior in transport.indices
+
+
+def test_retrieval_rejects_incompatible_published_snapshot(tmp_path: Path) -> None:
+    transport = MemoryOpenSearch()
+    persistence = store(transport)
+    (tmp_path / "file.py").write_text("def exact_name():\n    return 1\n")
+    persistence.full_rebuild(indexer("rev-1").index(tmp_path))
+    active = next(iter(transport.aliases.values()))
+    snapshot = next(record for record in transport.indices[active].values()
+                    if record.get("record_kind") == "snapshot")
+    snapshot["projection_fingerprint"] = "sha256:" + "0" * 64
+    application = RetrievalApplicationService(
+        {"acme/widgets": RepositoryBinding("acme/widgets", tmp_path, "opensearch")},
+        navigation_store=lambda _binding: persistence,
+    )
+    with pytest.raises(KnowledgeSearchError) as failed:
+        application.find_symbol(FindSymbolRequest("exact_name", "acme/widgets"))
+    assert failed.value.category == "schema_mismatch"
 
 
 def test_mapping_and_indexing_identity_fail_closed(tmp_path: Path) -> None:

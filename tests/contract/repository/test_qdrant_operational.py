@@ -72,6 +72,8 @@ class MemoryQdrant:
         self.fail_partial_knowledge_upsert = False
         self.fail_partial_delete = False
         self.fail_alias_after_apply = False
+        self.fail_payload_index_call: int | None = None
+        self.payload_index_calls = 0
         self.flip_alias_after_snapshot_read: tuple[str, str] | None = None
         self.query_collections: list[str] = []
         self._collection_create_lock = threading.Lock()
@@ -164,6 +166,10 @@ class MemoryQdrant:
 
             if method == "PUT" and suffix == "index?wait=true":
                 assert isinstance(payload, dict)
+                self.payload_index_calls += 1
+                if self.fail_payload_index_call == self.payload_index_calls:
+                    raise KnowledgeSearchError("payload index write failed",
+                                               category="index_update_failure")
                 schema = cast(dict[str, object], item["payload_schema"])
                 schema[str(payload["field_name"])] = {"data_type": payload["field_schema"]}
                 return {"result": True}
@@ -583,6 +589,29 @@ def test_missing_qdrant_payload_index_is_repaired_without_reembedding(tmp_path: 
     assert index.validate_schema(require_vectors=True) is None
 
 
+def test_partial_payload_index_failure_preserves_snapshot_and_resumes(tmp_path: Path) -> None:
+    transport = MemoryQdrant()
+    index, embedder = store(transport)
+    (tmp_path / "service.py").write_text("def exact_name():\n    return 1\n")
+    first = index.full_rebuild(index_result(tmp_path))
+    assert first.snapshot.active_collection is not None
+    active = first.snapshot.active_collection
+    schema = cast(dict[str, object], transport.collections[active]["payload_schema"])
+    schema.pop("structural_names")
+    schema.pop("structural_qualified_names")
+    transport.fail_payload_index_call = transport.payload_index_calls + 2
+    before = len(embedder.texts)
+    with pytest.raises(KnowledgeSearchError, match="payload index write failed"):
+        index.add_missing_payload_indexes(_REPOSITORY)
+    assert index.load_snapshot(_REPOSITORY) == first.snapshot
+    assert index.payload_index_differences(active)[0] == ["structural_qualified_names"]
+    with pytest.raises(KnowledgeSearchError, match="payload"):
+        index.validate_schema(require_vectors=True)
+    assert index.add_missing_payload_indexes(_REPOSITORY) == ["structural_qualified_names"]
+    assert index.load_snapshot(_REPOSITORY) == first.snapshot
+    assert len(embedder.texts) == before
+
+
 def test_safe_auto_reprojects_old_contract_without_reembedding(tmp_path: Path) -> None:
     (tmp_path / "service.py").write_text("def exact_name():\n    return 1\n")
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
@@ -629,6 +658,43 @@ def test_safe_auto_reprojects_old_contract_without_reembedding(tmp_path: Path) -
     ))
     assert repeated["action"] == "none"
     assert len(transport.writes) == writes
+
+
+def test_reconcile_rejects_checkout_change_during_canonical_indexing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "service.py"
+    source.write_text("def exact_name():\n    return 1\n")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=Test",
+                    "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture"],
+                   check=True)
+    revision = subprocess.check_output(["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+                                       text=True).strip()
+    runtime = prepare_repository_index_runtime(
+        tmp_path, repository=_REPOSITORY, branch=None, revision=revision,
+    )
+    transport = MemoryQdrant()
+    persistence, _ = store(transport)
+    first = persistence.full_rebuild(runtime.indexer.index(tmp_path))
+    persistence.indexing_fingerprint = runtime.fingerprint
+    context = IndexContext(tmp_path, "qdrant-vector", runtime, persistence,
+                           driver=QdrantOperationalIndex(persistence, runtime))
+    original = runtime.indexer.index
+
+    def mutate_after_read(workspace: Path, **kwargs: object):
+        result = original(workspace, **kwargs)
+        source.write_text("def exact_name():\n    return 999\n")
+        return result
+
+    monkeypatch.setattr(runtime.indexer, "index", mutate_after_read)
+    before = dict(transport.aliases)
+    with pytest.raises(KnowledgeSearchError) as failed:
+        reconcile_index_context(context, ReconciliationSettings(mode="explicit-rebuild"))
+    assert failed.value.category == "source_worktree_dirty"
+    assert transport.aliases == before
+    assert persistence.load_snapshot(_REPOSITORY) == first.snapshot
 
 def test_structural_lookup_reads_bounded_candidates_without_embed_or_scan(tmp_path: Path) -> None:
     transport = MemoryQdrant()

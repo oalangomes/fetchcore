@@ -14,6 +14,7 @@ import fcntl
 import os
 from pathlib import Path
 import subprocess
+from tempfile import TemporaryDirectory
 import time
 from typing import cast
 from urllib.parse import urlparse
@@ -22,11 +23,17 @@ from fetchcore.adapters.retrieval.solr.backend import SolrIndexSnapshot, SolrInd
 from fetchcore.adapters.retrieval.solr.index_contract import bind_indexing_contract_store
 from fetchcore.adapters.retrieval.solr.index_contract import snapshot_indexing_fingerprint
 from fetchcore.adapters.retrieval.solr.reconciliation import (
-    inspect_ownership, inspect_snapshot_identity, managed_schema, rebuild_with_swap,
+    inspect_ownership, inspect_snapshot_identity, rebuild_with_swap,
     standalone_mode,
 )
-from fetchcore.adapters.retrieval.opensearch.backend import OpenSearchIndexStore
-from fetchcore.adapters.retrieval.qdrant.backend import QdrantVectorIndexStore
+from fetchcore.adapters.retrieval.opensearch.backend import (
+    OpenSearchIndexStore, _repository_alias as opensearch_repository_alias,
+)
+from fetchcore.adapters.retrieval.opensearch.operational import OpenSearchOperationalIndex
+from fetchcore.adapters.retrieval.qdrant.backend import (
+    QdrantVectorIndexStore, _repository_alias as qdrant_repository_alias,
+)
+from fetchcore.adapters.retrieval.qdrant.operational import QdrantOperationalIndex
 from fetchcore.application.runtime_config import ReconciliationSettings
 from fetchcore.application.indexing import IndexContext, _observe, _probe_embedding_provider
 from fetchcore.retrieval.contracts import KnowledgeSearchError
@@ -64,6 +71,58 @@ def _source_state(context: IndexContext) -> tuple[bool, str]:
 
 
 @contextmanager
+def _frozen_context(context: IndexContext) -> Iterator[IndexContext]:
+    """Index a private checkout of the exact commit, never the operator's tree."""
+    available, reason = _source_state(context)
+    if not available:
+        raise KnowledgeSearchError("Index source changed before materialization",
+                                   category=reason)
+    with TemporaryDirectory(prefix="fetchcore-reconcile-source-") as directory:
+        root = Path(directory) / "repository"
+        try:
+            subprocess.run(
+                ["git", "clone", "--quiet", "--no-hardlinks", "--no-checkout",
+                 "--", str(context.workspace.resolve()), str(root)],
+                check=True, capture_output=True, timeout=120,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "checkout", "--quiet", "--detach",
+                 str(context.runtime.revision)],
+                check=True, capture_output=True, timeout=120,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise KnowledgeSearchError("Pinned source materialization failed",
+                                       category="source_revision_unverifiable") from exc
+        frozen_runtime = replace(context.runtime, workspace=root)
+        frozen = replace(context, workspace=root, runtime=frozen_runtime)
+        if context.backend == "opensearch" and context.driver is not None:
+            frozen = replace(frozen, driver=OpenSearchOperationalIndex(
+                cast(OpenSearchIndexStore, context.store), frozen_runtime,
+            ))
+        elif context.backend == "qdrant-vector" and context.driver is not None:
+            frozen = replace(frozen, driver=QdrantOperationalIndex(
+                cast(QdrantVectorIndexStore, context.store), frozen_runtime,
+            ))
+        available, reason = _source_state(frozen)
+        if not available:
+            raise KnowledgeSearchError("Pinned source is not clean",
+                                       category=reason)
+        yield frozen
+        available, reason = _source_state(frozen)
+        if not available:
+            raise KnowledgeSearchError("Pinned source changed during indexing",
+                                       category=reason)
+
+
+def _verify_source_before_publish(original: IndexContext, frozen: IndexContext) -> None:
+    for context in (original, frozen):
+        available, reason = _source_state(context)
+        if not available:
+            raise KnowledgeSearchError("Index source changed during indexing",
+                                       category=reason)
+
+
+@contextmanager
 def _resource_lock(context: IndexContext) -> Iterator[None]:
     """Serialize local maintenance processes for one backend resource/repository."""
     store = context.store
@@ -93,6 +152,28 @@ def _schema_differences(context: IndexContext) -> dict[str, object]:
             raise
         return {"category": exc.category, **exc.metadata}
     return {}
+
+
+def _ownership_issue(context: IndexContext, differences: dict[str, object]) -> str | None:
+    """Expose a read-only ownership block during inspection when provable."""
+    repository = context.runtime.repository
+    try:
+        if context.backend == "solr":
+            if differences.get("category") != "index_missing":
+                inspect_ownership(cast(SolrIndexStore, context.store), repository)
+        elif context.backend == "opensearch":
+            store = cast(OpenSearchIndexStore, context.store)
+            alias = opensearch_repository_alias(store.settings, repository)
+            store._validate_alias_ownership(store._alias_indexes(alias), repository)
+        else:
+            store_q = cast(QdrantVectorIndexStore, context.store)
+            alias = qdrant_repository_alias(store_q.settings, repository)
+            store_q._validate_rebuild_target(
+                repository, alias, store_q._active_collection(alias),
+            )
+    except KnowledgeSearchError as exc:
+        return exc.category
+    return None
 
 
 def _status(context: IndexContext) -> dict[str, object]:
@@ -165,12 +246,10 @@ def reconcile_index_context(
         and differences.get("vector_field_type") is None
     )
     solrcloud = False
-    if action == "rebuild" and context.backend == "solr" and differences:
+    if action == "rebuild" and context.backend == "solr":
         solr_store = cast(SolrIndexStore, context.store)
         solrcloud = not standalone_mode(solr_store)
-        action = "schema_upgrade_and_rebuild" if additive else "staged_rebuild"
-        if solrcloud or (additive and not managed_schema(solr_store)):
-            action = "staged_rebuild"
+        action = "staged_rebuild"
     if context.backend == "qdrant-vector" and differences.get("missing_payload_indexes") and not differences.get("incompatible_payload_indexes"):
         store_q = cast(QdrantVectorIndexStore, context.store)
         try:
@@ -190,6 +269,9 @@ def reconcile_index_context(
     blocked: str | None = None
     if action != "none" and settings.mode == "safe-auto" and not settings.managed:
         blocked = "managed_resource_authorization_required"
+    ownership_issue = _ownership_issue(context, differences)
+    if ownership_issue is not None:
+        blocked = ownership_issue
     source_available, source_reason = _source_state(context)
     if action != "none" and settings.mode != "inspect" and not source_available:
         blocked = source_reason
@@ -208,6 +290,7 @@ def reconcile_index_context(
         "previous_state": prior_mode, "reason": prior_reason,
         "action": action, "execution": settings.mode,
         "schema_differences": differences,
+        "migration_kind": "additive_fields" if additive else None,
         "source": {"available": source_available, "reason": source_reason},
         "fingerprints": {
             "expected_indexing": context.runtime.fingerprint,
@@ -215,8 +298,8 @@ def reconcile_index_context(
             "actual_projection": observation.get("snapshot_projection_fingerprint"),
         },
         "blocked_reason": blocked,
-        "ready": action == "none" and not differences,
-        "status": "ready" if action == "none" and not differences else
+        "ready": action == "none" and not differences and blocked is None,
+        "status": "ready" if action == "none" and not differences and blocked is None else
                   "blocked" if blocked else "rebuild_required",
     }
     if settings.mode == "inspect" or blocked or action == "none":
@@ -230,7 +313,7 @@ def reconcile_index_context(
             backend_store,
             expected_dimensions=dimensions or 768,
         )
-    with _resource_lock(context):
+    with _resource_lock(context), _frozen_context(context) as frozen:
         # A new inspection under the lock prevents acting on a stale plan.
         if _schema_differences(context) != differences or _status(context) != observation:
             raise KnowledgeSearchError("Backend changed after reconciliation inspection",
@@ -240,26 +323,15 @@ def reconcile_index_context(
             store = cast(SolrIndexStore, context.store)
             inspect_ownership(store, context.runtime.repository)
             if action == "sync":
-                execution = context.legacy("sync")
+                execution = frozen.legacy("sync")
             else:
-                indexed = context.runtime.indexer.index(context.workspace)
-                if action == "schema_upgrade_and_rebuild":
-                    from fetchcore.adapters.retrieval.solr.reconciliation import add_structural_fields
-                    if not add_structural_fields(store, cast(list[str], missing)):
-                        if settings.solr_configset is None:
-                            raise KnowledgeSearchError(
-                                "Static Solr schema requires a compatible staging configset",
-                                category="rebuild_required",
-                            )
-                        action = "staged_rebuild"
-                if action == "staged_rebuild":
-                    assert settings.solr_configset is not None
-                    execution = rebuild_with_swap(
-                        store, indexed, configset=settings.solr_configset,
-                        unique_stage=settings.mode == "explicit-rebuild",
-                    )
-                else:
-                    execution = store.full_rebuild(indexed).to_mapping()
+                indexed = frozen.runtime.indexer.index(frozen.workspace)
+                _verify_source_before_publish(context, frozen)
+                assert settings.solr_configset is not None
+                execution = rebuild_with_swap(
+                    store, indexed, configset=settings.solr_configset,
+                    unique_stage=settings.mode == "explicit-rebuild",
+                )
         elif context.backend == "qdrant-vector":
             store_q = cast(QdrantVectorIndexStore, context.store)
             if action == "add_payload_indexes":
@@ -271,16 +343,19 @@ def reconcile_index_context(
                     if exc.category != "rebuild_required":
                         raise
                     action = "rebuild"
-                    indexed = context.runtime.indexer.index(context.workspace)
+                    indexed = frozen.runtime.indexer.index(frozen.workspace)
+                    _verify_source_before_publish(context, frozen)
                     snapshot = store_q.load_snapshot(context.runtime.repository)
                     execution = store_q.reconcile_projection(
                         indexed, expected_snapshot=snapshot,
                     ).to_mapping()
             elif action == "sync":
                 assert context.driver is not None
-                execution = context.driver.run("sync")
+                assert frozen.driver is not None
+                execution = frozen.driver.run("sync")
             else:
-                indexed = context.runtime.indexer.index(context.workspace)
+                indexed = frozen.runtime.indexer.index(frozen.workspace)
+                _verify_source_before_publish(context, frozen)
                 snapshot = None
                 try:
                     snapshot = store_q.load_snapshot(context.runtime.repository)
@@ -298,9 +373,11 @@ def reconcile_index_context(
             store_o = cast(OpenSearchIndexStore, context.store)
             if action == "sync":
                 assert context.driver is not None
-                execution = context.driver.run("sync")
+                assert frozen.driver is not None
+                execution = frozen.driver.run("sync")
             else:
-                indexed = context.runtime.indexer.index(context.workspace)
+                indexed = frozen.runtime.indexer.index(frozen.workspace)
+                _verify_source_before_publish(context, frozen)
                 execution = store_o.full_rebuild(indexed).to_mapping()
         plan["stage_timings_ms"] = {
             "mutation": round((time.monotonic() - mutation_started) * 1000),

@@ -12,6 +12,7 @@ from hashlib import sha256
 import json
 from xml.etree import ElementTree
 from pathlib import Path
+from uuid import uuid4
 
 from fetchcore.adapters.retrieval.solr.backend import (
     SolrIndexStore, SolrSettings, UrllibSolrTransport,
@@ -24,6 +25,7 @@ from fetchcore.operational.solr_runtime import (
 )
 from fetchcore.repository.indexing import RepositoryIndexResult
 from fetchcore.projection import corpus_checksum
+from fetchcore.adapters.retrieval.solr.index_contract import snapshot_indexing_fingerprint
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 
 
@@ -168,62 +170,140 @@ def rebuild_with_swap(
     active = store.settings.collection
     stage = f"{active}-fc-reconcile-{identity}"
     if unique_stage:
-        from uuid import uuid4
         stage = f"{stage}-{uuid4().hex[:8]}"
     client = UrllibJsonClient()
-    status = client.request(
-        "GET", f"{service.endpoint}/admin/cores",
-        params={"action": "STATUS", "core": stage, "indexInfo": "false", "wt": "json"},
-        timeout=store.settings.timeout_seconds,
-    )
-    cores = status.get("status")
-    details = cores.get(stage) if isinstance(cores, dict) else None
-    exists = isinstance(details, dict) and details.get("name") == stage
-    if not exists:
+    def core_exists(name: str) -> bool:
+        status = client.request(
+            "GET", f"{service.endpoint}/admin/cores",
+            params={"action": "STATUS", "core": name, "indexInfo": "false", "wt": "json"},
+            timeout=store.settings.timeout_seconds,
+        )
+        cores = status.get("status")
+        details = cores.get(name) if isinstance(cores, dict) else None
+        return isinstance(details, dict) and details.get("name") == name
+
+    def bound_stage(name: str) -> SolrIndexStore:
+        settings: SolrSettings = replace(store.settings, collection=name)
+        candidate = type(store)(
+            UrllibSolrTransport(settings), settings,
+            embedding_provider=store.embedding_provider,
+            clock=store.clock, timer=store.timer,
+        )
+        if isinstance(store, IndexContractSolrIndexStore):
+            assert isinstance(candidate, IndexContractSolrIndexStore)
+            candidate.indexing_fingerprint = store.indexing_fingerprint
+        return candidate
+
+    checksum = corpus_checksum(result.documents)
+
+    def reusable(candidate: SolrIndexStore) -> bool:
+        try:
+            candidate.validate_schema(require_vectors=store.embedding_provider is not None)
+            inspect_ownership(candidate, result.repository)
+            snapshot = candidate.load_snapshot(result.repository)
+        except KnowledgeSearchError:
+            return False
+        return (snapshot.revision == result.revision
+                and snapshot.document_count == len(result.documents)
+                and snapshot.corpus_checksum == checksum
+                and snapshot_indexing_fingerprint(snapshot)
+                == getattr(store, "indexing_fingerprint", None))
+
+    reuse = core_exists(stage) and reusable(bound_stage(stage))
+    if not reuse and not unique_stage:
+        # An earlier partial deterministic stage may be followed by a complete
+        # suffixed stage. Discover only names in this exact target namespace and
+        # reuse only a fully verified matching snapshot.
+        payload = client.request(
+            "GET", f"{service.endpoint}/admin/cores",
+            params={"action": "STATUS", "indexInfo": "false", "wt": "json"},
+            timeout=store.settings.timeout_seconds,
+        )
+        statuses = payload.get("status")
+        if not isinstance(statuses, dict):
+            raise KnowledgeSearchError("Solr core inventory is unavailable",
+                                       category="publication_indeterminate")
+        for name in sorted(statuses):
+            if (name.startswith(f"{stage}-") and core_exists(name)
+                    and reusable(bound_stage(name))):
+                stage, reuse = name, True
+                break
+    if core_exists(stage) and not reuse:
+        # A deterministic name can hold the former active core after SWAP, or
+        # an interrupted partial stage. Neither may be overwritten or deleted.
+        stage = f"{stage}-{uuid4().hex[:8]}"
+    if not core_exists(stage):
         client.request(
             "GET", f"{service.endpoint}/admin/cores",
             params={"action": "CREATE", "name": stage, "configSet": configset,
                     "wt": "json"},
             timeout=store.settings.timeout_seconds,
         )
-    stage_settings: SolrSettings = replace(store.settings, collection=stage)
-    stage_store = type(store)(
-        UrllibSolrTransport(stage_settings), stage_settings,
-        embedding_provider=store.embedding_provider,
-        clock=store.clock, timer=store.timer,
-    )
-    if isinstance(store, IndexContractSolrIndexStore):
-        assert isinstance(stage_store, IndexContractSolrIndexStore)
-        stage_store.indexing_fingerprint = store.indexing_fingerprint
+    stage_store = bound_stage(stage)
     stage_store.validate_schema(require_vectors=store.embedding_provider is not None)
-    inspect_ownership(stage_store, result.repository)
-    persisted = stage_store.full_rebuild(result)
-    staged = stage_store.load_snapshot(result.repository)
-    if staged != persisted.snapshot:
-        raise KnowledgeSearchError("Solr staged snapshot changed before cutover",
-                                   category="concurrent_write")
+    if reuse:
+        staged = stage_store.load_snapshot(result.repository)
+        telemetry = None
+    else:
+        inspect_ownership(stage_store, result.repository)
+        persisted = stage_store.full_rebuild(result)
+        staged = stage_store.load_snapshot(result.repository)
+        if staged != persisted.snapshot:
+            raise KnowledgeSearchError("Solr staged snapshot changed before cutover",
+                                       category="concurrent_write")
+        telemetry = None if persisted.telemetry is None else persisted.telemetry.to_mapping()
+    staged_ownership = inspect_ownership(stage_store, result.repository)
     # Recheck ownership before the name swap; a separate writer may have acted.
     if inspect_ownership(store, result.repository) != original:
         raise KnowledgeSearchError("Solr active core changed while staging",
                                    category="concurrent_write")
-    client.request(
-        "GET", f"{service.endpoint}/admin/cores",
-        params={"action": "SWAP", "core": active, "other": stage, "wt": "json"},
-        timeout=store.settings.timeout_seconds,
-    )
-    try:
-        store.validate_schema(require_vectors=store.embedding_provider is not None)
-        published = store.load_snapshot(result.repository)
-        if published != staged:
-            raise KnowledgeSearchError("Solr published snapshot differs from stage",
-                                       category="index_update_failure")
-    except Exception:
+    def swap() -> None:
         client.request(
             "GET", f"{service.endpoint}/admin/cores",
             params={"action": "SWAP", "core": active, "other": stage, "wt": "json"},
             timeout=store.settings.timeout_seconds,
         )
+
+    def pair() -> tuple[SolrOwnership, SolrOwnership]:
+        return (inspect_ownership(store, result.repository),
+                inspect_ownership(stage_store, result.repository))
+
+    try:
+        swap()
+    except Exception as exc:
+        try:
+            observed = pair()
+        except Exception as read_error:
+            raise KnowledgeSearchError("Solr cutover state cannot be confirmed",
+                                       category="publication_indeterminate") from read_error
+        if observed == (original, staged_ownership):
+            raise
+        if observed != (staged_ownership, original):
+            raise KnowledgeSearchError("Solr cutover state is indeterminate",
+                                       category="publication_indeterminate") from exc
+    try:
+        store.validate_schema(require_vectors=store.embedding_provider is not None)
+        published = store.load_snapshot(result.repository)
+        if published != staged or pair() != (staged_ownership, original):
+            raise KnowledgeSearchError("Solr published snapshot differs from stage",
+                                       category="index_update_failure")
+    except Exception:
+        try:
+            if pair() != (staged_ownership, original):
+                raise KnowledgeSearchError("Solr active core changed before rollback",
+                                           category="publication_indeterminate")
+            rollback_response_error: KnowledgeSearchError | OSError | None = None
+            try:
+                swap()
+            except (KnowledgeSearchError, OSError) as response_error:
+                rollback_response_error = response_error
+            if pair() != (original, staged_ownership):
+                raise KnowledgeSearchError("Solr rollback is unverified",
+                                           category="publication_indeterminate") from rollback_response_error
+        except Exception as rollback_error:
+            raise KnowledgeSearchError("Solr rollback is unverified",
+                                       category="publication_indeterminate") from rollback_error
         raise
     return {"active_resource": active, "preserved_previous_resource": stage,
-            "snapshot": persisted.snapshot.to_solr(),
-            "telemetry": None if persisted.telemetry is None else persisted.telemetry.to_mapping()}
+            "snapshot": staged.to_solr(), "telemetry": telemetry,
+            "reused_staged_generation": reuse}

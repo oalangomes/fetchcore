@@ -89,3 +89,35 @@ These Qdrant vectors are test vectors, not operational `embeddinggemma` vectors.
 The normal CI operational indexing workflow remains fail-closed until an
 operator enables the separate reconciliation policy. No serving deployment was
 recreated as part of this validation.
+
+## PR #240 integrity follow-up
+
+The review of commit `7327ec3` identified four publication risks. The fixes
+remain within the existing reconciliation and adapter boundaries:
+
+| Blocker | Cause and correction | Failure evidence | Status |
+| --- | --- | --- | --- |
+| Solr active rebuild | The additive-field path could call `full_rebuild` on the active core. All Solr rebuilds now require a compatible versioned configset and a validated Standalone staging core; unsupported cutover blocks explicitly. | Live interruption during staging left the active core unchanged; post-SWAP failure restored the previous snapshot. | Resolved |
+| OpenSearch promotion | A post-promotion validation failure could leave the alias on the new generation. Promotion now reads the persisted alias, restores the previous target under the writer lock when safe, verifies restoration, and reports `publication_indeterminate` when it cannot prove rollback. Staged and prior indices are retained. | Contract tests cover pre-promotion failure, lost promotion response, post-promotion validation failure, failed rollback, and competing alias change. A live post-promotion failure restored the old alias. | Resolved |
+| Git source identity | A clean preflight did not freeze bytes read by indexing. Reconciliation now creates a temporary private Git clone at the requested commit, indexes that checkout, and verifies both source checkouts before publishing a rebuilt projection. No persistent worktree is created. | A contract test modifies the original checkout during canonical indexing and proves the alias and ready snapshot remain unchanged. | Resolved |
+| Solr stage collision | The deterministic stage name could contain a retained prior core after `SWAP`. Existing stages are reused only after schema, ownership, revision, checksum, fingerprint and ready-snapshot checks. Partial stages and prior cores remain untouched; a fresh name is used when needed. | Live partial-stage interruption and complete-stage interruption are followed by a CLI resume in a new process. A second explicit rebuild preserves the earlier backup; repeated safe-auto returns no-op. | Resolved |
+
+The CI `structural-live-backends` matrix now runs the reconciliation test against
+disposable Solr, OpenSearch and Qdrant resources on every PR. For Solr, the job
+creates a disposable configset with the four structural fields removed, leaving
+the current configset and operational core untouched. Each backend uploads a
+JUnit XML result and its test log as a `reconciliation-live-*` artifact.
+
+Local validation of this follow-up: lint, mypy, build and documentation checks
+passed; the full suite had 1,519 passed and 12 optional live tests skipped.
+The opt-in integration test passed separately against all three real services.
+The Solr failure sequence took 435.82 seconds because it exercised repeated
+staging, a fresh CLI process, cutover rollback and an explicit second rebuild.
+An application contract test also rejects structural retrieval from a published
+snapshot with an incompatible projection fingerprint.
+
+The private clone ensures that published bytes come from the requested commit.
+An operator working-tree change during indexing blocks a rebuild before backend
+mutation. The current serving deployment and registered source revision remain
+separate; this evidence does not claim the deployed CLI/MCP route has been
+switched to the recovered snapshot. SolrCloud automatic cutover remains blocked.

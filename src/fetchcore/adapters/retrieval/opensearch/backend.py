@@ -833,19 +833,12 @@ class OpenSearchIndexStore:
             old_indexes = self._alias_indexes(alias)
             self._validate_alias_ownership(old_indexes, result.repository)
             self.transport.request("PUT", concrete, self._generation_mapping(result.repository))
-            try:
-                (projected, embedding_requests, embedding_vectors,
-                 embedding_duration_ms) = self._project_documents_with_telemetry(result.documents)
-                self._bulk_upsert(concrete, (*projected, snapshot.to_mapping()))
-                self.transport.request("POST", f"{concrete}/_refresh", {})
-                self._validate_staged(concrete, snapshot)
-                self._promote(alias, concrete, old_indexes, snapshot)
-            except Exception:
-                # The alias still points at the old generation before promotion.
-                # After an ambiguous promotion response, keep staging for recovery.
-                if concrete not in self._alias_indexes(alias):
-                    self._delete_index_if_present(concrete)
-                raise
+            (projected, embedding_requests, embedding_vectors,
+             embedding_duration_ms) = self._project_documents_with_telemetry(result.documents)
+            self._bulk_upsert(concrete, (*projected, snapshot.to_mapping()))
+            self.transport.request("POST", f"{concrete}/_refresh", {})
+            self._validate_staged(concrete, snapshot)
+            self._promote(alias, concrete, old_indexes, snapshot)
 
         duration_ms = elapsed_ms(started, self.timer())
         telemetry = IndexSyncTelemetry(
@@ -897,32 +890,22 @@ class OpenSearchIndexStore:
                                if item.previous_document_id != item.document.id)
             concrete = _concrete_index(self.settings, result, uuid4().hex)
             self.transport.request("PUT", concrete, self._generation_mapping(result.repository))
-            staging_copy_active = False
-            try:
-                staging_copy_active = True
-                copied = self._copy_to_stage({
-                    "source": {"index": old_indexes[0]}, "dest": {"index": concrete},
-                })
-                staging_copy_active = False
-                if copied.get("failures") or copied.get("timed_out") is True:
-                    raise KnowledgeSearchError("OpenSearch staging copy failed", category="index_update_failure")
-                copied_count = copied.get("created", 0)
-                if not isinstance(copied_count, int) or copied_count != previous.document_count + 1:
-                    raise KnowledgeSearchError("OpenSearch staging copy count is incomplete", category="index_update_failure")
-                (projected, embedding_requests, embedding_vectors,
-                 embedding_duration_ms) = self._project_documents_with_telemetry(upserts)
-                self._bulk_upsert(concrete, projected)
-                self._bulk_delete(concrete, removed_ids)
-                self._bulk_upsert(concrete, (snapshot.to_mapping(),))
-                self.transport.request("POST", f"{concrete}/_refresh", {})
-                self._validate_staged(concrete, snapshot)
-                self._promote(alias, concrete, old_indexes, snapshot)
-            except Exception:
-                # A task may outlive a transport timeout. Keep its private stage
-                # until an operator confirms task completion before cleanup.
-                if not staging_copy_active and concrete not in self._alias_indexes(alias):
-                    self._delete_index_if_present(concrete)
-                raise
+            copied = self._copy_to_stage({
+                "source": {"index": old_indexes[0]}, "dest": {"index": concrete},
+            })
+            if copied.get("failures") or copied.get("timed_out") is True:
+                raise KnowledgeSearchError("OpenSearch staging copy failed", category="index_update_failure")
+            copied_count = copied.get("created", 0)
+            if not isinstance(copied_count, int) or copied_count != previous.document_count + 1:
+                raise KnowledgeSearchError("OpenSearch staging copy count is incomplete", category="index_update_failure")
+            (projected, embedding_requests, embedding_vectors,
+             embedding_duration_ms) = self._project_documents_with_telemetry(upserts)
+            self._bulk_upsert(concrete, projected)
+            self._bulk_delete(concrete, removed_ids)
+            self._bulk_upsert(concrete, (snapshot.to_mapping(),))
+            self.transport.request("POST", f"{concrete}/_refresh", {})
+            self._validate_staged(concrete, snapshot)
+            self._promote(alias, concrete, old_indexes, snapshot)
         duration_ms = elapsed_ms(started, self.timer())
         return OpenSearchIndexSyncResult(
             mode="incremental", snapshot=snapshot,
@@ -971,9 +954,49 @@ class OpenSearchIndexStore:
             *({"remove": {"index": old, "alias": alias}} for old in old_indexes),
             {"add": {"index": concrete, "alias": alias}},
         ]
-        self.transport.request("POST", "_aliases", {"actions": actions})
-        if self._alias_indexes(alias) != (concrete,) or self.load_snapshot(snapshot.repository) != snapshot:
-            raise KnowledgeSearchError("OpenSearch alias promotion is incomplete", category="index_update_failure")
+        try:
+            self.transport.request("POST", "_aliases", {"actions": actions})
+            if (self._alias_indexes(alias) != (concrete,)
+                    or self.load_snapshot(snapshot.repository) != snapshot):
+                raise KnowledgeSearchError("OpenSearch alias promotion is incomplete",
+                                           category="index_update_failure")
+        except Exception as exc:
+            try:
+                actual = self._alias_indexes(alias)
+            except Exception as read_error:
+                raise KnowledgeSearchError(
+                    "OpenSearch alias state cannot be confirmed after promotion",
+                    category="publication_indeterminate",
+                ) from read_error
+            if actual == old_indexes:
+                raise
+            if actual != (concrete,):
+                raise KnowledgeSearchError(
+                    "OpenSearch alias changed outside the writer lock",
+                    category="publication_indeterminate",
+                ) from exc
+            rollback = [
+                {"remove": {"index": concrete, "alias": alias}},
+                *({"add": {"index": old, "alias": alias}} for old in old_indexes),
+            ]
+            try:
+                self.transport.request("POST", "_aliases", {"actions": rollback})
+            except Exception as rollback_error:
+                try:
+                    restored = self._alias_indexes(alias) == old_indexes
+                except KnowledgeSearchError:
+                    restored = False
+                if not restored:
+                    raise KnowledgeSearchError(
+                        "OpenSearch alias rollback is unverified",
+                        category="publication_indeterminate",
+                    ) from rollback_error
+            if self._alias_indexes(alias) != old_indexes:
+                raise KnowledgeSearchError(
+                    "OpenSearch alias rollback is unverified",
+                    category="publication_indeterminate",
+                ) from exc
+            raise
         # Keep old generations for manual rollback and recovery.
 
     def _generation_mapping(self, repository: str) -> dict[str, object]:
