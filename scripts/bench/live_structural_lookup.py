@@ -110,6 +110,7 @@ class _MeasuredStages:
         self.wall_ms: dict[str, float] = {}
         self.backend_ms: dict[str, float] = {}
         self.originals: list[tuple[object, str, object]] = []
+        self.active: list[list[float]] = []
 
     def wrap(self, owner: object, method_name: str, stage: str) -> None:
         original = getattr(owner, method_name)
@@ -118,19 +119,25 @@ class _MeasuredStages:
         def measured(*args: object, **kwargs: object) -> object:
             backend_before = self.transport.backend_ms
             started = time.perf_counter()
+            self.active.append([0.0, 0.0])
             try:
                 return original(*args, **kwargs)
             finally:
-                self.wall_ms[stage] = self.wall_ms.get(stage, 0.0) + (
-                    time.perf_counter() - started
-                ) * 1_000
-                self.backend_ms[stage] = self.backend_ms.get(stage, 0.0) + (
-                    self.transport.backend_ms - backend_before
+                elapsed = (time.perf_counter() - started) * 1_000
+                backend_elapsed = self.transport.backend_ms - backend_before
+                child_wall, child_backend = self.active.pop()
+                self.wall_ms[stage] = self.wall_ms.get(stage, 0.0) + elapsed - child_wall
+                self.backend_ms[stage] = (
+                    self.backend_ms.get(stage, 0.0) + backend_elapsed - child_backend
                 )
+                if self.active:
+                    self.active[-1][0] += elapsed
+                    self.active[-1][1] += backend_elapsed
 
         setattr(owner, method_name, measured)
 
     def reset(self) -> None:
+        assert not self.active
         self.wall_ms.clear()
         self.backend_ms.clear()
 
@@ -237,6 +244,7 @@ def run(backend: str, url: str, size: int, samples: int) -> dict[str, object]:
             repeated = []
             backend_times = []
             app_only = []
+            app_remainder = []
             calls = []
             transferred = []
             stage_wall: dict[str, list[float]] = {name: [] for name in (
@@ -257,6 +265,7 @@ def run(backend: str, url: str, size: int, samples: int) -> dict[str, object]:
                 if index > 0:
                     backend_times.append(measured.backend_ms)
                     app_only.append(max(0.0, elapsed - measured.backend_ms))
+                    app_remainder.append(max(0.0, elapsed - sum(stages.wall_ms.values())))
                     calls.append(measured.calls)
                     transferred.append(measured.documents)
                     for name, values in stage_wall.items():
@@ -268,7 +277,8 @@ def run(backend: str, url: str, size: int, samples: int) -> dict[str, object]:
                 "cold_ms": round(cold[0], 3),
                 "repeated": _percentiles(repeated),
                 "backend_transport": _percentiles(backend_times),
-                "application_hydration": _percentiles(app_only),
+                "application_processing_total": _percentiles(app_only),
+                "application_remainder": _percentiles(app_remainder),
                 "stages": {name: {
                     "wall": _percentiles(values),
                     "backend_transport": _percentiles(stage_backend[name]),
