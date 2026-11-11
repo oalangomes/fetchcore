@@ -40,6 +40,7 @@ _BACKEND_FIELDS = {
     "opensearch": frozenset({
         "url", "index", "collection", "timeout_seconds", "projection_version",
         "field_boosts", "signal_type_boosts", "batch_size", "diagnostic_candidate_window",
+        "username", "password",
     }),
     "qdrant-vector": frozenset({
         "url", "collection", "timeout_seconds", "projection_version",
@@ -157,7 +158,7 @@ class FetchCoreRuntimeConfig:
     """Resolved application bootstrap, independent of its input source."""
 
     backend: str = "local-semantic"
-    backend_settings: Mapping[str, object] = field(default_factory=dict)
+    backend_settings: Mapping[str, object] = field(default_factory=dict, repr=False)
     retrieval: RetrievalConfig | None = None
     ollama: OllamaRuntimeSettings = OllamaRuntimeSettings()
     reconciliation: ReconciliationSettings = ReconciliationSettings()
@@ -202,7 +203,7 @@ def validate_backend_settings(backend: str, settings: Mapping[str, object]) -> N
     ):
         if key in data:
             _positive_int(data[key], f"backends.{backend}.{key}")
-    for key in ("collection", "index", "embedding_model", "api_key"):
+    for key in ("collection", "index", "embedding_model", "api_key", "username", "password"):
         if key in data:
             _string(data[key], f"backends.{backend}.{key}")
     if backend == "solr":
@@ -297,6 +298,11 @@ def _env_overlay(env: Mapping[str, str], default_backend: str) -> dict[str, obje
                     except ValueError as exc:
                         raise ValueError(f"{name} must be a positive integer") from exc
                 backend_settings[field_name.lower()] = setting_value
+    if selected == "opensearch":
+        for field_name in ("USERNAME", "PASSWORD"):
+            name = f"FETCHCORE_OPENSEARCH_{field_name}"
+            if name in env:
+                backend_settings[field_name.lower()] = env[name]
 
     retrieval = pick("FETCHCORE_RETRIEVAL", "FETCHCORE_MCP_RETRIEVAL")
     if "FETCHCORE_RETRIEVAL" in env and not env["FETCHCORE_RETRIEVAL"].strip():

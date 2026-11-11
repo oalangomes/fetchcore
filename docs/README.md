@@ -20,6 +20,7 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Follow the Developer Local installation contract | [Developer Local guide](guides/developer-local.md) and [P0.0 audit](operations/p00-installation-contract-2026-10-19.md) |
 | Review the Developer Local acceptance gate | [P0.1 acceptance](operations/p01-developer-local-acceptance-2026-10-19.md) |
 | Share local services safely | [Shared development infrastructure](guides/shared-development-infrastructure.md) |
+| Pilot a secure remote OpenSearch backend | [Remote OpenSearch pilot](guides/remote-opensearch.md) |
 | Review consumer migration starting state | [Shared infrastructure consumer audit](operations/shared-infra-consumer-audit.md) |
 | Review consumer migration validation | [Shared infrastructure consumer validation](operations/shared-infra-consumer-validation.md) |
 | Review Qdrant OPERATIONAL preflight | [Qdrant preflight 2026-10-17](operations/qdrant-operational-preflight-2026-10-17.md) |

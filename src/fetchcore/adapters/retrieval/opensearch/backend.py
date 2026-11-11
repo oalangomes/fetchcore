@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import time
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from fetchcore.retrieval.contracts import Anchor
 from fetchcore.retrieval.translation import validate_intent_translation, translation_diagnostics
@@ -117,6 +118,36 @@ class OpenSearchSettings:
     )
     batch_size: int = 200
     diagnostic_candidate_window: int | None = None
+    username: str | None = None
+    password: str | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        parsed = urlparse(self.url)
+        if parsed.username is not None or parsed.password is not None:
+            raise KnowledgeSearchError(
+                "OpenSearch URL must not include credentials",
+                category="schema_mismatch",
+            )
+        if self.username is None and self.password is None:
+            return
+        if (
+            not isinstance(self.username, str)
+            or not self.username
+            or ":" in self.username
+            or any(char in self.username for char in "\r\n")
+            or not isinstance(self.password, str)
+            or not self.password
+            or any(char in self.password for char in "\r\n")
+        ):
+            raise KnowledgeSearchError(
+                "OpenSearch authentication requires a valid username/password pair",
+                category="schema_mismatch",
+            )
+        if parsed.scheme != "https":
+            raise KnowledgeSearchError(
+                "OpenSearch authenticated endpoints require HTTPS",
+                category="schema_mismatch",
+            )
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object] | None) -> OpenSearchSettings:
@@ -173,6 +204,8 @@ class OpenSearchSettings:
             signal_type_boosts=controls.signal_type_boosts,
             batch_size=batch_size,
             diagnostic_candidate_window=controls.diagnostic_candidate_window,
+            username=cast(str | None, data.get("username")),
+            password=cast(str | None, data.get("password"))
         )
 
 
@@ -190,12 +223,28 @@ class OpenSearchTransport(Protocol):
         ...
 
 
+class _NoAuthenticatedRedirects(HTTPRedirectHandler):
+    """Never forward an OpenSearch Authorization header to a redirect target."""
+
+    def redirect_request(
+        self, req: Request, fp: object, code: int, msg: str,
+        headers: object, newurl: str,
+    ) -> None:
+        return None
+
+
 class UrllibOpenSearchTransport:
     """Dependency-free REST transport for local or remote OpenSearch."""
 
     def __init__(self, settings: OpenSearchSettings) -> None:
         """Initialize UrllibOpenSearchTransport with its explicit dependencies."""
         self.settings = settings
+        # Disable redirects when an Authorization header is present.
+        self._opener = (
+            build_opener(_NoAuthenticatedRedirects())
+            if settings.username is not None
+            else None
+        )
 
     def request(
         self,
@@ -213,18 +262,26 @@ class UrllibOpenSearchTransport:
             body = None
         else:
             body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        request = Request(
-            url,
-            data=body,
-            method=method,
-            headers={"Accept": "application/json", "Content-Type": content_type},
-        )
+        headers = {"Accept": "application/json", "Content-Type": content_type}
+        if self.settings.username is not None:
+            assert self.settings.password is not None
+            credentials = f"{self.settings.username}:{self.settings.password}".encode()
+            token = base64.b64encode(credentials).decode("ascii")
+            headers["Authorization"] = f"Basic {token}"
+        request = Request(url, data=body, method=method, headers=headers)
         try:
-            with urlopen(request, timeout=self.settings.timeout_seconds) as response:
+            response = (
+                self._opener.open(request, timeout=self.settings.timeout_seconds)
+                if self._opener is not None
+                else urlopen(request, timeout=self.settings.timeout_seconds)
+            )
+            with response:
                 raw = response.read()
         except HTTPError as exc:
             category = (
-                "index_missing"
+                "authentication_denied"
+                if exc.code in {401, 403}
+                else "index_missing"
                 if exc.code == 404
                 else "schema_mismatch"
                 if exc.code in {400, 409, 422}
