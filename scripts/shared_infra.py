@@ -9,12 +9,22 @@ from pathlib import Path
 import re
 import subprocess
 import time
+import xml.etree.ElementTree as ET
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 OWNER = "fetchcore-shared-infra-v1"
 BACKENDS = {"solr": "solr", "opensearch": "opensearch", "qdrant": "qdrant-vector"}
+SOLR_CONFIGSET = "fetchcore-projection-v3"
+
+
+class SolrDeploymentModeError(RuntimeError):
+    """Observed Solr mode does not match the explicitly routed deployment mode."""
+
+
+class SolrConfigurationError(RuntimeError):
+    """Solr resource configset or schema is incompatible with FetchCore."""
 
 
 def index_settings(config: dict[str, str]) -> str:
@@ -116,6 +126,10 @@ def route(
         "FETCHCORE_INFRA_PROJECT": f"fetchcore-{instance}",
         "FETCHCORE_INFRA_OWNER": OWNER,
         "FETCHCORE_ENVIRONMENT": environment,
+        "FETCHCORE_SOLR_DEPLOYMENT_MODE": (
+            "standalone" if environment == "operational" else "solrcloud"
+        ),
+        "FETCHCORE_SOLR_CONFIGSET": SOLR_CONFIGSET,
         "FETCHCORE_REPOSITORY": repository,
         "FETCHCORE_SOLR_PORT": str(8983 + offset),
         "OPENSEARCH_PORT": str(9200 + offset),
@@ -209,46 +223,214 @@ def validate_volumes(config: dict[str, str]) -> None:
             raise ValueError("refusing unowned volume in reserved project")
 
 
+def _solr_json(url: str) -> dict[str, object]:
+    request = Request(url, headers={"Accept": "application/json"})
+    with urlopen(request, timeout=3) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise RuntimeError("Solr returned an invalid JSON object")
+    return payload
+
+
+def _schema_value(value: str) -> object:
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    return value
+
+
+def _expected_analyzer(analyzer: ET.Element) -> dict[str, object]:
+    result: dict[str, object] = {}
+    tokenizer = analyzer.find("tokenizer")
+    if tokenizer is not None:
+        result["tokenizer"] = dict(tokenizer.attrib)
+    for tag, key in (("filter", "filters"), ("charFilter", "charFilters")):
+        entries = [dict(element.attrib) for element in analyzer.findall(tag)]
+        if entries:
+            result[key] = entries
+    return result
+
+
+def _validate_solrcloud_schema(collection_url: str) -> None:
+    expected_schema = ET.parse(
+        ROOT / "infra" / "solr" / "configset" / "conf" / "schema.xml"
+    ).getroot()
+    payload = _solr_json(f"{collection_url}/schema?wt=json")
+    schema = payload.get("schema")
+    if not isinstance(schema, dict):
+        raise RuntimeError("SolrCloud collection returned no schema")
+    if (
+        schema.get("name") != expected_schema.get("name")
+        or str(schema.get("version")) != expected_schema.get("version")
+        or schema.get("uniqueKey") != expected_schema.findtext("uniqueKey")
+    ):
+        raise SolrConfigurationError("SolrCloud collection schema identity is incompatible")
+
+    def compare_elements(
+        xml_elements: list[ET.Element],
+        actual_value: object,
+        label: str,
+        nested: bool = False,
+    ) -> None:
+        if not isinstance(actual_value, list) or not all(
+            isinstance(item, dict) for item in actual_value
+        ):
+            raise SolrConfigurationError(f"SolrCloud collection returned invalid {label}")
+        expected = {item.get("name"): item for item in xml_elements}
+        actual = {item.get("name"): item for item in actual_value}
+        if len(actual) != len(actual_value) or set(actual) != set(expected):
+            raise SolrConfigurationError(
+                f"SolrCloud collection {label} differ from Projection v3"
+            )
+        for name, element in expected.items():
+            observed = actual[name]
+            for key, value in element.attrib.items():
+                if observed.get(key) != _schema_value(value):
+                    raise SolrConfigurationError(
+                        f"SolrCloud collection {label} definition is incompatible: {name}"
+                    )
+            if nested and label == "fieldTypes":
+                for analyzer in element.findall("analyzer"):
+                    analyzer_type = analyzer.get("type")
+                    if analyzer_type not in {"index", "query"}:
+                        raise SolrConfigurationError(
+                            "Projection v3 has an unknown analyzer type"
+                        )
+                    actual_key = f"{analyzer_type}Analyzer"
+                    if observed.get(actual_key) != _expected_analyzer(analyzer):
+                        raise SolrConfigurationError(
+                            f"SolrCloud collection field type is incompatible: {name}"
+                        )
+
+    compare_elements(expected_schema.findall("field"), schema.get("fields"), "fields")
+    compare_elements(
+        expected_schema.findall("fieldType"),
+        schema.get("fieldTypes"),
+        "fieldTypes",
+        nested=True,
+    )
+    compare_elements(
+        expected_schema.findall("dynamicField"),
+        schema.get("dynamicFields"),
+        "dynamicFields",
+    )
+    copy_fields = schema.get("copyFields")
+    expected_copy_fields = expected_schema.findall("copyField")
+    if (
+        not isinstance(copy_fields, list)
+        or len(copy_fields) != len(expected_copy_fields)
+        or any(
+            not isinstance(item, dict)
+            or item != element.attrib
+            for item, element in zip(copy_fields, expected_copy_fields, strict=True)
+        )
+    ):
+        raise SolrConfigurationError(
+            "SolrCloud collection copyFields differ from Projection v3"
+        )
+
+    expected_similarity = expected_schema.find("similarity")
+    actual_similarity = schema.get("similarity")
+    if expected_similarity is None or not isinstance(actual_similarity, dict):
+        raise SolrConfigurationError(
+            "SolrCloud collection similarity configuration is invalid"
+        )
+    if actual_similarity.get("class") != expected_similarity.get("class"):
+        raise SolrConfigurationError("SolrCloud collection similarity is incompatible")
+    for parameter in expected_similarity:
+        if actual_similarity.get(parameter.get("name", "")) != (parameter.text or "").strip():
+            raise SolrConfigurationError(
+                "SolrCloud collection similarity parameters are incompatible"
+            )
+
+
 def wait_ready(backend: str, config: dict[str, str], timeout: float = 180.0) -> dict[str, str]:
     """Wait for an HTTP-level readiness endpoint without provisioning resources."""
-    endpoint = {
-        "solr": (
-            f"{config['FETCHCORE_SOLR_URL']}/admin/collections"
-            "?action=CLUSTERSTATUS&wt=json"
-        ),
-        "opensearch": f"{config['FETCHCORE_OPENSEARCH_URL']}/_cluster/health",
-        "qdrant": f"{config['FETCHCORE_QDRANT_URL']}/readyz",
-    }[backend]
+    if backend == "solr":
+        expected_mode = config.get("FETCHCORE_SOLR_DEPLOYMENT_MODE")
+        if expected_mode not in {"standalone", "solrcloud"}:
+            raise ValueError("Solr readiness requires an explicit deployment mode")
+        endpoint = f"{config['FETCHCORE_SOLR_URL']}/admin/info/system?wt=json"
+    else:
+        endpoint = {
+            "opensearch": f"{config['FETCHCORE_OPENSEARCH_URL']}/_cluster/health",
+            "qdrant": f"{config['FETCHCORE_QDRANT_URL']}/readyz",
+        }[backend]
     deadline = time.monotonic() + timeout
     last_error = "no response"
     while time.monotonic() < deadline:
         try:
-            request = Request(endpoint, headers={"Accept": "application/json"})
-            with urlopen(request, timeout=3) as response:
-                body = response.read()
             if backend == "solr":
-                cluster_status = json.loads(body.decode("utf-8"))
-                if not isinstance(cluster_status, dict):
-                    raise RuntimeError("SolrCloud returned an invalid cluster status")
-                response_header = cluster_status.get("responseHeader")
+                system_info = _solr_json(endpoint)
+                response_header = system_info.get("responseHeader")
                 if (
                     not isinstance(response_header, dict)
                     or response_header.get("status") != 0
                 ):
-                    raise RuntimeError("SolrCloud returned an unsuccessful cluster status")
-                cluster = cluster_status.get("cluster")
-                live_nodes = cluster.get("live_nodes") if isinstance(cluster, dict) else None
-                if (
-                    not isinstance(live_nodes, list)
-                    or not live_nodes
-                    or not all(isinstance(node, str) and node for node in live_nodes)
-                ):
-                    raise RuntimeError("SolrCloud has no verified live ZooKeeper nodes")
+                    raise RuntimeError("Solr returned an unsuccessful system status")
+                observed_mode = {
+                    "std": "standalone",
+                    "solrcloud": "solrcloud",
+                }.get(system_info.get("mode"))
+                if observed_mode is None:
+                    raise RuntimeError("Solr deployment mode could not be determined")
+                if observed_mode != expected_mode:
+                    raise SolrDeploymentModeError(
+                        f"Solr deployment mode mismatch: expected {expected_mode}, "
+                        f"observed {observed_mode}"
+                    )
+                if expected_mode == "solrcloud":
+                    cluster_endpoint = (
+                        f"{config['FETCHCORE_SOLR_URL']}/admin/collections"
+                        "?action=CLUSTERSTATUS&wt=json"
+                    )
+                    cluster_status = _solr_json(cluster_endpoint)
+                    cluster_header = cluster_status.get("responseHeader")
+                    if (
+                        not isinstance(cluster_header, dict)
+                        or cluster_header.get("status") != 0
+                    ):
+                        raise RuntimeError("SolrCloud returned an unsuccessful cluster status")
+                    cluster = cluster_status.get("cluster")
+                    live_nodes = cluster.get("live_nodes") if isinstance(cluster, dict) else None
+                    if (
+                        not isinstance(live_nodes, list)
+                        or not live_nodes
+                        or not all(isinstance(node, str) and node for node in live_nodes)
+                    ):
+                        raise RuntimeError("SolrCloud has no verified live ZooKeeper nodes")
+                    collections = cluster.get("collections") if isinstance(cluster, dict) else None
+                    collection_name = config["FETCHCORE_SOLR_COLLECTION"]
+                    collection = (
+                        collections.get(collection_name)
+                        if isinstance(collections, dict)
+                        else None
+                    )
+                    if collection is not None:
+                        if not isinstance(collection, dict) or collection.get(
+                            "configName"
+                        ) != config["FETCHCORE_SOLR_CONFIGSET"]:
+                            raise SolrConfigurationError(
+                                "SolrCloud collection configset does not match Projection v3"
+                            )
+                        _validate_solrcloud_schema(
+                            f"{config['FETCHCORE_SOLR_URL']}/{quote(collection_name, safe='')}"
+                        )
             elif backend == "opensearch":
+                request = Request(endpoint, headers={"Accept": "application/json"})
+                with urlopen(request, timeout=3) as response:
+                    body = response.read()
                 health = json.loads(body.decode("utf-8"))
                 if health.get("status") not in {"green", "yellow"}:
                     raise RuntimeError(f"OpenSearch cluster status is {health.get('status')!r}")
+            else:
+                request = Request(endpoint, headers={"Accept": "application/json"})
+                with urlopen(request, timeout=3):
+                    pass
             return {"backend": backend, "endpoint": endpoint, "status": "ready"}
+        except (SolrDeploymentModeError, SolrConfigurationError):
+            raise
         except (OSError, json.JSONDecodeError, RuntimeError) as exc:
             last_error = str(exc)
             time.sleep(min(2.0, max(0.0, deadline - time.monotonic())))

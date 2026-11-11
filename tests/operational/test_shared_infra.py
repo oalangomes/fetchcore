@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 from unittest.mock import Mock
+import xml.etree.ElementTree as ET
 
 import pytest
 import yaml
@@ -27,6 +28,10 @@ def test_routing_isolates_logical_and_physical_resources():
     assert len({c["FETCHCORE_SOLR_URL"] for c in (dev, operational, dedicated)}) == 3
     assert all(c["FETCHCORE_OLLAMA_URL"] == "http://host.docker.internal:11434"
                for c in (dev, bench, operational, dedicated))
+    assert dev["FETCHCORE_SOLR_DEPLOYMENT_MODE"] == "solrcloud"
+    assert bench["FETCHCORE_SOLR_DEPLOYMENT_MODE"] == "solrcloud"
+    assert operational["FETCHCORE_SOLR_DEPLOYMENT_MODE"] == "standalone"
+    assert operational["FETCHCORE_SOLR_CONFIGSET"] == "fetchcore-projection-v3"
     assert json.loads(dev["FETCHCORE_INDEX_BACKEND_SETTINGS"])["projection_version"] == "3"
     assert infra.route("dev", "another/fetchcore")["FETCHCORE_SOLR_COLLECTION"] != dev[
         "FETCHCORE_SOLR_COLLECTION"
@@ -332,7 +337,72 @@ def test_qdrant_prepare_requires_explicit_vector_dimensions(monkeypatch):
     run.assert_not_called()
 
 
-def test_readiness_checks_solr_without_provisioning(monkeypatch):
+def _solr_schema_payload():
+    schema_file = ROOT / "infra/solr/configset/conf/schema.xml"
+    root = ET.parse(schema_file).getroot()
+
+    def value(item):
+        return {"true": True, "false": False}.get(item, item)
+
+    schema = {
+        "name": root.get("name"),
+        "version": root.get("version"),
+        "uniqueKey": root.findtext("uniqueKey"),
+        "fields": [
+            {key: value(item) for key, item in field.attrib.items()}
+            for field in root.findall("field")
+        ],
+        "fieldTypes": [],
+        "dynamicFields": [
+            {key: value(item) for key, item in field.attrib.items()}
+            for field in root.findall("dynamicField")
+        ],
+        "copyFields": [dict(field.attrib) for field in root.findall("copyField")],
+    }
+    for field_type in root.findall("fieldType"):
+        observed = {
+            key: value(item) for key, item in field_type.attrib.items()
+        }
+        for analyzer in field_type.findall("analyzer"):
+            analyzer_value = {}
+            tokenizer = analyzer.find("tokenizer")
+            if tokenizer is not None:
+                analyzer_value["tokenizer"] = dict(tokenizer.attrib)
+            for tag, key in (("filter", "filters"), ("charFilter", "charFilters")):
+                entries = [dict(element.attrib) for element in analyzer.findall(tag)]
+                if entries:
+                    analyzer_value[key] = entries
+            observed[f"{analyzer.get('type')}Analyzer"] = analyzer_value
+        schema["fieldTypes"].append(observed)
+    similarity = root.find("similarity")
+    assert similarity is not None
+    schema["similarity"] = {"class": similarity.get("class")}
+    schema["similarity"].update({
+        element.get("name"): (element.text or "").strip()
+        for element in similarity
+    })
+    return {"schema": schema}
+
+
+def _ready_responses(mode, *, collection_name=None, collection_config=None, schema=None):
+    def response(url):
+        if url.endswith("/admin/info/system?wt=json"):
+            return {"responseHeader": {"status": 0}, "mode": mode}
+        if "action=CLUSTERSTATUS" in url:
+            collections = {}
+            if collection_config is not None:
+                collections[collection_name] = {"configName": collection_config}
+            return {
+                "responseHeader": {"status": 0},
+                "cluster": {
+                    "live_nodes": ["127.0.0.1:8983_solr"],
+                    "collections": collections,
+                },
+            }
+        if url.endswith("/schema?wt=json"):
+            return schema or _solr_schema_payload()
+        raise AssertionError(f"Unexpected readiness endpoint: {url}")
+
     class Response:
         def __enter__(self):
             return self
@@ -340,37 +410,104 @@ def test_readiness_checks_solr_without_provisioning(monkeypatch):
         def __exit__(self, *_):
             return None
 
-        def read(self):
-            return b'{"responseHeader":{"status":0},"cluster":{"live_nodes":["127.0.0.1:8983_solr"]}}'
+        def __init__(self, value):
+            self.value = value
 
-    request = Mock()
-    open_url = Mock(return_value=Response())
-    monkeypatch.setattr(infra, "Request", lambda url, headers: request)
+        def read(self):
+            return json.dumps(self.value).encode()
+
+    requests = []
+
+    def open_url(request, timeout):
+        del timeout
+        url = request.full_url
+        requests.append(url)
+        return Response(response(url))
+
+    return open_url, requests
+
+
+def test_readiness_accepts_operational_solr_standalone(monkeypatch):
+    open_url, requests = _ready_responses("std")
     monkeypatch.setattr(infra, "urlopen", open_url)
-    result = infra.wait_ready("solr", infra.route("operational", "a/b"))
+    config = infra.route("operational", "a/b")
+    result = infra.wait_ready("solr", config)
     assert result["status"] == "ready"
-    assert result["endpoint"] == (
-        "http://127.0.0.1:38983/solr/admin/collections?action=CLUSTERSTATUS&wt=json"
+    assert result["endpoint"] == "http://127.0.0.1:38983/solr/admin/info/system?wt=json"
+    assert config["FETCHCORE_SOLR_DEPLOYMENT_MODE"] == "standalone"
+    assert requests == [result["endpoint"]]
+
+
+@pytest.mark.parametrize("environment", ["dev", "bench"])
+def test_readiness_accepts_dev_bench_solrcloud(monkeypatch, environment):
+    open_url, requests = _ready_responses("solrcloud")
+    monkeypatch.setattr(infra, "urlopen", open_url)
+    config = infra.route(environment, "a/b")
+    result = infra.wait_ready("solr", config)
+    assert result["status"] == "ready"
+    assert config["FETCHCORE_SOLR_DEPLOYMENT_MODE"] == "solrcloud"
+    assert len(requests) == 2
+    assert requests[0].endswith("/admin/info/system?wt=json")
+    assert "action=CLUSTERSTATUS" in requests[1]
+
+
+@pytest.mark.parametrize(
+    ("environment", "observed_mode"),
+    [("operational", "solrcloud"), ("dev", "std"), ("bench", "std")],
+)
+def test_readiness_rejects_incompatible_solr_deployment_mode(
+    monkeypatch, environment, observed_mode,
+):
+    open_url, requests = _ready_responses(observed_mode)
+    monkeypatch.setattr(infra, "urlopen", open_url)
+    with pytest.raises(infra.SolrDeploymentModeError, match="mode mismatch"):
+        infra.wait_ready("solr", infra.route(environment, "a/b"), timeout=0.01)
+    assert len(requests) == 1
+
+
+def test_readiness_rejects_existing_cloud_collection_with_other_configset(monkeypatch):
+    config = infra.route("dev", "a/b")
+    open_url, requests = _ready_responses(
+        "solrcloud",
+        collection_name=config["FETCHCORE_SOLR_COLLECTION"],
+        collection_config="different-configset",
     )
-    open_url.assert_called_once()
+    monkeypatch.setattr(infra, "urlopen", open_url)
+    with pytest.raises(infra.SolrConfigurationError, match="configset"):
+        infra.wait_ready("solr", config)
+    assert not any(url.endswith("/schema?wt=json") for url in requests)
 
 
-def test_solr_readiness_rejects_empty_cluster(monkeypatch):
-    class Response:
-        def __enter__(self):
-            return self
+def test_readiness_compares_full_existing_cloud_schema(monkeypatch):
+    config = infra.route("dev", "a/b")
+    schema = _solr_schema_payload()
+    schema["schema"]["fields"] = [
+        {**field, "stored": False} if field["name"] == "canonical_payload" else field
+        for field in schema["schema"]["fields"]
+    ]
+    open_url, requests = _ready_responses(
+        "solrcloud",
+        collection_name=config["FETCHCORE_SOLR_COLLECTION"],
+        collection_config=infra.SOLR_CONFIGSET,
+        schema=schema,
+    )
+    monkeypatch.setattr(infra, "urlopen", open_url)
+    with pytest.raises(infra.SolrConfigurationError, match="fields definition"):
+        infra.wait_ready("solr", config)
+    assert any(url.endswith("/schema?wt=json") for url in requests)
 
-        def __exit__(self, *args):
-            return None
 
-        def read(self):
-            return b'{"responseHeader":{"status":0},"cluster":{"live_nodes":[]}}'
-
-    monkeypatch.setattr(infra, "Request", lambda url, headers: Mock())
-    monkeypatch.setattr(infra, "urlopen", Mock(return_value=Response()))
-    with pytest.raises(RuntimeError, match="SolrCloud has no verified live ZooKeeper nodes"):
-        infra.wait_ready("solr", infra.route("operational", "a/b"), timeout=0.01)
-
+def test_readiness_checks_existing_cloud_collection_schema(monkeypatch):
+    config = infra.route("bench", "a/b")
+    open_url, requests = _ready_responses(
+        "solrcloud",
+        collection_name=config["FETCHCORE_SOLR_COLLECTION"],
+        collection_config=infra.SOLR_CONFIGSET,
+    )
+    monkeypatch.setattr(infra, "urlopen", open_url)
+    result = infra.wait_ready("solr", config)
+    assert result["status"] == "ready"
+    assert any(url.endswith("/schema?wt=json") for url in requests)
 
 @pytest.mark.parametrize("environment", ["dev", "bench", "operational"])
 @pytest.mark.parametrize("backend", ["solr", "opensearch", "qdrant"])

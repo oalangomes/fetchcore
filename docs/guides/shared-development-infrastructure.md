@@ -252,8 +252,12 @@ labels; this is an accidental-deletion boundary, not a hostile-admin security mo
 Hermetic tests cover routing, backend selection, invalid identity, no implicit provisioning, volume
 adoption refusal, ownership mismatch, safe cleanup and resource isolation. Compose
 can be rendered without starting services. No retrieval tuning or schema migration
-is introduced. `ready` checks actual HTTP health; for Qdrant this is an external
-readiness probe because the upstream image has no in-container HTTP client.
+is introduced. `ready` requires an explicitly routed Solr deployment mode:
+OPERATIONAL checks Standalone, while DEV/BENCH check SolrCloud and its live cluster.
+An existing Cloud collection must use the expected configset and complete
+Projection v3 schema. Mode or schema mismatches fail readiness without fallback.
+For Qdrant, readiness is an external probe because the upstream image has no
+in-container HTTP client.
 Use an explicitly allocated host for any later live service/resource preparation;
 use existing shared indexes read-only for retrieval validation and never overwrite
 them as a smoke-test target.

@@ -91,10 +91,14 @@ if [ "$create_collection" = "true" ]; then
         curl -fsS "$solr_url/admin/collections?action=CREATE&name=$collection&collection.configName=$configset_name&numShards=1&replicationFactor=1&wt=json" \
             >/dev/null
     fi
-    for field in id record_kind repository content canonical_payload projection_version \
-        embedding_vector snapshot_revision corpus_checksum; do
-        curl -fsS "$solr_url/$collection/schema/fields/$field?wt=json" >/dev/null
-    done
+    collection_status=$(curl -fsS \
+        "$solr_url/admin/collections?action=CLUSTERSTATUS&collection=$collection&wt=json")
+    if ! printf '%s' "$collection_status" \
+        | grep -Eq '"configName"[[:space:]]*:[[:space:]]*"'$configset_name'"'; then
+        echo "SolrCloud collection $collection does not use configset $configset_name" >&2
+        exit 1
+    fi
+
     curl -fsS "$solr_url/$collection/select?q=*:*&rows=0&wt=json" >/dev/null
 fi
 
