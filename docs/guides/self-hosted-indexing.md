@@ -1,6 +1,6 @@
 # Self-hosted repository indexing
 
-FetchCore can index a repository from GitHub Actions on a self-hosted runner while keeping indexing semantics inside FetchCore. The path below describes the Solr-specific reusable workflow; the three OPERATIONAL workflows are listed below.
+FetchCore can index a repository from GitHub Actions on a self-hosted runner while keeping indexing semantics inside FetchCore. The path below describes the Solr-specific reusable workflow. Under [ADR-0006](../adr/ADR-0006-solr-official-backend.md), Solr is the only official, automatically maintained operational backend; the OpenSearch and Qdrant workflows are retained for explicit manual compatibility/recovery runs.
 
 ```text
 GitHub Actions
@@ -16,7 +16,7 @@ Solr snapshot + repository knowledge
 
 The workflow is transport and scheduling only. It does not reimplement Git delta discovery, fingerprint compatibility, canonical indexing, or persistence rules.
 
-## Operational automatic indexing by backend
+## Operational indexing: automatic Solr and manual compatibility workflows
 
 The reusable `.github/workflows/repository-index.yml` remains Solr-specific for existing callers. Each OPERATIONAL backend now has an **independent GitHub Actions workflow**, with separate manual dispatch, status, concurrency and evidence artifacts:
 
@@ -24,9 +24,7 @@ The reusable `.github/workflows/repository-index.yml` remains Solr-specific for 
 - [OpenSearch](../../.github/workflows/operational-opensearch.yml);
 - [Qdrant](../../.github/workflows/operational-qdrant.yml).
 
-All three use the same CI-success-on-`master` trigger, which always selects `sync`.
-Manual dispatch on `master` exposes `index_lifecycle: plan | sync | rebuild`,
-defaulting to `sync`. OpenSearch and Qdrant reuse the existing backend-neutral
+Only Solr is triggered automatically after successful CI on `master`, selecting `sync`. OpenSearch and Qdrant are **manual-dispatch only** for existing compatibility/recovery users; no automatic sync is triggered for those backends. Manual dispatch on `master` exposes `index_lifecycle: plan | sync | rebuild`, defaulting to `sync`. OpenSearch and Qdrant reuse the existing backend-neutral
 indexing lifecycle through `scripts/shared_infra.py`; each runs only against its
 own OPERATIONAL resource. Running one workflow manually does not start the other two.
 
@@ -74,8 +72,7 @@ Use the backend's OPERATIONAL workflow linked above, then **Run workflow** with
 
 Plan runs stop after inspection; readiness after execution is not claimed for a
 plan. Rebuild can still fail closed on corrupt state or adapter ownership checks.
-Subsequent automatic runs continue to use strict `sync` and never recover by
-rebuilding implicitly. Schema migration and serving revision reconciliation
+Subsequent automatic **Solr** runs continue to use strict `sync` and never recover by rebuilding implicitly. OpenSearch/Qdrant run only on explicit manual dispatch. Schema migration and serving revision reconciliation
 remain separate operator actions.
 
 A successful embedding preflight tests one short input; it does not prove that
