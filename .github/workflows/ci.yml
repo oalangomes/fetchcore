@@ -228,6 +228,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+      - name: Install FetchCore test dependencies
+        run: python -m pip install -e ".[dev]"
       - name: Start disposable SolrCloud
         env:
           FETCHCORE_SOLR_PORT: "8983"
@@ -235,7 +238,6 @@ jobs:
       - name: Verify routed mode, configset, full schema and real query
         run: |
           python - <<'PY'
-          import importlib.util
           import json
           from pathlib import Path
           import sys
