@@ -68,6 +68,24 @@ def test_yaml_env_and_explicit_precedence(tmp_path: Path) -> None:
     assert load_runtime_config(path=path, environ={}).backend_settings["url"] == "http://file:8983/solr"
 
 
+def test_solr_cloud_settings_are_accepted_by_runtime_config(tmp_path: Path) -> None:
+    path = tmp_path / "solrcloud.yaml"
+    path.write_text(
+        "version: 1\nruntime:\n  backend: solr\n"
+        "backends:\n  solr:\n"
+        "    url: http://solrcloud:8983/solr\n"
+        "    collection: fc-operational\n"
+        "    deployment_mode: solrcloud\n"
+        "    configset: fetchcore-projection-v3\n",
+        encoding="utf-8",
+    )
+
+    config = load_runtime_config(path=path, environ={})
+
+    assert config.backend_settings["deployment_mode"] == "solrcloud"
+    assert config.backend_settings["configset"] == "fetchcore-projection-v3"
+
+
 def test_qdrant_embedding_probe_uses_effective_ollama_endpoint(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
