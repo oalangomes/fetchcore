@@ -5,3 +5,7 @@
 `application/composition.py` owns explicit `BackendRegistry` and `EmbeddingProviderRegistry` factories. It is the boundary allowed to know concrete implementations. Built-in IDs are code-owned, and unknown IDs or factory identity mismatches fail explicitly. The runtime loader resolves settings and hands typed values to composition; adapters should not discover their own environment settings.
 
 Backend capability differences are declared through `RetrievalBackendCapabilities`. A backend that cannot represent a requested capability reports it rather than silently substituting another mode. See [ADR-0002](../adr/ADR-0002-capability-adapters.md) and [adding a backend](../guides/adding-a-backend.md).
+
+## Product backend policy
+
+[ADR-0006](../adr/ADR-0006-solr-official-backend.md) selects **Solr as FetchCore's sole official operational retrieval/index backend**. OpenSearch and Qdrant are compatibility/maintenance adapters, not co-equal product targets; `local-semantic` remains a local/development and compatibility path. This is a product-support policy, **not** a change to the backend-neutral `KnowledgeSearchBackend` port, canonical Repository Knowledge or capability negotiation. Existing operator-selected backend IDs and runtime defaults continue to work until separately migrated through an explicitly tested, versioned change.
