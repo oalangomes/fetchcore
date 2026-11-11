@@ -117,3 +117,64 @@ or existing snapshot was changed.
 
 Solr 9.10 documentation: [graph traversal and `trackTraversal`](https://solr.apache.org/guide/solr/9_10/query-guide/graph-traversal.html),
 [`shortestPath()` and `maxDepth`](https://solr.apache.org/guide/solr/9_10/query-guide/stream-source-reference.html).
+
+## Standalone preflight: M1 blocked
+
+The production topology is Solr 9.10.1 standalone, not SolrCloud. The M0
+expressions were re-run against a disposable standalone core created from the
+FetchCore configset. Both `nodes()` and `shortestPath()` returned an expression
+error, `zkHost not found for collection 'graphprobe'`. This occurs before graph
+data is traversed, so the Cloud traversal measurements below do not validate
+the deployed topology. The core also rejected the M0 edge field
+`source_identity_s` as unknown; `_default` dynamic fields from M0 are not the
+FetchCore knowledge schema or a publishable GraphProjection schema.
+
+Reproduce on the pinned image with no existing data volumes:
+
+```bash
+SOLR_IMAGE='solr:9.10.1@sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb'
+docker run -d --rm --name fetchcore-graph-standalone \
+  -p 127.0.0.1:48984:8983 \
+  -v "$PWD/infra/solr/configset:/fetchcore-configset:ro" \
+  "$SOLR_IMAGE" solr-precreate graphprobe /fetchcore-configset
+docker run -d --rm --name fetchcore-graph-cloud \
+  -p 127.0.0.1:48985:8983 "$SOLR_IMAGE" solr -c -f
+PYTHONPATH=src .venv/bin/python scripts/experiments/solr_graph_m0.py \
+  --solr-url http://127.0.0.1:48985/solr \
+  --standalone-url http://127.0.0.1:48984/solr --standalone-core graphprobe \
+  --samples 5 --output docs/benchmarks/results/solr-graph-preflight-2026-11-11.json
+FETCHCORE_GRAPH_M0_SOLR_URL=http://127.0.0.1:48985/solr \
+FETCHCORE_GRAPH_STANDALONE_URL=http://127.0.0.1:48984/solr \
+FETCHCORE_GRAPH_STANDALONE_CORE=graphprobe \
+  .venv/bin/python -m pytest tests/integration/test_solr_graph_m0.py -q
+docker stop fetchcore-graph-standalone fetchcore-graph-cloud
+```
+
+The probe also verifies a 512-neighbor star with reverse edges (1,024 edge
+observations): 513 unique nodes are returned, the cycle does not duplicate the
+root, and `shortestPath(maxDepth=1)` returns the direct edge. This is a bounded
+fixture, not evidence of a server-side node, memory, or response limit.
+Hydrating all three pairs on the four-node path returned all four observations,
+including both A→B source lines, with one `select` request. The script records
+Solr `RESPONSE_TIME`/`QTime` separately from client wall time. On this host the
+in the five-sample artifact, the high-fan-out traversal median was 952 ms
+client-side and 18 ms server-side. Batch hydration had a 948 ms client wall time
+and 1 ms Solr `QTime`, versus three individual edge-pair lookups at about 926 ms
+each. Most observed delay is outside Solr expression execution (HTTP plus the
+container/network path). It hydrates edge documents,
+not canonical symbol/source objects; application-level hydration remains
+unmeasured.
+
+`DeclarationIdentity.key` currently has the exact form
+`symbol:v1:sha256:<64 lowercase hex>`. The spike now rejects any other form and
+maps that digest to the parser-safe `symbol_v1_sha256_<digest>` traversal key.
+This mapping is injective for the validated canonical v1 format and avoids
+Lucene's colon query parsing; it does not claim support for future identity
+formats.
+
+**M1 is blocked for the current deployment.** Do not silently substitute
+`{!graph}`, a different traversal engine, or a Cloud-only serving path. The
+separate graph schema and publisher cannot be accepted as compatible until a
+supported Standalone traversal/publication design is chosen and tested. M1
+projection work that depends on a traversable graph collection is therefore
+not implemented in this PR. No knowledge/lexical/hybrid collection was changed.
