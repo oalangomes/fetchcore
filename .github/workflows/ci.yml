@@ -255,6 +255,10 @@ jobs:
               payload = json.load(response)
           assert payload["response"]["numFound"] == 0, payload
           PY
+      - name: Verify live SolrCloud graph traversal preflight
+        env:
+          FETCHCORE_GRAPH_M0_SOLR_URL: http://127.0.0.1:8983/solr
+        run: python -m pytest -q tests/integration/test_solr_graph_m0.py
       - name: Stop disposable SolrCloud
         if: always()
         run: docker compose -p fc-solrcloud-contract -f infra/compose/solr.yml down -v

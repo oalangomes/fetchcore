@@ -67,10 +67,6 @@ jobs:
                   time.sleep(2)
           raise SystemExit("Standalone Solr did not start")
           PY
-      - name: Verify live SolrCloud graph traversal preflight
-        env:
-          FETCHCORE_GRAPH_M0_SOLR_URL: http://127.0.0.1:8983/solr
-        run: python -m pytest -q tests/integration/test_solr_graph_m0.py
       - name: Index real Search Lab fixture in Solr
         env:
           FETCHCORE_INDEX_WORKSPACE: ${{ github.workspace }}/tools/explorer/fixtures/demo-repo
