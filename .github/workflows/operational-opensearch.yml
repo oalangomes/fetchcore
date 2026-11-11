@@ -1,11 +1,7 @@
 name: FetchCore operational OpenSearch index
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches:
-      - master
+  # Compatibility/recovery only. Solr owns automatic operational sync (ADR-0006).
   workflow_dispatch:
     inputs:
       index_lifecycle:
@@ -28,11 +24,7 @@ jobs:
 
   operational-opensearch-index:
     name: OPERATIONAL OpenSearch
-    if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
-      (github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_repository.full_name == github.repository)
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
     runs-on: ${{ fromJSON(vars.FETCHCORE_INDEX_RUNNER_LABELS_JSON || '["self-hosted","Linux","X64","fetchcore"]') }}
     timeout-minutes: 45
     concurrency:
