@@ -45,12 +45,14 @@ class FakeSolr:
         repositories: set[str] | None = None,
         unbound_documents: int = 0,
         unavailable_calls: int = 0,
+        live_nodes: list[str] | None = None,
     ) -> None:
         self.mode = mode
         self.resources = set(resources or ())
         self.repositories = set(repositories or ())
         self.unbound_documents = unbound_documents
         self.unavailable_calls = unavailable_calls
+        self.live_nodes = ["127.0.0.1:8983_solr"] if live_nodes is None else live_nodes
         self.calls: list[tuple[str, str, Mapping[str, str], Mapping[str, object] | None]] = []
 
     def request(
@@ -74,6 +76,14 @@ class FakeSolr:
                 "mode": self.mode,
                 "lucene": {"solr-spec-version": "9.10.1"},
             }
+        if url.endswith("/admin/collections") and values.get("action") == "CLUSTERSTATUS":
+            return {
+                "responseHeader": {"status": 0},
+                "cluster": {"live_nodes": self.live_nodes},
+            }
+        if url.endswith("/admin/collections") and values.get("action") == "CREATE":
+            self.resources.add(values["name"])
+            return {"responseHeader": {"status": 0}}
         if url.endswith("/admin/cores"):
             if values["action"] == "CREATE":
                 self.resources.add(values["name"])
@@ -84,11 +94,7 @@ class FakeSolr:
         if url.endswith("/admin/collections"):
             return {"collections": sorted(self.resources)}
         if url.endswith("/admin/configs"):
-            return {"configSets": ["fetchcore"]}
-        if url.endswith("/api/collections"):
-            assert payload is not None
-            self.resources.add(str(payload["name"]))
-            return {"responseHeader": {"status": 0}}
+            return {"configSets": ["fetchcore", "fetchcore-projection-v3"]}
         if url.endswith("/select"):
             query = values["q"]
             if query == "*:*":
@@ -159,6 +165,7 @@ def test_provision_if_missing_uses_free_owned_port_and_exact_cleanup(tmp_path: P
     state = prepare_solr_runtime(
         config(
             tmp_path,
+            deployment_mode=DeploymentMode.STANDALONE,
             provision_mode=ProvisionMode.PROVISION_IF_MISSING,
             create_if_missing=True,
         ),
@@ -194,7 +201,7 @@ def test_owned_solr_waits_through_startup_http_503(tmp_path: Path) -> None:
     docker = FakeDocker()
     state = prepare_solr_runtime(
         config(tmp_path, provision_mode=ProvisionMode.PROVISION_IF_MISSING,
-               create_if_missing=True),
+               create_if_missing=True, deployment_mode=DeploymentMode.STANDALONE),
         client=solr, docker=docker, choose_port=lambda: 49125, sleep=lambda _: None,
     )
     assert state.instance == "provisioned"
@@ -213,6 +220,7 @@ def test_owned_provisioning_defaults_to_bundled_configset(tmp_path: Path) -> Non
         config(
             tmp_path,
             configset_dir=None,
+            deployment_mode=DeploymentMode.STANDALONE,
             provision_mode=ProvisionMode.PROVISION_IF_MISSING,
             create_if_missing=True,
         ),
@@ -340,8 +348,58 @@ def test_solrcloud_uses_collections_api_and_checks_configset(tmp_path: Path) -> 
     assert state.deployment_mode == "solrcloud"
     assert state.resource_kind == "collection"
     assert any(call[1].endswith("/admin/configs") for call in solr.calls)
-    assert any(call[1].endswith("/api/collections") for call in solr.calls)
+    assert any(
+        call[1].endswith("/admin/collections") and call[2].get("action") == "CREATE"
+        for call in solr.calls
+    )
     assert not any(call[1].endswith("/admin/cores") for call in solr.calls)
+    assert any(
+        call[2].get("action") == "CLUSTERSTATUS" for call in solr.calls
+    )
+
+
+def test_auto_owned_provisioning_creates_cloud_collection(tmp_path: Path) -> None:
+    solr = FakeSolr(mode="solrcloud", unavailable_calls=1)
+    docker = FakeDocker()
+
+    state = prepare_solr_runtime(
+        config(
+            tmp_path,
+            resource="fetchcore-cloud",
+            configset="fetchcore-projection-v3",
+            provision_mode=ProvisionMode.PROVISION_IF_MISSING,
+            create_if_missing=True,
+        ),
+        client=solr,
+        docker=docker,
+        choose_port=lambda: 49126,
+        sleep=lambda _: None,
+    )
+
+    assert state.deployment_mode == "solrcloud"
+    assert state.resource_kind == "collection"
+    assert state.resource_state == "created"
+    assert state.repository_binding == "unbound"
+    assert docker.calls[0][-3:] == ("solr", "-c", "-f")
+    assert docker.calls[1] == (
+        "exec", "fetchcore-solr-123-1", "solr", "zk", "upconfig",
+        "-z", "localhost:9983", "-n", "fetchcore-projection-v3",
+        "-d", "/fetchcore-configset/conf",
+    )
+    assert any(
+        call[1].endswith("/admin/collections") and call[2].get("action") == "CREATE"
+        for call in solr.calls
+    )
+
+
+def test_cloud_readiness_requires_a_live_cluster_node(tmp_path: Path) -> None:
+    solr = FakeSolr(mode="solrcloud", live_nodes=[])
+
+    with pytest.raises(SolrRuntimeError) as failure:
+        prepare_solr_runtime(config(tmp_path), client=solr, docker=FakeDocker())
+
+    assert failure.value.category == "cluster_unavailable"
+    assert not any(call[0] == "POST" for call in solr.calls)
 
 
 def test_repository_resource_collision_fails_closed(tmp_path: Path) -> None:
@@ -463,6 +521,7 @@ def test_missing_resource_writes_a_preflight_artifact_without_mutation(
 def _owned_prepare_args(tmp_path: Path) -> list[str]:
     return [
         "prepare", "--solr-url", "http://127.0.0.1:8983/solr",
+        "--deployment-mode", "standalone",
         "--resource", "fetchcore-self-dogfood", "--repository", "oalangomes/fetchcore",
         "--create-if-missing", "--provision-mode", "provision_if_missing",
         "--solr-image", IMAGE, "--configset-dir", str(tmp_path),

@@ -210,6 +210,7 @@ def test_cleanup_checks_all_ownership_before_deleting(monkeypatch):
 def test_compose_has_no_implicit_resource_or_model_creation():
     compose = yaml.safe_load((ROOT / "infra/compose/shared.yml").read_text())
     assert compose["services"]["solr"]["command"] == ["sh", "/fetchcore-start-shared.sh"]
+    assert compose["volumes"]["solrcloud-data"]["labels"]["io.fetchcore.owner"]
     ollama = yaml.safe_load((ROOT / "infra/compose/ollama.yml").read_text())
     assert "command" not in ollama["services"]["ollama"]
     assert "shared.yml" not in (ROOT / "compose.yml").read_text()
@@ -340,7 +341,7 @@ def test_readiness_checks_solr_without_provisioning(monkeypatch):
             return None
 
         def read(self):
-            return b"{}"
+            return b'{"responseHeader":{"status":0},"cluster":{"live_nodes":["127.0.0.1:8983_solr"]}}'
 
     request = Mock()
     open_url = Mock(return_value=Response())
@@ -348,8 +349,27 @@ def test_readiness_checks_solr_without_provisioning(monkeypatch):
     monkeypatch.setattr(infra, "urlopen", open_url)
     result = infra.wait_ready("solr", infra.route("operational", "a/b"))
     assert result["status"] == "ready"
-    assert result["endpoint"] == "http://127.0.0.1:38983/solr/admin/info/system?wt=json"
+    assert result["endpoint"] == (
+        "http://127.0.0.1:38983/solr/admin/collections?action=CLUSTERSTATUS&wt=json"
+    )
     open_url.assert_called_once()
+
+
+def test_solr_readiness_rejects_empty_cluster(monkeypatch):
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return b'{"responseHeader":{"status":0},"cluster":{"live_nodes":[]}}'
+
+    monkeypatch.setattr(infra, "Request", lambda url, headers: Mock())
+    monkeypatch.setattr(infra, "urlopen", Mock(return_value=Response()))
+    with pytest.raises(RuntimeError, match="SolrCloud has no verified live ZooKeeper nodes"):
+        infra.wait_ready("solr", infra.route("operational", "a/b"), timeout=0.01)
 
 
 @pytest.mark.parametrize("environment", ["dev", "bench", "operational"])

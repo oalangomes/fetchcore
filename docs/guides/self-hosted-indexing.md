@@ -258,10 +258,11 @@ fingerprints, repository binding, and currentness.
 
 ### Creating a missing core or collection
 
-Creation requires `create_if_missing: true`. It creates only `collection` and uses
-the named, server-side `solr_configset` (default `fetchcore`). An external Solr
-operator must install that configset first. If it is unavailable, creation fails
-explicitly; the workflow does not upload, repair, or replace a configset.
+Creation requires `create_if_missing: true`. When reusing an existing service, it
+creates only `collection` and uses the named, server-side `solr_configset`
+(default `fetchcore`). An external Solr operator must install that configset
+first. If it is unavailable, creation fails explicitly; reuse-only service
+preparation does not upload, repair, or replace a configset.
 
 For an initial dedicated resource, manually dispatch
 `.github/workflows/repository-index.yml` as a separate initialization run. Set
@@ -352,8 +353,12 @@ create_if_missing: true
 
 That path selects a free loopback port, creates a uniquely named ephemeral
 container from the digest-pinned Solr image, and records it as owned by the run.
-The owned startup probe retries a temporary HTTP 503 while the container starts;
-other server errors still fail the preflight explicitly.
+For SolrCloud, the container starts with `solr -c`, uploads the explicitly named
+versioned configset to its ZooKeeper, then creates the collection through the
+Collections API. This disposable path has no persistent volume and does not
+migrate or modify any existing service. Standalone remains available only when
+selected explicitly. The owned startup probe retries a temporary HTTP 503 while
+the container starts; other server errors still fail the preflight explicitly.
 Cleanup removes only that exact owned container. It never deletes a pre-existing
 container or volume. `managed_solr: true` remains as a deprecated compatibility
 alias for this opt-in policy. Nonempty `solr_port` and `solr_volume` inputs fail

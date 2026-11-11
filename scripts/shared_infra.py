@@ -193,7 +193,10 @@ def validate_volumes(config: dict[str, str]) -> None:
         ["docker", "volume", "ls", "--format", "{{.Name}}"],
         check=True, capture_output=True, text=True,
     ).stdout.split()
-    for name in (f"{project}_{kind}-data" for kind in ("solr", "opensearch", "qdrant", "ollama")):
+    for name in (
+        f"{project}_{kind}-data"
+        for kind in ("solr", "solrcloud", "opensearch", "qdrant", "ollama")
+    ):
         if name not in existing:
             continue
         detail = json.loads(subprocess.run(
@@ -209,7 +212,10 @@ def validate_volumes(config: dict[str, str]) -> None:
 def wait_ready(backend: str, config: dict[str, str], timeout: float = 180.0) -> dict[str, str]:
     """Wait for an HTTP-level readiness endpoint without provisioning resources."""
     endpoint = {
-        "solr": f"{config['FETCHCORE_SOLR_URL']}/admin/info/system?wt=json",
+        "solr": (
+            f"{config['FETCHCORE_SOLR_URL']}/admin/collections"
+            "?action=CLUSTERSTATUS&wt=json"
+        ),
         "opensearch": f"{config['FETCHCORE_OPENSEARCH_URL']}/_cluster/health",
         "qdrant": f"{config['FETCHCORE_QDRANT_URL']}/readyz",
     }[backend]
@@ -220,7 +226,25 @@ def wait_ready(backend: str, config: dict[str, str], timeout: float = 180.0) -> 
             request = Request(endpoint, headers={"Accept": "application/json"})
             with urlopen(request, timeout=3) as response:
                 body = response.read()
-            if backend == "opensearch":
+            if backend == "solr":
+                cluster_status = json.loads(body.decode("utf-8"))
+                if not isinstance(cluster_status, dict):
+                    raise RuntimeError("SolrCloud returned an invalid cluster status")
+                response_header = cluster_status.get("responseHeader")
+                if (
+                    not isinstance(response_header, dict)
+                    or response_header.get("status") != 0
+                ):
+                    raise RuntimeError("SolrCloud returned an unsuccessful cluster status")
+                cluster = cluster_status.get("cluster")
+                live_nodes = cluster.get("live_nodes") if isinstance(cluster, dict) else None
+                if (
+                    not isinstance(live_nodes, list)
+                    or not live_nodes
+                    or not all(isinstance(node, str) and node for node in live_nodes)
+                ):
+                    raise RuntimeError("SolrCloud has no verified live ZooKeeper nodes")
+            elif backend == "opensearch":
                 health = json.loads(body.decode("utf-8"))
                 if health.get("status") not in {"green", "yellow"}:
                     raise RuntimeError(f"OpenSearch cluster status is {health.get('status')!r}")

@@ -5,7 +5,11 @@ on:
     paths:
       - 'tools/explorer/**'
       - '.github/workflows/explorer.yml'
+      - 'infra/compose/solr.yml'
+      - 'infra/images.lock'
+      - 'infra/solr/**'
       - 'src/fetchcore/application/**'
+      - 'src/fetchcore/operational/solr_runtime.py'
       - 'src/fetchcore/retrieval/**'
   workflow_dispatch:
 
@@ -41,19 +45,23 @@ jobs:
           python -m pip install -r tools/explorer/api/requirements.txt
       - name: Python contracts and default Solr selection
         run: python -m pytest -q tools/explorer/api/test_app.py
-      - name: Start isolated Solr with FetchCore Projection v3 schema
+      - name: Start isolated SolrCloud with the versioned FetchCore configset
         run: |
           docker run -d --name fetchcore-explorer-solr \
             -p 127.0.0.1:8983:8983 \
             -v "$GITHUB_WORKSPACE/infra/solr/configset:/fetchcore-configset:ro" \
-            "$FETCHCORE_SOLR_IMAGE" solr-precreate fetchcore /fetchcore-configset
-      - name: Wait for Solr readiness
+            -v "$GITHUB_WORKSPACE/infra/solr/start-cloud.sh:/fetchcore-start-cloud.sh:ro" \
+            -e FETCHCORE_SOLR_COLLECTION=fetchcore \
+            -e FETCHCORE_SOLR_CONFIGSET=fetchcore-projection-v3 \
+            -e FETCHCORE_SOLR_CREATE_COLLECTION=true \
+            "$FETCHCORE_SOLR_IMAGE" sh /fetchcore-start-cloud.sh
+      - name: Wait for SolrCloud collection readiness
         run: |
           python - <<'PY'
           import time
           from urllib.request import urlopen
 
-          url = "http://127.0.0.1:8983/solr/admin/info/system"
+          url = "http://127.0.0.1:8983/solr/fetchcore/schema/fields/canonical_payload?wt=json"
           for _ in range(60):
               try:
                   with urlopen(url, timeout=2) as response:
@@ -63,6 +71,10 @@ jobs:
                   time.sleep(2)
           raise SystemExit("Solr did not start")
           PY
+      - name: Verify live SolrCloud graph traversal preflight
+        env:
+          FETCHCORE_GRAPH_M0_SOLR_URL: http://127.0.0.1:8983/solr
+        run: python -m pytest -q tests/integration/test_solr_graph_m0.py
       - name: Index real Search Lab fixture in Solr
         env:
           FETCHCORE_INDEX_WORKSPACE: ${{ github.workspace }}/tools/explorer/fixtures/demo-repo
@@ -125,7 +137,7 @@ jobs:
           scripts/ci/docker-pull.sh "$solr_image"
           echo "FETCHCORE_PYTHON_IMAGE=$python_image" >> "$GITHUB_ENV"
           echo "FETCHCORE_SOLR_IMAGE=$solr_image" >> "$GITHUB_ENV"
-      - name: Validate root, legacy and standalone Compose contracts
+      - name: Validate root, legacy and SolrCloud Compose contracts
         run: |
           docker compose config --quiet
           docker compose --profile runtime --profile indexing config --quiet

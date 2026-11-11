@@ -105,9 +105,9 @@ def test_container_inputs_are_immutable_and_match_dockerfile() -> None:
     assert values["FETCHCORE_SOLR_IMAGE"] in (
         ROOT / "infra" / "compose" / "solr.yml"
     ).read_text(encoding="utf-8")
-    assert "/opt/solr/server/solr/configsets/fetchcore:ro" in (
-        ROOT / "infra" / "compose" / "solr.yml"
-    ).read_text(encoding="utf-8")
+    solr_compose = (ROOT / "infra" / "compose" / "solr.yml").read_text(encoding="utf-8")
+    assert "solrcloud-data:/var/solr" in solr_compose
+    assert "../solr/start-cloud.sh:/fetchcore-start-cloud.sh:ro" in solr_compose
     assert values["FETCHCORE_SOLR_IMAGE"] in (
         ROOT / ".github" / "workflows" / "repository-index.yml"
     ).read_text(encoding="utf-8")
@@ -141,6 +141,7 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     self_inputs = yaml.safe_load(self_dogfood)["jobs"]["self-index"]["with"]
     assert self_inputs["create_if_missing"] is True
     assert self_inputs["solr_provision_mode"] == "provision_if_missing"
+    assert self_inputs["solr_deployment_mode"] == "solrcloud"
     assert self_inputs["index_lifecycle"] == "rebuild"
     assert self_inputs["evaluate"] is True
 
