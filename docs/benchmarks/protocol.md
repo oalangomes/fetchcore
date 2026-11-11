@@ -7,3 +7,6 @@ The frozen [baseline v1 protocol](baseline-v1.md) defines its own corpus, arms, 
 ## Operational execution and publication
 
 New suite measurements follow the [BENCH infrastructure and run-bundle standard](infrastructure.md). Artifact identity and integrity, execution completeness, operator review and native benchmark quality are separate decisions. Functional BENCH uses suite-specific logical resources on shared BENCH backends; performance uses explicitly authorized isolated Compose projects with external host-load attestation. Neither mode changes native metrics or claims consumer satisfaction.
+
+The [Solr graph M0 spike](solr-graph-m0-2026-11-11.md) is a disposable
+compatibility experiment for issue #30, not a promoted retrieval benchmark.
