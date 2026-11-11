@@ -27,11 +27,13 @@ jobs:
       target_branch: ${{ github.head_ref || github.ref_name }}
       fetchcore_ref: ${{ github.event.pull_request.head.sha || github.sha }}
       solr_url: http://127.0.0.1:8983/solr
-      solr_deployment_mode: solrcloud
+      # The Cloud generation publisher is delivered separately; keep this
+      # pre-migration dogfood run on the historical Standalone lifecycle.
+      solr_deployment_mode: standalone
       collection: fetchcore-self-dogfood
       create_if_missing: true
       solr_provision_mode: provision_if_missing
-      solr_configset: fetchcore-projection-v3
+      solr_configset: fetchcore
       index_lifecycle: rebuild
       evaluate: true
       evaluation_modes_json: '["lexical"]'

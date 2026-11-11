@@ -45,23 +45,19 @@ jobs:
           python -m pip install -r tools/explorer/api/requirements.txt
       - name: Python contracts and default Solr selection
         run: python -m pytest -q tools/explorer/api/test_app.py
-      - name: Start isolated SolrCloud with the versioned FetchCore configset
+      - name: Start isolated Standalone Solr for legacy indexer validation
         run: |
           docker run -d --name fetchcore-explorer-solr \
             -p 127.0.0.1:8983:8983 \
             -v "$GITHUB_WORKSPACE/infra/solr/configset:/fetchcore-configset:ro" \
-            -v "$GITHUB_WORKSPACE/infra/solr/start-cloud.sh:/fetchcore-start-cloud.sh:ro" \
-            -e FETCHCORE_SOLR_COLLECTION=fetchcore \
-            -e FETCHCORE_SOLR_CONFIGSET=fetchcore-projection-v3 \
-            -e FETCHCORE_SOLR_CREATE_COLLECTION=true \
-            "$FETCHCORE_SOLR_IMAGE" sh /fetchcore-start-cloud.sh
-      - name: Wait for SolrCloud collection readiness
+            "$FETCHCORE_SOLR_IMAGE" solr-precreate fetchcore /fetchcore-configset
+      - name: Wait for Standalone Solr readiness
         run: |
           python - <<'PY'
           import time
           from urllib.request import urlopen
 
-          url = "http://127.0.0.1:8983/solr/fetchcore/schema/fields/canonical_payload?wt=json"
+          url = "http://127.0.0.1:8983/solr/admin/info/system?wt=json"
           for _ in range(60):
               try:
                   with urlopen(url, timeout=2) as response:
@@ -69,7 +65,7 @@ jobs:
                           raise SystemExit(0)
               except OSError:
                   time.sleep(2)
-          raise SystemExit("Solr did not start")
+          raise SystemExit("Standalone Solr did not start")
           PY
       - name: Verify live SolrCloud graph traversal preflight
         env:

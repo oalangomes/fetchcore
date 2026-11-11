@@ -1,24 +1,27 @@
 # Shared development infrastructure and resource lifecycle
 
-Status: shared DEV/BENCH local infrastructure. New local Solr services use
-single-node SolrCloud. The existing OPERATIONAL Solr Standalone service remains
-unchanged until an explicitly authorized migration.
+Status: shared DEV/BENCH local infrastructure. Explicit shared DEV/BENCH Solr
+services use single-node SolrCloud. The legacy root Compose entry point and
+OPERATIONAL service remain Standalone until Cloud indexing/publication is
+implemented and the migration is explicitly authorized.
 
 ## Audit and scope
 
-The root `compose.yml` includes the app and a local SolrCloud node. It uses a new
-`solrcloud-data` volume and never mounts or converts the previous Standalone
-`solr-data` volume. Independent backend files exist for Solr, OpenSearch and
+The root `compose.yml` retains its Standalone compatibility service and existing
+`solr-data` volume. Explicit shared DEV/BENCH infrastructure uses a new
+`solrcloud-data` volume and never mounts or converts the Standalone volume.
+Independent backend files exist for Solr, OpenSearch and
 Qdrant. Ollama is reused as a host/provider service; it is not started or
 duplicated by this tooling. Existing shared backend instances can be selected
 explicitly and are never adopted as owned Compose projects.
-The prior Standalone `solr-data` volume is not mounted or removed. Fresh local
-Compose starts use `solrcloud-data`; avoid `docker compose down -v` when either
+The prior Standalone `solr-data` volume is not mounted or removed. Shared
+DEV/BENCH starts use `solrcloud-data`; avoid `docker compose down -v` when either
 generation's data must be retained.
 
 `repository-index.yml` separates reuse-only service discovery from explicit
 service/resource provisioning, validates repository-resource binding, and emits
-run evidence. Self-dogfood provisions disposable SolrCloud on hosted runners.
+run evidence. Until Cloud publication is implemented, self-dogfood validates the
+legacy Standalone indexing path.
 Operational indexing remains reuse-only and targets the separate existing
 OPERATIONAL service/resources below. See
 [self-hosted indexing](self-hosted-indexing.md) for the three independent workflows
@@ -143,14 +146,15 @@ validation and creation. OpenSearch reports the schema capabilities actually
 present (for example, existing indexes without a vector mapping are lexical-only).
 Solr resource preparation continues to use its existing Solr runtime.
 
-New local Solr starts run in SolrCloud mode with embedded ZooKeeper for
-single-node development. The local service persists Solr and embedded ZooKeeper
+New explicit shared DEV/BENCH Solr starts run in SolrCloud mode with embedded
+ZooKeeper for single-node development. That service persists Solr and embedded ZooKeeper
 state in `solrcloud-data`; it uploads the versioned configset
 `fetchcore-projection-v3` to ZooKeeper and verifies its files without overwriting
 an existing configset. A same-name mismatch fails startup; publish changed
 configuration under a new configset version. The shared DEV/BENCH service does
-not create logical collections; root Compose creates only its configured local
-development collection.
+not create logical collections; only the separate Cloud Compose service creates
+its configured local development collection. The legacy root Compose remains
+Standalone and preserves the existing `solr-data` volume.
 
 Existing Standalone `solr-data` volumes remain separate and untouched. A
 `shared_infra.py up` against an already-running owned project uses `--no-recreate`,
