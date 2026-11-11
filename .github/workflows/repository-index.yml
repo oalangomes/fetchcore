@@ -419,6 +419,7 @@ jobs:
         env:
           REPOSITORY: ${{ steps.identity.outputs.repository }}
           COLLECTION: ${{ inputs.collection }}
+          CONFIGSET: ${{ inputs.solr_configset }}
           EVALUATION_MODES_JSON: ${{ inputs.evaluation_modes_json }}
           EMBEDDING_PROVIDER: ${{ inputs.embedding_provider }}
           EMBEDDING_MODEL: ${{ inputs.embedding_model }}
@@ -435,6 +436,8 @@ jobs:
           payload = {
               "url": os.environ["FETCHCORE_SOLR_URL"],
               "collection": os.environ["COLLECTION"],
+              "deployment_mode": os.environ["FETCHCORE_SOLR_DEPLOYMENT_MODE"],
+              "configset": os.environ["CONFIGSET"],
               "projection_version": "3",
           }
           print("FETCHCORE_INDEX_BACKEND_SETTINGS=" + json.dumps(payload, separators=(",", ":")))

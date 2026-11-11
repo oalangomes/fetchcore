@@ -163,6 +163,11 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     operational_inputs = operational_jobs["operational-index"]["with"]
     assert "FETCHCORE_OPERATIONAL_SOLR_COLLECTION" in operational_inputs["collection"]
     assert "fc-operational-fetchcore-635ab7352c2850f2" in operational_inputs["collection"]
+    assert "FETCHCORE_OPERATIONAL_SOLR_MODE" in operational_inputs["solr_deployment_mode"]
+    assert "'standalone'" in operational_inputs["solr_deployment_mode"]
+    assert "FETCHCORE_OPERATIONAL_SOLRCLOUD_URL" in operational_inputs["solr_url"]
+    assert "FETCHCORE_OPERATIONAL_SOLRCLOUD_ALIAS" in operational_inputs["collection"]
+    assert "FETCHCORE_OPERATIONAL_SOLRCLOUD_CONFIGSET" in operational_inputs["solr_configset"]
     assert "http://127.0.0.1:38983/solr" in operational_inputs["solr_url"]
     assert operational_inputs["create_if_missing"] is False
     assert operational_inputs["solr_provision_mode"] == "reuse_only"

@@ -218,6 +218,12 @@ def reconcile_index_context(
     context: IndexContext, settings: ReconciliationSettings,
 ) -> dict[str, object]:
     """Inspect, plan and optionally execute a safe repository projection repair."""
+    if (
+        context.backend == "solr"
+        and context.driver is not None
+        and cast(SolrIndexStore, context.store).settings.deployment_mode == "solrcloud"
+    ):
+        return context.driver.run("reconcile")
     started = time.monotonic()
     if context.backend == "solr":
         store = bind_indexing_contract_store(

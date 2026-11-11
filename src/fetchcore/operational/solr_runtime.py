@@ -19,9 +19,15 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Protocol, cast
+from uuid import uuid4
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
+
+from fetchcore.adapters.retrieval.solr.schema_validation import (
+    validate_projection_v3_schema,
+)
+from fetchcore.retrieval.contracts import KnowledgeSearchError
 
 
 _RESOURCE_PATTERN = re.compile(r"[A-Za-z0-9_.-]+")
@@ -243,6 +249,10 @@ def prepare_solr_runtime(
             service, config.resource, client=http, timeout=config.timeout_seconds,
         ):
             raise SolrRuntimeError("resource_creation_failed", "Solr resource was not created")
+    if service.deployment_mode is DeploymentMode.SOLRCLOUD:
+        _validate_cloud_schema(
+            service, config.resource, client=http, timeout=config.timeout_seconds,
+        )
     binding = _repository_binding(
         service, config.resource, config.repository, client=http, timeout=config.timeout_seconds,
     )
@@ -250,7 +260,7 @@ def prepare_solr_runtime(
         endpoint=service.endpoint,
         deployment_mode=service.deployment_mode.value,
         instance="reused",
-        resource_kind="core" if service.deployment_mode is DeploymentMode.STANDALONE else "collection",
+        resource_kind="core" if service.deployment_mode is DeploymentMode.STANDALONE else "alias",
         resource=config.resource,
         resource_state="existing" if existed else "created",
         repository_binding=binding,
@@ -412,6 +422,10 @@ def _provision_runtime(
             service, config.resource, client=client, timeout=config.timeout_seconds,
         ):
             raise SolrRuntimeError("resource_creation_failed", "Owned Solr resource was not created")
+        if service.deployment_mode is DeploymentMode.SOLRCLOUD:
+            _validate_cloud_schema(
+                service, config.resource, client=client, timeout=config.timeout_seconds,
+            )
         binding = _repository_binding(
             service, config.resource, config.repository,
             client=client, timeout=config.timeout_seconds,
@@ -426,7 +440,7 @@ def _provision_runtime(
         resource_kind=(
             "core"
             if service.deployment_mode is DeploymentMode.STANDALONE
-            else "collection"
+            else "alias"
         ),
         resource=config.resource,
         resource_state="created",
@@ -494,7 +508,23 @@ def _resource_exists(
     collections = payload.get("collections")
     if not isinstance(collections, list) or not all(isinstance(item, str) for item in collections):
         raise SolrRuntimeError("not_solr", "Collections API returned an invalid list response")
-    return resource in collections
+    aliases_payload = client.request(
+        "GET", f"{service.endpoint}/admin/collections",
+        params={"action": "LISTALIASES", "wt": "json"}, timeout=timeout,
+    )
+    aliases = aliases_payload.get("aliases")
+    if not isinstance(aliases, dict) or not all(
+        isinstance(name, str) for name in aliases
+    ):
+        raise SolrRuntimeError("not_solr", "Collections API returned an invalid alias list")
+    if resource in aliases:
+        return True
+    if resource in collections:
+        raise SolrRuntimeError(
+            "resource_kind_mismatch",
+            "Configured SolrCloud resource is a collection, not the required stable alias",
+        )
+    return False
 
 
 def _create_resource(
@@ -530,14 +560,25 @@ def _create_resource(
         raise SolrRuntimeError(
             "configset_unavailable", "Required SolrCloud configset is not available server-side",
         )
+    generation = f"{config.resource}-g-bootstrap-{uuid4().hex[:8]}"
     client.request(
         "GET", f"{service.endpoint}/admin/collections",
         params={
             "action": "CREATE",
-            "name": config.resource,
+            "name": generation,
             "collection.configName": config.configset,
             "numShards": "1",
             "replicationFactor": "1",
+            "wt": "json",
+        },
+        timeout=config.timeout_seconds,
+    )
+    client.request(
+        "GET", f"{service.endpoint}/admin/collections",
+        params={
+            "action": "CREATEALIAS",
+            "name": config.resource,
+            "collections": generation,
             "wt": "json",
         },
         timeout=config.timeout_seconds,
@@ -579,6 +620,26 @@ def _repository_binding(
         "repository_resource_collision",
         "Dedicated Solr resource contains a snapshot for a different repository",
     )
+
+
+def _validate_cloud_schema(
+    service: ServiceObservation,
+    resource: str,
+    *,
+    client: JsonClient,
+    timeout: float,
+) -> None:
+    payload = client.request(
+        "GET", f"{service.endpoint}/{resource}/schema",
+        params={"wt": "json"}, timeout=timeout,
+    )
+    try:
+        validate_projection_v3_schema(payload.get("schema"))
+    except KnowledgeSearchError as exc:
+        raise SolrRuntimeError(
+            "schema_mismatch",
+            "SolrCloud resource schema differs from the packaged Projection v3 contract",
+        ) from exc
 
 
 def _validated_endpoint(value: str) -> str:

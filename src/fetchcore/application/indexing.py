@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal, cast
 from datetime import UTC, datetime
@@ -35,6 +35,7 @@ from fetchcore.adapters.retrieval.solr.index_contract import (
 from fetchcore.adapters.retrieval.solr.incremental_persistence import (
     TargetedGitAwareSolrSynchronizer,
 )
+from fetchcore.adapters.retrieval.solr.cloud_lifecycle import SolrCloudGenerationManager
 from fetchcore.adapters.retrieval.opensearch.backend import (
     OPENSEARCH_VECTOR_DIMENSIONS, OpenSearchIndexStore, OpenSearchSettings,
     UrllibOpenSearchTransport,
@@ -145,6 +146,8 @@ class IndexContext:
                 return os_result
             return driver.run("plan" if operation == "dry-run" else operation)
         solr = cast(SolrIndexStore, self.store)
+        if self.driver is not None:
+            return self.driver.run("plan" if operation == "dry-run" else operation)
         if operation == "bootstrap":
             solr.validate_schema(require_vectors=self.require_vectors)
             result: dict[str, object] = {
@@ -294,6 +297,16 @@ def build_index_context(
         settings,
         embedding_provider=embedding_provider,
     )
+    if settings.deployment_mode == "solrcloud":
+        store = bind_indexing_contract_store(store, runtime.indexer)
+        return IndexContext(
+            root,
+            backend,
+            runtime,
+            store,
+            retrieval,
+            SolrCloudOperationalIndex(store, runtime),
+        )
     return IndexContext(root, backend, runtime, store, retrieval)
 
 
@@ -401,6 +414,133 @@ def _observe(context: IndexContext) -> IndexObservation:
         snapshot_indexing_fingerprint=snapshot_indexing_fingerprint(snapshot),
         snapshot_projection_fingerprint=snapshot.projection_fingerprint,
     )
+
+
+class SolrCloudOperationalIndex:
+    """Run SolrCloud indexing through versioned collections and one stable alias."""
+
+    def __init__(self, store: SolrIndexStore, runtime: RepositoryIndexRuntime) -> None:
+        self.store = store
+        self.runtime = runtime
+        self.manager = SolrCloudGenerationManager(
+            store.settings,
+            store_factory=self._store_for_collection,
+        )
+
+    def run(self, operation: str) -> dict[str, object]:
+        if operation not in {
+            "bootstrap", "status", "plan", "dry-run", "sync", "rebuild", "reconcile",
+        }:
+            raise ValueError("Unsupported SolrCloud indexing operation")
+        if operation == "reconcile":
+            return self.manager.reconciliation_report(self.runtime.repository)
+        if operation == "bootstrap":
+            self.store.validate_schema(require_vectors=self.store.embedding_provider is not None)
+            self.manager.require_active_generation(self.runtime.repository)
+            result: dict[str, object] = {
+                "schema": "fetchcore.solr.projection-v3",
+                "projection_version": self.store.settings.projection_version,
+                "validated": True,
+                "deployment_mode": "solrcloud",
+            }
+            if self.store.embedding_provider is not None:
+                result["embedding_probe"] = _probe_embedding_provider(self.store)
+            return result
+
+        self.manager.require_active_generation(self.runtime.repository)
+        context = IndexContext(
+            self.runtime.workspace,
+            "solr",
+            self.runtime,
+            self.store,
+            driver=None,
+        )
+        observation = _observe(context)
+        result = {
+            "indexed_revision": observation.indexed_revision,
+            "mode": observation.mode,
+            "currentness": observation.currentness,
+            "reason": observation.reason,
+            "schema_compatible": observation.schema_compatible,
+            "projection_compatible": observation.projection_compatible,
+            "incremental_possible": observation.mode in {"incremental", "noop"},
+            "indexing_fingerprint": self.runtime.fingerprint,
+            "projection_fingerprint": self.store.projection_fingerprint,
+            "snapshot_indexing_fingerprint": observation.snapshot_indexing_fingerprint,
+            "snapshot_projection_fingerprint": observation.snapshot_projection_fingerprint,
+            "deployment_mode": "solrcloud",
+        }
+        if operation == "status":
+            if observation.discovery is not None:
+                result["discovery"] = observation.discovery
+            return result
+        if operation in {"plan", "dry-run"}:
+            if observation.mode != "rebuild_required":
+                preview = dry_run_repository_index(self.store, self.runtime)
+                result["reason"] = preview["reason"]
+                result["mode"] = preview["mode"]
+                result["noop"] = preview["noop"]
+                for key in ("planned_mutations", "discovery", "indexing_telemetry",
+                            "stage_timings_ms", "snapshot_error"):
+                    if key in preview:
+                        result[key] = preview[key]
+            return result
+        if operation == "sync":
+            if observation.mode == "initial":
+                raise KnowledgeSearchError(
+                    "Index absent; call index rebuild explicitly",
+                    category="snapshot_missing",
+                )
+            if observation.mode == "rebuild_required":
+                raise KnowledgeSearchError(
+                    "Explicit rebuild required: " + observation.reason,
+                    category="rebuild_required",
+                )
+            with self.manager.writer_lock(self.runtime.repository):
+                active = self.manager.require_active_generation(self.runtime.repository)
+                synced = TargetedGitAwareSolrSynchronizer(
+                    self._store_for_collection(active),
+                    self.runtime.indexer,
+                    allow_rebuild=False,
+                ).sync(self.runtime.workspace)
+                self.manager.assert_active_generation(active)
+            execution = _execution_result(synced.storage)
+            execution["noop"] = synced.noop
+            execution["discovery"] = synced.discovery.to_mapping()
+            result["execution"] = execution
+            result["mode"] = "noop" if synced.noop else "incremental"
+            result["previous_indexed_revision"] = result.pop("indexed_revision")
+            result["previous_currentness"] = result.pop("currentness")
+            return result
+
+        self.store.validate_schema(require_vectors=self.store.embedding_provider is not None)
+        previous_revision = observation.indexed_revision
+        previous_currentness = observation.currentness
+        indexed = self.runtime.indexer.index(self.runtime.workspace)
+        publication = self.manager.rebuild(indexed)
+        result["execution"] = _execution_result(publication.storage)
+        result["publication"] = {
+            "alias": self.store.settings.collection,
+            "previous_collection": publication.previous_collection,
+            "active_collection": publication.active_collection,
+            "retained_previous_generation": True,
+        }
+        result["mode"] = "rebuild"
+        result["previous_indexed_revision"] = previous_revision
+        result["previous_currentness"] = previous_currentness
+        result["reason"] = "explicit_rebuild"
+        return result
+
+    def _store_for_collection(self, collection: str) -> SolrIndexStore:
+        settings = replace(self.store.settings, collection=collection)
+        store = SolrIndexStore(
+            UrllibSolrTransport(settings),
+            settings,
+            embedding_provider=self.store.embedding_provider,
+            clock=self.store.clock,
+            timer=self.store.timer,
+        )
+        return bind_indexing_contract_store(store, self.runtime.indexer)
 
 
 class RepositoryIndexApplicationService:

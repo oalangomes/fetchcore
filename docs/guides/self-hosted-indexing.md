@@ -44,6 +44,44 @@ manual `rebuild` invokes the existing explicit replacement command. No workflow
 pulls a model or repairs a schema. Qdrant lexical/targeted remains unsupported.
 An unavailable provider or incompatible live schema stops the run visibly.
 
+### SolrCloud OPERATIONAL migration gate
+
+The Solr OPERATIONAL workflow remains Standalone by default. It selects SolrCloud
+only when an operator explicitly sets the repository variable
+`FETCHCORE_OPERATIONAL_SOLR_MODE=solrcloud` and configures
+`FETCHCORE_OPERATIONAL_SOLRCLOUD_URL` and
+`FETCHCORE_OPERATIONAL_SOLRCLOUD_ALIAS`. The Cloud alias must be dedicated to
+the registered repository and resolve to exactly one collection. Its configset
+defaults to `fetchcore-projection-v3`; override it with
+`FETCHCORE_OPERATIONAL_SOLRCLOUD_CONFIGSET` only when that configset has been
+independently validated. Until the variables are deliberately changed after
+the migration gate, automatic indexing continues against the existing
+Standalone endpoint and volume.
+
+In SolrCloud, `rebuild` writes a new versioned collection, validates its schema,
+repository snapshot, revision, document count and corpus checksum, then changes
+the stable alias. The prior generation is retained. `sync` reuses the active
+alias and the existing Git-aware incremental synchronizer, under a distributed
+collection lock; it refuses an unexpected alias target or an incompatible
+snapshot. A lost alias-update response is resolved by reading the alias and
+validating the generation, not by assuming the update failed.
+
+The lock collection is named `fetchcore-lock-<sha256-prefix>` from the alias and
+repository identity. A crashed process can leave that collection behind; all
+subsequent writers then fail closed with `concurrent_write`. Before manual
+recovery, confirm the indexing run has stopped and inspect the lock record at
+`/solr/<lock-collection>/select?q=id:%22fetchcore-writer-lock%22&wt=json`.
+Verify its repository and alias ownership before deleting that exact lock
+collection through the SolrCloud Collections API. If ownership is uncertain,
+do not delete it. Unpublished generations are retained for inspection; this
+workflow does not automatically delete generations or orphaned staging
+collections.
+
+This gate prepares the code and workflow for an operator-authorized migration;
+it does not itself authorize or perform the operational cutover. Validate a
+disposable SolrCloud full rebuild, subsequent incremental sync, readiness and
+retrieval before changing the variables above.
+
 ### Manual operational recovery
 
 Use the backend's OPERATIONAL workflow linked above, then **Run workflow** with
