@@ -8,16 +8,19 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import time
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 
 from fetchcore.adapters.retrieval.solr.schema_validation import (
     validate_projection_v3_schema,
 )
 from fetchcore.retrieval.contracts import KnowledgeSearchError
 
-ROOT = Path(__file__).resolve().parents[1]
 OWNER = "fetchcore-shared-infra-v1"
 BACKENDS = {"solr": "solr", "opensearch": "opensearch", "qdrant": "qdrant-vector"}
 SOLR_CONFIGSET = "fetchcore-projection-v3"
