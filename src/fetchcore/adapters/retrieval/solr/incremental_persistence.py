@@ -147,6 +147,39 @@ class TargetedGitAwareSolrSynchronizer(DocumentAwareGitSolrSynchronizer):
             stage_timings_ms=stage_timings_ms,
         )
 
+    def noop_if_current(self, workspace: Path) -> RepositorySyncOutcome | None:
+        """Return a no-op outcome without changing the selected Solr collection."""
+        repository = self.indexer.resolve_repository_identity(workspace)
+        snapshot = self.store.load_snapshot(repository)
+        if snapshot_indexing_fingerprint(snapshot) != self.indexing_fingerprint:
+            return None
+        embedding_mismatch = not self.store.embedding_snapshot_matches(snapshot)
+        lexical_view_of_vector_snapshot = (
+            getattr(self.store, "embedding_provider", None) is None
+            and snapshot.embedding_provider is not None
+        )
+        if embedding_mismatch and not lexical_view_of_vector_snapshot:
+            return None
+        plan = self.detector.plan(
+            workspace,
+            previous_revision=snapshot.revision,
+            current_revision=self.indexer.config.revision,
+        )
+        current_branch = self.indexer.config.branch
+        if (
+            plan.mode == "git-delta"
+            and not plan.changed_paths
+            and not plan.removed_paths
+            and snapshot.revision == plan.current_revision
+            and (current_branch is None or snapshot.branch == current_branch)
+        ):
+            return _noop_outcome(
+                snapshot,
+                plan,
+                indexing_duration_ms=0,
+            )
+        return None
+
 
 def _noop_outcome(
     snapshot: SolrIndexSnapshot,

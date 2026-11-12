@@ -291,3 +291,34 @@ def test_workflow_accepts_explicit_vector_modes_and_rejects_schema_dimension() -
     )
     assert rejected.returncode != 0
     assert "must be 768" in rejected.stderr
+
+
+def test_workflow_expands_evaluation_modes_as_separate_lines() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "repository-index.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    evaluation = next(
+        step["run"]
+        for step in workflow["jobs"]["index"]["steps"]
+        if step.get("name") == "Evaluate configured retrieval modes through MCP"
+    )
+    converter = next(
+        line.strip()[len("done < <(") : -1]
+        for line in evaluation.splitlines()
+        if line.strip().startswith("done < <(")
+    )
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'mapfile -t modes < <({converter}); printf "%s\\n" "${{modes[@]}}"',
+        ],
+        env={**os.environ, "EVALUATION_MODES_JSON": '["lexical","dense","hybrid"]'},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.splitlines() == ["lexical", "dense", "hybrid"]

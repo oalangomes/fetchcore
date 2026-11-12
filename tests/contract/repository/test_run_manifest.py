@@ -67,6 +67,33 @@ def test_full_discovery_does_not_claim_rebuild_or_unmeasured_file_deltas():
     assert observed["execution"]["stage_timings_ms"] == {"canonical_full_index_ms": 24}
 
 
+def test_full_rebuild_plan_mode_is_valid_manifest_evidence():
+    incremental = artifact("incremental")
+    payload = incremental.to_mapping()
+    payload["command"]["operation"] = "plan"
+    payload["command"]["result"]["mode"] = "full_rebuild"
+    payload["command"]["result"]["currentness"] = "absent"
+    payload["command"]["result"]["incremental_possible"] = False
+    payload["command"]["result"].pop("execution")
+    planned = IndexRunArtifact.from_mapping(payload)
+    identity = OperationalRunIdentity(
+        planned.run_id,
+        planned.repository,
+        planned.backend,
+        planned.target,
+        planned.configuration_fingerprint,
+    )
+    result = compose_run_manifest(
+        [planned],
+        identity=identity,
+        requested="rebuild",
+        revision=planned.command["result"]["target_revision"],
+        outcome="success",
+    )
+    assert result["observations"][0]["operation"] == "plan"
+    assert result["observations"][0]["mode"] == "full_rebuild"
+
+
 def test_manifest_cli_composes_available_commands_after_failure(tmp_path):
     import subprocess
     import sys

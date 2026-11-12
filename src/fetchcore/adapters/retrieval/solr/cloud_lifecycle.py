@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import re
+import time
 from typing import Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -26,6 +27,7 @@ from fetchcore.adapters.retrieval.solr.schema_validation import (
 )
 from fetchcore.repository.indexing import RepositoryIndexResult
 from fetchcore.retrieval.contracts import KnowledgeSearchError
+from fetchcore.telemetry import elapsed_ms
 
 
 _NAME_PATTERN = re.compile(r"[A-Za-z0-9_.-]+")
@@ -174,6 +176,9 @@ class SolrCloudPublication:
     storage: SolrIndexSyncResult
     previous_collection: str
     active_collection: str
+    copied_records: int = 0
+    copy_duration_ms: int = 0
+    noop: bool = False
 
 
 class SolrCloudGenerationManager:
@@ -318,65 +323,230 @@ class SolrCloudGenerationManager:
                     },
                 )
 
-            if self.active_collection() != prior_name:
+            return self._publish_generation(
+                prior_name=prior_name,
+                prior=prior,
+                generation_name=generation_name,
+                expected=expected,
+                repository=repository,
+                storage=storage,
+            )
+
+    def incremental_sync(
+        self,
+        repository: str,
+        *,
+        no_op: Callable[[SolrIndexStore], SolrIndexSyncResult | None],
+        synchronize: Callable[[SolrIndexStore], SolrIndexSyncResult | None],
+    ) -> SolrCloudPublication:
+        """Apply a delta to a copied generation and publish it only after validation."""
+        with self.writer_lock(repository):
+            prior_name = self.active_collection()
+            prior = self._inspect_generation(prior_name, repository)
+            if prior.snapshot is None:
                 raise KnowledgeSearchError(
-                    "SolrCloud alias changed while the generation was being built",
-                    category="concurrent_write",
-                    metadata={"alias": alias, "recovery_required": True},
+                    "Index absent; call index rebuild explicitly",
+                    category="snapshot_missing",
+                )
+            source = self.store_factory(prior_name)
+            no_op_storage = no_op(source)
+            if no_op_storage is not None:
+                if no_op_storage.snapshot != prior.snapshot:
+                    raise KnowledgeSearchError(
+                        "No-op inspection returned a different active snapshot",
+                        category="snapshot_revision_mismatch",
+                    )
+                return SolrCloudPublication(
+                    storage=no_op_storage,
+                    previous_collection=prior_name,
+                    active_collection=prior_name,
+                    noop=True,
+                )
+
+            generation_name = _generation_collection(self.settings.collection)
+            if generation_name in self.api.list_collections():
+                raise KnowledgeSearchError(
+                    "Generated SolrCloud collection name already exists",
+                    category="repository_resource_collision",
+                    metadata={"collection": generation_name},
                 )
             try:
-                self.api.set_alias(alias, generation_name)
+                self.api.create_collection(generation_name, self.settings.configset)
             except Exception as exc:
-                observed = self._alias_target_after_error()
-                if observed != generation_name:
-                    if observed == prior_name:
-                        raise KnowledgeSearchError(
-                            "SolrCloud alias promotion did not take effect",
-                            category="index_update_failure",
-                            metadata={"activation": "not_confirmed"},
-                        ) from exc
+                raise KnowledgeSearchError(
+                    "SolrCloud incremental staging collection creation failed",
+                    category="index_update_failure",
+                    metadata={
+                        "operation": "incremental_sync",
+                        "collection": generation_name,
+                        "active_collection": prior_name,
+                        "activation": "not_attempted",
+                        "recovery_required": True,
+                    },
+                ) from exc
+            staged = self.store_factory(generation_name)
+            try:
+                staged.validate_schema(require_vectors=staged.embedding_provider is not None)
+                if self.api.collection_configset(generation_name) != self.settings.configset:
                     raise KnowledgeSearchError(
-                        "SolrCloud alias promotion outcome is indeterminate",
-                        category="concurrent_write",
-                        metadata={
-                            "alias": alias,
-                            "observed_target": observed,
-                            "recovery_required": True,
-                        },
-                    ) from exc
+                        "Staging collection does not use the requested FetchCore configset",
+                        category="schema_mismatch",
+                        metadata={"collection": generation_name},
+                    )
+                copy_started = time.monotonic()
+                copied_records = staged.copy_repository_projection_from(source, repository)
+                copy_duration_ms = elapsed_ms(copy_started, time.monotonic())
+                copied = self._inspect_generation(generation_name, repository)
+                if copied.snapshot != prior.snapshot:
+                    raise KnowledgeSearchError(
+                        "Staged projection copy differs from the active generation",
+                        category="index_update_failure",
+                        metadata={"collection": generation_name},
+                    )
+                storage = synchronize(staged)
+                if storage is None:
+                    unchanged = self._inspect_generation(generation_name, repository)
+                    if unchanged.snapshot != prior.snapshot:
+                        raise KnowledgeSearchError(
+                            "No-op staged sync changed the copied snapshot",
+                            category="index_update_failure",
+                            metadata={"collection": generation_name},
+                        )
+                    self.api.delete_collection(generation_name)
+                    no_op_storage = no_op(source)
+                    if no_op_storage is None or no_op_storage.snapshot != prior.snapshot:
+                        raise KnowledgeSearchError(
+                            "Repository changed during no-op validation; retry incremental sync",
+                            category="concurrent_write",
+                            metadata={"retry_required": True},
+                        )
+                    return SolrCloudPublication(
+                        storage=no_op_storage,
+                        previous_collection=prior_name,
+                        active_collection=prior_name,
+                        noop=True,
+                    )
 
-            observed = self.active_collection()
+                expected = self._inspect_generation(generation_name, repository)
+                if expected.snapshot is None or expected.snapshot != storage.snapshot:
+                    raise KnowledgeSearchError(
+                        "Staged incremental snapshot differs from its storage result",
+                        category="index_update_failure",
+                        metadata={"collection": generation_name},
+                    )
+            except KnowledgeSearchError as exc:
+                metadata = dict(exc.metadata)
+                metadata.update({
+                    "operation": "incremental_sync",
+                    "active_collection": prior_name,
+                    "staging_collection": generation_name,
+                    "activation": "not_attempted",
+                    "recovery_required": True,
+                })
+                raise KnowledgeSearchError(
+                    "SolrCloud incremental generation staging failed; the prior generation remains active",
+                    category=exc.category,
+                    metadata=metadata,
+                ) from exc
+            except Exception as exc:
+                raise KnowledgeSearchError(
+                    "SolrCloud incremental generation staging failed; the prior generation remains active",
+                    category="index_update_failure",
+                    metadata={
+                        "operation": "incremental_sync",
+                        "active_collection": prior_name,
+                        "staging_collection": generation_name,
+                        "activation": "not_attempted",
+                        "recovery_required": True,
+                        "cause_category": type(exc).__name__,
+                    },
+                ) from exc
+
+            return self._publish_generation(
+                prior_name=prior_name,
+                prior=prior,
+                generation_name=generation_name,
+                expected=expected,
+                repository=repository,
+                storage=storage,
+                copied_records=copied_records,
+                copy_duration_ms=copy_duration_ms,
+            )
+
+    def _publish_generation(
+        self,
+        *,
+        prior_name: str,
+        prior: SolrCloudGeneration,
+        generation_name: str,
+        expected: SolrCloudGeneration,
+        repository: str,
+        storage: SolrIndexSyncResult,
+        copied_records: int = 0,
+        copy_duration_ms: int = 0,
+    ) -> SolrCloudPublication:
+        alias = self.settings.collection
+        if self.active_collection() != prior_name:
+            raise KnowledgeSearchError(
+                "SolrCloud alias changed while the generation was being built",
+                category="concurrent_write",
+                metadata={"alias": alias, "recovery_required": True},
+            )
+        try:
+            self.api.set_alias(alias, generation_name)
+        except Exception as exc:
+            observed = self._alias_target_after_error()
             if observed != generation_name:
                 if observed == prior_name:
                     raise KnowledgeSearchError(
-                        "SolrCloud alias promotion was not confirmed",
+                        "SolrCloud alias promotion did not take effect",
                         category="index_update_failure",
                         metadata={"activation": "not_confirmed"},
-                    )
+                    ) from exc
                 raise KnowledgeSearchError(
-                    "SolrCloud alias changed to an unexpected generation",
+                    "SolrCloud alias promotion outcome is indeterminate",
                     category="concurrent_write",
                     metadata={
                         "alias": alias,
                         "observed_target": observed,
                         "recovery_required": True,
                     },
+                ) from exc
+
+        observed = self.active_collection()
+        if observed != generation_name:
+            if observed == prior_name:
+                raise KnowledgeSearchError(
+                    "SolrCloud alias promotion was not confirmed",
+                    category="index_update_failure",
+                    metadata={"activation": "not_confirmed"},
                 )
-            try:
-                active = self._inspect_generation(alias, repository)
-                if active.snapshot != expected.snapshot:
-                    raise KnowledgeSearchError(
-                        "Published SolrCloud snapshot differs from the validated generation",
-                        category="index_update_failure",
-                    )
-                return SolrCloudPublication(
-                    storage=storage,
-                    previous_collection=prior_name,
-                    active_collection=generation_name,
+            raise KnowledgeSearchError(
+                "SolrCloud alias changed to an unexpected generation",
+                category="concurrent_write",
+                metadata={
+                    "alias": alias,
+                    "observed_target": observed,
+                    "recovery_required": True,
+                },
+            )
+        try:
+            active = self._inspect_generation(alias, repository)
+            if active.snapshot != expected.snapshot:
+                raise KnowledgeSearchError(
+                    "Published SolrCloud snapshot differs from the validated generation",
+                    category="index_update_failure",
                 )
-            except Exception as exc:
-                self._restore_prior_alias(prior_name, generation_name, prior, repository, exc)
-                raise
+            return SolrCloudPublication(
+                storage=storage,
+                previous_collection=prior_name,
+                active_collection=generation_name,
+                copied_records=copied_records,
+                copy_duration_ms=copy_duration_ms,
+            )
+        except Exception as exc:
+            self._restore_prior_alias(prior_name, generation_name, prior, repository, exc)
+            raise
 
     def require_active_generation(self, repository: str) -> str:
         """Read and validate the currently aliased generation before incremental writes."""
