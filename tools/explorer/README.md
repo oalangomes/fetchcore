@@ -350,7 +350,11 @@ scripts/ci/docker-pull.sh "$FETCHCORE_SOLR_IMAGE"
 docker run -d --name fetchcore-search-lab-solr \
   -p 127.0.0.1:8983:8983 \
   -v "$PWD/infra/solr/configset:/fetchcore-configset:ro" \
-  "$FETCHCORE_SOLR_IMAGE" solr-precreate fetchcore-lab /fetchcore-configset
+  -v "$PWD/infra/solr/start-cloud.sh:/fetchcore-start-cloud.sh:ro" \
+  -e FETCHCORE_SOLR_COLLECTION=fetchcore-lab \
+  -e FETCHCORE_SOLR_CONFIGSET=fetchcore-projection-v3 \
+  -e FETCHCORE_SOLR_CREATE_COLLECTION=true \
+  "$FETCHCORE_SOLR_IMAGE" sh /fetchcore-start-cloud.sh
 ```
 
 After Solr has started, bootstrap and index this repository (or point at a separately provisioned and indexed collection):

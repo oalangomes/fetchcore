@@ -5,7 +5,11 @@ on:
     paths:
       - 'tools/explorer/**'
       - '.github/workflows/explorer.yml'
+      - 'infra/compose/solr.yml'
+      - 'infra/images.lock'
+      - 'infra/solr/**'
       - 'src/fetchcore/application/**'
+      - 'src/fetchcore/operational/solr_runtime.py'
       - 'src/fetchcore/retrieval/**'
   workflow_dispatch:
 
@@ -41,19 +45,19 @@ jobs:
           python -m pip install -r tools/explorer/api/requirements.txt
       - name: Python contracts and default Solr selection
         run: python -m pytest -q tools/explorer/api/test_app.py
-      - name: Start isolated Solr with FetchCore Projection v3 schema
+      - name: Start isolated Standalone Solr for legacy indexer validation
         run: |
           docker run -d --name fetchcore-explorer-solr \
             -p 127.0.0.1:8983:8983 \
             -v "$GITHUB_WORKSPACE/infra/solr/configset:/fetchcore-configset:ro" \
             "$FETCHCORE_SOLR_IMAGE" solr-precreate fetchcore /fetchcore-configset
-      - name: Wait for Solr readiness
+      - name: Wait for Standalone Solr readiness
         run: |
           python - <<'PY'
           import time
           from urllib.request import urlopen
 
-          url = "http://127.0.0.1:8983/solr/admin/info/system"
+          url = "http://127.0.0.1:8983/solr/admin/info/system?wt=json"
           for _ in range(60):
               try:
                   with urlopen(url, timeout=2) as response:
@@ -61,7 +65,7 @@ jobs:
                           raise SystemExit(0)
               except OSError:
                   time.sleep(2)
-          raise SystemExit("Solr did not start")
+          raise SystemExit("Standalone Solr did not start")
           PY
       - name: Index real Search Lab fixture in Solr
         env:
@@ -125,7 +129,7 @@ jobs:
           scripts/ci/docker-pull.sh "$solr_image"
           echo "FETCHCORE_PYTHON_IMAGE=$python_image" >> "$GITHUB_ENV"
           echo "FETCHCORE_SOLR_IMAGE=$solr_image" >> "$GITHUB_ENV"
-      - name: Validate root, legacy and standalone Compose contracts
+      - name: Validate root, legacy and SolrCloud Compose contracts
         run: |
           docker compose config --quiet
           docker compose --profile runtime --profile indexing config --quiet

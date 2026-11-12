@@ -1,6 +1,6 @@
-# Legacy FetchCore Compose entry point retained for CI and existing deployments.
-# Standard DEV: scripts/shared_infra.py up, then scripts/shared_infra.py app.
+# Legacy Standalone entry point retained for CI and existing deployments.
+# SolrCloud DEV: scripts/shared_infra.py up, then scripts/shared_infra.py app.
 name: fetchcore
 include:
   - ./infra/compose/app.yml
-  - ./infra/compose/solr.yml
+  - ./infra/compose/solr-standalone.yml

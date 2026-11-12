@@ -1,21 +1,29 @@
 # Shared development infrastructure and resource lifecycle
 
-Status: shared DEV/BENCH/OPERATIONAL local infrastructure. Solr, OpenSearch and
-Qdrant have operational acceptance on their separate OPERATIONAL resources.
+Status: shared DEV/BENCH local infrastructure. Explicit shared DEV/BENCH Solr
+services use single-node SolrCloud. The legacy root Compose entry point and
+OPERATIONAL service remain Standalone until Cloud indexing/publication is
+implemented and the migration is explicitly authorized.
 
 ## Audit and scope
 
-The legacy root `compose.yml` includes app and Solr, precreates `fetchcore`, and
-keeps its existing ports and volumes for compatibility. Independent backend
-files exist for Solr, OpenSearch and Qdrant. Ollama is reused as a host/provider
-service; it is not started or duplicated by this tooling. Existing shared backend
-instances can be selected explicitly and are never adopted as owned Compose projects.
+The root `compose.yml` retains its Standalone compatibility service and existing
+`solr-data` volume. Explicit shared DEV/BENCH infrastructure uses a new
+`solrcloud-data` volume and never mounts or converts the Standalone volume.
+Independent backend files exist for Solr, OpenSearch and
+Qdrant. Ollama is reused as a host/provider service; it is not started or
+duplicated by this tooling. Existing shared backend instances can be selected
+explicitly and are never adopted as owned Compose projects.
+The prior Standalone `solr-data` volume is not mounted or removed. Shared
+DEV/BENCH starts use `solrcloud-data`; avoid `docker compose down -v` when either
+generation's data must be retained.
 
-`repository-index.yml` already separates reuse-only service discovery from explicit
+`repository-index.yml` separates reuse-only service discovery from explicit
 service/resource provisioning, validates repository-resource binding, and emits
-run evidence. Self-dogfood explicitly provisions disposable Solr on hosted runners;
-that hermetic CI path remains unchanged. Operational indexing is reuse-only and
-uses the isolated operational endpoints/resources below. See
+run evidence. Until Cloud publication is implemented, self-dogfood validates the
+legacy Standalone indexing path.
+Operational indexing remains reuse-only and targets the separate existing
+OPERATIONAL service/resources below. See
 [self-hosted indexing](self-hosted-indexing.md) for the three independent workflows
 and their acceptance evidence.
 
@@ -121,7 +129,8 @@ Selecting an environment or backend with `env`, `ready` or `run` never starts
 containers or creates indexes/collections. `up` is explicit and starts only the
 selected service, then waits for its HTTP readiness endpoint. It refuses reserved projects/volumes without
 matching ownership labels. It starts only the selected backend, never the app or
-indexer, and Solr starts without precreating a logical core. Repeated `up` uses
+indexer, and Solr starts in Cloud mode without creating a logical collection.
+Repeated `up` uses
 `--no-recreate` and reuses owned instances, even if Compose configuration changed.
 Applying a changed container configuration requires a separately reviewed explicit
 Compose recreation. There is no discovery-triggered fallback to a new instance.
@@ -137,13 +146,47 @@ validation and creation. OpenSearch reports the schema capabilities actually
 present (for example, existing indexes without a vector mapping are lexical-only).
 Solr resource preparation continues to use its existing Solr runtime.
 
-The shared Solr startup script installs the pinned configset into
-`/var/solr/data/configsets/fetchcore` (standalone's default configset base), without
-creating a core. An existing different configset fails startup instead of being
-overwritten. A bind mount under `/opt/solr/server/solr/configsets` alone is insufficient
-for CoreAdmin CREATE with this image. Existing external services need a separately
-verified server-side configset; preserve broken/old configsets and install a distinct
-named copy when necessary, then pass its name to `prepare --configset`.
+New explicit shared DEV/BENCH Solr starts run in SolrCloud mode with embedded
+ZooKeeper for single-node development. That service persists Solr and embedded ZooKeeper
+state in `solrcloud-data`; it uploads the versioned configset
+`fetchcore-projection-v3` to ZooKeeper and verifies its files without overwriting
+an existing configset. A same-name mismatch fails startup; publish changed
+configuration under a new configset version. The shared DEV/BENCH service does
+not create logical collections; only the separate Cloud Compose service creates
+its configured local development collection. The legacy root Compose remains
+Standalone and preserves the existing `solr-data` volume.
+
+Existing Standalone `solr-data` volumes remain separate and untouched. A
+`shared_infra.py up` against an already-running owned project uses `--no-recreate`,
+so it does not switch that service or its data automatically. Review and apply a
+separate DEV/BENCH migration if desired. Neither this local setup nor this PR
+changes the OPERATIONAL endpoint, Standalone data, or service.
+
+Embedded ZooKeeper is for local development and disposable CI, not a production
+ensemble. For cloud or multi-node deployments, configure an externally managed,
+persistent ZooKeeper ensemble with the Solr-supported authentication/ACL policy.
+Set `FETCHCORE_SOLR_ZK_HOST` to its connection string; Compose passes it to Solr
+as `ZK_HOST`. Keep each Solr node's `/var/solr` volume persistent and separate,
+and operate ZooKeeper persistence/backups independently. The operator owns
+provisioning, network policy, chroot creation, credentials, backups and recovery.
+For a ZooKeeper chroot, create it before Solr starts; for example, use
+`solr zk mkroot /fetchcore -z zk1.example:2181,zk2.example:2181,zk3.example:2181`
+and set `FETCHCORE_SOLR_ZK_HOST` to the same ensemble with `/fetchcore` appended.
+For an externally managed ensemble, deploy Solr nodes with persistent
+`/var/solr` volumes and keep ZooKeeper's own durable storage and backup lifecycle
+outside this Compose project. Example local Compose override:
+
+```bash
+export FETCHCORE_SOLR_ZK_HOST='zk1.example:2181,zk2.example:2181,zk3.example:2181/fetchcore'
+docker compose -f infra/compose/solr.yml up -d
+```
+
+Replace the example hostnames with operator-provisioned endpoints. This command
+does not create or configure ZooKeeper, set credentials/ACLs, or alter existing
+Solr resources.
+See the Apache Solr [SolrCloud mode](https://solr.apache.org/guide/solr/9_10/deployment-guide/solr-control-script-reference.html#solrcloud-mode)
+and [ZooKeeper configuration](https://solr.apache.org/guide/solr/9_10/deployment-guide/zookeeper-ensemble.html)
+documentation.
 
 Prepare a new Solr logical resource explicitly with the existing
 `python -m fetchcore.operational.solr_runtime prepare` command: use the emitted
@@ -213,8 +256,12 @@ labels; this is an accidental-deletion boundary, not a hostile-admin security mo
 Hermetic tests cover routing, backend selection, invalid identity, no implicit provisioning, volume
 adoption refusal, ownership mismatch, safe cleanup and resource isolation. Compose
 can be rendered without starting services. No retrieval tuning or schema migration
-is introduced. `ready` checks actual HTTP health; for Qdrant this is an external
-readiness probe because the upstream image has no in-container HTTP client.
+is introduced. `ready` requires an explicitly routed Solr deployment mode:
+OPERATIONAL checks Standalone, while DEV/BENCH check SolrCloud and its live cluster.
+An existing Cloud collection must use the expected configset and complete
+Projection v3 schema. Mode or schema mismatches fail readiness without fallback.
+For Qdrant, readiness is an external probe because the upstream image has no
+in-container HTTP client.
 Use an explicitly allocated host for any later live service/resource preparation;
 use existing shared indexes read-only for retrieval validation and never overwrite
 them as a smoke-test target.

@@ -1,18 +1,30 @@
-# Standalone Solr service; included by the root FetchCore Compose.
+# Single-node SolrCloud for local development; OPERATIONAL endpoints are separate.
 services:
   solr:
     image: ${FETCHCORE_SOLR_IMAGE:-solr:9.10.1@sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb}
-    command: ["solr-precreate", "${FETCHCORE_SOLR_COLLECTION:-fetchcore}", "/fetchcore-configset"]
+    command: ["sh", "/fetchcore-start-cloud.sh"]
+    environment:
+      FETCHCORE_SOLR_COLLECTION: ${FETCHCORE_SOLR_COLLECTION:-fetchcore}
+      FETCHCORE_SOLR_CONFIGSET: ${FETCHCORE_SOLR_CONFIGSET:-fetchcore-projection-v3}
+      FETCHCORE_SOLR_CREATE_COLLECTION: "true"
+      ZK_HOST: ${FETCHCORE_SOLR_ZK_HOST:-}
     ports:
       - "127.0.0.1:${FETCHCORE_SOLR_PORT:-8983}:8983"
     volumes:
-      - solr-data:/var/solr
+      - solrcloud-data:/var/solr
       - ../solr/configset:/fetchcore-configset:ro
-      # Keep the pinned configset available to explicit provisioning without
-      # creating a root-owned subdirectory under /var/solr/data (Solr runs non-root).
-      - ../solr/configset:/opt/solr/server/solr/configsets/fetchcore:ro
+      - ../solr/start-cloud.sh:/fetchcore-start-cloud.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8983/solr/admin/info/system >/dev/null"]
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsS 'http://127.0.0.1:8983/solr/admin/collections?action=CLUSTERSTATUS&wt=json'
+          | grep -E '"live_nodes"[[:space:]]*:[[:space:]]*\[[[:space:]]*"' >/dev/null
+          && curl -fsS 'http://127.0.0.1:8983/solr/admin/configs?action=LIST&omitHeader=true&wt=json'
+          | grep -F "\"$$FETCHCORE_SOLR_CONFIGSET\"" >/dev/null
+          && if [ "$$FETCHCORE_SOLR_CREATE_COLLECTION" = "true" ]; then
+          curl -fsS "http://127.0.0.1:8983/solr/$$FETCHCORE_SOLR_COLLECTION/select?q=*:*&rows=0&wt=json"
+          >/dev/null; fi
       interval: 10s
       timeout: 5s
       start_period: 60s
@@ -20,4 +32,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  solr-data:
+  solrcloud-data:

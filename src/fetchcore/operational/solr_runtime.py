@@ -292,6 +292,29 @@ def probe_solr_service(
         raise SolrRuntimeError(
             "deployment_mode_mismatch", "Configured Solr deployment mode does not match the service",
         )
+    if actual_mode is DeploymentMode.SOLRCLOUD:
+        cluster_payload = client.request(
+            "GET", f"{endpoint}/admin/collections",
+            params={"action": "CLUSTERSTATUS", "wt": "json"}, timeout=timeout,
+        )
+        cluster_header = cluster_payload.get("responseHeader")
+        if (
+            not isinstance(cluster_header, dict)
+            or cluster_header.get("status") != 0
+        ):
+            raise SolrRuntimeError(
+                "cluster_unavailable", "SolrCloud returned an unsuccessful cluster status",
+            )
+        cluster = cluster_payload.get("cluster")
+        live_nodes = cluster.get("live_nodes") if isinstance(cluster, dict) else None
+        if (
+            not isinstance(live_nodes, list)
+            or not live_nodes
+            or not all(isinstance(node, str) and node for node in live_nodes)
+        ):
+            raise SolrRuntimeError(
+                "cluster_unavailable", "SolrCloud has no verified live ZooKeeper nodes",
+            )
     version = lucene.get("solr-spec-version")
     return ServiceObservation(
         endpoint=endpoint,
@@ -349,19 +372,42 @@ def _provision_runtime(
         raise SolrRuntimeError("invalid_configuration", "Solr configset path is not a directory")
     if not _OWNER_PATTERN.fullmatch(config.owner_token):
         raise SolrRuntimeError("invalid_configuration", "Provisioning requires a safe owner token")
+    deployment_mode = (
+        DeploymentMode.SOLRCLOUD
+        if config.deployment_mode is DeploymentMode.AUTO
+        else config.deployment_mode
+    )
     port = choose_port()
     if not 1 <= port <= 65535:
         raise SolrRuntimeError("provisioning_failed", "Free-port selection returned an invalid port")
     container = f"fetchcore-solr-{config.owner_token}"
-    docker.run((
+    arguments = [
         "run", "-d", "--name", container, "--pull=missing",
         "-p", f"127.0.0.1:{port}:8983",
         "-v", f"{configset_dir}:/fetchcore-configset:ro",
-        config.solr_image, "solr-precreate", config.resource, "/fetchcore-configset",
-    ))
+        config.solr_image,
+    ]
+    if deployment_mode is DeploymentMode.SOLRCLOUD:
+        arguments.extend(("solr", "-c", "-f"))
+    else:
+        arguments.extend(("solr-precreate", config.resource, "/fetchcore-configset"))
+    docker.run(arguments)
     endpoint = f"http://127.0.0.1:{port}/solr"
     try:
-        service = _wait_for_service(config, endpoint=endpoint, client=client, sleep=sleep)
+        service = _wait_for_service(
+            config,
+            endpoint=endpoint,
+            deployment_mode=deployment_mode,
+            client=client,
+            sleep=sleep,
+        )
+        if service.deployment_mode is DeploymentMode.SOLRCLOUD:
+            docker.run((
+                "exec", container, "solr", "zk", "upconfig",
+                "-z", "localhost:9983", "-n", config.configset,
+                "-d", "/fetchcore-configset/conf",
+            ))
+            _create_resource(service, config, client=client)
         if not _resource_exists(
             service, config.resource, client=client, timeout=config.timeout_seconds,
         ):
@@ -377,7 +423,11 @@ def _provision_runtime(
         endpoint=endpoint,
         deployment_mode=service.deployment_mode.value,
         instance="provisioned",
-        resource_kind="core",
+        resource_kind=(
+            "core"
+            if service.deployment_mode is DeploymentMode.STANDALONE
+            else "collection"
+        ),
         resource=config.resource,
         resource_state="created",
         repository_binding=binding,
@@ -392,6 +442,7 @@ def _wait_for_service(
     config: SolrRuntimeConfig,
     *,
     endpoint: str,
+    deployment_mode: DeploymentMode,
     client: JsonClient,
     sleep: Callable[[float], None],
 ) -> ServiceObservation:
@@ -400,20 +451,16 @@ def _wait_for_service(
         try:
             service = probe_solr_service(
                 endpoint,
-                expected_mode=DeploymentMode.STANDALONE,
+                expected_mode=deployment_mode,
                 timeout=config.timeout_seconds,
                 client=client,
             )
-            if config.deployment_mode is DeploymentMode.SOLRCLOUD:
-                raise SolrRuntimeError(
-                    "deployment_mode_mismatch",
-                    "Owned standalone provisioning cannot satisfy solrcloud mode",
-                )
             return service
         except SolrRuntimeError as exc:
             last_error = exc
             if exc.category not in {
                 "connection_refused", "connection_failure", "timeout", "service_unavailable",
+                "cluster_unavailable",
             }:
                 raise
             if attempt + 1 < config.startup_attempts:
@@ -484,8 +531,15 @@ def _create_resource(
             "configset_unavailable", "Required SolrCloud configset is not available server-side",
         )
     client.request(
-        "POST", f"{service.endpoint}/api/collections",
-        payload={"name": config.resource, "config": config.configset, "numShards": 1},
+        "GET", f"{service.endpoint}/admin/collections",
+        params={
+            "action": "CREATE",
+            "name": config.resource,
+            "collection.configName": config.configset,
+            "numShards": "1",
+            "replicationFactor": "1",
+            "wt": "json",
+        },
         timeout=config.timeout_seconds,
     )
 
