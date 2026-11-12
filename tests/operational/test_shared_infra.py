@@ -62,6 +62,22 @@ def invoke(monkeypatch, *args):
     infra.main()
 
 
+@pytest.mark.parametrize("backend", ["opensearch", "qdrant"])
+def test_operational_rejects_alternate_backends(backend):
+    with pytest.raises(ValueError, match="OPERATIONAL supports Solr only"):
+        infra.route("operational", "oalangomes/fetchcore", backend)
+
+
+def test_operational_alternate_backend_fails_before_running_command(monkeypatch):
+    run = Mock(side_effect=AssertionError("no command should execute"))
+    monkeypatch.setattr(infra.subprocess, "run", run)
+    with pytest.raises(ValueError, match="OPERATIONAL supports Solr only"):
+        invoke(monkeypatch, "run", "--environment", "operational",
+               "--repository", "oalangomes/fetchcore", "--backend", "qdrant",
+               "--", "fetchcore", "index")
+    run.assert_not_called()
+
+
 def test_env_has_no_side_effects(monkeypatch, capsys):
     run = Mock(side_effect=AssertionError("must not provision"))
     monkeypatch.setattr(infra.subprocess, "run", run)
@@ -88,7 +104,7 @@ def test_run_passes_explicit_host_ollama_url_to_requested_command(monkeypatch):
         monkeypatch,
         "run",
         "--environment",
-        "operational",
+        "bench",
         "--repository",
         "oalangomes/fetchcore",
         "--backend",
