@@ -173,50 +173,10 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
 
     assert list(operational_jobs) == ["operational-index"]  # Solr unchanged
 
+    # ADR-0006: alternate backends must not have any OPERATIONAL workflow,
+    # including manual dispatch. Compatibility tests continue in DEV/BENCH.
     for backend in ("opensearch", "qdrant"):
-        path = workflow_dir / f"operational-{backend}.yml"
-        backend_workflow = path.read_text(encoding="utf-8")
-        assert "workflow_run:" in backend_workflow
-        assert "workflow_dispatch:" in backend_workflow
-        assert "github.event.workflow_run.conclusion == 'success'" in backend_workflow
-        assert "github.event.workflow_run.event == 'push'" in backend_workflow
-        assert "head_repository.full_name == github.repository" in backend_workflow
-        backend_jobs = yaml.safe_load(backend_workflow)["jobs"]
-        vector = backend_jobs[f"operational-{backend}-index"]
-        assert len(backend_jobs) == 1
-        assert vector["env"]["FC_BACKEND"] == backend
-        assert vector["concurrency"]["group"] == f"fetchcore-operational-{backend}"
-        assert vector["concurrency"]["cancel-in-progress"] is False
-        assert "FETCHCORE_OPERATIONAL_OLLAMA_URL" in vector["env"]["FC_OLLAMA_URL"]
-        assert "FETCHCORE_OPERATIONAL_RETRIEVAL_MODE" in vector["env"]["FC_RETRIEVAL_MODE"]
-        assert "'hybrid'" in vector["env"]["FC_RETRIEVAL_MODE"]
-        dispatch = yaml.safe_load(backend_workflow)[True]["workflow_dispatch"]["inputs"]["retrieval_mode"]
-        assert dispatch["default"] == "hybrid"
-        assert dispatch["options"] == ["hybrid", "dense"]
-        assert "github.event.workflow_run.head_sha || github.sha" in vector["env"]["FC_TARGET_SHA"]
-        profile_step = next(
-            step["run"] for step in vector["steps"]
-            if step.get("name") == "Resolve explicit retrieval profile"
-        )
-        assert "hybrid|dense" in profile_step
-        assert '"provider": "ollama"' in profile_step
-        assert '"model": "embeddinggemma"' in profile_step
-        assert '"dimensions": 768' in profile_step
-        assert '"enabled": mode == "hybrid"' in profile_step
-        assert "FETCHCORE_RETRIEVAL=" in profile_step
-        vector_steps = "\n".join(
-            step.get("run", "") for step in vector["steps"] if isinstance(step, dict)
-        )
-        assert "--create-if-missing" not in vector_steps
-        assert f"--backend {backend}" in vector_steps
-        assert "prepare --environment operational" in vector_steps
-        if backend == "qdrant":
-            assert "--vector-dimensions 768" in vector_steps
-        assert "status-before.json" in vector_steps
-        assert "plan oalangomes/fetchcore --json" in vector_steps
-        assert "sync oalangomes/fetchcore --json" in vector_steps
-        assert "status-after.json" in vector_steps
-        assert "readiness --json" in vector_steps
+        assert not (workflow_dir / f"operational-{backend}.yml").exists()
 
     assert "FETCHCORE_DOCS_LOCALIZATION_ENABLED == 'true'" in localization
     assert "Validate localization configuration" in localization
