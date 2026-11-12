@@ -1,0 +1,115 @@
+{
+  "batch_hydrated_edge_documents": 4,
+  "batch_hydration_http_requests": 1,
+  "collection_shards": 1,
+  "duplicate_pair_evidence": 2,
+  "edge_documents": 11,
+  "high_fanout": {
+    "cycle_root_deduplicated": true,
+    "edge_documents": 1024,
+    "fanout": 512,
+    "index_wall_ms": 1149.764,
+    "nodes_client_minus_server_ms_median": 935.086,
+    "nodes_client_wall_ms_median": 952.086,
+    "nodes_server_response_time_ms_median": 18,
+    "server_hard_limit_proven": false,
+    "shortest_path_max_depth_1": true,
+    "unique_nodes_at_depth_2": 513
+  },
+  "hydrated_edge_documents": 4,
+  "hydration_rows_cap": 20,
+  "index_ms": 1022.889,
+  "levels": {
+    "1": 2,
+    "2": 3,
+    "3": 4
+  },
+  "paths": 1,
+  "request_timeout_seconds": 20,
+  "scoped_checks": {
+    "other_relation": true,
+    "other_repository": true,
+    "other_revision": true,
+    "other_snapshot": true
+  },
+  "serialized_edge_payload_bytes": 8165,
+  "solr_version": "9.10.1",
+  "standalone_preflight": {
+    "m0_edge_schema": "incompatible",
+    "schema_error": "unknown field 'source_identity_s'",
+    "traversal": "unsupported",
+    "traversal_errors": {
+      "nodes": "invalid expression nodes(graphprobe,walk=\"standalone-probe->source_node_s\",gather=target_node_s,fq=\"repository_s:repo-a AND revision_s:r1 AND snapshot_s:s1 AND relation_type_s:calls\",trackTraversal=true,scatter=\"branches,leaves\") - zkHost not found for collection 'graphprobe'",
+      "shortest_path": "invalid expression shortestPath(graphprobe,from=standalone-probe,to=target-probe,edge=\"source_node_s=target_node_s\",fq=\"repository_s:repo-a AND revision_s:r1 AND snapshot_s:s1 AND relation_type_s:calls\",maxDepth=1) - zkHost not found for collection 'graphprobe'"
+    }
+  },
+  "timings_ms": {
+    "hydrate_batch_ms": {
+      "max": 947.564,
+      "median": 947.564,
+      "min": 947.564,
+      "samples": 1
+    },
+    "hydrate_batch_qtime_ms": {
+      "max": 1,
+      "median": 1,
+      "min": 1,
+      "samples": 1
+    },
+    "hydrate_pair_ms": {
+      "max": 928.649,
+      "median": 925.985,
+      "min": 924.32,
+      "samples": 3
+    },
+    "nodes_1_ms": {
+      "max": 954.62,
+      "median": 941.765,
+      "min": 935.798,
+      "samples": 5
+    },
+    "nodes_1_server_ms": {
+      "max": 9,
+      "median": 4,
+      "min": 3,
+      "samples": 5
+    },
+    "nodes_2_ms": {
+      "max": 957.586,
+      "median": 952.426,
+      "min": 947.06,
+      "samples": 5
+    },
+    "nodes_2_server_ms": {
+      "max": 12,
+      "median": 10,
+      "min": 9,
+      "samples": 5
+    },
+    "nodes_3_ms": {
+      "max": 971.173,
+      "median": 949.741,
+      "min": 933.448,
+      "samples": 5
+    },
+    "nodes_3_server_ms": {
+      "max": 12,
+      "median": 11,
+      "min": 8,
+      "samples": 5
+    },
+    "shortest_path_ms": {
+      "max": 964.221,
+      "median": 947.212,
+      "min": 932.223,
+      "samples": 5
+    },
+    "shortest_path_server_ms": {
+      "max": 14,
+      "median": 12,
+      "min": 7,
+      "samples": 5
+    }
+  },
+  "unresolved_observations_excluded": 1
+}

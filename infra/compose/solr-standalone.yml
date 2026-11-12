@@ -1,0 +1,21 @@
+# Standalone compatibility service for legacy workflows and existing deployments.
+services:
+  solr:
+    image: ${FETCHCORE_SOLR_IMAGE:-solr:9.10.1@sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb}
+    command: ["solr-precreate", "${FETCHCORE_SOLR_COLLECTION:-fetchcore}", "/fetchcore-configset"]
+    ports:
+      - "127.0.0.1:${FETCHCORE_SOLR_PORT:-8983}:8983"
+    volumes:
+      - solr-data:/var/solr
+      - ../solr/configset:/fetchcore-configset:ro
+      - ../solr/configset:/opt/solr/server/solr/configsets/fetchcore:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8983/solr/admin/info/system >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  solr-data:

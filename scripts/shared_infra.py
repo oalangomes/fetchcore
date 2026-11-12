@@ -8,13 +8,30 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import time
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from fetchcore.adapters.retrieval.solr.schema_validation import (
+    validate_projection_v3_schema,
+)
+from fetchcore.retrieval.contracts import KnowledgeSearchError
+
 OWNER = "fetchcore-shared-infra-v1"
 BACKENDS = {"solr": "solr", "opensearch": "opensearch", "qdrant": "qdrant-vector"}
+SOLR_CONFIGSET = "fetchcore-projection-v3"
+
+
+class SolrDeploymentModeError(RuntimeError):
+    """Observed Solr mode does not match the explicitly routed deployment mode."""
+
+
+class SolrConfigurationError(RuntimeError):
+    """Solr resource configset or schema is incompatible with FetchCore."""
 
 
 def index_settings(config: dict[str, str]) -> str:
@@ -95,8 +112,7 @@ def route(
         raise ValueError("repository must be canonical owner/name")
     if backend not in BACKENDS:
         raise ValueError("unknown retrieval backend")
-    # ADR-0006: only Solr can be routed into the persistent OPERATIONAL namespace.
-    # DEV/BENCH remain available for adapter compatibility and benchmarking.
+    # ADR-0006: only Solr can enter OPERATIONAL. DEV/BENCH keep optional adapters.
     if environment == "operational" and backend != "solr":
         raise ValueError("OPERATIONAL supports Solr only (ADR-0006)")
     if dedicated and environment != "bench":
@@ -120,6 +136,10 @@ def route(
         "FETCHCORE_INFRA_PROJECT": f"fetchcore-{instance}",
         "FETCHCORE_INFRA_OWNER": OWNER,
         "FETCHCORE_ENVIRONMENT": environment,
+        "FETCHCORE_SOLR_DEPLOYMENT_MODE": (
+            "standalone" if environment == "operational" else "solrcloud"
+        ),
+        "FETCHCORE_SOLR_CONFIGSET": SOLR_CONFIGSET,
         "FETCHCORE_REPOSITORY": repository,
         "FETCHCORE_SOLR_PORT": str(8983 + offset),
         "OPENSEARCH_PORT": str(9200 + offset),
@@ -197,7 +217,10 @@ def validate_volumes(config: dict[str, str]) -> None:
         ["docker", "volume", "ls", "--format", "{{.Name}}"],
         check=True, capture_output=True, text=True,
     ).stdout.split()
-    for name in (f"{project}_{kind}-data" for kind in ("solr", "opensearch", "qdrant", "ollama")):
+    for name in (
+        f"{project}_{kind}-data"
+        for kind in ("solr", "solrcloud", "opensearch", "qdrant", "ollama")
+    ):
         if name not in existing:
             continue
         detail = json.loads(subprocess.run(
@@ -210,25 +233,110 @@ def validate_volumes(config: dict[str, str]) -> None:
             raise ValueError("refusing unowned volume in reserved project")
 
 
+def _solr_json(url: str) -> dict[str, object]:
+    request = Request(url, headers={"Accept": "application/json"})
+    with urlopen(request, timeout=3) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise RuntimeError("Solr returned an invalid JSON object")
+    return payload
+
+
+def _validate_solrcloud_schema(collection_url: str) -> None:
+    payload = _solr_json(f"{collection_url}/schema?wt=json")
+    schema = payload.get("schema")
+    try:
+        validate_projection_v3_schema(schema)
+    except KnowledgeSearchError as exc:
+        raise SolrConfigurationError(str(exc)) from exc
+
+
 def wait_ready(backend: str, config: dict[str, str], timeout: float = 180.0) -> dict[str, str]:
     """Wait for an HTTP-level readiness endpoint without provisioning resources."""
-    endpoint = {
-        "solr": f"{config['FETCHCORE_SOLR_URL']}/admin/info/system?wt=json",
-        "opensearch": f"{config['FETCHCORE_OPENSEARCH_URL']}/_cluster/health",
-        "qdrant": f"{config['FETCHCORE_QDRANT_URL']}/readyz",
-    }[backend]
+    if backend == "solr":
+        expected_mode = config.get("FETCHCORE_SOLR_DEPLOYMENT_MODE")
+        if expected_mode not in {"standalone", "solrcloud"}:
+            raise ValueError("Solr readiness requires an explicit deployment mode")
+        endpoint = f"{config['FETCHCORE_SOLR_URL']}/admin/info/system?wt=json"
+    else:
+        endpoint = {
+            "opensearch": f"{config['FETCHCORE_OPENSEARCH_URL']}/_cluster/health",
+            "qdrant": f"{config['FETCHCORE_QDRANT_URL']}/readyz",
+        }[backend]
     deadline = time.monotonic() + timeout
     last_error = "no response"
     while time.monotonic() < deadline:
         try:
-            request = Request(endpoint, headers={"Accept": "application/json"})
-            with urlopen(request, timeout=3) as response:
-                body = response.read()
-            if backend == "opensearch":
+            if backend == "solr":
+                system_info = _solr_json(endpoint)
+                response_header = system_info.get("responseHeader")
+                if (
+                    not isinstance(response_header, dict)
+                    or response_header.get("status") != 0
+                ):
+                    raise RuntimeError("Solr returned an unsuccessful system status")
+                observed_mode = {
+                    "std": "standalone",
+                    "solrcloud": "solrcloud",
+                }.get(system_info.get("mode"))
+                if observed_mode is None:
+                    raise RuntimeError("Solr deployment mode could not be determined")
+                if observed_mode != expected_mode:
+                    raise SolrDeploymentModeError(
+                        f"Solr deployment mode mismatch: expected {expected_mode}, "
+                        f"observed {observed_mode}"
+                    )
+                if expected_mode == "solrcloud":
+                    cluster_endpoint = (
+                        f"{config['FETCHCORE_SOLR_URL']}/admin/collections"
+                        "?action=CLUSTERSTATUS&wt=json"
+                    )
+                    cluster_status = _solr_json(cluster_endpoint)
+                    cluster_header = cluster_status.get("responseHeader")
+                    if (
+                        not isinstance(cluster_header, dict)
+                        or cluster_header.get("status") != 0
+                    ):
+                        raise RuntimeError("SolrCloud returned an unsuccessful cluster status")
+                    cluster = cluster_status.get("cluster")
+                    live_nodes = cluster.get("live_nodes") if isinstance(cluster, dict) else None
+                    if (
+                        not isinstance(live_nodes, list)
+                        or not live_nodes
+                        or not all(isinstance(node, str) and node for node in live_nodes)
+                    ):
+                        raise RuntimeError("SolrCloud has no verified live ZooKeeper nodes")
+                    collections = cluster.get("collections") if isinstance(cluster, dict) else None
+                    collection_name = config["FETCHCORE_SOLR_COLLECTION"]
+                    collection = (
+                        collections.get(collection_name)
+                        if isinstance(collections, dict)
+                        else None
+                    )
+                    if collection is not None:
+                        if not isinstance(collection, dict) or collection.get(
+                            "configName"
+                        ) != config["FETCHCORE_SOLR_CONFIGSET"]:
+                            raise SolrConfigurationError(
+                                "SolrCloud collection configset does not match Projection v3"
+                            )
+                        _validate_solrcloud_schema(
+                            f"{config['FETCHCORE_SOLR_URL']}/{quote(collection_name, safe='')}"
+                        )
+            elif backend == "opensearch":
+                request = Request(endpoint, headers={"Accept": "application/json"})
+                with urlopen(request, timeout=3) as response:
+                    body = response.read()
                 health = json.loads(body.decode("utf-8"))
                 if health.get("status") not in {"green", "yellow"}:
                     raise RuntimeError(f"OpenSearch cluster status is {health.get('status')!r}")
+            else:
+                request = Request(endpoint, headers={"Accept": "application/json"})
+                with urlopen(request, timeout=3):
+                    pass
             return {"backend": backend, "endpoint": endpoint, "status": "ready"}
+        except (SolrDeploymentModeError, SolrConfigurationError):
+            raise
         except (OSError, json.JSONDecodeError, RuntimeError) as exc:
             last_error = str(exc)
             time.sleep(min(2.0, max(0.0, deadline - time.monotonic())))

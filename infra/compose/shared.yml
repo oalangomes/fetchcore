@@ -10,8 +10,10 @@ services:
     extends:
       file: solr.yml
       service: solr
-    # Empty service: logical resources are created only by explicit preparation.
+    # Configset is installed at startup; logical collections remain explicit.
     command: ["sh", "/fetchcore-start-shared.sh"]
+    environment:
+      FETCHCORE_SOLR_CREATE_COLLECTION: "false"
     volumes:
       - ../solr/start-shared.sh:/fetchcore-start-shared.sh:ro
   opensearch:
@@ -26,7 +28,7 @@ services:
       service: qdrant
 
 volumes:
-  solr-data:
+  solrcloud-data:
     labels:
       io.fetchcore.owner: ${FETCHCORE_INFRA_OWNER:?}
   opensearch-data:

@@ -105,9 +105,17 @@ def test_container_inputs_are_immutable_and_match_dockerfile() -> None:
     assert values["FETCHCORE_SOLR_IMAGE"] in (
         ROOT / "infra" / "compose" / "solr.yml"
     ).read_text(encoding="utf-8")
-    assert "/opt/solr/server/solr/configsets/fetchcore:ro" in (
-        ROOT / "infra" / "compose" / "solr.yml"
+    solr_compose = (ROOT / "infra" / "compose" / "solr.yml").read_text(encoding="utf-8")
+    assert "solrcloud-data:/var/solr" in solr_compose
+    standalone_compose = (
+        ROOT / "infra" / "compose" / "solr-standalone.yml"
     ).read_text(encoding="utf-8")
+    assert "solr-data:/var/solr" in standalone_compose
+    assert "solr-precreate" in standalone_compose
+    assert "./infra/compose/solr-standalone.yml" in (
+        ROOT / "compose.yml"
+    ).read_text(encoding="utf-8")
+    assert "../solr/start-cloud.sh:/fetchcore-start-cloud.sh:ro" in solr_compose
     assert values["FETCHCORE_SOLR_IMAGE"] in (
         ROOT / ".github" / "workflows" / "repository-index.yml"
     ).read_text(encoding="utf-8")
@@ -141,6 +149,8 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     self_inputs = yaml.safe_load(self_dogfood)["jobs"]["self-index"]["with"]
     assert self_inputs["create_if_missing"] is True
     assert self_inputs["solr_provision_mode"] == "provision_if_missing"
+    assert self_inputs["solr_deployment_mode"] == "standalone"
+    assert self_inputs["solr_configset"] == "fetchcore"
     assert self_inputs["index_lifecycle"] == "rebuild"
     assert self_inputs["evaluate"] is True
 
@@ -153,6 +163,11 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
     operational_inputs = operational_jobs["operational-index"]["with"]
     assert "FETCHCORE_OPERATIONAL_SOLR_COLLECTION" in operational_inputs["collection"]
     assert "fc-operational-fetchcore-635ab7352c2850f2" in operational_inputs["collection"]
+    assert "FETCHCORE_OPERATIONAL_SOLR_MODE" in operational_inputs["solr_deployment_mode"]
+    assert "'standalone'" in operational_inputs["solr_deployment_mode"]
+    assert "FETCHCORE_OPERATIONAL_SOLRCLOUD_URL" in operational_inputs["solr_url"]
+    assert "FETCHCORE_OPERATIONAL_SOLRCLOUD_ALIAS" in operational_inputs["collection"]
+    assert "FETCHCORE_OPERATIONAL_SOLRCLOUD_CONFIGSET" in operational_inputs["solr_configset"]
     assert "http://127.0.0.1:38983/solr" in operational_inputs["solr_url"]
     assert operational_inputs["create_if_missing"] is False
     assert operational_inputs["solr_provision_mode"] == "reuse_only"
@@ -173,14 +188,13 @@ def test_workflows_are_valid_yaml_and_preserve_ci_boundaries() -> None:
 
     assert list(operational_jobs) == ["operational-index"]  # Solr unchanged
 
-    # ADR-0006: alternate backends must not have any OPERATIONAL workflow,
-    # including manual dispatch. Compatibility tests continue in DEV/BENCH.
+    # Only Solr has an OPERATIONAL workflow (ADR-0006).
     for backend in ("opensearch", "qdrant"):
         assert not (workflow_dir / f"operational-{backend}.yml").exists()
 
     assert "FETCHCORE_DOCS_LOCALIZATION_ENABLED == 'true'" in localization
     assert "Validate localization configuration" in localization
-    assert ci.count("scripts/ci/docker-pull.sh") == 1
+    assert ci.count("scripts/ci/docker-pull.sh") == 2
     assert "dogfood-smoke:" not in ci
     assert explorer.count("scripts/ci/docker-pull.sh") == 3
     assert "fetchcore-lab" not in explorer

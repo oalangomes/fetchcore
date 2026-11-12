@@ -345,6 +345,8 @@ class SolrSettings:
 
     url: str = "http://localhost:8983/solr"
     collection: str = "fetchcore-knowledge"
+    deployment_mode: str = "standalone"
+    configset: str = "fetchcore"
     timeout_seconds: float = 10.0
     projection_version: str = SOLR_PROJECTION_VERSION
     field_boosts: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_SOLR_FIELD_BOOSTS))
@@ -370,6 +372,18 @@ class SolrSettings:
         if not _COLLECTION_PATTERN.fullmatch(collection):
             raise KnowledgeSearchError(
                 "Solr collection contains unsupported characters",
+                category="schema_mismatch",
+            )
+        deployment_mode = str(data.get("deployment_mode", cls.deployment_mode)).strip()
+        if deployment_mode not in {"standalone", "solrcloud"}:
+            raise KnowledgeSearchError(
+                "Solr deployment_mode must be standalone or solrcloud",
+                category="schema_mismatch",
+            )
+        configset = str(data.get("configset", cls.configset)).strip()
+        if not _COLLECTION_PATTERN.fullmatch(configset):
+            raise KnowledgeSearchError(
+                "Solr configset contains unsupported characters",
                 category="schema_mismatch",
             )
         try:
@@ -406,6 +420,8 @@ class SolrSettings:
         return cls(
             url=url,
             collection=collection,
+            deployment_mode=deployment_mode,
+            configset=configset,
             timeout_seconds=timeout,
             projection_version=controls.projection_version,
             field_boosts=controls.field_boosts,
@@ -1209,9 +1225,10 @@ class SolrIndexStore:
             self.validate_schema(require_vectors=True)
         started = self.timer()
         snapshot = self._snapshot(result)
-        # A prior process may have stopped after commit=false staging. Solr's
-        # update log must be clean before deriving the active replacement set.
-        self._rollback()
+        # A new SolrCloud generation is an empty collection; SolrCloud does not
+        # support the Standalone update-log rollback command.
+        if self.settings.deployment_mode == "standalone":
+            self._rollback()
         previous = self._load_stored_projection(result.repository)
         (
             projected_documents,
@@ -1229,7 +1246,18 @@ class SolrIndexStore:
                 previous_records=previous.records,
                 expected_snapshot=snapshot,
             )
-        except Exception as exc:  # noqa: BLE001 - discard must cover partial staging
+        except Exception as exc:
+            if self.settings.deployment_mode == "solrcloud":
+                raise KnowledgeSearchError(
+                    "SolrCloud generation staging failed; the unpublished collection must be inspected",
+                    category="index_update_failure",
+                    metadata={
+                        "operation": "full_rebuild",
+                        "activation": "not_attempted",
+                        "recovery_required": True,
+                        "cause_category": _error_category(exc),
+                    },
+                ) from exc
             self._discard_staged_after_failure(
                 repository=result.repository,
                 previous=previous,
@@ -1239,7 +1267,18 @@ class SolrIndexStore:
         try:
             self._commit()
             self._validate_projected_state(result.documents, snapshot)
-        except Exception as exc:  # noqa: BLE001 - compensation must cover any failed mutation
+        except Exception as exc:
+            if self.settings.deployment_mode == "solrcloud":
+                raise KnowledgeSearchError(
+                    "SolrCloud generation validation failed before publication",
+                    category="index_update_failure",
+                    metadata={
+                        "operation": "full_rebuild",
+                        "activation": "not_attempted",
+                        "recovery_required": True,
+                        "cause_category": _error_category(exc),
+                    },
+                ) from exc
             self._restore_after_failure(
                 repository=result.repository,
                 previous=previous,

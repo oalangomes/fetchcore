@@ -26,6 +26,44 @@ Under [ADR-0006](../adr/ADR-0006-solr-official-backend.md), the only current OPE
 
 Consumers must separately configure their `retrieval.dense.enabled` / `retrieval.hybrid.enabled` policy through `FETCHCORE_CONFIG` or `FETCHCORE_RETRIEVAL`. A lexical-only Solr snapshot cannot be silently promoted by `sync`: perform a separately authorized explicit vector rebuild and inspect the updated fingerprint/readiness. No workflow silently pulls models, repairs schema or recovers a missing snapshot by rebuilding it.
 
+### SolrCloud OPERATIONAL migration gate
+
+The Solr OPERATIONAL workflow remains Standalone by default. It selects SolrCloud
+only when an operator explicitly sets the repository variable
+`FETCHCORE_OPERATIONAL_SOLR_MODE=solrcloud` and configures
+`FETCHCORE_OPERATIONAL_SOLRCLOUD_URL` and
+`FETCHCORE_OPERATIONAL_SOLRCLOUD_ALIAS`. The Cloud alias must be dedicated to
+the registered repository and resolve to exactly one collection. Its configset
+defaults to `fetchcore-projection-v3`; override it with
+`FETCHCORE_OPERATIONAL_SOLRCLOUD_CONFIGSET` only when that configset has been
+independently validated. Until the variables are deliberately changed after
+the migration gate, automatic indexing continues against the existing
+Standalone endpoint and volume.
+
+In SolrCloud, `rebuild` writes a new versioned collection, validates its schema,
+repository snapshot, revision, document count and corpus checksum, then changes
+the stable alias. The prior generation is retained. `sync` reuses the active
+alias and the existing Git-aware incremental synchronizer, under a distributed
+collection lock; it refuses an unexpected alias target or an incompatible
+snapshot. A lost alias-update response is resolved by reading the alias and
+validating the generation, not by assuming the update failed.
+
+The lock collection is named `fetchcore-lock-<sha256-prefix>` from the alias and
+repository identity. A crashed process can leave that collection behind; all
+subsequent writers then fail closed with `concurrent_write`. Before manual
+recovery, confirm the indexing run has stopped and inspect the lock record at
+`/solr/<lock-collection>/select?q=id:%22fetchcore-writer-lock%22&wt=json`.
+Verify its repository and alias ownership before deleting that exact lock
+collection through the SolrCloud Collections API. If ownership is uncertain,
+do not delete it. Unpublished generations are retained for inspection; this
+workflow does not automatically delete generations or orphaned staging
+collections.
+
+This gate prepares the code and workflow for an operator-authorized migration;
+it does not itself authorize or perform the operational cutover. Validate a
+disposable SolrCloud full rebuild, subsequent incremental sync, readiness and
+retrieval before changing the variables above.
+
 ### Manual operational recovery
 
 Use [Solr operational workflow](../../.github/workflows/operational-index.yml) with **Run workflow** from `master`. Manual dispatch from other branches is rejected.
@@ -209,10 +247,11 @@ fingerprints, repository binding, and currentness.
 
 ### Creating a missing core or collection
 
-Creation requires `create_if_missing: true`. It creates only `collection` and uses
-the named, server-side `solr_configset` (default `fetchcore`). An external Solr
-operator must install that configset first. If it is unavailable, creation fails
-explicitly; the workflow does not upload, repair, or replace a configset.
+Creation requires `create_if_missing: true`. When reusing an existing service, it
+creates only `collection` and uses the named, server-side `solr_configset`
+(default `fetchcore`). An external Solr operator must install that configset
+first. If it is unavailable, creation fails explicitly; reuse-only service
+preparation does not upload, repair, or replace a configset.
 
 For an initial dedicated resource, manually dispatch
 `.github/workflows/repository-index.yml` as a separate initialization run. Set
@@ -303,8 +342,12 @@ create_if_missing: true
 
 That path selects a free loopback port, creates a uniquely named ephemeral
 container from the digest-pinned Solr image, and records it as owned by the run.
-The owned startup probe retries a temporary HTTP 503 while the container starts;
-other server errors still fail the preflight explicitly.
+For SolrCloud, the container starts with `solr -c`, uploads the explicitly named
+versioned configset to its ZooKeeper, then creates the collection through the
+Collections API. This disposable path has no persistent volume and does not
+migrate or modify any existing service. Standalone remains available only when
+selected explicitly. The owned startup probe retries a temporary HTTP 503 while
+the container starts; other server errors still fail the preflight explicitly.
 Cleanup removes only that exact owned container. It never deletes a pre-existing
 container or volume. `managed_solr: true` remains as a deprecated compatibility
 alias for this opt-in policy. Nonempty `solr_port` and `solr_volume` inputs fail

@@ -34,12 +34,14 @@ The config loader precedence is built-in defaults < operator YAML < environment 
 
 ## Operational sequence
 
-Provision a **dedicated** Solr service/resource with the FetchCore Projection v3 configset by an explicitly authorized operator action. The installed wheel's `python -m fetchcore.operational.solr_runtime prepare` reuses by default. To create an owned Docker service when the configured loopback endpoint is unavailable, pass both `--provision-mode provision_if_missing` and `--create-if-missing`, an owner token, a pinned Solr image, and output paths:
+Provision a **dedicated** Solr service/resource with the FetchCore Projection v3 configset by an explicitly authorized operator action. The installed wheel's `python -m fetchcore.operational.solr_runtime prepare` reuses by default. To create a disposable owned SolrCloud service when the configured loopback endpoint is unavailable, pass both `--provision-mode provision_if_missing` and `--create-if-missing`, an owner token, a pinned Solr image, and output paths:
 
 ```bash
 /absolute/venv/bin/python -m fetchcore.operational.solr_runtime prepare \
   --solr-url http://127.0.0.1:18984/solr \
-  --resource my-dedicated-core --repository owner/project \
+  --deployment-mode solrcloud \
+  --resource my-dedicated-collection --repository owner/project \
+  --configset fetchcore-projection-v3 \
   --provision-mode provision_if_missing --create-if-missing \
   --owner-token my-local-run \
   --solr-image 'solr:9.10.1@sha256:<verified-64-hex-digest>' \
@@ -47,7 +49,7 @@ Provision a **dedicated** Solr service/resource with the FetchCore Projection v3
   --output-env /absolute/private/solr-state.env
 ```
 
-Replace the example digest with a verified image digest. The returned `endpoint` may use a different free loopback port; put that exact endpoint and the returned resource into the private YAML. When reusing an existing standalone Solr service, creating a missing core requires its configset to be installed **server-side** under Solr's configset directory; `--create-if-missing` does not upload one. An explicit `--configset-dir` may override the bundled files for owned provisioning. `docker compose up` may start a service, but does not register or index a repository. Never point this sequence at a shared collection or BENCH resource. [Self-hosted indexing](self-hosted-indexing.md) documents the existing automation surface.
+Replace the example digest with a verified image digest. The returned `endpoint` may use a different free loopback port; put that exact endpoint and the returned collection into the private YAML. Owned SolrCloud provisioning uploads the configured versioned configset to the disposable node's ZooKeeper before creating the collection. This owned CI/development path has no persistent volume; use the local Compose service and its `solrcloud-data` volume for persistent development data. When reusing an existing SolrCloud service, the configset must already be available in ZooKeeper; `--create-if-missing` creates only the named collection and fails if the configset is absent. An explicit `--configset-dir` may override the bundled files for owned provisioning. `docker compose up` does not register or index a repository. Never point this sequence at a shared collection or BENCH resource. [Shared development infrastructure](shared-development-infrastructure.md) documents the local Cloud topology; [self-hosted indexing](self-hosted-indexing.md) documents the automation surface.
 
 For an already provisioned local resource and a local Git workspace under `/absolute/allowed-root`, substitute the canonical identity returned by `repo add`:
 
