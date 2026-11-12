@@ -547,7 +547,7 @@ def test_routed_qdrant_requires_vector_dimensions_before_backend_access(monkeypa
     from fetchcore.cli import main
     from fetchcore.application import indexing
 
-    config = infra.route("operational", "a/b", backend)
+    config = infra.route("bench", "a/b", backend)
     build_solr = Mock(side_effect=AssertionError("must never compose a Solr writer"))
     monkeypatch.setattr(indexing, "SolrIndexStore", build_solr)
     result = CliRunner().invoke(
