@@ -24,8 +24,7 @@ run evidence. Until Cloud publication is implemented, self-dogfood validates the
 legacy Standalone indexing path.
 Operational indexing remains reuse-only and targets the separate existing
 OPERATIONAL service/resources below. See
-[self-hosted indexing](self-hosted-indexing.md) for the three independent workflows
-and their acceptance evidence.
+[self-hosted indexing](self-hosted-indexing.md) for the Solr-only OPERATIONAL workflow and historical acceptance evidence.
 
 Benchmark `search-intent-v2/run.py` accepts routed environment defaults while
 retaining explicit CLI arguments. Frozen baseline-v1 and paired `evidence.py`
@@ -44,7 +43,7 @@ to print routing JSON. This has no Docker or filesystem side effects.
 | --- | --- | --- | --- | --- | --- |
 | fetchcore-shared | DEV, functional BENCH | 18983 | 19200 / 19600 | 16333 / 16334 | existing host service |
 | fetchcore-bench-dedicated | performance BENCH | 28983 | 29200 / 29600 | 26333 / 26334 | existing host service |
-| fetchcore-operational | persistent OPERATIONAL | 38983 | 39200 / 39600 | 36333 / 36334 | existing host service |
+| fetchcore-operational | persistent OPERATIONAL (Solr only) | 38983 | disabled (legacy reserved ports 39200 / 39600) | disabled (legacy reserved ports 36333 / 36334) | existing host service |
 
 Endpoints bind to `127.0.0.1`; Solr has `/solr`. Each project has its own named
 backend data volumes and containers. Ollama is not part of these projects and has
@@ -107,9 +106,7 @@ from WSL. The routing default is `http://host.docker.internal:11434`; pass
 it with container `localhost` or start another Ollama. `FETCHCORE_BACKEND` selects
 `solr`, `opensearch`, or `qdrant-vector` (`--backend qdrant` maps to the latter);
 `FETCHCORE_INDEX_BACKEND` and its endpoint/resource settings select that same backend.
-Registered indexing now supports Solr, OpenSearch and Qdrant through the
-same application boundary (#123, operationally accepted in #130/#202/#203).
-Unsupported backend capabilities still fail explicitly; no request is redirected to Solr.
+Registered indexing supports Solr, OpenSearch and Qdrant through the same application boundary (#123). Under [ADR-0006](../adr/ADR-0006-solr-official-backend.md), **OPERATIONAL accepts Solr only**: `scripts/shared_infra.py` rejects OpenSearch/Qdrant for `--environment operational` with an explicit error, before attempting service operations. Alternate adapters remain usable in DEV and BENCH; unsupported capabilities fail explicitly rather than falling back.
 
 ## Explicit service and resource preparation
 
@@ -194,13 +191,7 @@ URL, resource and repository. Use `--provision-mode provision_if_missing`
 with `--create-if-missing` only for an intentional new resource; subsequent
 checks use `--provision-mode reuse_only`. Then explicitly run `fetchcore index bootstrap`, registration,
 plan and sync using the routed environment. Bootstrap remains Projection v3.
-OpenSearch/Qdrant infrastructure preparation creates only empty schemas and aliases;
-it does not create an indexed snapshot. Their indexing lifecycle is operationally
-supported. Resource creation and an initial or compatibility rebuild remain
-explicit operator actions. The independent OPERATIONAL workflows perform only
-incremental `sync` on pre-existing compatible snapshots after CI succeeds;
-missing/incompatible snapshots require a separate, authorized operator action
-rather than automatic reconstruction.
+OpenSearch/Qdrant preparation in DEV or BENCH creates only empty schemas and aliases, not indexed snapshots. Neither has an OPERATIONAL indexing workflow (manual or automatic). Only the Solr OPERATIONAL workflow performs post-CI incremental `sync` against an existing compatible snapshot; missing/incompatible snapshots require a separate authorized action, never automatic reconstruction.
 
 `run` exports host-process `FETCHCORE_*` settings, not container DNS or MCP-specific
 configuration. Use the emitted values explicitly for MCP-specific settings, or
@@ -214,10 +205,9 @@ contract fingerprint change was completed for Solr, OpenSearch and Qdrant, and
 that `readiness` returned `ready: true` for all three. Successful independent
 GitHub Actions runs and their checked readiness steps are recorded in
 [operational acceptance](self-hosted-indexing.md#operational-acceptance-2026-10-20).
-The current cycle is **explicit rebuild when needed → automatic incremental sync
-→ readiness**. A workflow never creates or repairs an incompatible snapshot;
-it fails closed. OPERATIONAL resources stay separate from DEV and BENCH, and
-the old `fetchcore` core and volumes remain outside this lifecycle.
+The current **Solr-only** OPERATIONAL cycle is **explicit rebuild when needed → automatic incremental sync → readiness**. A workflow never creates or repairs an incompatible snapshot; it fails closed. The October 2026 OpenSearch/Qdrant acceptance results are historical only. OPERATIONAL resources stay separate from DEV and BENCH, and the old `fetchcore` core and volumes remain outside this lifecycle.
+
+Retired OpenSearch/Qdrant OPERATIONAL resources may still physically exist or be running on the operator host: changing repository workflows and routing does not stop services. After verifying ownership and consumer traffic, the operator must separately stop those containers through a reviewed non-destructive action; do **not** invoke `down -v`, `prune`, or delete their collections/volumes as part of this ADR. The old ports remain reserved to prevent accidental reuse.
 
 `FETCHCORE_OPERATIONAL_SOLR_URL` and `FETCHCORE_OPERATIONAL_SOLR_COLLECTION` repository
 variables override the workflow defaults for an operator-managed isolated service.

@@ -41,6 +41,7 @@ Use this index to find the current contract. Historical extraction notes and ind
 | Explore benchmarks, acquisition tests and studies | [Experiment convention](benchmarks/protocol.md), [baseline v1 protocol](benchmarks/baseline-v1.md), [Markdown acceptance test](../tests/acceptance/acquisition/markdown/README.md), [Local-relations acceptance test](../tests/acceptance/acquisition/local-relations/README.md), [SearchIntent v2 experiment](benchmarks/search-intent-v2.md), and [repository-learning consumer study](../studies/repository-learning/STUDY.md) |
 | Review bounded structural lookup cost | [Structural lookup acquisition check](benchmarks/structural-lookup-2026-11-07.md) |
 | Understand a durable decision | [ADR index](adr/README.md) |
+| Understand the official retrieval backend policy | [Solr backend ADR](adr/ADR-0006-solr-official-backend.md) and [adapter architecture](architecture/adapters-and-composition.md) |
 | Follow a migration or inspect extraction provenance | [Namespace migration](migrations/fetchcore-namespace.md) and [historical extraction](history/extraction/README.md) |
 
 ## Vocabulary

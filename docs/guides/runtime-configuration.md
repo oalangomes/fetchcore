@@ -3,13 +3,15 @@
 FetchCore serving configuration belongs to the operator. Give the MCP process
 an explicit `FETCHCORE_CONFIG=/absolute/path/config.yaml`, or call
 `load_runtime_config(path=...)` from an SDK bootstrap. FetchCore does not search
-the repository workspace for this file. Repository-owned `.fetchcore` indexing
+the repository workspace for this file.
+
+**Official product backend:** [ADR-0006](../adr/ADR-0006-solr-official-backend.md) establishes Solr as the single supported operational/indexing reference. The YAML below explicitly selects Solr; vector retrieval still needs compatible schema, persisted vectors and an available embedding provider. Existing `local-semantic`, OpenSearch and Qdrant selections remain accepted for compatibility. The current SDK/runtime default `local-semantic` is unchanged until a separately tested migration; do not assume this sample rewrites that default. Repository-owned `.fetchcore` indexing
 and document policy files cannot set runtime endpoints.
 
 ```yaml
 version: 1
 runtime:
-  backend: qdrant-vector
+  backend: solr
   workspace: /workspace
   repository: owner/repo
 retrieval:
@@ -22,9 +24,9 @@ retrieval:
       timeout_seconds: 60
       request_batch_size: 32
 backends:
-  qdrant-vector:
-    url: http://qdrant:6333
-    collection: fetchcore-vector
+  solr:
+    url: http://solr:8983/solr
+    collection: fetchcore
     timeout_seconds: 30
 embedding:
   ollama:

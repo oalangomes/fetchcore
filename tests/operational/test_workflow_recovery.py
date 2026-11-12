@@ -18,8 +18,14 @@ LIFECYCLE = "${{ github.event_name == 'workflow_dispatch' && inputs.index_lifecy
 
 
 def _workflow(backend):
-    name = "operational-index.yml" if backend == "solr" else f"operational-{backend}.yml"
+    assert backend == "solr"
+    name = "operational-index.yml"
     return yaml.safe_load((WORKFLOWS / name).read_text())
+
+
+def test_alternate_operational_workflows_are_absent():
+    for backend in ("opensearch", "qdrant"):
+        assert not (WORKFLOWS / f"operational-{backend}.yml").exists()
 
 
 def _expression(value, **contexts):
@@ -31,7 +37,7 @@ def _expression(value, **contexts):
                 {"__builtins__": {}}, contexts)
 
 
-@pytest.mark.parametrize("backend", ["solr", "opensearch", "qdrant"])
+@pytest.mark.parametrize("backend", ["solr"])
 @pytest.mark.parametrize("event,requested,expected", [
     ("workflow_run", "", "sync"),
     ("workflow_run", "rebuild", "sync"),
@@ -72,7 +78,7 @@ def test_manual_actions_never_change_automatic_sync(backend, event, requested, e
         )
 
 
-@pytest.mark.parametrize("backend", ["solr", "opensearch", "qdrant"])
+@pytest.mark.parametrize("backend", ["solr"])
 def test_manual_operational_actions_require_master_workflow(backend):
     condition = next(iter(_workflow(backend)["jobs"].values()))["if"]
     for ref, allowed in (("refs/heads/master", True), ("refs/heads/untrusted", False)):
@@ -206,7 +212,7 @@ os.execv(sys.executable, [sys.executable, *args])
     return result, commands, evidence
 
 
-@pytest.mark.parametrize("backend", ["solr", "opensearch", "qdrant"])
+@pytest.mark.parametrize("backend", ["solr"])
 @pytest.mark.parametrize("state", ["absent", "incompatible", "current"])
 @pytest.mark.parametrize("lifecycle", ["plan", "sync", "rebuild"])
 def test_workflow_recovery_executes_only_selected_action(tmp_path, backend, state, lifecycle):
@@ -228,7 +234,7 @@ def test_workflow_recovery_executes_only_selected_action(tmp_path, backend, stat
             assert commands[-1] == "readiness"
 
 
-@pytest.mark.parametrize("backend", ["solr", "opensearch", "qdrant"])
+@pytest.mark.parametrize("backend", ["solr"])
 @pytest.mark.parametrize("state", ["schema", "collision"])
 def test_manual_rebuild_never_bypasses_schema_or_collision(tmp_path, backend, state):
     result, commands, _ = _run_steps(tmp_path, backend, "rebuild", state)
@@ -238,7 +244,7 @@ def test_manual_rebuild_never_bypasses_schema_or_collision(tmp_path, backend, st
         assert "rebuild" not in commands
 
 
-@pytest.mark.parametrize("backend", ["solr", "opensearch", "qdrant"])
+@pytest.mark.parametrize("backend", ["solr"])
 @pytest.mark.parametrize("invalid", [
     {"indexed_revision": "wrong"}, {"currentness": "unknown"},
     {"snapshot_indexing_fingerprint": "wrong"},
@@ -251,7 +257,7 @@ def test_rebuild_verification_checks_persisted_identity(tmp_path, backend, inval
     assert result.returncode != 0
 
 
-@pytest.mark.parametrize("backend", ["solr", "opensearch", "qdrant"])
+@pytest.mark.parametrize("backend", ["solr"])
 def test_embedding_failure_is_visible_in_log_and_artifact_without_retry(tmp_path, backend):
     result, commands, evidence = _run_steps(tmp_path, backend, "rebuild", "embedding")
     assert result.returncode != 0

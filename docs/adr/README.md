@@ -9,5 +9,6 @@ ADRs preserve the reasons and trade-offs for durable decisions. Current behavior
 | [ADR-0003 — Operator-owned runtime configuration and explicit registries](ADR-0003-operator-runtime-configuration.md) | Accepted |
 | [ADR-0004 — Versioned persisted identities and fail-closed compatibility](ADR-0004-versioned-persisted-identities.md) | Accepted |
 | [ADR-0005 — Developer Local installation and operational ownership](ADR-0005-developer-local-installation.md) | Accepted |
+| [ADR-0006 — Apache Solr as the official operational retrieval backend](ADR-0006-solr-official-backend.md) | Accepted |
 
 Do not create ADRs for tuning values, single class/file choices, one-off fixes, or benchmark results.
