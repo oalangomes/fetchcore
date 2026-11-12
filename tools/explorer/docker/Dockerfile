@@ -9,7 +9,7 @@ COPY src/ ./src/
 COPY tools/explorer/api/ ./tools/explorer/api/
 COPY tools/explorer/docker/mcp_http.py ./tools/explorer/docker/mcp_http.py
 COPY tools/explorer/docker/smoke.py ./tools/explorer/docker/smoke.py
-RUN python -m pip install --no-cache-dir ".[mcp]" -r tools/explorer/api/requirements.txt
+RUN python -m pip install --no-cache-dir ".[mcp,structure]" -r tools/explorer/api/requirements.txt
 
 FROM node:22-alpine AS web-build
 WORKDIR /web
