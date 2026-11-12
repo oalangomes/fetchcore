@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
@@ -44,6 +45,22 @@ from fetchcore.backends.solr import (
 from memory_solr_transport import MemoryTransport
 
 
+class RealtimeMemoryTransport(MemoryTransport):
+    def get(
+        self,
+        path: str,
+        params: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        if path == "get":
+            ids = str((params or {}).get("ids", "")).split(",")
+            return {
+                "response": {
+                    "docs": [self.documents[item] for item in ids if item in self.documents],
+                },
+            }
+        return super().get(path, params)
+
+
 def _indexer(revision: str = "rev-a") -> RepositoryIndexer:
     return RepositoryIndexer(
         RepositoryIndexConfig(repository="example/repo", branch="main", revision=revision)
@@ -64,6 +81,21 @@ def _store(transport: MemoryTransport) -> SolrIndexStore:
     return bind_indexing_contract_store(base, _indexer())
 
 
+def _cloud_store(transport: MemoryTransport) -> SolrIndexStore:
+    base = SolrIndexStore(
+        transport,
+        SolrSettings(
+            url="http://solr.test/solr",
+            collection="generation",
+            deployment_mode="solrcloud",
+            configset="fetchcore-projection-v3",
+        ),
+        clock=lambda: "2026-08-19T17:00:00+00:00",
+        timer=lambda: 1.0,
+    )
+    return bind_indexing_contract_store(base, _indexer())
+
+
 def _index_pair(tmp_path: Path) -> tuple[RepositoryIndexResult, RepositoryIndexResult]:
     (tmp_path / "a.py").write_text("def first():\n    return 1\n", encoding="utf-8")
     (tmp_path / "b.py").write_text("def second():\n    return 2\n", encoding="utf-8")
@@ -73,6 +105,38 @@ def _index_pair(tmp_path: Path) -> tuple[RepositoryIndexResult, RepositoryIndexR
     (tmp_path / "c.py").write_text("def third():\n    return 3\n", encoding="utf-8")
     second = _indexer("rev-b").index(tmp_path, previous_documents=first.documents)
     return first, second
+
+
+def test_solrcloud_full_rebuild_does_not_use_standalone_rollback(tmp_path: Path) -> None:
+    (tmp_path / "source.py").write_text("def symbol():\n    return 1\n")
+    result = _indexer().index(tmp_path)
+    transport = RealtimeMemoryTransport()
+
+    _cloud_store(transport).full_rebuild(result)
+
+    assert not any(
+        isinstance(payload, dict) and "rollback" in payload
+        for path, payload, _params in transport.post_calls
+        if path == "update"
+    )
+
+
+def test_solrcloud_staging_failure_does_not_attempt_unsupported_rollback(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "source.py").write_text("def symbol():\n    return 1\n")
+    result = _indexer().index(tmp_path)
+    transport = RealtimeMemoryTransport()
+    transport.fail_next_commit = True
+
+    with pytest.raises(KnowledgeSearchError, match="generation validation failed"):
+        _cloud_store(transport).full_rebuild(result)
+
+    assert not any(
+        isinstance(payload, dict) and "rollback" in payload
+        for path, payload, _params in transport.post_calls
+        if path == "update"
+    )
 
 
 def _seed(

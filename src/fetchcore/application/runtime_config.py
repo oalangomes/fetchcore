@@ -33,8 +33,9 @@ _BACKEND_FIELDS = {
         "default_knowledge_type",
     }),
     "solr": frozenset({
-        "url", "collection", "timeout_seconds", "projection_version", "field_boosts",
-        "signal_type_boosts", "batch_size", "diagnostic_candidate_window",
+        "url", "collection", "deployment_mode", "configset", "timeout_seconds",
+        "projection_version", "field_boosts", "signal_type_boosts", "batch_size",
+        "diagnostic_candidate_window",
         "ann_search_breadth",
     }),
     "opensearch": frozenset({
@@ -202,7 +203,9 @@ def validate_backend_settings(backend: str, settings: Mapping[str, object]) -> N
     ):
         if key in data:
             _positive_int(data[key], f"backends.{backend}.{key}")
-    for key in ("collection", "index", "embedding_model", "api_key"):
+    for key in (
+        "collection", "index", "deployment_mode", "configset", "embedding_model", "api_key",
+    ):
         if key in data:
             _string(data[key], f"backends.{backend}.{key}")
     if backend == "solr":

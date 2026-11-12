@@ -8,6 +8,7 @@ from email.message import Message
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -20,9 +21,76 @@ from fetchcore.operational.solr_runtime import (
     cleanup_solr_runtime,
     prepare_solr_runtime,
 )
+from fetchcore.retrieval.contracts import KnowledgeSearchError
+from fetchcore.adapters.retrieval.solr.schema_validation import (
+    validate_projection_v3_schema,
+)
 
 
 IMAGE = "solr:9.10.1@sha256:" + ("a" * 64)
+
+
+def _schema_attribute(value: str) -> object:
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    return value
+
+
+def _api_analyzer(element: ET.Element) -> dict[str, object]:
+    result: dict[str, object] = {}
+    tokenizer = element.find("tokenizer")
+    if tokenizer is not None:
+        result["tokenizer"] = dict(tokenizer.attrib)
+    for tag, key in (("filter", "filters"), ("charFilter", "charFilters")):
+        entries = [dict(child.attrib) for child in element.findall(tag)]
+        if entries:
+            result[key] = entries
+    return result
+
+
+def _schema_response() -> dict[str, object]:
+    schema_file = Path(solr_runtime.__file__).parent / "configset/conf/schema.xml"
+    root = ET.parse(schema_file).getroot()
+    field_types: list[dict[str, object]] = []
+    for element in root.findall("fieldType"):
+        definition: dict[str, object] = {
+            key: _schema_attribute(value) for key, value in element.attrib.items()
+        }
+        for analyzer in element.findall("analyzer"):
+            analyzer_type = analyzer.get("type")
+            if analyzer_type in {"index", "query"}:
+                definition[f"{analyzer_type}Analyzer"] = _api_analyzer(analyzer)
+        field_types.append(definition)
+    similarity = root.find("similarity")
+    similarity_definition: dict[str, object] = {}
+    if similarity is not None:
+        similarity_definition["class"] = similarity.get("class")
+        for parameter in similarity:
+            name = parameter.get("name")
+            if name is not None:
+                similarity_definition[name] = (parameter.text or "").strip()
+    return {
+        "schema": {
+            "name": root.get("name"),
+            "version": root.get("version"),
+            "uniqueKey": root.findtext("uniqueKey"),
+            "fields": [
+                {key: _schema_attribute(value) for key, value in element.attrib.items()}
+                for element in root.findall("field")
+            ],
+            "fieldTypes": field_types,
+            "dynamicFields": [
+                {
+                    key: _schema_attribute(value) for key, value in element.attrib.items()
+                }
+                for element in root.findall("dynamicField")
+            ],
+            "copyFields": [dict(element.attrib) for element in root.findall("copyField")],
+            "similarity": similarity_definition,
+        },
+    }
 
 
 class FakeDocker:
@@ -49,6 +117,7 @@ class FakeSolr:
     ) -> None:
         self.mode = mode
         self.resources = set(resources or ())
+        self.aliases: dict[str, str] = {}
         self.repositories = set(repositories or ())
         self.unbound_documents = unbound_documents
         self.unavailable_calls = unavailable_calls
@@ -81,8 +150,13 @@ class FakeSolr:
                 "responseHeader": {"status": 0},
                 "cluster": {"live_nodes": self.live_nodes},
             }
+        if url.endswith("/admin/collections") and values.get("action") == "LISTALIASES":
+            return {"responseHeader": {"status": 0}, "aliases": dict(self.aliases)}
         if url.endswith("/admin/collections") and values.get("action") == "CREATE":
             self.resources.add(values["name"])
+            return {"responseHeader": {"status": 0}}
+        if url.endswith("/admin/collections") and values.get("action") == "CREATEALIAS":
+            self.aliases[values["name"]] = values["collections"]
             return {"responseHeader": {"status": 0}}
         if url.endswith("/admin/cores"):
             if values["action"] == "CREATE":
@@ -95,6 +169,8 @@ class FakeSolr:
             return {"collections": sorted(self.resources)}
         if url.endswith("/admin/configs"):
             return {"configSets": ["fetchcore", "fetchcore-projection-v3"]}
+        if url.endswith("/schema"):
+            return _schema_response()
         if url.endswith("/select"):
             query = values["q"]
             if query == "*:*":
@@ -346,16 +422,60 @@ def test_solrcloud_uses_collections_api_and_checks_configset(tmp_path: Path) -> 
         docker=FakeDocker(forbidden=True),
     )
     assert state.deployment_mode == "solrcloud"
-    assert state.resource_kind == "collection"
+    assert state.resource_kind == "alias"
     assert any(call[1].endswith("/admin/configs") for call in solr.calls)
     assert any(
         call[1].endswith("/admin/collections") and call[2].get("action") == "CREATE"
+        for call in solr.calls
+    )
+    assert any(
+        call[1].endswith("/admin/collections") and call[2].get("action") == "CREATEALIAS"
         for call in solr.calls
     )
     assert not any(call[1].endswith("/admin/cores") for call in solr.calls)
     assert any(
         call[2].get("action") == "CLUSTERSTATUS" for call in solr.calls
     )
+
+
+def test_solrcloud_reuses_only_a_stable_alias(tmp_path: Path) -> None:
+    solr = FakeSolr(mode="solrcloud", resources={"fetchcore-generation-1"})
+    solr.aliases["fetchcore-self-dogfood"] = "fetchcore-generation-1"
+
+    state = prepare_solr_runtime(
+        config(tmp_path, deployment_mode=DeploymentMode.SOLRCLOUD),
+        client=solr,
+        docker=FakeDocker(forbidden=True),
+    )
+
+    assert state.resource_kind == "alias"
+    assert state.resource_state == "existing"
+    assert state.repository_binding == "unbound"
+
+
+def test_solrcloud_rejects_collection_where_alias_is_required(tmp_path: Path) -> None:
+    solr = FakeSolr(mode="solrcloud", resources={"fetchcore-self-dogfood"})
+
+    with pytest.raises(SolrRuntimeError) as failure:
+        prepare_solr_runtime(
+            config(tmp_path, deployment_mode=DeploymentMode.SOLRCLOUD),
+            client=solr,
+            docker=FakeDocker(forbidden=True),
+        )
+
+    assert failure.value.category == "resource_kind_mismatch"
+
+
+def test_projection_schema_validation_rejects_incomplete_schema_payload() -> None:
+    schema = _schema_response()["schema"]
+    validate_projection_v3_schema(schema)
+    assert isinstance(schema, dict)
+    schema["fields"] = schema["fields"][:-1]
+
+    with pytest.raises(KnowledgeSearchError) as failure:
+        validate_projection_v3_schema(schema)
+
+    assert failure.value.category == "schema_mismatch"
 
 
 def test_auto_owned_provisioning_creates_cloud_collection(tmp_path: Path) -> None:
@@ -377,7 +497,7 @@ def test_auto_owned_provisioning_creates_cloud_collection(tmp_path: Path) -> Non
     )
 
     assert state.deployment_mode == "solrcloud"
-    assert state.resource_kind == "collection"
+    assert state.resource_kind == "alias"
     assert state.resource_state == "created"
     assert state.repository_binding == "unbound"
     assert docker.calls[0][-3:] == ("solr", "-c", "-f")

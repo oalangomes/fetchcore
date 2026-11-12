@@ -8,12 +8,19 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import time
-import xml.etree.ElementTree as ET
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from fetchcore.adapters.retrieval.solr.schema_validation import (
+    validate_projection_v3_schema,
+)
+from fetchcore.retrieval.contracts import KnowledgeSearchError
+
 OWNER = "fetchcore-shared-infra-v1"
 BACKENDS = {"solr": "solr", "opensearch": "opensearch", "qdrant": "qdrant-vector"}
 SOLR_CONFIGSET = "fetchcore-projection-v3"
@@ -232,117 +239,13 @@ def _solr_json(url: str) -> dict[str, object]:
     return payload
 
 
-def _schema_value(value: str) -> object:
-    if value == "true":
-        return True
-    if value == "false":
-        return False
-    return value
-
-
-def _expected_analyzer(analyzer: ET.Element) -> dict[str, object]:
-    result: dict[str, object] = {}
-    tokenizer = analyzer.find("tokenizer")
-    if tokenizer is not None:
-        result["tokenizer"] = dict(tokenizer.attrib)
-    for tag, key in (("filter", "filters"), ("charFilter", "charFilters")):
-        entries = [dict(element.attrib) for element in analyzer.findall(tag)]
-        if entries:
-            result[key] = entries
-    return result
-
-
 def _validate_solrcloud_schema(collection_url: str) -> None:
-    expected_schema = ET.parse(
-        ROOT / "infra" / "solr" / "configset" / "conf" / "schema.xml"
-    ).getroot()
     payload = _solr_json(f"{collection_url}/schema?wt=json")
     schema = payload.get("schema")
-    if not isinstance(schema, dict):
-        raise RuntimeError("SolrCloud collection returned no schema")
-    if (
-        schema.get("name") != expected_schema.get("name")
-        or str(schema.get("version")) != expected_schema.get("version")
-        or schema.get("uniqueKey") != expected_schema.findtext("uniqueKey")
-    ):
-        raise SolrConfigurationError("SolrCloud collection schema identity is incompatible")
-
-    def compare_elements(
-        xml_elements: list[ET.Element],
-        actual_value: object,
-        label: str,
-        nested: bool = False,
-    ) -> None:
-        if not isinstance(actual_value, list) or not all(
-            isinstance(item, dict) for item in actual_value
-        ):
-            raise SolrConfigurationError(f"SolrCloud collection returned invalid {label}")
-        expected = {item.get("name"): item for item in xml_elements}
-        actual = {item.get("name"): item for item in actual_value}
-        if len(actual) != len(actual_value) or set(actual) != set(expected):
-            raise SolrConfigurationError(
-                f"SolrCloud collection {label} differ from Projection v3"
-            )
-        for name, element in expected.items():
-            observed = actual[name]
-            for key, value in element.attrib.items():
-                if observed.get(key) != _schema_value(value):
-                    raise SolrConfigurationError(
-                        f"SolrCloud collection {label} definition is incompatible: {name}"
-                    )
-            if nested and label == "fieldTypes":
-                for analyzer in element.findall("analyzer"):
-                    analyzer_type = analyzer.get("type")
-                    if analyzer_type not in {"index", "query"}:
-                        raise SolrConfigurationError(
-                            "Projection v3 has an unknown analyzer type"
-                        )
-                    actual_key = f"{analyzer_type}Analyzer"
-                    if observed.get(actual_key) != _expected_analyzer(analyzer):
-                        raise SolrConfigurationError(
-                            f"SolrCloud collection field type is incompatible: {name}"
-                        )
-
-    compare_elements(expected_schema.findall("field"), schema.get("fields"), "fields")
-    compare_elements(
-        expected_schema.findall("fieldType"),
-        schema.get("fieldTypes"),
-        "fieldTypes",
-        nested=True,
-    )
-    compare_elements(
-        expected_schema.findall("dynamicField"),
-        schema.get("dynamicFields"),
-        "dynamicFields",
-    )
-    copy_fields = schema.get("copyFields")
-    expected_copy_fields = expected_schema.findall("copyField")
-    if (
-        not isinstance(copy_fields, list)
-        or len(copy_fields) != len(expected_copy_fields)
-        or any(
-            not isinstance(item, dict)
-            or item != element.attrib
-            for item, element in zip(copy_fields, expected_copy_fields, strict=True)
-        )
-    ):
-        raise SolrConfigurationError(
-            "SolrCloud collection copyFields differ from Projection v3"
-        )
-
-    expected_similarity = expected_schema.find("similarity")
-    actual_similarity = schema.get("similarity")
-    if expected_similarity is None or not isinstance(actual_similarity, dict):
-        raise SolrConfigurationError(
-            "SolrCloud collection similarity configuration is invalid"
-        )
-    if actual_similarity.get("class") != expected_similarity.get("class"):
-        raise SolrConfigurationError("SolrCloud collection similarity is incompatible")
-    for parameter in expected_similarity:
-        if actual_similarity.get(parameter.get("name", "")) != (parameter.text or "").strip():
-            raise SolrConfigurationError(
-                "SolrCloud collection similarity parameters are incompatible"
-            )
+    try:
+        validate_projection_v3_schema(schema)
+    except KnowledgeSearchError as exc:
+        raise SolrConfigurationError(str(exc)) from exc
 
 
 def wait_ready(backend: str, config: dict[str, str], timeout: float = 180.0) -> dict[str, str]:
