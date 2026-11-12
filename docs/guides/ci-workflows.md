@@ -22,9 +22,9 @@ master push
     ↓
 CI on GitHub-hosted runners
     ↓ successful master run only
-independent Solr, OpenSearch and Qdrant OPERATIONAL workflows
+Solr OPERATIONAL workflow only
     ↓
-reuse each backend's persistent OPERATIONAL resource
+reuse the Solr persistent OPERATIONAL resource
     ↓
 plan → incremental sync | noop → readiness
 ```
@@ -34,22 +34,11 @@ Pull requests never write to persistent OPERATIONAL resources.
 owned ephemeral Solr runtime and explicitly rebuilds the disposable
 `fetchcore-self-dogfood` resource. The run cleans up only resources it owns.
 
-The [Solr](../../.github/workflows/operational-index.yml),
-[OpenSearch](../../.github/workflows/operational-opensearch.yml) and
-[Qdrant](../../.github/workflows/operational-qdrant.yml) workflows accept only a
-successful `push` CI run for `master` from the FetchCore repository, or an
-explicit manual dispatch. Each uses the immutable `head_sha` for post-CI runs
-and only its own persistent OPERATIONAL resource. Automatic runs require existing
-compatible snapshots, perform `sync` and verify readiness; missing or incompatible
-schema/fingerprints fail closed without an implicit rebuild. Manual dispatch from
-`master` offers `index_lifecycle: plan | sync | rebuild` with `sync` as the default.
-Inspect a plan run before explicitly authorizing a separate rebuild run; schema
-and ownership checks remain mandatory. See
-[manual operational recovery](self-hosted-indexing.md#manual-operational-recovery).
-All default to
-hybrid retrieval, allow explicit dense selection, and use Ollama
-`embeddinggemma` at 768 dimensions. See the
-[operational acceptance](self-hosted-indexing.md#operational-acceptance-2026-10-20).
+The [Solr OPERATIONAL workflow](../../.github/workflows/operational-index.yml) alone accepts successful `push` CI runs for `master` from the FetchCore repository, or explicit manual dispatch from `master`. It uses the immutable `head_sha` from the completed CI run and only the Solr persistent OPERATIONAL resource. Automatic runs require an existing compatible snapshot and perform strict `sync`; missing or incompatible schema/fingerprints fail closed without implicit rebuild. Manual dispatch offers `index_lifecycle: plan | sync | rebuild` (default `sync`); inspect a plan before explicitly authorizing a separate rebuild. See [manual operational recovery](self-hosted-indexing.md#manual-operational-recovery).
+
+Under [ADR-0006](../adr/ADR-0006-solr-official-backend.md), **OpenSearch and Qdrant have no OPERATIONAL workflow at all**, including manual dispatch. `scripts/shared_infra.py` fails closed when either is selected with `--environment operational`. Their DEV/BENCH support and historical October 2026 operational evidence do not imply current production support. This repository change does not stop pre-existing external containers or delete persisted collections.
+
+Solr OPERATIONAL defaults to hybrid retrieval, permits explicit dense selection, and uses Ollama `embeddinggemma` at 768 dimensions. The [October 2026 multi-backend acceptance evidence](self-hosted-indexing.md#operational-acceptance-2026-10-20) is preserved as historical context, not the active topology.
 
 The repository does not choose the self-hosted runner boot policy. The default
 operational labels include `fetchcore`; override
@@ -93,11 +82,7 @@ self-dogfood explicitly; those settings are outside source control.
 
 ## Operational run manifest
 
-Indexing workflows emit `run-manifest.json` alongside existing command JSON and
-the legacy Solr `run-evidence.json`. The new `fetchcore.operational-run` schema
-version 1 composes existing validated `IndexRunArtifact` observations. Solr,
-OpenSearch and Qdrant use the same composition contract. The original command
-and legacy evidence formats remain unchanged.
+The active Solr OPERATIONAL workflow emits `run-manifest.json` alongside existing command JSON and the legacy Solr `run-evidence.json`. The `fetchcore.operational-run` schema version 1 composes existing validated `IndexRunArtifact` observations. Historical OpenSearch/Qdrant manifest artifacts remain valid evidence, but no longer have active OPERATIONAL publishers. The original command and legacy evidence formats remain unchanged.
 
 The manifest records run/repository/revision/backend/destination identity, a hash
 of effective runtime configuration, requested lifecycle, workflow outcome and
