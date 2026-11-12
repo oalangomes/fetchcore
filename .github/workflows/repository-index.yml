@@ -635,7 +635,7 @@ jobs:
             if [ "$EVALUATION_GATE" != "true" ]; then args+=(--report-only); fi
             python .fetchcore-runtime/scripts/dogfood_mcp_eval.py "${args[@]}"
             cat "$FETCHCORE_DOGFOOD_OUTPUT/mcp-evaluation-$mode.md" >> "$GITHUB_STEP_SUMMARY"
-          done < <(python -c 'import json, os; print("\\n".join(json.loads(os.environ["EVALUATION_MODES_JSON"])))')
+          done < <(python -c 'import json, os; print("\n".join(json.loads(os.environ["EVALUATION_MODES_JSON"])))')
 
       - name: Compose bounded run evidence
         if: ${{ success() }}

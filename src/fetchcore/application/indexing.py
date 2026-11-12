@@ -35,6 +35,7 @@ from fetchcore.adapters.retrieval.solr.index_contract import (
 from fetchcore.adapters.retrieval.solr.incremental_persistence import (
     TargetedGitAwareSolrSynchronizer,
 )
+from fetchcore.adapters.retrieval.solr.incremental import RepositorySyncOutcome
 from fetchcore.adapters.retrieval.solr.cloud_lifecycle import SolrCloudGenerationManager
 from fetchcore.adapters.retrieval.opensearch.backend import (
     OPENSEARCH_VECTOR_DIMENSIONS, OpenSearchIndexStore, OpenSearchSettings,
@@ -496,19 +497,60 @@ class SolrCloudOperationalIndex:
                     "Explicit rebuild required: " + observation.reason,
                     category="rebuild_required",
                 )
-            with self.manager.writer_lock(self.runtime.repository):
-                active = self.manager.require_active_generation(self.runtime.repository)
-                synced = TargetedGitAwareSolrSynchronizer(
-                    self._store_for_collection(active),
+            noop_outcome: RepositorySyncOutcome | None = None
+            synced_outcome: RepositorySyncOutcome | None = None
+
+            def no_op(active_store: SolrIndexStore) -> SolrIndexSyncResult | None:
+                nonlocal noop_outcome
+                noop_outcome = TargetedGitAwareSolrSynchronizer(
+                    active_store,
+                    self.runtime.indexer,
+                    allow_rebuild=False,
+                ).noop_if_current(self.runtime.workspace)
+                return None if noop_outcome is None else noop_outcome.storage
+
+            def synchronize(staged_store: SolrIndexStore) -> SolrIndexSyncResult | None:
+                nonlocal noop_outcome, synced_outcome
+                candidate = TargetedGitAwareSolrSynchronizer(
+                    staged_store,
                     self.runtime.indexer,
                     allow_rebuild=False,
                 ).sync(self.runtime.workspace)
-                self.manager.assert_active_generation(active)
-            execution = _execution_result(synced.storage)
+                if candidate.noop:
+                    noop_outcome = candidate
+                    return None
+                synced_outcome = candidate
+                return candidate.storage
+
+            publication = self.manager.incremental_sync(
+                self.runtime.repository,
+                no_op=no_op,
+                synchronize=synchronize,
+            )
+            synced = noop_outcome if publication.noop else synced_outcome
+            if synced is None or synced.storage.snapshot != publication.storage.snapshot:
+                raise KnowledgeSearchError(
+                    "SolrCloud incremental publication has no matching sync outcome",
+                    category="index_update_failure",
+                    metadata={
+                        "active_collection": publication.active_collection,
+                        "noop": publication.noop,
+                    },
+                )
+            execution = _execution_result(publication.storage)
             execution["noop"] = synced.noop
             execution["discovery"] = synced.discovery.to_mapping()
             result["execution"] = execution
-            result["mode"] = "noop" if synced.noop else "incremental"
+            result["mode"] = "noop" if publication.noop else "incremental"
+            if not publication.noop:
+                result["publication"] = {
+                    "alias": self.store.settings.collection,
+                    "previous_collection": publication.previous_collection,
+                    "active_collection": publication.active_collection,
+                    "retained_previous_generation": True,
+                    "copied_records": publication.copied_records,
+                    "copy_duration_ms": publication.copy_duration_ms,
+                }
             result["previous_indexed_revision"] = result.pop("indexed_revision")
             result["previous_currentness"] = result.pop("currentness")
             return result

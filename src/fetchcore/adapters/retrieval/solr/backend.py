@@ -1218,6 +1218,51 @@ class SolrIndexStore:
                 break
         return tuple(records)
 
+    def copy_repository_projection_from(
+        self,
+        source: SolrIndexStore,
+        repository: str,
+    ) -> int:
+        """Copy persisted records, including raw vectors, into an empty Cloud collection."""
+        if (
+            self.settings.deployment_mode != "solrcloud"
+            or source.settings.deployment_mode != "solrcloud"
+        ):
+            raise KnowledgeSearchError(
+                "Solr projection copies require SolrCloud collections",
+                category="deployment_mode_mismatch",
+            )
+        if self._select({"q": "*:*", "rows": 0})["num_found"] != 0:
+            raise KnowledgeSearchError(
+                "SolrCloud staging collection is not empty",
+                category="repository_resource_collision",
+                metadata={"collection": self.settings.collection},
+            )
+        records = source._load_projection_records(repository)
+        if not records:
+            raise KnowledgeSearchError(
+                "Source SolrCloud generation has no persisted projection",
+                category="snapshot_missing",
+                metadata={"repository": repository},
+            )
+        expected_checksum = _projection_records_checksum(records)
+        self._upsert_records(records)
+        self._commit()
+        copied = self._load_projection_records(repository)
+        actual_checksum = _projection_records_checksum(copied)
+        if actual_checksum != expected_checksum:
+            raise KnowledgeSearchError(
+                "SolrCloud staged projection copy differs from its source",
+                category="index_update_failure",
+                metadata={
+                    "expected_projection_checksum": expected_checksum,
+                    "actual_projection_checksum": actual_checksum,
+                    "expected_record_count": len(records),
+                    "actual_record_count": len(copied),
+                },
+            )
+        return len(records)
+
     def full_rebuild(self, result: RepositoryIndexResult) -> SolrIndexSyncResult:
         """Replace the repository projection with a complete rebuild."""
         self._ensure_complete(result)

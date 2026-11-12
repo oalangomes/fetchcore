@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
+from dataclasses import replace
 import hashlib
 from types import SimpleNamespace
 from typing import cast
@@ -29,6 +30,7 @@ class FakeCloud:
         self.collections: set[str] = {"generation-initial"}
         self.aliases: dict[str, object] = {"knowledge": "generation-initial"}
         self.configsets: dict[str, str] = {"generation-initial": "fetchcore-projection-v3"}
+        self.lock_records: dict[str, list[dict[str, object]]] = {}
         self.fail_promotion_after_change = False
         self.fail_promotion_before_change = False
         self.fail_alias_validation = False
@@ -60,6 +62,7 @@ class FakeCloud:
     def delete_collection(self, collection: str) -> None:
         self.collections.remove(collection)
         self.configsets.pop(collection, None)
+        self.lock_records.pop(collection, None)
 
 
 class FakeCloudState:
@@ -67,7 +70,7 @@ class FakeCloudState:
         self.cloud = cloud
         self.snapshots: dict[str, SolrIndexSnapshot] = {}
         self.documents: dict[str, tuple[object, ...]] = {}
-        self.lock_records: dict[str, list[dict[str, object]]] = {}
+        self.lock_records = cloud.lock_records
         self.fail_alias_validation = False
 
     def resolve(self, name: str) -> str:
@@ -108,7 +111,7 @@ class FakeStore:
         self.settings = settings
         self.embedding_provider = None
         self.transport = FakeTransport(state, settings.collection)
-        self.clock = lambda: datetime.now(UTC).isoformat()
+        self.clock: Callable[[], str] = lambda: datetime.now(UTC).isoformat()
         self.timer = lambda: 0.0
 
     def validate_schema(self, *, require_vectors: bool = False) -> None:
@@ -141,6 +144,19 @@ class FakeStore:
     def load_documents(self, repository: str) -> tuple[object, ...]:
         del repository
         return self.state.documents.get(self.state.resolve(self.settings.collection), ())
+
+    def copy_repository_projection_from(
+        self,
+        source: FakeStore,
+        repository: str,
+    ) -> int:
+        source_name = self.state.resolve(source.settings.collection)
+        snapshot = self.state.snapshots[source_name]
+        self.state.snapshots[self.settings.collection] = snapshot
+        self.state.documents[self.settings.collection] = self.state.documents.get(
+            source_name, (),
+        )
+        return len(self.state.documents[self.settings.collection]) + 1
 
     def full_rebuild(self, result: RepositoryIndexResult) -> SolrIndexSyncResult:
         snapshot = SolrIndexSnapshot(
@@ -218,6 +234,144 @@ def test_rebuild_publishes_new_generation_and_preserves_previous(
     assert not any(name.startswith("fetchcore-lock-") for name in cloud.collections)
 
 
+def test_incremental_publication_stages_a_copy_before_alias_switch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cloud = FakeCloud()
+    state = FakeCloudState(cloud)
+    manager = _manager(cloud, monkeypatch=monkeypatch, state=state)
+    initial = manager.rebuild(_result())
+    previous = initial.active_collection
+    previous_snapshot = state.snapshots[previous]
+    writes: list[str] = []
+
+    def synchronize(staged: SolrIndexStore) -> SolrIndexSyncResult:
+        collection = staged.settings.collection
+        assert collection != previous
+        assert state.snapshots[collection] == previous_snapshot
+        writes.append(collection)
+        updated = replace(previous_snapshot, revision="def456")
+        state.snapshots[collection] = updated
+        return SolrIndexSyncResult(
+            mode="incremental",
+            snapshot=updated,
+            added=0,
+            updated=0,
+            deleted=0,
+            unchanged=0,
+            duration_ms=1,
+        )
+
+    publication = manager.incremental_sync(
+        "owner/repo",
+        no_op=lambda _active: None,
+        synchronize=synchronize,
+    )
+
+    assert writes == [publication.active_collection]
+    assert publication.active_collection != previous
+    assert cloud.aliases["knowledge"] == publication.active_collection
+    assert state.snapshots[previous] == previous_snapshot
+    assert previous in cloud.collections
+    assert publication.copied_records == 1
+    assert publication.noop is False
+
+
+def test_incremental_noop_does_not_create_a_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cloud = FakeCloud()
+    manager = _manager(cloud, monkeypatch=monkeypatch)
+    initial = manager.rebuild(_result())
+    collections_before = set(cloud.collections)
+    snapshot = initial.storage.snapshot
+    noop_storage = SolrIndexSyncResult(
+        mode="incremental",
+        snapshot=snapshot,
+        added=0,
+        updated=0,
+        deleted=0,
+        unchanged=0,
+        duration_ms=0,
+    )
+
+    publication = manager.incremental_sync(
+        "owner/repo",
+        no_op=lambda _active: noop_storage,
+        synchronize=lambda _staged: pytest.fail("no-op must not stage a generation"),
+    )
+
+    assert publication.noop is True
+    assert publication.active_collection == initial.active_collection
+    assert set(cloud.collections) == collections_before
+
+
+def test_incremental_staging_failure_leaves_the_active_generation_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cloud = FakeCloud()
+    state = FakeCloudState(cloud)
+    manager = _manager(cloud, monkeypatch=monkeypatch, state=state)
+    initial = manager.rebuild(_result())
+    previous = initial.active_collection
+    previous_snapshot = state.snapshots[previous]
+    staged_collections: list[str] = []
+
+    def fail_after_staged_write(staged: SolrIndexStore) -> SolrIndexSyncResult:
+        collection = staged.settings.collection
+        staged_collections.append(collection)
+        state.snapshots[collection] = replace(previous_snapshot, revision="partial")
+        raise KnowledgeSearchError("injected staging failure", category="unavailable")
+
+    with pytest.raises(KnowledgeSearchError, match="generation staging failed") as failure:
+        manager.incremental_sync(
+            "owner/repo",
+            no_op=lambda _active: None,
+            synchronize=fail_after_staged_write,
+        )
+
+    assert failure.value.metadata["activation"] == "not_attempted"
+    assert cloud.aliases["knowledge"] == previous
+    assert state.snapshots[previous] == previous_snapshot
+    assert len(staged_collections) == 1
+    assert staged_collections[0] in cloud.collections
+    assert not any(name.startswith("fetchcore-lock-") for name in cloud.collections)
+
+
+def test_incremental_lost_promotion_response_is_resolved_by_alias_observation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cloud = FakeCloud()
+    state = FakeCloudState(cloud)
+    manager = _manager(cloud, monkeypatch=monkeypatch, state=state)
+    initial = manager.rebuild(_result())
+    previous = initial.active_collection
+    cloud.fail_promotion_after_change = True
+    updated = replace(initial.storage.snapshot, revision="def456")
+
+    def synchronize(staged: SolrIndexStore) -> SolrIndexSyncResult:
+        state.snapshots[staged.settings.collection] = updated
+        return SolrIndexSyncResult(
+            mode="incremental",
+            snapshot=updated,
+            added=0,
+            updated=0,
+            deleted=0,
+            unchanged=0,
+            duration_ms=1,
+        )
+
+    publication = manager.incremental_sync(
+        "owner/repo",
+        no_op=lambda _active: None,
+        synchronize=synchronize,
+    )
+
+    assert publication.active_collection != previous
+    assert publication.active_collection == cloud.aliases["knowledge"]
+    assert previous in cloud.collections
+
+
 def test_lost_promotion_response_is_resolved_by_observing_alias(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -291,7 +445,9 @@ def test_reconciliation_reports_stale_lock_without_mutating_cluster(
 
     assert report["action"] == "recovery_required"
     assert report["mutated"] is False
-    assert report["writer_lock"]["collection"] == lock_name
+    lock_report = report["writer_lock"]
+    assert isinstance(lock_report, dict)
+    assert lock_report["collection"] == lock_name
     assert cloud.collections == before
 
 

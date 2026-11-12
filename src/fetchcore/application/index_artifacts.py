@@ -17,7 +17,7 @@ from fetchcore.telemetry import IndexStageTelemetry
 
 MAX_ARTIFACT_BYTES = 2_000_000
 OPERATIONS = {"status", "plan", "sync", "rebuild"}
-MODES = {"initial", "incremental", "noop", "rebuild", "rebuild_required"}
+MODES = {"initial", "incremental", "noop", "rebuild", "rebuild_required", "full_rebuild"}
 
 
 def _text(value: object, name: str) -> str:

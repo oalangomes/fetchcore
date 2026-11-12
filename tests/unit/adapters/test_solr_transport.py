@@ -14,7 +14,10 @@ from fetchcore.backends.solr import (
     SolrBackend,
     SolrSettings,
 )
-from fetchcore.adapters.retrieval.solr.backend import _solr_dense_candidates
+from fetchcore.adapters.retrieval.solr.backend import (
+    SolrIndexStore,
+    _solr_dense_candidates,
+)
 from fetchcore.retrieval.contracts import KnowledgeSearchError, SearchScope
 
 
@@ -195,3 +198,50 @@ def test_solr_dense_propagates_typed_transport_error() -> None:
             settings=settings, vector=(0.1,),
         )
     assert exc.value.category == "backend_unavailable"
+
+
+def test_solrcloud_projection_copy_preserves_raw_vectors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = SolrSettings.from_mapping({
+        "deployment_mode": "solrcloud",
+        "collection": "source",
+    })
+    source = SolrIndexStore(_MemoryTransport(), settings)
+    target = SolrIndexStore(
+        _MemoryTransport(),
+        SolrSettings.from_mapping({
+            "deployment_mode": "solrcloud",
+            "collection": "staging",
+        }),
+    )
+    records = (
+        {
+            "id": "knowledge-1",
+            "record_kind": "knowledge",
+            "repository": "owner/repo",
+            "canonical_payload": '{"id":"knowledge-1"}',
+            "embedding_vector": [0.125, -0.5, 0.75],
+        },
+        {
+            "id": "snapshot-owner-repo",
+            "record_kind": "snapshot",
+            "repository": "owner/repo",
+            "canonical_payload": '{"revision":"abc123"}',
+        },
+    )
+    target_reads = iter((records,))
+    writes: list[dict[str, object]] = []
+    commits: list[bool] = []
+    monkeypatch.setattr(source, "_load_projection_records", lambda _repository: records)
+    monkeypatch.setattr(target, "_select", lambda _params: {"num_found": 0, "docs": []})
+    monkeypatch.setattr(target, "_load_projection_records", lambda _repository: next(target_reads))
+    monkeypatch.setattr(target, "_upsert_records", lambda values: writes.extend(values))
+    monkeypatch.setattr(target, "_commit", lambda: commits.append(True))
+
+    copied = target.copy_repository_projection_from(source, "owner/repo")
+
+    assert copied == len(records)
+    assert writes == list(records)
+    assert writes[0]["embedding_vector"] == [0.125, -0.5, 0.75]
+    assert commits == [True]

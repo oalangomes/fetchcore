@@ -81,6 +81,9 @@ This gate prepares the code and workflow for an operator-authorized migration;
 it does not itself authorize or perform the operational cutover. Validate a
 disposable SolrCloud full rebuild, subsequent incremental sync, readiness and
 retrieval before changing the variables above.
+Use the [SolrCloud OPERATIONAL cutover runbook](solrcloud-operational-cutover.md)
+for the audited environment state, Cloud validation protocol, activation gates,
+consumer updates, and rollback procedure.
 
 ### Manual operational recovery
 
