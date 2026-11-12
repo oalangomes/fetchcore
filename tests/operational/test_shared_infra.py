@@ -323,7 +323,7 @@ def test_up_starts_selected_backend_and_waits_for_readiness(monkeypatch):
     ready = Mock(return_value={"backend": "qdrant", "status": "ready"})
     monkeypatch.setattr(infra.subprocess, "run", run)
     monkeypatch.setattr(infra, "wait_ready", ready)
-    invoke(monkeypatch, "up", "--environment", "operational", "--repository", "a/b",
+    invoke(monkeypatch, "up", "--environment", "bench", "--repository", "a/b",
            "--backend", "qdrant")
     assert run.call_args.args[0][-4:] == ["up", "-d", "--no-recreate", "qdrant"]
     ready.assert_called_once()
@@ -342,7 +342,7 @@ def test_qdrant_prepare_requires_explicit_vector_dimensions(monkeypatch):
     run = Mock()
     monkeypatch.setattr(infra.subprocess, "run", run)
     with pytest.raises(SystemExit):
-        invoke(monkeypatch, "prepare", "--environment", "operational", "--repository", "a/b",
+        invoke(monkeypatch, "prepare", "--environment", "bench", "--repository", "a/b",
                "--backend", "qdrant", "--create-if-missing")
     run.assert_not_called()
 
@@ -368,7 +368,7 @@ def test_readiness_checks_solr_without_provisioning(monkeypatch):
     open_url.assert_called_once()
 
 
-@pytest.mark.parametrize("environment", ["dev", "bench", "operational"])
+@pytest.mark.parametrize("environment", ["dev", "bench"])
 @pytest.mark.parametrize("backend", ["solr", "opensearch", "qdrant"])
 def test_indexing_never_routes_to_another_backend(tmp_path, environment, backend):
     config = infra.route(environment, "a/b", backend)
@@ -408,7 +408,7 @@ def test_qdrant_readiness_does_not_accept_liveness(monkeypatch):
     opened = Mock(side_effect=HTTPError("http://localhost/readyz", 503, "not ready", {}, None))
     monkeypatch.setattr(infra, "urlopen", opened)
     with pytest.raises(RuntimeError, match="readiness timed out"):
-        infra.wait_ready("qdrant", infra.route("operational", "a/b", "qdrant"), timeout=0.01)
+        infra.wait_ready("qdrant", infra.route("bench", "a/b", "qdrant"), timeout=0.01)
     assert opened.call_args.args[0].full_url.endswith("/readyz")
 
 
@@ -416,7 +416,7 @@ def test_qdrant_readiness_does_not_accept_liveness(monkeypatch):
 def test_qdrant_prepare_rejects_incompatible_vector_schema(monkeypatch, distance, modifier):
     from fetchcore.adapters.retrieval.qdrant import backend
 
-    config = infra.route("operational", "a/b", "qdrant")
+    config = infra.route("bench", "a/b", "qdrant")
     alias = backend._repository_alias(backend.QdrantVectorSettings.from_mapping({
         "collection": config["FETCHCORE_QDRANT_COLLECTION"],
     }), "a/b")
@@ -444,5 +444,5 @@ def test_qdrant_prepare_rejects_malformed_inventory_before_creation(monkeypatch)
     ])
     monkeypatch.setattr(backend.UrllibQdrantTransport, "request", request)
     with pytest.raises(ValueError, match="invalid collection inventory"):
-        infra._qdrant_resource(infra.route("operational", "a/b", "qdrant"), "a/b", True, 768)
+        infra._qdrant_resource(infra.route("bench", "a/b", "qdrant"), "a/b", True, 768)
     assert all(call.args[0] == "GET" for call in request.call_args_list)
