@@ -95,6 +95,10 @@ def route(
         raise ValueError("repository must be canonical owner/name")
     if backend not in BACKENDS:
         raise ValueError("unknown retrieval backend")
+    # ADR-0006: only Solr can be routed into the persistent OPERATIONAL namespace.
+    # DEV/BENCH remain available for adapter compatibility and benchmarking.
+    if environment == "operational" and backend != "solr":
+        raise ValueError("OPERATIONAL supports Solr only (ADR-0006)")
     if dedicated and environment != "bench":
         raise ValueError("dedicated mode is only available for bench")
     if not isinstance(ollama_url, str):
