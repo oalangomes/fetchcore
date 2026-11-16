@@ -1,0 +1,40 @@
+version: 2
+repository: oalangomes/fetchcore
+# Corpus revision pinned so every exact span below is a deterministic precondition.
+revision: 32a288977fc03bf7b903ef38d258c91ac975fe42
+
+defaults:
+  limit: 20
+
+scenarios:
+  - id: targeted-solr-synchronizer-class
+    action: find_symbol
+    name: TargetedGitAwareSolrSynchronizer
+    kind: class
+    path: src/fetchcore/adapters/retrieval/solr/incremental_persistence.py
+    expected_symbols:
+      - name: TargetedGitAwareSolrSynchronizer
+        qualified_name: fetchcore.adapters.retrieval.solr.incremental_persistence.TargetedGitAwareSolrSynchronizer
+        kind: class
+        path: src/fetchcore/adapters/retrieval/solr/incremental_persistence.py
+        line_start: 25
+        line_end: 181
+    verify_source: true
+
+  - id: find-symbol-homonyms
+    action: find_symbol
+    name: find_symbol
+    expected_symbols:
+      - name: find_symbol
+        qualified_name: fetchcore.repository.navigation.find_symbol
+        kind: function
+        path: src/fetchcore/repository/navigation.py
+        line_start: 160
+        line_end: 233
+      - name: find_symbol
+        qualified_name: fetchcore.application.navigation.RepositoryKnowledgeNavigationService.find_symbol
+        kind: method
+        path: src/fetchcore/application/navigation.py
+        line_start: 129
+        line_end: 147
+    verify_source: true
