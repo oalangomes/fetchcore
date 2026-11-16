@@ -308,10 +308,21 @@ def test_provenance_is_required_on_every_observed_symbol() -> None:
     reversed_span = _observed_symbol(line_start=30, line_end=29)
     assert "invalid line_end" in dogfood.symbol_provenance_errors(reversed_span)
 
+    inconsistent_ref = _observed_symbol(
+        source_ref="repository://other/repo/unrelated.py"
+    )
+    assert "source_ref does not match repository and path" in (
+        dogfood.symbol_provenance_errors(inconsistent_ref)
+    )
+
 
 def test_payload_contract_errors_fail_closed() -> None:
-    valid = {"status": "success", "results": []}
+    valid = {"status": "not_found", "results": []}
     assert dogfood.symbol_payload_errors(valid) == ()
+
+    assert "navigation status contradicts empty results" in (
+        dogfood.symbol_payload_errors({"status": "success", "results": []})
+    )
 
     broken = {"status": "invented", "results": None}
     errors = dogfood.symbol_payload_errors(broken)
@@ -367,6 +378,10 @@ def test_source_verification_flags_revision_divergence_and_bad_content() -> None
     diverged = dict(valid_payload, revision="older-revision")
     assert "get_source revision mismatch" in dogfood.source_read_errors(
         diverged, symbol, "oalangomes/fetchcore"
+    )
+    missing_revision = dict(valid_payload, revision=None)
+    assert "get_source revision mismatch" in dogfood.source_read_errors(
+        missing_revision, symbol, "oalangomes/fetchcore"
     )
     wrong_repo = dict(valid_payload, repository="other/repo")
     assert "get_source repository mismatch" in dogfood.source_read_errors(
@@ -644,6 +659,52 @@ def test_results_are_validated_against_the_requested_scope() -> None:
     ) == ()
 
 
+@pytest.mark.parametrize(
+    ("changed", "expected_error"),
+    [
+        ({"repository": "other/repo"}, "unexpected response repository"),
+        ({"revision": "older-revision"}, "unexpected response revision"),
+        ({"revision": None}, "missing response revision"),
+        (
+            {"revision": "older-revision", "results": [_observed_symbol()]},
+            "result 0: response revision mismatch",
+        ),
+        (
+            {"status": "not_found"},
+            "navigation status contradicts non-empty results",
+        ),
+        (
+            {"results": [_observed_symbol(source_ref="repository://other/repo/unrelated.py")]},
+            "result 0: source_ref does not match repository and path",
+        ),
+    ],
+)
+def test_contradictory_find_symbol_envelopes_fail_closed(
+    changed: dict[str, object], expected_error: str
+) -> None:
+    payload: dict[str, object] = {
+        "repository": "oalangomes/fetchcore",
+        "revision": "32a288977fc03bf7b903ef38d258c91ac975fe42",
+        "results": [_observed_symbol()],
+        "coverage": [],
+        "status": "success",
+        "limit_reached": False,
+        "scan_complete": True,
+        "scan_diagnostics": [],
+    }
+    payload.update(changed)
+
+    report = asyncio.run(dogfood._evaluate_symbol_scenario(
+        _find_symbol_session(payload),
+        SimpleNamespace(repository="oalangomes/fetchcore"),
+        _plain_symbol_scenario(),
+    ))
+
+    assert report["outcome"] == "contract_error"
+    assert expected_error in report["contract_errors"]
+    assert report["passed"] is False
+
+
 def test_incomplete_or_truncated_source_windows_fail_verification() -> None:
     symbol = _observed_symbol()
     complete = {
@@ -662,9 +723,26 @@ def test_incomplete_or_truncated_source_windows_fail_verification() -> None:
         "truncated": False,
     }
 
-    truncated = dict(complete, truncated=True)
-    assert "get_source returned a truncated window" in dogfood.source_read_errors(
-        truncated, symbol, "oalangomes/fetchcore"
+    bounded = dict(complete, truncated=True)
+    assert dogfood.source_read_errors(
+        bounded, symbol, "oalangomes/fetchcore"
+    ) == ()
+
+    short_content = "\n".join(
+        "class TargetedGitAwareSolrSynchronizer" if number == 25
+        else f"line {number}"
+        for number in range(25, 181)
+    )
+    short_bounded = dict(bounded, line_end=180, content=short_content)
+    assert "get_source line_end mismatch" in dogfood.source_read_errors(
+        short_bounded, symbol, "oalangomes/fetchcore"
+    )
+
+    incomplete_content = dict(bounded, content=short_content)
+    assert "get_source content does not cover the returned line range" in (
+        dogfood.source_read_errors(
+            incomplete_content, symbol, "oalangomes/fetchcore"
+        )
     )
 
     incomplete = dict(
@@ -723,6 +801,20 @@ def test_get_source_is_not_required_without_source_verification() -> None:
         {"find_symbol", "get_source"}
     )
 
+    payload = {
+        "repository": "oalangomes/fetchcore",
+        "revision": "32a288977fc03bf7b903ef38d258c91ac975fe42",
+        "results": [_observed_symbol()],
+        "status": "success",
+    }
+    report = asyncio.run(dogfood._evaluate_symbol_scenario(
+        _find_symbol_session(payload),
+        SimpleNamespace(repository="oalangomes/fetchcore"),
+        plain,
+    ))
+    assert report["passed"] is True
+    assert report["verify_source"]["requested"] is False
+
 
 def test_smoke_failure_is_reported_without_blocking_the_evaluation() -> None:
     args = SimpleNamespace(repository="oalangomes/fetchcore")
@@ -761,6 +853,84 @@ def test_smoke_failure_is_reported_without_blocking_the_evaluation() -> None:
     assert ok is True
     assert smoke["get_source_required"] is False
     assert smoke["get_source_verified"] is None
+
+
+@pytest.mark.parametrize(
+    ("source_changes", "expected_error"),
+    [
+        ({"revision": "wrong-revision"}, "source_revision_mismatch"),
+        ({"source_ref": "repository://other/repo/unrelated.py"},
+         "source_provenance_mismatch"),
+    ],
+)
+def test_smoke_uses_first_scenario_requiring_source_and_checks_provenance(
+    source_changes: dict[str, object], expected_error: str
+) -> None:
+    plain = _plain_symbol_scenario(verify_source=False)
+    verifying = dogfood.SymbolScenario(
+        **{
+            **vars(_plain_symbol_scenario(verify_source=True)),
+            "revision": "requested-revision",
+            "expected_symbols": (_expected(path="other/source.py"),),
+        }
+    )
+    args = SimpleNamespace(repository="oalangomes/fetchcore", revision="cli-revision")
+    expected_ref = "repository://oalangomes/fetchcore/other/source.py"
+
+    class SourceSession:
+        async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
+            assert name == "get_source"
+            assert arguments == {
+                "source_ref": expected_ref,
+                "repository": args.repository,
+                "revision": "requested-revision",
+            }
+            payload = {
+                "repository": args.repository,
+                "source_ref": expected_ref,
+                "path": "other/source.py",
+                "revision": "requested-revision",
+                "content": "class Example: pass",
+            }
+            payload.update(source_changes)
+            return SimpleNamespace(is_error=False, structured_content=payload)
+
+    smoke, ok = asyncio.run(dogfood._symbol_smoke(
+        SourceSession(), args, (plain, verifying),
+        dogfood.symbol_required_tools((plain, verifying)),
+    ))
+    assert ok is False
+    assert smoke["error_category"] == expected_error
+
+
+@pytest.mark.parametrize(
+    ("required", "verified", "expected"),
+    [(True, False, "FAIL"), (True, True, "PASS"), (False, None, "N/A")],
+)
+def test_symbol_markdown_reports_actual_smoke_status(
+    required: bool, verified: bool | None, expected: str
+) -> None:
+    payload: dict[str, object] = {
+        "status": "failed" if verified is False else "passed",
+        "repository": "oalangomes/fetchcore",
+        "revision": "revision",
+        "backend": "solr",
+        "mode": "lexical",
+        "collection": "test",
+        "protocol_smoke": {
+            "get_source_required": required,
+            "get_source_verified": verified,
+        },
+        "summary": {
+            "passed": 0, "total": 0, "unsupported": 0,
+            "symbol_match_rate": 0.0, "provenance_valid_rate": 0.0,
+        },
+        "scenarios": [],
+    }
+    markdown = dogfood.markdown_symbol_report(payload)
+    assert f"- MCP protocol smoke: **{expected}**" in markdown
+    if expected != "PASS":
+        assert "- MCP protocol smoke: **PASS**" not in markdown
 
 
 def test_verify_source_and_limit_types_are_strict() -> None:

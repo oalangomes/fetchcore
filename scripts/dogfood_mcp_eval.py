@@ -557,7 +557,10 @@ async def _symbol_smoke(
 ) -> tuple[dict[str, object], bool]:
     """Smoke get_source when required; a failed smoke never blocks the report."""
 
-    smoke_symbol = scenarios[0].expected_symbols[0]
+    smoke_scenario = next(
+        (scenario for scenario in scenarios if scenario.verify_source), scenarios[0]
+    )
+    smoke_symbol = smoke_scenario.expected_symbols[0]
     smoke_source_ref = (
         f"repository://{args.repository}/"
         + smoke_symbol.path.strip().lstrip("./")
@@ -572,7 +575,7 @@ async def _symbol_smoke(
     }
     if "get_source" not in required:
         return smoke, True
-    smoke_revision = getattr(args, "revision", None) or scenarios[0].revision
+    smoke_revision = smoke_scenario.revision or getattr(args, "revision", None)
     arguments: dict[str, object] = {
         "source_ref": smoke_source_ref,
         "repository": args.repository,
@@ -586,6 +589,18 @@ async def _symbol_smoke(
         smoke["get_source_verified"] = False
         return smoke, False
     payload = tool_payload(result)
+    if (
+        payload.get("repository") != args.repository
+        or payload.get("source_ref") != smoke_source_ref
+        or _normalize_path(payload.get("path")) != _normalize_path(smoke_symbol.path)
+    ):
+        smoke["error_category"] = "source_provenance_mismatch"
+        smoke["get_source_verified"] = False
+        return smoke, False
+    if smoke_revision is not None and payload.get("revision") != smoke_revision:
+        smoke["error_category"] = "source_revision_mismatch"
+        smoke["get_source_verified"] = False
+        return smoke, False
     if not str(payload.get("content", "")).strip():
         smoke["error_category"] = "empty_content"
         smoke["get_source_verified"] = False
@@ -720,6 +735,13 @@ async def _evaluate_symbol_scenario(
     raw_list = raw_results if isinstance(raw_results, list) else []
     results = [item for item in raw_list if isinstance(item, dict)]
     effective_revision = scenario.revision or getattr(args, "revision", None)
+    if payload.get("repository") != args.repository:
+        contract_errors.append("unexpected response repository")
+    response_revision = payload.get("revision")
+    if not isinstance(response_revision, str) or not response_revision.strip():
+        contract_errors.append("missing response revision")
+    elif effective_revision is not None and response_revision != effective_revision:
+        contract_errors.append("unexpected response revision")
     for index, item in enumerate(raw_list):
         if not isinstance(item, dict):
             contract_errors.append(f"result {index}: not an object")
@@ -730,6 +752,8 @@ async def _evaluate_symbol_scenario(
             item, str(args.repository), effective_revision
         ):
             contract_errors.append(f"result {index}: {message}")
+        if item.get("revision") != response_revision:
+            contract_errors.append(f"result {index}: response revision mismatch")
     report["contract_errors"] = contract_errors
     report["coverage_status"] = payload.get("status")
     report["result_count"] = len(raw_list)
@@ -912,6 +936,17 @@ def symbol_provenance_errors(result: dict[str, object]) -> tuple[str, ...]:
         value = result.get(field)
         if not isinstance(value, str) or not value.strip():
             errors.append(f"missing {field}")
+    repository = result.get("repository")
+    path = result.get("path")
+    source_ref = result.get("source_ref")
+    if (
+        isinstance(repository, str) and repository.strip()
+        and isinstance(path, str) and path.strip()
+        and isinstance(source_ref, str) and source_ref.strip()
+    ):
+        expected_ref = f"repository://{repository}/{path.strip().lstrip('./')}"
+        if source_ref != expected_ref:
+            errors.append("source_ref does not match repository and path")
     line_start = result.get("line_start")
     line_end = result.get("line_end")
     start_valid = _is_integer(line_start) and int(line_start) >= 1
@@ -950,6 +985,12 @@ def symbol_payload_errors(payload: dict[str, object]) -> tuple[str, ...]:
         errors.append("invalid navigation status")
     if not isinstance(payload.get("results"), list):
         errors.append("invalid results collection")
+    elif not payload.get("results") and payload.get("status") == "success":
+        errors.append("navigation status contradicts empty results")
+    elif payload.get("results") and payload.get("status") in {
+        "not_found", "unsupported", "unknown"
+    }:
+        errors.append("navigation status contradicts non-empty results")
     return tuple(errors)
 
 
@@ -966,7 +1007,7 @@ def source_read_errors(
     if payload.get("source_ref") != symbol.get("source_ref"):
         errors.append("get_source source_ref mismatch")
     returned_revision = payload.get("revision")
-    if returned_revision is not None and returned_revision != symbol.get("revision"):
+    if returned_revision != symbol.get("revision"):
         errors.append("get_source revision mismatch")
     path = payload.get("path")
     if not isinstance(path, str) or _normalize_path(path) != _normalize_path(
@@ -985,18 +1026,14 @@ def source_read_errors(
         or int(returned_end) != int(expected_end)
     ):
         errors.append("get_source line_end mismatch")
-    if payload.get("truncated"):
-        errors.append("get_source returned a truncated window")
     content = payload.get("content")
     if not isinstance(content, str) or not content.strip():
         errors.append("get_source returned empty content")
         return tuple(errors)
     returned_start = payload.get("line_start")
-    if (
-        not payload.get("truncated")
-        and _is_integer(returned_start)
-        and _is_integer(returned_end)
-    ):
+    # Production marks a bounded window as truncated when the file has lines
+    # outside it. The requested span and returned content determine completeness.
+    if _is_integer(returned_start) and _is_integer(returned_end):
         observed_lines = len(content.splitlines())
         expected_lines = int(returned_end) - int(returned_start) + 1
         if observed_lines != expected_lines:
@@ -1200,6 +1237,12 @@ def markdown_report(payload: dict[str, object]) -> str:
 def markdown_symbol_report(payload: dict[str, object]) -> str:
     summary = payload["summary"]
     assert isinstance(summary, dict)
+    smoke = payload["protocol_smoke"]
+    assert isinstance(smoke, dict)
+    smoke_status = (
+        "N/A" if not smoke.get("get_source_required")
+        else "PASS" if smoke.get("get_source_verified") is True else "FAIL"
+    )
     lines = [
         "# FetchCore find_symbol structural evaluation",
         "",
@@ -1209,7 +1252,7 @@ def markdown_symbol_report(payload: dict[str, object]) -> str:
         f"- Backend: `{payload['backend']}`",
         f"- Retrieval mode: `{payload['mode']}`",
         f"- Collection: `{payload['collection']}`",
-        "- MCP protocol smoke: **PASS**",
+        f"- MCP protocol smoke: **{smoke_status}**",
         (
             f"- Scenarios: {summary['passed']}/{summary['total']} passed "
             f"({summary['unsupported']} unsupported)"
