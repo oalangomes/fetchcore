@@ -54,3 +54,4 @@ Use lowercase kebab-case filenames (except numbered ADRs), one H1 per page, rela
 
 - [Targeted exact retrieval](concepts/targeted-retrieval.md)
 - [Live structural navigation benchmark protocol](benchmarks/structural-live-2026-11-09.md)
+- [Deterministic get_related one-hop baseline](benchmarks/get-related-1hop-2026-11-16.md)

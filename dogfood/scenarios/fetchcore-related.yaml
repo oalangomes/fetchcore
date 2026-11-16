@@ -1,0 +1,109 @@
+version: 3
+repository: oalangomes/fetchcore
+# Immutable master revision from PR #250; materialize and explicitly index this revision.
+revision: fa94f4ee456710f348d05f16425c5b5a016c867c
+
+defaults:
+  limit: 20
+
+scenarios:
+  - id: resolved-call-exact-target
+    action: get_related
+    source: symbol:v1:sha256:304bcc784f290a747892c8c562959b70ff8659dc5b2a0b65bdae543c9686e62d
+    relation_types: [calls]
+    require_resolution: true
+    expected_status: success
+    verify_source: true
+    expected_relationships:
+      - source_identity: symbol:v1:sha256:304bcc784f290a747892c8c562959b70ff8659dc5b2a0b65bdae543c9686e62d
+        kind: calls
+        target: SourceReadRequest
+        resolution: exact-unique
+        status: resolved
+        direction: outgoing
+        source_ref: repository://oalangomes/fetchcore/src/fetchcore/application/repository_serving.py
+        line: 98
+        target_identity: symbol:v1:sha256:8e8fbf6a69f87b00ded14870295ee93b800b86bfe0f4369e681315ecad876547
+        target_source_ref: repository://oalangomes/fetchcore/src/fetchcore/application/service.py
+        target_path: src/fetchcore/application/service.py
+
+  - id: resolved-call-incoming
+    action: get_related
+    source: symbol:v1:sha256:8e8fbf6a69f87b00ded14870295ee93b800b86bfe0f4369e681315ecad876547
+    relation_types: [calls]
+    direction: incoming
+    expected_status: success
+    expected_relationships:
+      - source_identity: symbol:v1:sha256:304bcc784f290a747892c8c562959b70ff8659dc5b2a0b65bdae543c9686e62d
+        kind: calls
+        target: SourceReadRequest
+        resolution: exact-unique
+        status: resolved
+        direction: incoming
+        source_ref: repository://oalangomes/fetchcore/src/fetchcore/application/repository_serving.py
+        line: 98
+        target_identity: symbol:v1:sha256:8e8fbf6a69f87b00ded14870295ee93b800b86bfe0f4369e681315ecad876547
+        target_source_ref: repository://oalangomes/fetchcore/src/fetchcore/application/service.py
+        target_path: src/fetchcore/application/service.py
+
+  - id: homonym-unconfirmed-call
+    action: get_related
+    source: symbol:v1:sha256:4d296401c0c22d11661bed9ef6e197ddc2caf5c48ca9a129afb6732da4863209
+    relation_types: [calls]
+    expected_status: success
+    expected_relationships:
+      - source_identity: symbol:v1:sha256:4d296401c0c22d11661bed9ef6e197ddc2caf5c48ca9a129afb6732da4863209
+        kind: calls
+        target: get_related
+        resolution: import_binding
+        status: unresolved
+        direction: outgoing
+        source_ref: repository://oalangomes/fetchcore/src/fetchcore/application/navigation.py
+        line: 194
+        target_identity: null
+
+  - id: unconfirmed-is-not-resolved
+    action: get_related
+    source: symbol:v1:sha256:4d296401c0c22d11661bed9ef6e197ddc2caf5c48ca9a129afb6732da4863209
+    relation_types: [calls]
+    require_resolution: true
+    expected_status: not_found
+    expected_relationships: []
+
+  - id: file-import-limit-and-partial-coverage
+    action: get_related
+    source: repository://oalangomes/fetchcore/src/fetchcore/application/__init__.py
+    relation_types: [imports, extends]
+    limit: 1
+    expected_status: partial
+    expected_relationships:
+      - source_identity: repository://oalangomes/fetchcore/src/fetchcore/application/__init__.py
+        kind: imports
+        target: .composition
+        resolution: exact-unique
+        status: resolved
+        direction: outgoing
+        source_ref: repository://oalangomes/fetchcore/src/fetchcore/application/__init__.py
+        line: 3
+        target_identity: symbol:v1:sha256:a7eba29228df034d8ee90e622da1099026f775f937fa37cb676970a8b813b7e6
+        target_source_ref: repository://oalangomes/fetchcore/src/fetchcore/application/composition.py
+        target_path: src/fetchcore/application/composition.py
+
+  - id: unsupported-relation-family
+    action: get_related
+    source: symbol:v1:sha256:4d296401c0c22d11661bed9ef6e197ddc2caf5c48ca9a129afb6732da4863209
+    relation_types: [implements]
+    expected_status: unsupported
+    expected_relationships: []
+
+  - id: unknown-source
+    action: get_related
+    source: symbol:v1:sha256:0000000000000000000000000000000000000000000000000000000000000000
+    relation_types: [calls]
+    expected_error_category: source_missing
+
+  - id: unsupported-incoming-file
+    action: get_related
+    source: repository://oalangomes/fetchcore/src/fetchcore/application/__init__.py
+    direction: incoming
+    expected_error_category: unsupported_capability

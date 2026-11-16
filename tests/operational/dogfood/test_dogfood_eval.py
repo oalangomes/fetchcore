@@ -133,6 +133,241 @@ def test_v2_symbol_scenarios_parse_with_exact_expectations() -> None:
     assert any(len(item.expected_symbols) > 1 for item in scenarios)
 
 
+def _related_scenarios() -> tuple[object, ...]:
+    return dogfood.load_scenarios(
+        ROOT / "dogfood" / "scenarios" / "fetchcore-related.yaml"
+    )
+
+
+def _related_observation(**overrides: object) -> dict[str, object]:
+    scenario = next(item for item in _related_scenarios() if item.id == "resolved-call-exact-target")
+    relation = dict(scenario.expected_relationships[0])
+    relation.update({
+        "repository": scenario.repository,
+        "revision": scenario.revision,
+        "path": "src/fetchcore/application/repository_serving.py",
+        "checksum": "sha256:source",
+        "target_revision": scenario.revision,
+        "target_checksum": "sha256:target",
+        "target_document_id": "document:target",
+        "evidence_basis": "source",
+    })
+    relation.update(overrides)
+    return relation
+
+
+def test_v3_real_scenarios_are_pinned_and_separate_from_v1_v2() -> None:
+    scenarios = _related_scenarios()
+    assert len(scenarios) >= 8
+    assert all(isinstance(item, dogfood.RelatedScenario) for item in scenarios)
+    assert {item.revision for item in scenarios} == {
+        "fa94f4ee456710f348d05f16425c5b5a016c867c"
+    }
+    assert {item.repository for item in scenarios} == {"oalangomes/fetchcore"}
+    assert {item.direction for item in scenarios} == {"outgoing", "incoming"}
+    assert any(item.expected_status == "partial" and item.limit == 1 for item in scenarios)
+    assert any(item.expected_error_category == "source_missing" for item in scenarios)
+
+
+def test_v3_rejects_unpinned_or_invented_ground_truth(tmp_path: Path) -> None:
+    scenario = {
+        "id": "invalid", "action": "get_related", "source": "symbol:v1:sha256:abc",
+        "expected_status": "success", "expected_relationships": [],
+    }
+    payload = {"version": 3, "repository": "owner/repo", "scenarios": [scenario]}
+    path = tmp_path / "related.yaml"
+    path.write_text("version: 3\nrepository: owner/repo\nscenarios: []\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="pinned revision"):
+        dogfood.load_scenarios(path)
+    payload["revision"] = "fixed"
+    with pytest.raises(ValueError, match="exactly one expected outcome"):
+        dogfood._load_related_scenarios({
+            **payload, "scenarios": [{**scenario, "expected_error_category": "source_missing"}],
+        })
+    relation = dict(next(item for item in _related_scenarios() if item.expected_relationships).expected_relationships[0])
+    with pytest.raises(ValueError, match="target_identity"):
+        dogfood._load_related_scenarios({
+            **payload, "scenarios": [{**scenario, "expected_relationships": [{**relation, "target_identity": 42}]}],
+        })
+    with pytest.raises(ValueError, match="invalid relation_types"):
+        dogfood._load_related_scenarios({
+            **payload, "scenarios": [{**scenario, "relation_types": ["invented"]}],
+        })
+
+
+def test_v3_exact_matching_keeps_missing_unexpected_and_homonyms() -> None:
+    resolved = _related_observation()
+    homonym = _related_observation(source_identity="symbol:v1:sha256:other")
+    expected = ({key: resolved[key] for key in (
+        "source_identity", "kind", "target", "status", "resolution", "direction",
+        "source_ref", "line", "target_identity",
+    )},)
+    matched, missing, unexpected = dogfood.match_expected_relationships(
+        [homonym, resolved], expected
+    )
+    assert len(matched) == 1
+    assert missing == []
+    assert unexpected == [homonym]
+    assert dogfood.match_expected_relationships([homonym], expected)[1] == list(expected)
+
+
+def test_v3_provenance_rejects_wrong_binding_and_unconfirmed_target() -> None:
+    valid = _related_observation()
+    assert dogfood.related_provenance_errors(
+        valid, "oalangomes/fetchcore", valid["revision"]
+    ) == ()
+    broken = _related_observation(
+        repository="other/repo", target_revision="other-revision",
+        target_source_ref="repository://other/repo/target.py", checksum="",
+    )
+    errors = dogfood.related_provenance_errors(
+        broken, "oalangomes/fetchcore", valid["revision"]
+    )
+    assert "relation repository/revision mismatch" in errors
+    assert "target revision mismatch" in errors
+    assert "target source_ref/path mismatch" in errors
+    assert "missing checksum" in errors
+    unconfirmed = _related_observation(
+        status="ambiguous", resolution="ambiguous",
+    )
+    assert "unconfirmed relation claims target_identity" in dogfood.related_provenance_errors(
+        unconfirmed, "oalangomes/fetchcore", valid["revision"]
+    )
+
+
+def test_v3_partial_response_and_unexpected_relation_fail_ground_truth() -> None:
+    scenario = next(item for item in _related_scenarios() if item.id == "resolved-call-exact-target")
+    observed = _related_observation()
+    envelope = {
+        "repository": scenario.repository, "revision": scenario.revision,
+        "status": "partial", "results": [observed],
+        "coverage": [{"capability": "calls_observed", "status": "partial"}],
+        "limit_reached": False, "scan_complete": False,
+        "scan_diagnostics": ["structural_candidate_budget_exhausted"],
+    }
+
+    class FakeSession:
+        async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
+            assert name == "get_related"
+            return SimpleNamespace(is_error=False, structured_content=envelope)
+
+    scenario = dogfood.RelatedScenario(**{
+        **scenario.__dict__, "verify_source": False,
+    })
+    report = asyncio.run(dogfood._evaluate_related_scenario(
+        FakeSession(), SimpleNamespace(repository=scenario.repository), scenario,
+    ))
+    assert report["coverage_status"] == "partial"
+    assert report["matched_relationships"]
+    assert report["passed"] is False
+    envelope["status"] = "success"
+    envelope["scan_complete"] = True
+    envelope["scan_diagnostics"] = []
+    envelope["results"].append({**observed, "target": "invented", "line": 99})
+    report = asyncio.run(dogfood._evaluate_related_scenario(
+        FakeSession(), SimpleNamespace(repository=scenario.repository), scenario,
+    ))
+    assert len(report["unexpected_relationships"]) == 1
+    assert report["passed"] is False
+
+
+def test_v3_tool_error_categories_and_source_read_failures() -> None:
+    scenarios = _related_scenarios()
+    unknown = next(item for item in scenarios if item.id == "unknown-source")
+    resolved = next(item for item in scenarios if item.id == "resolved-call-exact-target")
+    observation = _related_observation()
+    payload = {
+        "repository": resolved.repository, "revision": resolved.revision,
+        "status": "success", "results": [observation],
+        "coverage": [{"capability": "calls_observed", "status": "supported"}],
+        "limit_reached": False, "scan_complete": True, "scan_diagnostics": [],
+    }
+
+    class FakeSession:
+        error_category = "source_missing"
+
+        async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
+            if name == "get_related" and arguments["source"] == unknown.source:
+                return SimpleNamespace(
+                    is_error=True,
+                    content=[SimpleNamespace(
+                        type="text", text=f"FetchCore related lookup failed: {self.error_category}",
+                    )],
+                )
+            if name == "get_related":
+                return SimpleNamespace(is_error=False, structured_content=payload)
+            return SimpleNamespace(is_error=False, structured_content={
+                "repository": resolved.repository,
+                "revision": "wrong-revision",
+                "path": observation["path"],
+                "source_ref": observation["source_ref"],
+                "line_start": 98, "line_end": 98,
+                "content": "SourceReadRequest(request.source)",
+            })
+
+    session = FakeSession()
+    args = SimpleNamespace(repository=unknown.repository)
+    expected_error = asyncio.run(dogfood._evaluate_related_scenario(session, args, unknown))
+    assert expected_error["outcome"] == "expected_tool_error"
+    assert expected_error["passed"] is True
+    session.error_category = "schema_mismatch"
+    wrong_error = asyncio.run(dogfood._evaluate_related_scenario(session, args, unknown))
+    assert wrong_error["outcome"] == "tool_error"
+    assert wrong_error["passed"] is False
+
+    source_failure = asyncio.run(dogfood._evaluate_related_scenario(session, args, resolved))
+    assert len(source_failure["matched_relationships"]) == 1
+    assert source_failure["passed"] is False
+    assert source_failure["source_verifications"][0]["reasons"] == [
+        "get_source revision mismatch"
+    ]
+    payload["repository"] = "other/repo"
+    binding_failure = asyncio.run(dogfood._evaluate_related_scenario(session, args, resolved))
+    assert "response repository/revision mismatch" in binding_failure["contract_errors"]
+    assert binding_failure["provenance_valid"] is False
+    assert binding_failure["passed"] is False
+
+
+@pytest.mark.parametrize("resolution,status", [
+    ("ambiguous", "ambiguous"), ("observed", "observed"),
+])
+def test_v3_unconfirmed_relationships_never_gain_target_identity(
+    resolution: str, status: str,
+) -> None:
+    base = next(item for item in _related_scenarios() if item.id == "homonym-unconfirmed-call")
+    expected = {**base.expected_relationships[0], "resolution": resolution, "status": status}
+    scenario = dogfood.RelatedScenario(**{
+        **base.__dict__, "expected_relationships": (expected,),
+    })
+    observation = {
+        **expected, "repository": base.repository, "revision": base.revision,
+        "path": "src/fetchcore/application/navigation.py", "checksum": "sha256:source",
+        "target_document_id": None, "target_revision": None,
+        "target_checksum": None, "evidence_basis": "source",
+    }
+    payload = {
+        "repository": base.repository, "revision": base.revision,
+        "status": "success", "results": [observation],
+        "coverage": [{"capability": "calls_observed", "status": "supported"}],
+        "limit_reached": False, "scan_complete": True, "scan_diagnostics": [],
+    }
+
+    class FakeSession:
+        async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
+            return SimpleNamespace(is_error=False, structured_content=payload)
+
+    report = asyncio.run(dogfood._evaluate_related_scenario(
+        FakeSession(), SimpleNamespace(repository=base.repository), scenario,
+    ))
+    assert report["passed"] is True
+    observation["target_identity"] = "symbol:v1:sha256:invented"
+    report = asyncio.run(dogfood._evaluate_related_scenario(
+        FakeSession(), SimpleNamespace(repository=base.repository), scenario,
+    ))
+    assert report["passed"] is False
+    assert any("unconfirmed relation claims target_identity" in item for item in report["contract_errors"])
+
+
 def test_v2_rejects_unsupported_actions_and_missing_expectations() -> None:
     with pytest.raises(ValueError, match="unsupported action"):
         dogfood._load_symbol_scenarios({
@@ -162,7 +397,7 @@ def test_v2_rejects_invalid_symbol_spans() -> None:
 
 def test_unknown_scenario_version_fails_explicitly(tmp_path: Path) -> None:
     path = tmp_path / "scenarios.yaml"
-    path.write_text("version: 3\nscenarios:\n  - id: x\n", encoding="utf-8")
+    path.write_text("version: 4\nscenarios:\n  - id: x\n", encoding="utf-8")
     with pytest.raises(ValueError, match="version"):
         dogfood.load_scenarios(path)
 
