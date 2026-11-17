@@ -1,0 +1,950 @@
+{
+  "backend": "solr",
+  "collection": "fc-related-pr251-review",
+  "mode": "lexical",
+  "protocol_smoke": {
+    "advertised_tools": [
+      "find_symbol",
+      "get_related",
+      "get_source",
+      "search"
+    ],
+    "initialized": true,
+    "required_tools": [
+      "get_related",
+      "get_source"
+    ]
+  },
+  "repository": "oalangomes/fetchcore",
+  "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+  "scenarios": [
+    {
+      "action": "get_related",
+      "contract_errors": [],
+      "coverage": [
+        {
+          "capability": "calls_observed",
+          "producers": [
+            {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "python",
+              "producer": "fetchcore.repository.structure.PythonStructuralExtractor",
+              "version": "3"
+            }
+          ],
+          "sources": 1,
+          "status": "supported",
+          "supported_sources": 1,
+          "unknown_sources": 0
+        },
+        {
+          "capability": "cross_file_resolution",
+          "producers": [
+            {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "python",
+              "producer": "fetchcore.repository.structure.PythonStructuralExtractor",
+              "version": "3"
+            }
+          ],
+          "sources": 1,
+          "status": "supported",
+          "supported_sources": 1,
+          "unknown_sources": 0
+        }
+      ],
+      "coverage_goal_status": null,
+      "coverage_status": "success",
+      "expected_error_category": null,
+      "expected_relationships": [
+        {
+          "direction": "outgoing",
+          "kind": "calls",
+          "line": 98,
+          "resolution": "exact-unique",
+          "source_identity": "symbol:v1:sha256:304bcc784f290a747892c8c562959b70ff8659dc5b2a0b65bdae543c9686e62d",
+          "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/repository_serving.py",
+          "status": "resolved",
+          "target": "SourceReadRequest",
+          "target_identity": "symbol:v1:sha256:8e8fbf6a69f87b00ded14870295ee93b800b86bfe0f4369e681315ecad876547",
+          "target_path": "src/fetchcore/application/service.py",
+          "target_source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/service.py"
+        }
+      ],
+      "expected_status": "success",
+      "get_related_duration_ms": 5726,
+      "id": "resolved-call-exact-target",
+      "limit_reached": false,
+      "matched_relationships": [
+        {
+          "expected": {
+            "direction": "outgoing",
+            "kind": "calls",
+            "line": 98,
+            "resolution": "exact-unique",
+            "source_identity": "symbol:v1:sha256:304bcc784f290a747892c8c562959b70ff8659dc5b2a0b65bdae543c9686e62d",
+            "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/repository_serving.py",
+            "status": "resolved",
+            "target": "SourceReadRequest",
+            "target_identity": "symbol:v1:sha256:8e8fbf6a69f87b00ded14870295ee93b800b86bfe0f4369e681315ecad876547",
+            "target_path": "src/fetchcore/application/service.py",
+            "target_source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/service.py"
+          },
+          "result": {
+            "checksum": "sha256:ea220db5310fb2ec482d20fa51e1b3f0ee7a5be27bd9a04fbe06cf4acafdc307",
+            "direction": "outgoing",
+            "evidence_basis": "import-binding-and-canonical-declaration",
+            "extraction": {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "python",
+              "producer": "fetchcore.repository.structure.PythonStructuralExtractor",
+              "version": "3"
+            },
+            "kind": "calls",
+            "line": 98,
+            "line_end": 98,
+            "path": "src/fetchcore/application/repository_serving.py",
+            "repository": "oalangomes/fetchcore",
+            "resolution": "exact-unique",
+            "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+            "source_identity": "symbol:v1:sha256:304bcc784f290a747892c8c562959b70ff8659dc5b2a0b65bdae543c9686e62d",
+            "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/repository_serving.py",
+            "status": "resolved",
+            "subtype": null,
+            "target": "SourceReadRequest",
+            "target_checksum": "sha256:55c4eac1993d089982137988651c66ec41480f6ccece15de2a416c2dbfa4f851",
+            "target_document_id": "kdoc_3293321b87671904b17c2c0bcbb61a44528167586d165c81caf2ad897614755f",
+            "target_identity": "symbol:v1:sha256:8e8fbf6a69f87b00ded14870295ee93b800b86bfe0f4369e681315ecad876547",
+            "target_path": "src/fetchcore/application/service.py",
+            "target_revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+            "target_source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/service.py"
+          }
+        }
+      ],
+      "missing_relationships": [],
+      "outcome": "passed",
+      "passed": true,
+      "provenance_checked_relationships": 1,
+      "provenance_valid": true,
+      "provenance_valid_relationships": 1,
+      "request": {
+        "depth": 1,
+        "direction": "outgoing",
+        "limit": 20,
+        "relation_types": [
+          "calls"
+        ],
+        "repository": "oalangomes/fetchcore",
+        "require_resolution": true,
+        "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+        "source": "symbol:v1:sha256:304bcc784f290a747892c8c562959b70ff8659dc5b2a0b65bdae543c9686e62d"
+      },
+      "result_count": 1,
+      "scan_complete": true,
+      "scan_diagnostics": [],
+      "source_verifications": [
+        {
+          "line": 98,
+          "reasons": [],
+          "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/repository_serving.py",
+          "verified": true
+        }
+      ],
+      "tool_error_category": null,
+      "unexpected_relationships": []
+    },
+    {
+      "action": "get_related",
+      "contract_errors": [],
+      "coverage": [
+        {
+          "capability": "cross_file_resolution",
+          "producers": [
+            {
+              "capabilities": [
+                "source_only"
+              ],
+              "language": null,
+              "producer": "fetchcore.source",
+              "version": "1"
+            },
+            {
+              "capabilities": [
+                "source_only"
+              ],
+              "language": "dockerfile",
+              "producer": "fetchcore.source",
+              "version": "1"
+            },
+            {
+              "capabilities": [
+                "declarations",
+                "imports"
+              ],
+              "language": "go",
+              "producer": "fetchcore.repository.extractors.languages.go.GoStructuralExtractor",
+              "version": "2"
+            },
+            {
+              "capabilities": [
+                "declarations",
+                "imports"
+              ],
+              "language": "html",
+              "producer": "fetchcore.repository.html.HtmlStructuralExtractor",
+              "version": "1"
+            },
+            {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "javascript",
+              "producer": "fetchcore.repository.structure.JavaScriptTypeScriptStructuralExtractor",
+              "version": "1"
+            },
+            {
+              "capabilities": [
+                "source_only"
+              ],
+              "language": "json",
+              "producer": "fetchcore.source",
+              "version": "1"
+            },
+            {
+              "capabilities": [
+                "source_only"
+              ],
+              "language": "makefile",
+              "producer": "fetchcore.source",
+              "version": "1"
+            },
+            {
+              "capabilities": [
+                "source_only"
+              ],
+              "language": "markdown",
+              "producer": "fetchcore.source",
+              "version": "1"
+            },
+            {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "python",
+              "producer": "fetchcore.repository.structure.PythonStructuralExtractor",
+              "version": "3"
+            },
+            {
+              "capabilities": [
+                "declarations",
+                "imports"
+              ],
+              "language": "shell",
+              "producer": "fetchcore.repository.shell.ShellStructuralExtractor",
+              "version": "1"
+            },
+            {
+              "capabilities": [
+                "source_only"
+              ],
+              "language": "toml",
+              "producer": "fetchcore.source",
+              "version": "1"
+            },
+            {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "typescript",
+              "producer": "fetchcore.repository.structure.JavaScriptTypeScriptStructuralExtractor",
+              "version": "1"
+            },
+            {
+              "capabilities": [
+                "source_only"
+              ],
+              "language": "xml",
+              "producer": "fetchcore.source",
+              "version": "1"
+            },
+            {
+              "capabilities": [
+                "source_only"
+              ],
+              "language": "yaml",
+              "producer": "fetchcore.source",
+              "version": "1"
+            }
+          ],
+          "sources": 617,
+          "status": "partial",
+          "supported_sources": 370,
+          "unknown_sources": 0
+        }
+      ],
+      "coverage_goal_status": "success",
+      "coverage_status": "partial",
+      "expected_error_category": null,
+      "expected_relationships": [
+        {
+          "direction": "incoming",
+          "kind": "calls",
+          "line": 98,
+          "resolution": "exact-unique",
+          "source_identity": "symbol:v1:sha256:304bcc784f290a747892c8c562959b70ff8659dc5b2a0b65bdae543c9686e62d",
+          "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/repository_serving.py",
+          "status": "resolved",
+          "target": "SourceReadRequest",
+          "target_identity": "symbol:v1:sha256:8e8fbf6a69f87b00ded14870295ee93b800b86bfe0f4369e681315ecad876547",
+          "target_path": "src/fetchcore/application/service.py",
+          "target_source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/service.py"
+        }
+      ],
+      "expected_status": "partial",
+      "get_related_duration_ms": 7476,
+      "id": "resolved-call-incoming",
+      "limit_reached": false,
+      "matched_relationships": [
+        {
+          "expected": {
+            "direction": "incoming",
+            "kind": "calls",
+            "line": 98,
+            "resolution": "exact-unique",
+            "source_identity": "symbol:v1:sha256:304bcc784f290a747892c8c562959b70ff8659dc5b2a0b65bdae543c9686e62d",
+            "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/repository_serving.py",
+            "status": "resolved",
+            "target": "SourceReadRequest",
+            "target_identity": "symbol:v1:sha256:8e8fbf6a69f87b00ded14870295ee93b800b86bfe0f4369e681315ecad876547",
+            "target_path": "src/fetchcore/application/service.py",
+            "target_source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/service.py"
+          },
+          "result": {
+            "checksum": "sha256:ea220db5310fb2ec482d20fa51e1b3f0ee7a5be27bd9a04fbe06cf4acafdc307",
+            "direction": "incoming",
+            "evidence_basis": "import-binding-and-canonical-declaration",
+            "extraction": {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "python",
+              "producer": "fetchcore.repository.structure.PythonStructuralExtractor",
+              "version": "3"
+            },
+            "kind": "calls",
+            "line": 98,
+            "line_end": 98,
+            "path": "src/fetchcore/application/repository_serving.py",
+            "repository": "oalangomes/fetchcore",
+            "resolution": "exact-unique",
+            "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+            "source_identity": "symbol:v1:sha256:304bcc784f290a747892c8c562959b70ff8659dc5b2a0b65bdae543c9686e62d",
+            "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/repository_serving.py",
+            "status": "resolved",
+            "subtype": null,
+            "target": "SourceReadRequest",
+            "target_checksum": "sha256:55c4eac1993d089982137988651c66ec41480f6ccece15de2a416c2dbfa4f851",
+            "target_document_id": "kdoc_3293321b87671904b17c2c0bcbb61a44528167586d165c81caf2ad897614755f",
+            "target_identity": "symbol:v1:sha256:8e8fbf6a69f87b00ded14870295ee93b800b86bfe0f4369e681315ecad876547",
+            "target_path": "src/fetchcore/application/service.py",
+            "target_revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+            "target_source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/service.py"
+          }
+        }
+      ],
+      "missing_relationships": [],
+      "outcome": "passed",
+      "passed": true,
+      "provenance_checked_relationships": 1,
+      "provenance_valid": true,
+      "provenance_valid_relationships": 1,
+      "request": {
+        "depth": 1,
+        "direction": "incoming",
+        "limit": 20,
+        "relation_types": [
+          "calls"
+        ],
+        "repository": "oalangomes/fetchcore",
+        "require_resolution": false,
+        "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+        "source": "symbol:v1:sha256:8e8fbf6a69f87b00ded14870295ee93b800b86bfe0f4369e681315ecad876547"
+      },
+      "result_count": 1,
+      "scan_complete": true,
+      "scan_diagnostics": [],
+      "source_verifications": [],
+      "tool_error_category": null,
+      "unexpected_relationships": []
+    },
+    {
+      "action": "get_related",
+      "contract_errors": [],
+      "coverage": [
+        {
+          "capability": "calls_observed",
+          "producers": [
+            {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "python",
+              "producer": "fetchcore.repository.structure.PythonStructuralExtractor",
+              "version": "3"
+            }
+          ],
+          "sources": 1,
+          "status": "supported",
+          "supported_sources": 1,
+          "unknown_sources": 0
+        }
+      ],
+      "coverage_goal_status": null,
+      "coverage_status": "success",
+      "expected_error_category": null,
+      "expected_relationships": [
+        {
+          "direction": "outgoing",
+          "kind": "calls",
+          "line": 194,
+          "resolution": "import_binding",
+          "source_identity": "symbol:v1:sha256:4d296401c0c22d11661bed9ef6e197ddc2caf5c48ca9a129afb6732da4863209",
+          "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/navigation.py",
+          "status": "unresolved",
+          "target": "get_related",
+          "target_identity": null
+        }
+      ],
+      "expected_status": "success",
+      "get_related_duration_ms": 3748,
+      "id": "homonym-unconfirmed-call",
+      "limit_reached": false,
+      "matched_relationships": [
+        {
+          "expected": {
+            "direction": "outgoing",
+            "kind": "calls",
+            "line": 194,
+            "resolution": "import_binding",
+            "source_identity": "symbol:v1:sha256:4d296401c0c22d11661bed9ef6e197ddc2caf5c48ca9a129afb6732da4863209",
+            "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/navigation.py",
+            "status": "unresolved",
+            "target": "get_related",
+            "target_identity": null
+          },
+          "result": {
+            "checksum": "sha256:ce32bacaa434d820c0551c1a3694d827daa3828aad02e8bfa9599ac35aba639f",
+            "direction": "outgoing",
+            "evidence_basis": "source",
+            "extraction": {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "python",
+              "producer": "fetchcore.repository.structure.PythonStructuralExtractor",
+              "version": "3"
+            },
+            "kind": "calls",
+            "line": 194,
+            "line_end": 194,
+            "path": "src/fetchcore/application/navigation.py",
+            "repository": "oalangomes/fetchcore",
+            "resolution": "import_binding",
+            "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+            "source_identity": "symbol:v1:sha256:4d296401c0c22d11661bed9ef6e197ddc2caf5c48ca9a129afb6732da4863209",
+            "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/navigation.py",
+            "status": "unresolved",
+            "subtype": "direct_call",
+            "target": "get_related",
+            "target_checksum": null,
+            "target_document_id": null,
+            "target_identity": null,
+            "target_path": null,
+            "target_revision": null,
+            "target_source_ref": null
+          }
+        }
+      ],
+      "missing_relationships": [],
+      "outcome": "passed",
+      "passed": true,
+      "provenance_checked_relationships": 1,
+      "provenance_valid": true,
+      "provenance_valid_relationships": 1,
+      "request": {
+        "depth": 1,
+        "direction": "outgoing",
+        "limit": 20,
+        "relation_types": [
+          "calls"
+        ],
+        "repository": "oalangomes/fetchcore",
+        "require_resolution": false,
+        "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+        "source": "symbol:v1:sha256:4d296401c0c22d11661bed9ef6e197ddc2caf5c48ca9a129afb6732da4863209"
+      },
+      "result_count": 1,
+      "scan_complete": true,
+      "scan_diagnostics": [],
+      "source_verifications": [],
+      "tool_error_category": null,
+      "unexpected_relationships": []
+    },
+    {
+      "action": "get_related",
+      "contract_errors": [],
+      "coverage": [
+        {
+          "capability": "calls_observed",
+          "producers": [
+            {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "python",
+              "producer": "fetchcore.repository.structure.PythonStructuralExtractor",
+              "version": "3"
+            }
+          ],
+          "sources": 1,
+          "status": "supported",
+          "supported_sources": 1,
+          "unknown_sources": 0
+        },
+        {
+          "capability": "cross_file_resolution",
+          "producers": [
+            {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "python",
+              "producer": "fetchcore.repository.structure.PythonStructuralExtractor",
+              "version": "3"
+            }
+          ],
+          "sources": 1,
+          "status": "supported",
+          "supported_sources": 1,
+          "unknown_sources": 0
+        }
+      ],
+      "coverage_goal_status": null,
+      "coverage_status": "not_found",
+      "expected_error_category": null,
+      "expected_relationships": [],
+      "expected_status": "not_found",
+      "get_related_duration_ms": 3782,
+      "id": "unconfirmed-is-not-resolved",
+      "limit_reached": false,
+      "matched_relationships": [],
+      "missing_relationships": [],
+      "outcome": "passed",
+      "passed": true,
+      "provenance_checked_relationships": 0,
+      "provenance_valid": true,
+      "provenance_valid_relationships": 0,
+      "request": {
+        "depth": 1,
+        "direction": "outgoing",
+        "limit": 20,
+        "relation_types": [
+          "calls"
+        ],
+        "repository": "oalangomes/fetchcore",
+        "require_resolution": true,
+        "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+        "source": "symbol:v1:sha256:4d296401c0c22d11661bed9ef6e197ddc2caf5c48ca9a129afb6732da4863209"
+      },
+      "result_count": 0,
+      "scan_complete": true,
+      "scan_diagnostics": [],
+      "source_verifications": [],
+      "tool_error_category": null,
+      "unexpected_relationships": []
+    },
+    {
+      "action": "get_related",
+      "contract_errors": [],
+      "coverage": [
+        {
+          "capability": "imports",
+          "producers": [
+            {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "python",
+              "producer": "fetchcore.repository.structure.PythonStructuralExtractor",
+              "version": "3"
+            }
+          ],
+          "sources": 1,
+          "status": "supported",
+          "supported_sources": 1,
+          "unknown_sources": 0
+        },
+        {
+          "capability": "inheritance",
+          "producers": [
+            {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "python",
+              "producer": "fetchcore.repository.structure.PythonStructuralExtractor",
+              "version": "3"
+            }
+          ],
+          "sources": 1,
+          "status": "unsupported",
+          "supported_sources": 0,
+          "unknown_sources": 0
+        }
+      ],
+      "coverage_goal_status": null,
+      "coverage_status": "partial",
+      "expected_error_category": null,
+      "expected_relationships": [
+        {
+          "direction": "outgoing",
+          "kind": "imports",
+          "line": 3,
+          "resolution": "exact-unique",
+          "source_identity": "repository://oalangomes/fetchcore/src/fetchcore/application/__init__.py",
+          "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/__init__.py",
+          "status": "resolved",
+          "target": ".composition",
+          "target_identity": "symbol:v1:sha256:a7eba29228df034d8ee90e622da1099026f775f937fa37cb676970a8b813b7e6",
+          "target_path": "src/fetchcore/application/composition.py",
+          "target_source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/composition.py"
+        }
+      ],
+      "expected_status": "partial",
+      "get_related_duration_ms": 5611,
+      "id": "file-import-limit-and-partial-coverage",
+      "limit_reached": true,
+      "matched_relationships": [
+        {
+          "expected": {
+            "direction": "outgoing",
+            "kind": "imports",
+            "line": 3,
+            "resolution": "exact-unique",
+            "source_identity": "repository://oalangomes/fetchcore/src/fetchcore/application/__init__.py",
+            "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/__init__.py",
+            "status": "resolved",
+            "target": ".composition",
+            "target_identity": "symbol:v1:sha256:a7eba29228df034d8ee90e622da1099026f775f937fa37cb676970a8b813b7e6",
+            "target_path": "src/fetchcore/application/composition.py",
+            "target_source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/composition.py"
+          },
+          "result": {
+            "checksum": "sha256:49e46b16173d446f12f19485ed8b33465fb44589eaa1ca2d2411b21e881e0f6c",
+            "direction": "outgoing",
+            "evidence_basis": "import-path-and-declaration",
+            "extraction": {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "python",
+              "producer": "fetchcore.repository.structure.PythonStructuralExtractor",
+              "version": "3"
+            },
+            "kind": "imports",
+            "line": 3,
+            "line_end": 3,
+            "path": "src/fetchcore/application/__init__.py",
+            "repository": "oalangomes/fetchcore",
+            "resolution": "exact-unique",
+            "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+            "source_identity": "repository://oalangomes/fetchcore/src/fetchcore/application/__init__.py",
+            "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/__init__.py",
+            "status": "resolved",
+            "subtype": null,
+            "target": ".composition",
+            "target_checksum": "sha256:8e9cab9448e5803884fcb7360ed1f66905604aeacacb9e26cc3e69af4f7ca0e0",
+            "target_document_id": "kdoc_219b6471394998633798d129e5b1456dbc9b2867c7f0e9dc755ed2203c5a65ff",
+            "target_identity": "symbol:v1:sha256:a7eba29228df034d8ee90e622da1099026f775f937fa37cb676970a8b813b7e6",
+            "target_path": "src/fetchcore/application/composition.py",
+            "target_revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+            "target_source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/composition.py"
+          }
+        }
+      ],
+      "missing_relationships": [],
+      "outcome": "passed",
+      "passed": true,
+      "provenance_checked_relationships": 1,
+      "provenance_valid": true,
+      "provenance_valid_relationships": 1,
+      "request": {
+        "depth": 1,
+        "direction": "outgoing",
+        "limit": 1,
+        "relation_types": [
+          "imports",
+          "extends"
+        ],
+        "repository": "oalangomes/fetchcore",
+        "require_resolution": false,
+        "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+        "source": "repository://oalangomes/fetchcore/src/fetchcore/application/__init__.py"
+      },
+      "result_count": 1,
+      "scan_complete": true,
+      "scan_diagnostics": [],
+      "source_verifications": [],
+      "tool_error_category": null,
+      "unexpected_relationships": []
+    },
+    {
+      "action": "get_related",
+      "contract_errors": [],
+      "coverage": [
+        {
+          "capability": "inheritance",
+          "producers": [
+            {
+              "capabilities": [
+                "declarations",
+                "imports",
+                "calls_observed",
+                "references_observed",
+                "tests_observed",
+                "cross_file_resolution"
+              ],
+              "language": "python",
+              "producer": "fetchcore.repository.structure.PythonStructuralExtractor",
+              "version": "3"
+            }
+          ],
+          "sources": 1,
+          "status": "unsupported",
+          "supported_sources": 0,
+          "unknown_sources": 0
+        }
+      ],
+      "coverage_goal_status": null,
+      "coverage_status": "unsupported",
+      "expected_error_category": null,
+      "expected_relationships": [],
+      "expected_status": "unsupported",
+      "get_related_duration_ms": 3741,
+      "id": "unsupported-relation-family",
+      "limit_reached": false,
+      "matched_relationships": [],
+      "missing_relationships": [],
+      "outcome": "passed",
+      "passed": true,
+      "provenance_checked_relationships": 0,
+      "provenance_valid": true,
+      "provenance_valid_relationships": 0,
+      "request": {
+        "depth": 1,
+        "direction": "outgoing",
+        "limit": 20,
+        "relation_types": [
+          "implements"
+        ],
+        "repository": "oalangomes/fetchcore",
+        "require_resolution": false,
+        "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+        "source": "symbol:v1:sha256:4d296401c0c22d11661bed9ef6e197ddc2caf5c48ca9a129afb6732da4863209"
+      },
+      "result_count": 0,
+      "scan_complete": true,
+      "scan_diagnostics": [],
+      "source_verifications": [],
+      "tool_error_category": null,
+      "unexpected_relationships": []
+    },
+    {
+      "action": "get_related",
+      "contract_errors": [],
+      "coverage": [],
+      "coverage_goal_status": null,
+      "coverage_status": null,
+      "expected_error_category": "source_missing",
+      "expected_relationships": [],
+      "expected_status": null,
+      "get_related_duration_ms": 2824,
+      "id": "unknown-source",
+      "limit_reached": null,
+      "matched_relationships": [],
+      "missing_relationships": [],
+      "outcome": "expected_tool_error",
+      "passed": true,
+      "provenance_checked_relationships": 0,
+      "provenance_valid": null,
+      "provenance_valid_relationships": 0,
+      "request": {
+        "depth": 1,
+        "direction": "outgoing",
+        "limit": 20,
+        "relation_types": [
+          "calls"
+        ],
+        "repository": "oalangomes/fetchcore",
+        "require_resolution": false,
+        "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+        "source": "symbol:v1:sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "result_count": 0,
+      "scan_complete": null,
+      "scan_diagnostics": [],
+      "source_verifications": [],
+      "tool_error_category": "source_missing",
+      "unexpected_relationships": []
+    },
+    {
+      "action": "get_related",
+      "contract_errors": [],
+      "coverage": [],
+      "coverage_goal_status": null,
+      "coverage_status": null,
+      "expected_error_category": "unsupported_capability",
+      "expected_relationships": [],
+      "expected_status": null,
+      "get_related_duration_ms": 947,
+      "id": "unsupported-incoming-file",
+      "limit_reached": null,
+      "matched_relationships": [],
+      "missing_relationships": [],
+      "outcome": "expected_tool_error",
+      "passed": true,
+      "provenance_checked_relationships": 0,
+      "provenance_valid": null,
+      "provenance_valid_relationships": 0,
+      "request": {
+        "depth": 1,
+        "direction": "incoming",
+        "limit": 20,
+        "relation_types": [],
+        "repository": "oalangomes/fetchcore",
+        "require_resolution": false,
+        "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c",
+        "source": "repository://oalangomes/fetchcore/src/fetchcore/application/__init__.py"
+      },
+      "result_count": 0,
+      "scan_complete": null,
+      "scan_diagnostics": [],
+      "source_verifications": [],
+      "tool_error_category": "unsupported_capability",
+      "unexpected_relationships": []
+    }
+  ],
+  "schema_version": 3,
+  "status": "passed",
+  "summary": {
+    "contract_errors": 0,
+    "coverage_status_counts": {
+      "not_found": 1,
+      "partial": 2,
+      "success": 2,
+      "unknown": 0,
+      "unsupported": 1
+    },
+    "exact_relationship_match_rate": 1.0,
+    "expected_relationships": 4,
+    "expected_tool_errors": 2,
+    "failed": 0,
+    "get_related_calls": 8,
+    "get_related_duration_ms_p50": 3765.0,
+    "get_related_duration_ms_p95": 7476.0,
+    "get_source_calls": 1,
+    "matched_relationships": 4,
+    "missing_relationships": 0,
+    "passed": 8,
+    "provenance_assessed_scenarios": 6,
+    "provenance_checked_relationships": 4,
+    "provenance_responses_with_relationships": 4,
+    "provenance_valid_rate": 1.0,
+    "provenance_valid_rate_unit": "responses_including_empty",
+    "provenance_valid_relationships": 4,
+    "provenance_valid_scenarios": 6,
+    "relationship_precision": 1.0,
+    "relationship_provenance_valid_rate": 1.0,
+    "relationship_provenance_valid_rate_unit": "returned_relationships",
+    "returned_relationships": 4,
+    "tool_errors": 0,
+    "total": 8,
+    "unexpected_relationships": 0
+  }
+}
