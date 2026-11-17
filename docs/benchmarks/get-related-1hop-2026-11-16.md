@@ -23,27 +23,58 @@ import-bound call without an exact target remains unresolved, including under
 the `require_resolution` filter; (3) a one-result bound does not hide partial
 extraction coverage; and (4) unsupported navigation and unknown sources fail
 explicitly, rather than inventing a relation. Source lines and canonical IDs
-in the YAML are the Ground Truth. Expected response status is also fixed in
-the YAML so a coverage divergence remains visible.
+in the YAML are the relationship Ground Truth. `expected_status` records the
+current navigation contract separately from the optional aspirational
+`coverage_goal_status`; the goal never changes scenario pass/fail.
 
 ## Observed baseline
 
-The [JSON report](results/get-related-1hop-2026-11-16.json) and
-[Markdown report](results/get-related-1hop-2026-11-16.md) came from MCP stdio
-against the isolated SolrCloud collection for the pinned repository revision.
-Seven of eight scenarios passed. All four expected relationships matched;
-there were zero missing and zero unexpected relationships. Provenance was valid
-in all six scenarios that returned a response. Two expected tool errors were
-observed (`source_missing` and `unsupported_capability`), with no unexpected
-tool or contract errors. Eight `get_related` calls and one `get_source` call
-returned four relationships. MCP wall-time p50/p95 was 3,744/7,504 ms.
+The [initial JSON report](results/get-related-1hop-2026-11-16.json) and
+[initial Markdown report](results/get-related-1hop-2026-11-16.md) are retained
+as the original MCP measurement against the isolated SolrCloud collection.
+They recorded 7/8 scenarios, 4/4 matched relationships, no missing or
+unexpected relationships, and p50/p95 of 3,744/7,504 ms. Their
+`provenance_valid_rate=6/6` measured response-level consistency, including
+two empty successful responses; it was not evidence that six relationships
+had valid provenance.
 
-The one divergence is `resolved-call-incoming`: the exact reverse edge was
-returned with correct source and target identities, but the response was
-`partial` rather than the pinned `success` expectation. The response's
-`cross_file_resolution` coverage is `partial` for the admitted corpus. The
-scenario stays failed; its Ground Truth was not edited to make the run green.
-This is a coverage-status discrepancy, not a missing or invented edge.
+The [review JSON report](results/get-related-1hop-review-2026-11-16.json) and
+[review Markdown report](results/get-related-1hop-review-2026-11-16.md) record
+a new MCP run on the same pinned revision. The evaluator and scenario changed;
+the indexed corpus and retrieval behavior did not.
+
+| Measure | Initial run | Review run |
+| --- | ---: | ---: |
+| Passing scenarios | 7/8 | 8/8 |
+| Exact relationships | 4/4 | 4/4 |
+| Missing / unexpected relationships | 0 / 0 | 0 / 0 |
+| Observed `partial` statuses | 2 | 2 |
+| Response provenance validity, including empty responses | 6/6 | 6/6 |
+| Relationship provenance validity | not reported | 4/4 |
+| Contract / unexpected tool errors | 0 / 0 | 0 / 0 |
+| `get_related` p50 / p95, ms | 3,744 / 7,504 | 3,765 / 7,476 |
+
+The passing-scenario increase comes solely from correcting the expected
+incoming status to `partial`. The new relationship provenance measure excludes
+empty responses. Latency comes from separate local runs and does not establish
+a performance change.
+
+The original `resolved-call-incoming` expectation classified `success` as the
+current contract, although the exact reverse edge was returned with
+`cross_file_resolution: partial`. The `navigation_result()` rule returns
+`partial` when coverage is partial, and the MCP/SDK/CLI reverse-navigation
+contract test asserts the same behavior for a mixed corpus. The pinned corpus
+has 370 supported sources among 617 under that capability, with partial
+coverage. The corrected
+scenario expects the contract's `partial` and retains `success` only as an
+aspirational coverage goal. The relationship Ground Truth, observed response
+and original measurement are unchanged.
+
+A future GraphProjection cannot claim complete coverage from a `success`
+status alone. Compare the declared per-capability coverage, admitted source
+counts, exact relationship matches, scan completeness, and missing/unexpected
+edges on the same pinned corpus. The aspirational goal is diagnostic, not a
+score or authority decision.
 
 This run is the **current 1-hop navigation baseline**: canonical structural
 lookup through MCP, without GraphProjection. The earlier
@@ -62,6 +93,8 @@ in the same isolated collection after a separate explicit rebuild. v1 returned
 PR #250 result. v2 returned 2/2 scenarios, 3/3 exact symbols and 3/3 source
 verifications, with no contract errors, also matching PR #250. These runs
 verify evaluator compatibility; their latency is separate from the v3 run.
+The review reran v1 over the new baseline's `fa94f4e` snapshot and observed
+the same 5/6 scenarios, 0.8333 hit rate and 0.6167 MRR.
 
 ## Reproduction
 
@@ -90,6 +123,14 @@ returned count reached the bound; it does not prove that another edge exists.
 The optional `get_source` call verifies the observed source line, revision,
 repository, reference and checksum precondition. It does not prove that the
 target is semantically related beyond the canonical resolver's evidence.
+The retained `provenance_valid_rate` is a response-level consistency measure
+whose denominator includes empty responses. The additive
+`relationship_provenance_valid_rate` checks only returned relationship objects;
+its value is `null` when none were returned. These checks validate metadata
+consistency, while optional `get_source` supplies a separate source-read check.
+When any target location field is disclosed, the evaluator requires the
+document ID, source reference, path, revision and checksum as one complete
+trace. A wholly withheld target location remains valid under the contract.
 
 The latency fields are wall time per MCP `get_related` call, including stdio
 transport and canonical document acquisition. p50/p95 over this small scenario

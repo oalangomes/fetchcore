@@ -77,6 +77,7 @@ class RelatedScenario:
     limit: int
     require_resolution: bool
     expected_status: str | None
+    coverage_goal_status: str | None
     expected_error_category: str | None
     expected_relationships: tuple[dict[str, object], ...]
     verify_source: bool
@@ -294,11 +295,16 @@ def _load_related_scenarios(payload: dict[object, object]) -> tuple[RelatedScena
             if not isinstance(raw.get(field, False), bool):
                 raise ValueError(f"scenario {scenario_id!r} requires boolean {field}")
         expected_status = raw.get("expected_status")
+        coverage_goal_status = raw.get("coverage_goal_status")
         expected_error = raw.get("expected_error_category")
         if (expected_status is None) == (expected_error is None):
             raise ValueError(f"scenario {scenario_id!r} requires exactly one expected outcome")
         if expected_status is not None and expected_status not in NAVIGATION_STATUSES:
             raise ValueError(f"scenario {scenario_id!r} has invalid expected_status")
+        if coverage_goal_status is not None and (
+            expected_status is None or coverage_goal_status not in NAVIGATION_STATUSES
+        ):
+            raise ValueError(f"scenario {scenario_id!r} has invalid coverage_goal_status")
         if expected_error is not None and (
             not isinstance(expected_error, str) or not expected_error.strip()
         ):
@@ -336,7 +342,8 @@ def _load_related_scenarios(payload: dict[object, object]) -> tuple[RelatedScena
             id=scenario_id, repository=repository, source=source, revision=revision,
             relation_types=tuple(relation_types), direction=str(direction), limit=limit,
             require_resolution=raw.get("require_resolution", False),
-            expected_status=expected_status, expected_error_category=expected_error,
+            expected_status=expected_status, coverage_goal_status=coverage_goal_status,
+            expected_error_category=expected_error,
             expected_relationships=tuple(relations), verify_source=raw.get("verify_source", False),
         ))
     return tuple(scenarios)
@@ -714,11 +721,16 @@ def related_provenance_errors(item: dict[str, object], repository: str, revision
         not isinstance(item["target_checksum"], str) or not item["target_checksum"]
     ):
         errors.append("invalid target checksum")
+    target_location = tuple(item.get(field) for field in (
+        "target_document_id", "target_source_ref", "target_path",
+        "target_revision", "target_checksum",
+    ))
     if item.get("target_document_id") is not None and not resolved:
         errors.append("unconfirmed relation claims target document")
-    if item.get("target_document_id") is not None and (
-        not target_ref or not target_path or not item.get("target_revision")
-        or not item.get("target_checksum")
+    # Target identity alone is allowed when the location is withheld. Once any
+    # location field is disclosed, require the whole canonical target trace.
+    if any(value is not None for value in target_location) and not all(
+        isinstance(value, str) and value.strip() for value in target_location
     ):
         errors.append("located target has incomplete provenance")
     return tuple(errors)
@@ -798,6 +810,7 @@ async def _evaluate_related_scenario(
     report: dict[str, object] = {
         "id": scenario.id, "action": "get_related", "request": arguments,
         "expected_status": scenario.expected_status,
+        "coverage_goal_status": scenario.coverage_goal_status,
         "expected_error_category": scenario.expected_error_category,
         "expected_relationships": list(scenario.expected_relationships),
         "matched_relationships": [], "missing_relationships": list(scenario.expected_relationships),
@@ -805,6 +818,8 @@ async def _evaluate_related_scenario(
         "coverage_status": None, "coverage": [],
         "scan_complete": None, "scan_diagnostics": [], "limit_reached": None,
         "provenance_valid": None, "contract_errors": [], "tool_error_category": None,
+        "provenance_checked_relationships": 0,
+        "provenance_valid_relationships": 0,
         "get_related_duration_ms": duration_ms, "source_verifications": [],
         "outcome": "failed", "passed": False,
     }
@@ -830,6 +845,7 @@ async def _evaluate_related_scenario(
         errors.append("invalid navigation bounds metadata")
     raw = payload.get("results")
     results = [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
+    raw_count = len(raw) if isinstance(raw, list) else 0
     if isinstance(raw, list) and len(results) != len(raw):
         errors.append("relation result is not an object")
     if len(results) > scenario.limit:
@@ -847,10 +863,14 @@ async def _evaluate_related_scenario(
         errors.append("invalid scan diagnostics")
     if diagnostics and payload.get("scan_complete") is True:
         errors.append("scan_complete contradicts diagnostics")
+    valid_relationships = 0
     for index, item in enumerate(results):
-        errors.extend(f"result {index}: {error}" for error in related_provenance_errors(
+        provenance_errors = related_provenance_errors(
             item, str(args.repository), scenario.revision
-        ))
+        )
+        errors.extend(f"result {index}: {error}" for error in provenance_errors)
+        if not provenance_errors:
+            valid_relationships += 1
         if item.get("direction") != scenario.direction:
             errors.append(f"result {index}: direction mismatch")
         if scenario.relation_types and item.get("kind") not in scenario.relation_types:
@@ -864,7 +884,9 @@ async def _evaluate_related_scenario(
         "coverage_status": payload.get("status"),
         "coverage": coverage, "scan_complete": payload.get("scan_complete"),
         "scan_diagnostics": diagnostics, "limit_reached": payload.get("limit_reached"),
-        "provenance_valid": not any(
+        "provenance_checked_relationships": raw_count,
+        "provenance_valid_relationships": valid_relationships,
+        "provenance_valid": len(results) == raw_count and not any(
             error.startswith("result ") or error == "response repository/revision mismatch"
             for error in errors
         ),
@@ -924,6 +946,8 @@ def related_summary(reports: list[dict[str, object]]) -> dict[str, object]:
     durations = [cast(int, item["get_related_duration_ms"]) for item in reports]
     assessed = sum(item["provenance_valid"] is not None for item in reports)
     valid = sum(item["provenance_valid"] is True for item in reports)
+    checked_relationships = sum(cast(int, item["provenance_checked_relationships"]) for item in reports)
+    valid_relationships = sum(cast(int, item["provenance_valid_relationships"]) for item in reports)
     return {
         "total": len(reports), "passed": sum(item["passed"] is True for item in reports),
         "failed": sum(item["passed"] is not True for item in reports),
@@ -934,6 +958,16 @@ def related_summary(reports: list[dict[str, object]]) -> dict[str, object]:
         "provenance_valid_scenarios": valid,
         "provenance_assessed_scenarios": assessed,
         "provenance_valid_rate": valid / assessed if assessed else None,
+        "provenance_valid_rate_unit": "responses_including_empty",
+        "provenance_responses_with_relationships": sum(
+            cast(int, item["provenance_checked_relationships"]) > 0 for item in reports
+        ),
+        "provenance_checked_relationships": checked_relationships,
+        "provenance_valid_relationships": valid_relationships,
+        "relationship_provenance_valid_rate": (
+            valid_relationships / checked_relationships if checked_relationships else None
+        ),
+        "relationship_provenance_valid_rate_unit": "returned_relationships",
         "returned_relationships": sum(cast(int, item["result_count"]) for item in reports),
         "get_related_calls": len(reports),
         "get_source_calls": sum(len(cast(list[object], item["source_verifications"])) for item in reports),
@@ -1710,6 +1744,8 @@ def markdown_related_report(payload: dict[str, object]) -> str:
     assert isinstance(summary, dict)
     provenance_rate = summary["provenance_valid_rate"]
     provenance_text = f"{provenance_rate:.4f}" if isinstance(provenance_rate, float) else "N/A"
+    relationship_rate = summary["relationship_provenance_valid_rate"]
+    relationship_text = f"{relationship_rate:.4f}" if isinstance(relationship_rate, float) else "N/A"
     lines = [
         "# FetchCore get_related one-hop evaluation", "",
         f"- Status: **{payload['status']}**",
@@ -1719,12 +1755,13 @@ def markdown_related_report(payload: dict[str, object]) -> str:
         f"- Scenarios: {summary['passed']}/{summary['total']} passed",
         f"- Expected/matched/missing/unexpected: {summary['expected_relationships']}/{summary['matched_relationships']}/{summary['missing_relationships']}/{summary['unexpected_relationships']}",
         f"- Exact relationship match rate: {summary['exact_relationship_match_rate']:.4f}",
-        f"- Provenance validity: {provenance_text}",
+        f"- Response provenance validity: {provenance_text} ({summary['provenance_valid_scenarios']}/{summary['provenance_assessed_scenarios']}; includes empty responses)",
+        f"- Relationship provenance validity: {relationship_text} ({summary['provenance_valid_relationships']}/{summary['provenance_checked_relationships']})",
         f"- MCP calls (related/source): {summary['get_related_calls']}/{summary['get_source_calls']}",
         f"- Tool/contract errors: {summary['tool_errors']}/{summary['contract_errors']}",
         f"- Latency p50/p95 (ms): {summary['get_related_duration_ms_p50']}/{summary['get_related_duration_ms_p95']}",
-        "", "| Scenario | Outcome | Coverage | Matched | Missing | Unexpected | Source reads |",
-        "| --- | --- | --- | ---: | ---: | ---: | --- |",
+        "", "| Scenario | Outcome | Coverage | Expected contract status | Coverage goal | Matched | Missing | Unexpected | Source reads |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | --- |",
     ]
     scenarios = payload["scenarios"]
     assert isinstance(scenarios, list)
@@ -1734,6 +1771,7 @@ def markdown_related_report(payload: dict[str, object]) -> str:
         assert isinstance(reads, list)
         lines.append(
             f"| {item['id']} | {item['outcome']} | {item['coverage_status'] or '-'} | "
+            f"{item['expected_status'] or '-'} | {item['coverage_goal_status'] or '-'} | "
             f"{len(item['matched_relationships'])} | {len(item['missing_relationships'])} | "
             f"{len(item['unexpected_relationships'])} | "
             f"{sum(entry['verified'] is True for entry in reads)}/{len(reads)} |"

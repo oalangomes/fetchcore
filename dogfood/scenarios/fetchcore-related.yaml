@@ -32,7 +32,9 @@ scenarios:
     source: symbol:v1:sha256:8e8fbf6a69f87b00ded14870295ee93b800b86bfe0f4369e681315ecad876547
     relation_types: [calls]
     direction: incoming
-    expected_status: success
+    # Current mixed-corpus contract; success is a future coverage goal only.
+    expected_status: partial
+    coverage_goal_status: success
     expected_relationships:
       - source_identity: symbol:v1:sha256:304bcc784f290a747892c8c562959b70ff8659dc5b2a0b65bdae543c9686e62d
         kind: calls

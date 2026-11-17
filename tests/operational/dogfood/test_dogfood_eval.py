@@ -166,6 +166,9 @@ def test_v3_real_scenarios_are_pinned_and_separate_from_v1_v2() -> None:
     assert {item.repository for item in scenarios} == {"oalangomes/fetchcore"}
     assert {item.direction for item in scenarios} == {"outgoing", "incoming"}
     assert any(item.expected_status == "partial" and item.limit == 1 for item in scenarios)
+    incoming = next(item for item in scenarios if item.id == "resolved-call-incoming")
+    assert incoming.expected_status == "partial"
+    assert incoming.coverage_goal_status == "success"
     assert any(item.expected_error_category == "source_missing" for item in scenarios)
 
 
@@ -192,6 +195,10 @@ def test_v3_rejects_unpinned_or_invented_ground_truth(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="invalid relation_types"):
         dogfood._load_related_scenarios({
             **payload, "scenarios": [{**scenario, "relation_types": ["invented"]}],
+        })
+    with pytest.raises(ValueError, match="coverage_goal_status"):
+        dogfood._load_related_scenarios({
+            **payload, "scenarios": [{**scenario, "coverage_goal_status": "invented"}],
         })
 
 
@@ -235,6 +242,44 @@ def test_v3_provenance_rejects_wrong_binding_and_unconfirmed_target() -> None:
     )
 
 
+@pytest.mark.parametrize("missing_field", [
+    "target_document_id", "target_source_ref", "target_path",
+    "target_revision", "target_checksum",
+])
+def test_v3_disclosed_target_requires_complete_provenance(missing_field: str) -> None:
+    complete = _related_observation()
+    incomplete = {**complete, missing_field: None}
+    errors = dogfood.related_provenance_errors(
+        incomplete, "oalangomes/fetchcore", complete["revision"]
+    )
+    assert "located target has incomplete provenance" in errors
+
+    hidden = {**complete, **dict.fromkeys((
+        "target_document_id", "target_source_ref", "target_path",
+        "target_revision", "target_checksum",
+    ))}
+    assert hidden["target_identity"] == complete["target_identity"]
+    assert dogfood.related_provenance_errors(
+        hidden, "oalangomes/fetchcore", complete["revision"]
+    ) == ()
+
+
+@pytest.mark.parametrize("overrides,expected_error", [
+    ({"target_document_id": ""}, "located target has incomplete provenance"),
+    ({"target_revision": "other-revision"}, "target revision mismatch"),
+    ({"target_checksum": ""}, "invalid target checksum"),
+    ({"target_source_ref": "repository://other/repo/target.py"}, "target source_ref/path mismatch"),
+])
+def test_v3_disclosed_target_rejects_invalid_metadata(
+    overrides: dict[str, object], expected_error: str,
+) -> None:
+    observed = _related_observation(**overrides)
+    errors = dogfood.related_provenance_errors(
+        observed, "oalangomes/fetchcore", observed["revision"]
+    )
+    assert expected_error in errors
+
+
 def test_v3_partial_response_and_unexpected_relation_fail_ground_truth() -> None:
     scenario = next(item for item in _related_scenarios() if item.id == "resolved-call-exact-target")
     observed = _related_observation()
@@ -269,6 +314,72 @@ def test_v3_partial_response_and_unexpected_relation_fail_ground_truth() -> None
     ))
     assert len(report["unexpected_relationships"]) == 1
     assert report["passed"] is False
+
+
+def test_v3_coverage_goal_does_not_override_contract_status() -> None:
+    scenario = next(item for item in _related_scenarios() if item.id == "resolved-call-incoming")
+    observed = _related_observation(direction="incoming")
+    payload = {
+        "repository": scenario.repository, "revision": scenario.revision,
+        "status": "partial", "results": [observed],
+        "coverage": [{"capability": "cross_file_resolution", "status": "partial"}],
+        "limit_reached": False, "scan_complete": True, "scan_diagnostics": [],
+    }
+
+    class FakeSession:
+        async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
+            return SimpleNamespace(is_error=False, structured_content=payload)
+
+    report = asyncio.run(dogfood._evaluate_related_scenario(
+        FakeSession(), SimpleNamespace(repository=scenario.repository), scenario,
+    ))
+    assert report["passed"] is True
+    assert report["coverage_status"] == report["expected_status"] == "partial"
+    assert report["coverage_goal_status"] == "success"
+
+
+def test_v3_provenance_metrics_exclude_empty_responses_from_relation_rate() -> None:
+    scenarios = _related_scenarios()
+    empty = next(item for item in scenarios if item.id == "unconfirmed-is-not-resolved")
+    resolved = next(item for item in scenarios if item.id == "resolved-call-exact-target")
+    resolved = dogfood.RelatedScenario(**{**resolved.__dict__, "verify_source": False})
+    payload = {
+        "repository": empty.repository, "revision": empty.revision,
+        "status": "not_found", "results": [],
+        "coverage": [{"capability": "calls_observed", "status": "supported"}],
+        "limit_reached": False, "scan_complete": True, "scan_diagnostics": [],
+    }
+
+    class FakeSession:
+        async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
+            return SimpleNamespace(is_error=False, structured_content=payload)
+
+    session = FakeSession()
+    args = SimpleNamespace(repository=empty.repository)
+    empty_report = asyncio.run(dogfood._evaluate_related_scenario(session, args, empty))
+    empty_summary = dogfood.related_summary([empty_report])
+    assert empty_summary["provenance_assessed_scenarios"] == 1
+    assert empty_summary["provenance_valid_scenarios"] == 1
+    assert empty_summary["provenance_checked_relationships"] == 0
+    assert empty_summary["provenance_valid_relationships"] == 0
+    assert empty_summary["relationship_provenance_valid_rate"] is None
+
+    payload["status"] = "success"
+    payload["results"] = [_related_observation()]
+    valid_report = asyncio.run(dogfood._evaluate_related_scenario(session, args, resolved))
+    assert valid_report["passed"] is True
+    payload["results"] = [_related_observation(target_revision=None)]
+    invalid_report = asyncio.run(dogfood._evaluate_related_scenario(session, args, resolved))
+    assert invalid_report["passed"] is False
+    assert invalid_report["provenance_valid"] is False
+    assert "result 0: located target has incomplete provenance" in invalid_report["contract_errors"]
+    summary = dogfood.related_summary([empty_report, valid_report, invalid_report])
+    assert summary["provenance_assessed_scenarios"] == 3
+    assert summary["provenance_valid_scenarios"] == 2
+    assert summary["provenance_responses_with_relationships"] == 2
+    assert summary["provenance_checked_relationships"] == 2
+    assert summary["provenance_valid_relationships"] == 1
+    assert summary["relationship_provenance_valid_rate"] == 0.5
 
 
 def test_v3_tool_error_categories_and_source_read_failures() -> None:
