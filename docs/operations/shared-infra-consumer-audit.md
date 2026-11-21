@@ -1,5 +1,7 @@
 # Shared infrastructure consumer audit
 
+For the current read-only local Docker inventory (2026-11-21), see the [local Docker audit](local-docker-audit.md).
+
 Audit of `codex/shared-infra-p0` before consumer migration. This records the
 starting state; completion evidence belongs in the PR and validation report.
 
