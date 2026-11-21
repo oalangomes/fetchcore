@@ -4,6 +4,10 @@ Escopo: Docker Desktop local, DEV, OPERATIONAL e BENCH do FetchCore. Esta é a
 continuação da [auditoria somente de leitura](local-docker-audit.md), revalidada
 antes das paradas. Não altera adapters, contratos, índice publicado ou produção.
 
+As seções até **Rollback e reinício** registram a primeira etapa. A
+[limpeza posterior](#limpeza-posterior-no-mesmo-dia) atualiza o estado dos volumes
+e substitui as instruções de rollback dos backends cujos containers foram removidos.
+
 ## Estado revalidado antes das mudanças
 
 - 27 containers visíveis (17 ativos), 42 volumes, 13 redes e 47 imagens. O
@@ -149,3 +153,74 @@ tamanho e consumidores imediatamente antes de cada lote.
    DEV/OP Solr, API/MCP e Lab devem subir com suas políticas atuais. Após o
    reinício, execute novamente readiness, alias/count, busca e leitura da fonte.
    Esta verificação pós-reinício é pendente porque não foi feito reboot do Engine.
+
+## Limpeza posterior no mesmo dia
+
+Após autorização adicional para exclusão permanente sem backup dos dois Qdrant
+maiores e, em seguida, dos 12 volumes históricos restantes, foram revalidados
+nomes, labels de projeto/owner e todos os mounts. Nenhum volume selecionado
+estava montado por container ativo. A exclusão em lote inicial foi rejeitada
+pela revisão automática por incluir recursos experimentais sem aprovação
+nominal; nenhuma remoção ocorreu naquele comando. A execução prosseguiu em
+lotes menores e os 12 nomes finais foram autorizados explicitamente.
+
+Foram removidos **18 volumes FetchCore**:
+
+- OpenSearch (6): `fetchcore-shared_opensearch-data`,
+  `fetchcore-operational_opensearch-data`,
+  `fetchcore-bench-dedicated_opensearch-data`,
+  `fetchcore-bench-a20261021a01_opensearch-data`,
+  `fetchcore-bench-b20261021b01_opensearch-data` e
+  `fetchcore-p02-codex_opensearch-data`.
+- Qdrant (6): `fetchcore-shared_qdrant-data`,
+  `fetchcore-operational_qdrant-data` (18,35 GB),
+  `fetchcore-bench-dedicated_qdrant-data` (16,61 GB),
+  `fetchcore-bench-a20261021a01_qdrant-data`,
+  `fetchcore-bench-b20261021b01_qdrant-data` e
+  `fetchcore-p02-codex_qdrant-data` (872,9 MB).
+- Solr Standalone (6): `fetchcore-shared_solr-data`,
+  `fetchcore-operational_solr-data`,
+  `fetchcore-bench-dedicated_solr-data`,
+  `fetchcore-bench-a20261021a01_solr-data`,
+  `fetchcore-bench-b20261021b01_solr-data` e
+  `fetchcore-p02-codex_solr-data`.
+
+`docker rm` removeu apenas os oito containers **já parados** que prendiam esses
+volumes: `fetchcore-shared-{opensearch,qdrant}-1`,
+`fetchcore-operational-{opensearch,qdrant,solr}-1` e
+`fetchcore-bench-dedicated-{opensearch,qdrant,solr}-1`. Nenhuma imagem, rede,
+container ativo ou volume de outro projeto foi removido. Nenhum prune foi
+executado. Não foi criado backup desses volumes, conforme autorização da
+exclusão sem backup.
+
+| Medida do Engine | Antes da limpeza | Depois da limpeza |
+| --- | ---: | ---: |
+| Volumes | 42 | 24 |
+| Tamanho lógico de volumes (`docker system df`) | ~43,16 GB | 4,813 GB |
+| Containers visíveis do FetchCore | 17 | 9 (cinco ativos, quatro parados) |
+| Redes | 13 | 13 |
+| Imagens | 47 | 47 |
+
+A diferença lógica é de aproximadamente **38,35 GB** em volumes. Não foi medida
+a redução física do arquivo de disco virtual do Docker Desktop; o espaço livre
+no host pode não crescer no mesmo valor.
+
+Permanecem os volumes Cloud
+`fetchcore-shared_solrcloud-data`,
+`fetchcore-operational-cloud_solrcloud-data` e
+`fetchcore-operational-cloud-validation_solrcloud-data` (validação parada,
+conservada conforme a autorização). DEV continuou saudável com zero coleções.
+O alias OPERATIONAL permaneceu
+`fc-operational-fetchcore-635ab7352c2850f2-cloud` →
+`fcg-0226c0ce8a-10724d819911`. Search Lab `/api/readiness` retornou `ready`
+e `/api/search` retornou `found` com fonte real
+`repository://oalangomes/fetchcore/src/fetchcore/repository/indexing.py` na
+revisão `00d6cdc21643bce5a8ce060d9cfbae7f467725da`.
+
+**Rollback atualizado:** os comandos `docker start` da seção anterior não se
+aplicam aos oito containers removidos. Restaurar esses dados exige um backup
+externo preexistente ou nova criação/indexação explícita dos recursos. Não foi
+produzido backup nesta limpeza. A configuração opt-in dos adapters continua
+versionada; sua futura ativação criará novos volumes vazios. O SolrCloud
+OPERATIONAL, DEV e Validation preservados mantêm seu procedimento próprio de
+reconciliação e recuperação.

@@ -9,8 +9,11 @@ rollback and retained resources.
 
 ## Audit and scope
 
-The root `compose.yml` retains its Standalone compatibility service and existing
-`solr-data` volume. Explicit shared DEV/BENCH infrastructure uses a new
+The root `compose.yml` retains its Standalone compatibility service and declares
+`solr-data`. Its former local volume was removed in the later
+[cleanup](../operations/local-solrcloud-only-2026-11-21.md#limpeza-posterior-no-mesmo-dia);
+starting that legacy Compose can create a new empty volume. Explicit shared
+DEV/BENCH infrastructure uses a separate
 `solrcloud-data` volume and never mounts or converts the Standalone volume.
 The shared Compose default selects only Solr; OpenSearch and Qdrant services
 require the `adapter-tests` profile or explicit selection with
@@ -19,9 +22,8 @@ tests remain available. Independent backend files still exist. Ollama is
 reused as a host/provider service; it is not started or
 duplicated by this tooling. Existing shared backend instances can be selected
 explicitly and are never adopted as owned Compose projects.
-The prior Standalone `solr-data` volume is not mounted or removed. Shared
-DEV/BENCH starts use `solrcloud-data`; avoid `docker compose down -v` when either
-generation's data must be retained.
+Shared DEV/BENCH starts use `solrcloud-data`; avoid `docker compose down -v`
+when Cloud data must be retained.
 
 `repository-index.yml` separates reuse-only service discovery from explicit
 service/resource provisioning, validates repository-resource binding, and emits
@@ -137,12 +139,14 @@ Repeated `up` uses
 `--no-recreate` and reuses owned instances, even if Compose configuration changed.
 Applying a changed container configuration requires a separately reviewed explicit
 Compose recreation. There is no discovery-triggered fallback to a new instance.
-An existing dedicated BENCH Solr container still mounting the legacy `solr-data`
-volume is rejected by `up`. When BENCH Cloud is needed, inspect and back up that
-volume as appropriate, then explicitly run
+If an existing dedicated BENCH Solr container mounts a legacy `solr-data`
+volume, `up` rejects it. After reviewing that volume, an operator can explicitly run
 `python scripts/shared_infra.py up --environment bench --dedicated --repository oalangomes/fetchcore --backend solr --replace-legacy-bench-solr`.
 This replaces only the owned BENCH Solr container, retains `solr-data`, and
 mounts the separate `solrcloud-data` volume. It does not index or delete data.
+After the 2026-11-21 cleanup, the old BENCH container and volume are absent;
+ordinary explicit `up --environment bench --dedicated --backend solr` starts
+Cloud on demand without the replacement option.
 `run` only supplies routing to the requested command; the command's own mutation
 semantics remain explicit. Missing services/resources fail in that command.
 
@@ -163,13 +167,14 @@ an existing configset. A same-name mismatch fails startup; publish changed
 configuration under a new configset version. The shared DEV/BENCH service does
 not create logical collections; only the separate Cloud Compose service creates
 its configured local development collection. The legacy root Compose remains
-Standalone and preserves the existing `solr-data` volume.
+Standalone; it does not contain a surviving local `solr-data` volume after
+the cleanup.
 
-Existing Standalone `solr-data` volumes remain separate and untouched. A
+Any future Standalone `solr-data` volume remains separate from Cloud. A
 `shared_infra.py up` against an already-running owned project uses `--no-recreate`,
 so it does not switch that service or its data automatically. Review and apply a
 separate DEV migration if desired. The local OPERATIONAL Cloud snapshot is a
-separate deployment and remains independent of the legacy Standalone volume.
+separate deployment and remains independent of the legacy Standalone route.
 
 Embedded ZooKeeper is for local development and disposable CI, not a production
 ensemble. For cloud or multi-node deployments, configure an externally managed,
