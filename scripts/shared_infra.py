@@ -540,6 +540,8 @@ def main() -> None:
     parser.add_argument("--environment", choices=["dev", "bench", "operational"], required=True)
     parser.add_argument("--repository", required=True)
     parser.add_argument("--dedicated", action="store_true")
+    parser.add_argument("--replace-legacy-bench-solr", action="store_true",
+                        help="explicitly replace only the owned legacy BENCH Solr container; retain its volume")
     parser.add_argument("--performance", action="store_true")
     parser.add_argument("--exclusive-host", action="store_true",
                         help="operator attests this host has no competing workload")
@@ -591,6 +593,11 @@ def main() -> None:
     if args.vector_dimensions is not None and args.vector_dimensions < 1:
         parser.error("--vector-dimensions must be positive")
     config = route(args.environment, args.repository, args.backend, args.dedicated, args.ollama_url)
+    if args.replace_legacy_bench_solr and not (
+        args.action == "up" and args.environment == "bench" and args.dedicated
+        and args.backend == "solr"
+    ):
+        parser.error("--replace-legacy-bench-solr requires up --environment bench --dedicated --backend solr")
     external = shared_endpoints(config, args.shared_endpoints)
     if args.performance and not (
         args.environment == "bench" and args.dedicated and args.exclusive_host
@@ -649,15 +656,35 @@ def main() -> None:
     elif args.action == "up":
         if args.backend in external:
             parser.error("selected backend is externally managed; use run for read-only readiness")
-        owned_containers(config)  # refuse adoption of an unrelated reserved project
+        ids = owned_containers(config)  # refuse adoption of an unrelated reserved project
         validate_volumes(config)
+        legacy_bench_solr = False
+        if args.environment == "bench" and args.dedicated and args.backend == "solr":
+            for container in ids:
+                detail = json.loads(subprocess.run(
+                    ["docker", "inspect", container], check=True, capture_output=True, text=True,
+                ).stdout)[0]
+                if detail["Config"].get("Labels", {}).get("com.docker.compose.service") != "solr":
+                    continue
+                legacy_bench_solr = any(
+                    mount.get("Type") == "volume" and mount.get("Name") ==
+                    f"{config['FETCHCORE_INFRA_PROJECT']}_solr-data"
+                    for mount in detail.get("Mounts", [])
+                )
+            if legacy_bench_solr and not args.replace_legacy_bench_solr:
+                raise RuntimeError(
+                    "legacy BENCH Solr container uses solr-data; rerun with "
+                    "--replace-legacy-bench-solr to replace only the container and retain the volume"
+                )
+            if args.replace_legacy_bench_solr and not legacy_bench_solr:
+                raise RuntimeError("no owned legacy BENCH Solr container to replace")
         compose_files = ["-f", str(ROOT / "infra/compose/shared.yml")]
         if args.backend == "ollama":
             compose_files += ["-f", str(ROOT / "infra/compose/ollama.yml")]
         subprocess.run([
             "docker", "compose", "--env-file", "/dev/null", "-p",
             config["FETCHCORE_INFRA_PROJECT"], *compose_files,
-            "up", "-d", "--no-recreate", args.backend,
+            "up", "-d", "--force-recreate" if legacy_bench_solr else "--no-recreate", args.backend,
         ], env=env, check=True)
         print(json.dumps(wait_ready(args.backend, config), indent=2, sort_keys=True))
     elif args.action == "prepare":
