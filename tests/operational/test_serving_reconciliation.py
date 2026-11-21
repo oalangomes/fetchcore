@@ -99,6 +99,34 @@ def test_candidate_uses_materialized_head_and_host_endpoints(
     assert seen[0].ollama.url == "http://127.0.0.1:11434"
 
 
+def test_candidate_accepts_explicit_lexical_profile_without_embedding_probe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    config = tmp_path / "runtime.yml"
+    _config(config)
+    data = yaml.safe_load(config.read_text())
+    data["retrieval"] = {
+        "mode": "lexical", "dense": {"enabled": False}, "hybrid": {"enabled": False},
+    }
+    config.write_text(yaml.safe_dump(data), encoding="utf-8")
+    monkeypatch.setattr(reconcile, "materialized_head", lambda workspace: HEAD)
+    seen = []
+    def inspect(inspector: object) -> ReadinessReport:
+        seen.append(inspector.config)  # type: ignore[attr-defined]
+        report = _report()
+        report.checks["embedding"] = ReadinessFact("not_required")
+        return report
+    monkeypatch.setattr(reconcile, "inspect_readiness", inspect)
+
+    revision, report = reconcile.validate_candidate(
+        config, workspace=tmp_path, solr_url="http://127.0.0.1:28984/solr",
+    )
+
+    assert revision == report.indexed_revision == HEAD
+    assert seen[0].retrieval.mode == "lexical"
+    assert report.checks["embedding"].state == "not_required"
+
+
 @pytest.mark.parametrize("report", [
     _report(revision="a" * 40),
     _report(failed="indexing_fingerprint"),

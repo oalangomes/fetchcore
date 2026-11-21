@@ -150,6 +150,16 @@ the same configured application runtime. The MCP endpoint is
 `http://127.0.0.1:38766/mcp`. It exposes `search`, `get_source`, `find_symbol`
 and `get_related` through
 the native `fetchcore.serving.mcp` adapter.
+For the local OPERATIONAL Cloud service on port 28984, pin
+`FETCHCORE_OPERATIONAL_SOURCE_PATH` to a durable, clean repository clone at
+the published snapshot revision. The API and MCP mount it read-only at
+`/workspace`; the active development checkout can advance independently.
+Set `FETCHCORE_OPERATIONAL_RUNTIME_CONFIG` to the operator-owned serving YAML.
+If the embedding provider is unavailable, an explicitly configured lexical
+mode can serve the existing Solr snapshot after the reconciliation readiness
+checks pass. Dense and hybrid capability are then unavailable; the index and
+original hybrid configuration remain intact. See the [local transition report](../operations/local-solrcloud-only-2026-11-21.md)
+for the verified binding, smoke results and rollback.
 Use `docker compose -f infra/compose/operational-mcp.yml logs mcp` to inspect
 MCP startup failures and `docker compose -f infra/compose/operational-mcp.yml logs api lab`
 for Lab startup failures. Stop the stack with

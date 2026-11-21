@@ -231,10 +231,18 @@ def test_cleanup_checks_all_ownership_before_deleting(monkeypatch):
 def test_compose_has_no_implicit_resource_or_model_creation():
     compose = yaml.safe_load((ROOT / "infra/compose/shared.yml").read_text())
     assert compose["services"]["solr"]["command"] == ["sh", "/fetchcore-start-shared.sh"]
+    assert "profiles" not in compose["services"]["solr"]
+    assert compose["services"]["opensearch"]["profiles"] == ["adapter-tests"]
+    assert compose["services"]["qdrant"]["profiles"] == ["adapter-tests"]
     assert compose["volumes"]["solrcloud-data"]["labels"]["io.fetchcore.owner"]
     ollama = yaml.safe_load((ROOT / "infra/compose/ollama.yml").read_text())
     assert "command" not in ollama["services"]["ollama"]
     assert "shared.yml" not in (ROOT / "compose.yml").read_text()
+
+
+def test_operational_serving_can_bind_a_pinned_source_checkout():
+    overlay = (ROOT / "infra/compose/operational-mcp.yml").read_text()
+    assert overlay.count("${FETCHCORE_OPERATIONAL_SOURCE_PATH:-../..}:/workspace:ro") == 2
 
 
 def test_app_projects_keep_api_dns_private_and_reuse_external_infra_network():
@@ -322,6 +330,35 @@ def test_up_never_recreates_existing_containers(monkeypatch):
     monkeypatch.setattr(infra, "wait_ready", Mock(return_value={"status": "ready"}))
     invoke(monkeypatch, "up", "--environment", "operational", "--repository", "a/b")
     assert run.call_args.args[0][-4:] == ["up", "-d", "--no-recreate", "solr"]
+
+
+def test_legacy_bench_solr_requires_explicit_container_replacement(monkeypatch):
+    def run_command(command, **kwargs):
+        if command[:2] == ["docker", "inspect"]:
+            detail = [{"Config": {"Labels": {"com.docker.compose.service": "solr"}},
+                       "Mounts": [{"Type": "volume", "Name":
+                                   "fetchcore-bench-dedicated_solr-data"}]}]
+            return subprocess.CompletedProcess(command, 0, json.dumps(detail))
+        return subprocess.CompletedProcess(command, 0, "")
+
+    run = Mock(side_effect=run_command)
+    monkeypatch.setattr(infra.subprocess, "run", run)
+    monkeypatch.setattr(infra, "owned_containers", Mock(return_value=["legacy-solr-id"]))
+    monkeypatch.setattr(infra, "validate_volumes", Mock())
+    monkeypatch.setattr(infra, "wait_ready", Mock(return_value={"status": "ready"}))
+    args = ("up", "--environment", "bench", "--repository", "a/b", "--dedicated")
+    with pytest.raises(RuntimeError, match="legacy BENCH Solr"):
+        invoke(monkeypatch, *args)
+    assert not any(call.args[0][:2] == ["docker", "compose"] for call in run.call_args_list)
+
+    invoke(monkeypatch, *args, "--replace-legacy-bench-solr")
+    assert run.call_args.args[0][-4:] == ["up", "-d", "--force-recreate", "solr"]
+
+
+def test_legacy_bench_replacement_flag_is_scoped(monkeypatch):
+    with pytest.raises(SystemExit):
+        invoke(monkeypatch, "up", "--environment", "dev", "--repository", "a/b",
+               "--replace-legacy-bench-solr")
 
 
 def test_up_starts_selected_backend_and_waits_for_readiness(monkeypatch):

@@ -75,8 +75,11 @@ def validate_candidate(
     """Prove candidate snapshot/revision/fingerprint compatibility without writes."""
     config = load_runtime_config(path=config_path, environ={})
     if (config.backend != "solr" or config.repository is None
-            or config.retrieval is None or config.retrieval.mode != "hybrid"):
-        raise ValueError("unsupported_serving_profile: expected a repository-bound Solr hybrid runtime")
+            or config.retrieval is None
+            or config.retrieval.mode not in {"lexical", "hybrid"}):
+        raise ValueError(
+            "unsupported_serving_profile: expected a repository-bound Solr lexical or hybrid runtime"
+        )
     root = workspace.resolve(strict=True)
     head = materialized_head(root)
     settings = dict(config.backend_settings)
