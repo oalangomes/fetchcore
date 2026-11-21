@@ -18,11 +18,13 @@ services:
       - ../solr/start-shared.sh:/fetchcore-start-shared.sh:ro
   opensearch:
     <<: *owned
+    profiles: ["adapter-tests"]
     extends:
       file: opensearch.yml
       service: opensearch
   qdrant:
     <<: *owned
+    profiles: ["adapter-tests"]
     extends:
       file: qdrant.yml
       service: qdrant

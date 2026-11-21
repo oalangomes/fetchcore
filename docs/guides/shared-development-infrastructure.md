@@ -1,17 +1,22 @@
 # Shared development infrastructure and resource lifecycle
 
 Status: shared DEV/BENCH local infrastructure. Explicit shared DEV/BENCH Solr
-services use single-node SolrCloud. The legacy root Compose entry point and
-OPERATIONAL service remain Standalone until Cloud indexing/publication is
-implemented and the migration is explicitly authorized.
+services use single-node SolrCloud. The legacy root Compose entry point remains
+Standalone for compatibility; the separate local OPERATIONAL Cloud deployment
+serves the published snapshot on port 28984. See the [local SolrCloud-only
+transition](../operations/local-solrcloud-only-2026-11-21.md) for measured state,
+rollback and retained resources.
 
 ## Audit and scope
 
 The root `compose.yml` retains its Standalone compatibility service and existing
 `solr-data` volume. Explicit shared DEV/BENCH infrastructure uses a new
 `solrcloud-data` volume and never mounts or converts the Standalone volume.
-Independent backend files exist for Solr, OpenSearch and
-Qdrant. Ollama is reused as a host/provider service; it is not started or
+The shared Compose default selects only Solr; OpenSearch and Qdrant services
+require the `adapter-tests` profile or explicit selection with
+`shared_infra.py up --backend opensearch|qdrant`. Their adapters, contracts and
+tests remain available. Independent backend files still exist. Ollama is
+reused as a host/provider service; it is not started or
 duplicated by this tooling. Existing shared backend instances can be selected
 explicitly and are never adopted as owned Compose projects.
 The prior Standalone `solr-data` volume is not mounted or removed. Shared
@@ -23,7 +28,7 @@ service/resource provisioning, validates repository-resource binding, and emits
 run evidence. Until Cloud publication is implemented, self-dogfood validates the
 legacy Standalone indexing path.
 Operational indexing remains reuse-only and targets the separate existing
-OPERATIONAL service/resources below. See
+OPERATIONAL service/resources. See
 [self-hosted indexing](self-hosted-indexing.md) for the Solr-only OPERATIONAL workflow and historical acceptance evidence.
 
 Benchmark `search-intent-v2/run.py` accepts routed environment defaults while
@@ -43,7 +48,8 @@ to print routing JSON. This has no Docker or filesystem side effects.
 | --- | --- | --- | --- | --- | --- |
 | fetchcore-shared | DEV, functional BENCH | 18983 | 19200 / 19600 | 16333 / 16334 | existing host service |
 | fetchcore-bench-dedicated | performance BENCH | 28983 | 29200 / 29600 | 26333 / 26334 | existing host service |
-| fetchcore-operational | persistent OPERATIONAL (Solr only) | 38983 | disabled (legacy reserved ports 39200 / 39600) | disabled (legacy reserved ports 36333 / 36334) | existing host service |
+| fetchcore-operational | legacy Standalone reservation (stopped) | 38983 | disabled (legacy reserved ports 39200 / 39600) | disabled (legacy reserved ports 36333 / 36334) | existing host service |
+| fetchcore-operational-cloud | local published OPERATIONAL | 28984 | disabled | disabled | existing host service |
 
 Endpoints bind to `127.0.0.1`; Solr has `/solr`. Each project has its own named
 backend data volumes and containers. Ollama is not part of these projects and has
@@ -131,6 +137,12 @@ Repeated `up` uses
 `--no-recreate` and reuses owned instances, even if Compose configuration changed.
 Applying a changed container configuration requires a separately reviewed explicit
 Compose recreation. There is no discovery-triggered fallback to a new instance.
+An existing dedicated BENCH Solr container still mounting the legacy `solr-data`
+volume is rejected by `up`. When BENCH Cloud is needed, inspect and back up that
+volume as appropriate, then explicitly run
+`python scripts/shared_infra.py up --environment bench --dedicated --repository oalangomes/fetchcore --backend solr --replace-legacy-bench-solr`.
+This replaces only the owned BENCH Solr container, retains `solr-data`, and
+mounts the separate `solrcloud-data` volume. It does not index or delete data.
 `run` only supplies routing to the requested command; the command's own mutation
 semantics remain explicit. Missing services/resources fail in that command.
 
@@ -156,8 +168,8 @@ Standalone and preserves the existing `solr-data` volume.
 Existing Standalone `solr-data` volumes remain separate and untouched. A
 `shared_infra.py up` against an already-running owned project uses `--no-recreate`,
 so it does not switch that service or its data automatically. Review and apply a
-separate DEV/BENCH migration if desired. Neither this local setup nor this PR
-changes the OPERATIONAL endpoint, Standalone data, or service.
+separate DEV migration if desired. The local OPERATIONAL Cloud snapshot is a
+separate deployment and remains independent of the legacy Standalone volume.
 
 Embedded ZooKeeper is for local development and disposable CI, not a production
 ensemble. For cloud or multi-node deployments, configure an externally managed,
@@ -247,7 +259,9 @@ Hermetic tests cover routing, backend selection, invalid identity, no implicit p
 adoption refusal, ownership mismatch, safe cleanup and resource isolation. Compose
 can be rendered without starting services. No retrieval tuning or schema migration
 is introduced. `ready` requires an explicitly routed Solr deployment mode:
-OPERATIONAL checks Standalone, while DEV/BENCH check SolrCloud and its live cluster.
+The legacy `shared_infra.py --environment operational` route checks Standalone;
+the separately deployed OPERATIONAL Cloud runtime checks SolrCloud on 28984.
+DEV/BENCH also check SolrCloud and its live cluster.
 An existing Cloud collection must use the expected configset and complete
 Projection v3 schema. Mode or schema mismatches fail readiness without fallback.
 For Qdrant, readiness is an external probe because the upstream image has no
