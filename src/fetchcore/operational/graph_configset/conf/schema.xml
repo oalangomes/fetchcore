@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<schema name="fetchcore-graph" version="1.0">
+  <uniqueKey>id</uniqueKey>
+  <fieldType name="string" class="solr.StrField" sortMissingLast="true"/>
+  <fieldType name="pint" class="solr.IntPointField" docValues="true"/>
+  <fieldType name="plong" class="solr.LongPointField" docValues="true"/>
+
+  <field name="id" type="string" indexed="true" stored="true" required="true" multiValued="false"/>
+  <field name="record_kind" type="string" indexed="true" stored="true" required="true" multiValued="false"/>
+  <field name="repository" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="revision" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="generation" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="source_identity" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="target_identity" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="relation_kind" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="evidence_basis" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="resolution" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="source_ref" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="source_document_id" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="source_checksum" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="line" type="pint" indexed="true" stored="true" multiValued="false"/>
+  <field name="target_document_id" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="target_source_ref" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="target_checksum" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="target_path" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="target_text" type="string" indexed="false" stored="true" multiValued="false"/>
+  <field name="projection_version" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="projection_fingerprint" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="corpus_checksum" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="indexing_fingerprint" type="string" indexed="true" stored="true" multiValued="false"/>
+  <field name="edge_count" type="pint" indexed="true" stored="true" multiValued="false"/>
+  <field name="canonical_payload" type="string" indexed="false" stored="true" multiValued="false"/>
+  <field name="_version_" type="plong" indexed="true" stored="true" multiValued="false"/>
+</schema>
