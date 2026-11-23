@@ -81,7 +81,11 @@ def _fixture(root: Path):
 def test_three_hop_map_preserves_paths_parallel_evidence_and_gaps(tmp_path: Path) -> None:
     indexed, graph, seed = _fixture(tmp_path)
     store = CanonicalGraphStore(graph)
-    request = NavigateGraphRequest(seed, repository=graph.repository,
+    target = next(symbol.identity.key for document in indexed.documents
+                  if document.path == "d.py"
+                  for symbol in document.evidence.declarations
+                  if symbol.identity is not None and symbol.name == "delta")
+    request = NavigateGraphRequest(seed, target=target, repository=graph.repository,
                                    relation_types=("calls",), depth=3)
     walk = walk_graph(store, "test-physical", graph.repository, graph.revision,
                       graph.generation, request)
@@ -93,6 +97,9 @@ def test_three_hop_map_preserves_paths_parallel_evidence_and_gaps(tmp_path: Path
     assert len(result.edges) == 4  # two distinct a->b call sites
     assert len([edge for edge in result.edges if edge.source_ref.endswith("a.py")]) == 2
     assert any(len(path.edge_ids) == 3 for path in result.paths)
+    assert result.target_reached is True
+    assert any(path.nodes[-1] == target and len(path.edge_ids) == 3
+               for path in result.paths)
     assert all(set(path.edge_ids) <= {edge.id for edge in result.edges}
                for path in result.paths)
     assert len(result.inconclusive_observations) >= 1
@@ -121,6 +128,17 @@ def test_adjacency_and_expansion_budgets_are_applied_before_extra_queries(tmp_pa
                       graph.generation, request)
     assert walk.backend_queries == 1
     assert "expansion_budget_reached" in walk.diagnostics
+
+    class OversizedStore(CanonicalGraphStore):
+        def list_edges(self, *args, **kwargs):
+            page = super().list_edges(*args, **kwargs)
+            return GraphEdgePage(page.edges + page.edges, True, 1)
+
+    with pytest.raises(KnowledgeSearchError) as exc:
+        walk_graph(OversizedStore(graph), "test-physical", graph.repository,
+                   graph.revision, graph.generation,
+                   replace(request, max_edges=1, expansion_budget=10))
+    assert exc.value.category == "schema_mismatch"
 
 
 def test_hydration_rejects_stale_edge_checksum_and_output_overflow(tmp_path: Path) -> None:

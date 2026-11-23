@@ -128,7 +128,8 @@ rebuild; lexical and one-hop retrieval remain available. Neither navigation
 nor status rebuilds an index. The graph configset is `fetchcore-graph-v1`.
 
 `navigate-graph` and MCP `navigate_graph` accept an exact
-`symbol:v1:sha256:<64 hex>` seed, `repository`, optional `revision`, direction,
+`symbol:v1:sha256:<64 hex>` seed, `repository`, optional exact `target` and
+`revision`, direction,
 relation-type filters, `depth` (1–3), `max_nodes`, `max_edges`, `max_paths`,
 `expansion_budget`, `timeout_seconds` and `max_output_bytes`. The SDK request
 is `NavigateGraphRequest`; `RetrievalApplicationService.navigate_graph` returns
@@ -137,7 +138,10 @@ ambiguous names are never selected silently. Each returned path names all of
 its individual edge IDs; every edge carries source and target provenance.
 The response also contains hydrated entities, inconclusive observations from
 the canonical corpus, extraction coverage, examined counts, consumed backend
-queries, diagnostics, and a `success`, `partial`, or `not_found` status.
+queries, diagnostics, `target_reached`, and a `success`, `partial`, or
+`not_found` status. When a target is supplied, paths ending at that canonical
+identity show the bounded route; `not_found` is returned only after a complete
+bounded scan with no such path.
 `fetchcore capabilities` advertises the declared `graph.bounded_navigation`
 flag for SolrCloud; `index graph-status` checks live readiness for a repository.
 

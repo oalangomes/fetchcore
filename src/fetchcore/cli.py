@@ -313,6 +313,7 @@ def get_related(
 @main.command("navigate-graph")
 @click.argument("seed")
 @click.option("--repo", "repository", required=True)
+@click.option("--target")
 @click.option("--revision")
 @click.option("--relation-type", "relation_types", multiple=True)
 @click.option("--direction", type=click.Choice(("outgoing", "incoming")), default="outgoing")
@@ -321,14 +322,15 @@ def get_related(
 @click.option("--max-edges", type=int, default=100)
 @click.option("--max-paths", type=int, default=100)
 @click.option("--expansion-budget", type=int, default=100)
-@click.option("--timeout-seconds", type=float, default=10.0)
+@click.option("--timeout-seconds", type=float, default=30.0)
 @click.option("--max-output-bytes", type=int, default=100_000)
 @click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False))
 @click.option("--cache-root", type=click.Path(path_type=Path, file_okay=False))
 @click.option("--allowed-root", multiple=True, type=click.Path(path_type=Path, file_okay=False))
 @click.option("--json", "as_json", is_flag=True)
 def navigate_graph(
-    seed: str, repository: str, revision: str | None, relation_types: tuple[str, ...],
+    seed: str, repository: str, target: str | None, revision: str | None,
+    relation_types: tuple[str, ...],
     direction: str, depth: int, max_nodes: int, max_edges: int, max_paths: int,
     expansion_budget: int, timeout_seconds: float, max_output_bytes: int,
     config_path: Path | None, cache_root: Path | None,
@@ -342,7 +344,7 @@ def navigate_graph(
             config_path=config_path, cache_root=cache_root,
             allowed_roots=allowed_root or None,
         ).navigate_graph(NavigateGraphRequest(
-            seed=seed, repository=repository, revision=revision,
+            seed=seed, target=target, repository=repository, revision=revision,
             relation_types=relation_types, direction=cast(GraphDirection, direction), depth=depth,
             max_nodes=max_nodes, max_edges=max_edges, max_paths=max_paths,
             expansion_budget=expansion_budget, timeout_seconds=timeout_seconds,

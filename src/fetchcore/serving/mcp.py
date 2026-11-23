@@ -108,6 +108,7 @@ def create_mcp_server(service: RetrievalApplicationService) -> MCPServer:
     def navigate_graph_tool(
         seed: str,
         repository: str,
+        target: str | None = None,
         revision: str | None = None,
         relation_types: list[str] | None = None,
         direction: str = "outgoing",
@@ -116,13 +117,13 @@ def create_mcp_server(service: RetrievalApplicationService) -> MCPServer:
         max_edges: int = 100,
         max_paths: int = 100,
         expansion_budget: int = 100,
-        timeout_seconds: float = 10.0,
+        timeout_seconds: float = 30.0,
         max_output_bytes: int = 100_000,
     ) -> dict[str, object]:
         """Return a bounded map of exact canonical relations and their provenance."""
         try:
             return service.navigate_graph(NavigateGraphRequest(
-                seed=seed, repository=repository, revision=revision,
+                seed=seed, target=target, repository=repository, revision=revision,
                 relation_types=tuple(relation_types or ()), direction=cast(GraphDirection, direction),
                 depth=depth, max_nodes=max_nodes, max_edges=max_edges,
                 max_paths=max_paths, expansion_budget=expansion_budget,

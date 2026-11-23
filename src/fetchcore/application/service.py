@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 import hashlib
+import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, cast
@@ -253,6 +254,14 @@ class RetrievalApplicationService:
         from .index_operations import prepare_repository_index_runtime
         from fetchcore.adapters.retrieval.solr.backend import SolrIndexSnapshot
 
+        deadline = time.monotonic() + request.timeout_seconds
+
+        def remaining() -> float:
+            seconds = deadline - time.monotonic()
+            if seconds <= 0.05:
+                raise KnowledgeSearchError("graph navigation timed out", category="timeout")
+            return seconds
+
         binding = self._binding(request.repository)
         if binding.backend != "solr":
             raise KnowledgeSearchError("graph capability is unavailable for this backend",
@@ -288,6 +297,7 @@ class RetrievalApplicationService:
                                        category="ambiguous_source")
         seed = seed_result.results[0]
         assert isinstance(seed, SymbolDefinition)
+        remaining()
         publisher = (self._graph_publication(binding) if self._graph_publication
                      else self._default_graph_publication(binding))
         capabilities: tuple[StructuralCapability, ...] = tuple(dict.fromkeys(
@@ -300,11 +310,13 @@ class RetrievalApplicationService:
                          for capability in capabilities)
         with publisher.read_active(binding.repository, snapshot.revision,
                                    cast(SolrIndexSnapshot, snapshot)) as session:
+            traversal_request = replace(request, timeout_seconds=remaining())
             walk = walk_graph(
                 session.store, session.graph_collection, binding.repository,
-                snapshot.revision, session.manifest.generation, request,
+                snapshot.revision, session.manifest.generation, traversal_request,
                 allowed_paths=binding.repository_paths,
             )
+            remaining()
             identifiers = tuple(sorted({seed.document_id} | {
                 document_id for edge in walk.edges
                 for document_id in (edge.source_document_id, edge.target_document_id)
@@ -336,6 +348,7 @@ class RetrievalApplicationService:
                 revision=snapshot.revision, generation=session.manifest.generation,
                 coverage=coverage,
             )
+            remaining()
             current = store.load_snapshot(binding.repository)
             if (current.revision != snapshot.revision
                     or current.corpus_checksum != snapshot.corpus_checksum
@@ -343,7 +356,8 @@ class RetrievalApplicationService:
                     != getattr(snapshot, "projection_fingerprint", None)):
                 raise KnowledgeSearchError("graph knowledge snapshot changed during navigation",
                                            category="snapshot_revision_mismatch")
-            return result
+        remaining()
+        return result
 
     @staticmethod
     def _default_graph_publication(binding: RepositoryBinding) -> GraphPublicationService:

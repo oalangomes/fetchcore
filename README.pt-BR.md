@@ -1,4 +1,4 @@
-<!-- fetchcore-localization: {"body_sha256":"478200a1ff5d0b66ba4f6d14e10063a890e43bd7437ffea2df2c85c87b0615d5","fingerprint":"916162d4883d4da53f0591c5151c198e7bff7a312af9fe7dacadf0d7707bef3f","glossary_sha256":"5cb83196075b9648d2d58285161323dbb0f59eea97c728e83e111d6e9497d705","locale":"pt-BR","model":"reviewed-ptbr-v1","provider":"bootstrap","schema":1,"source":"README.md","source_sha256":"7a7050b2ba3d55825b9332b4dde0f6aea10d8b074bc161f6dcb00886268e2501"} -->
+<!-- fetchcore-localization: {"body_sha256":"b3f61072aa5477215852518824d3889f2cb5566b63ec2a12bd2010b2ca4d56fe","fingerprint":"6e540895dcd11906b197735c4ad6e1eb3e336fc27f67c8857bdc1d4f9b36c51a","glossary_sha256":"5cb83196075b9648d2d58285161323dbb0f59eea97c728e83e111d6e9497d705","locale":"pt-BR","model":"issue-30-ptbr-v1","provider":"reviewed-manual","schema":1,"source":"README.md","source_sha256":"cdbfc072e09ac54d251234060c7de34490f293b0636b9b7bb90b292aa574c8b3"} -->
 # FetchCore
 
 [English](README.md) | [Português (Brasil)](README.pt-BR.md)

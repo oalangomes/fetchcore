@@ -71,7 +71,8 @@ inspection. The publisher does not automatically delete retained generations.
 ## Bounded knowledge map
 
 `navigate_graph` in the application boundary accepts an exact canonical symbol
-seed, direction, relation types, depth (one to three) and explicit budgets. It
+seed, optional exact target, direction, relation types, depth (one to three)
+and explicit budgets. It
 executes bounded exact adjacency queries, then checks each edge against
 canonical source and target documents. The response contains entities, edges,
 observation-specific paths, inconclusive observations, extraction coverage,
@@ -79,3 +80,29 @@ consumed budgets, diagnostics and generation identity. SDK, CLI and MCP expose
 the same mapping; `get_related` remains the independent one-hop operation.
 The map is evidence of static source relations, not proof of runtime execution
 or consumer satisfaction.
+
+The M0 `nodes()`/`shortestPath()` spike did not prove a strict server-side
+intermediate-node ceiling. The v1 serving decision is therefore exact BFS by
+hop: each Solr query uses repository, revision, generation, endpoint and
+relation filters, `rows=max_remaining_edges+1`, and the application caps
+expansions, nodes, edges, paths, depth and output bytes. A high-degree node can
+mark the map partial without processing the remainder. No public Streaming
+Expression is exposed. The operation deadline includes preflight, traversal,
+hydration and final generation checks; an expired deadline is a typed timeout.
+Solr `timeAllowed` rejects partial responses. Traversal can return a partial
+bounded map when a node/edge/path/expansion ceiling is met, with exact edges
+already examined and an explicit diagnostic. This choice pays more backend
+round trips than a single streaming traversal in exchange for a provable
+fan-out ceiling. The [ADR](../adr/ADR-0007-bounded-graph-projection-publication.md)
+records that trade-off.
+
+For recovery, `index graph-status` inspects the manifest and retained physical
+generations without mutation. If graph publication fails before activation,
+the previous graph alias remains in place; serving checks its binding against
+the current knowledge alias and may still reject it. An uncertain activation,
+changed alias, orphan writer lock or missing graph generation requires operator
+inspection with existing SolrCloud reconciliation commands and an explicit
+`index graph-rebuild` once knowledge is stable. No generation is deleted or
+reset automatically. A newly indexed knowledge generation makes old graph
+navigation unavailable until its compatible graph is rebuilt. Search and
+`get_related` remain independent of graph readiness.

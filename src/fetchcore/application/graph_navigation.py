@@ -32,6 +32,7 @@ class NavigateGraphRequest:
     """An exact seed and hard resource ceilings for at most three hops."""
 
     seed: str
+    target: str | None = None
     repository: str | None = None
     revision: str | None = None
     direction: GraphDirection = "outgoing"
@@ -41,13 +42,18 @@ class NavigateGraphRequest:
     max_edges: int = 100
     max_paths: int = 100
     expansion_budget: int = 100
-    timeout_seconds: float = 10.0
+    timeout_seconds: float = 30.0
     max_output_bytes: int = 100_000
 
     def __post_init__(self) -> None:
         if not _SYMBOL_ID.fullmatch(self.seed):
             raise KnowledgeSearchError(
                 "graph seed must be an exact canonical symbol identity",
+                category="schema_mismatch",
+            )
+        if self.target is not None and not _SYMBOL_ID.fullmatch(self.target):
+            raise KnowledgeSearchError(
+                "graph target must be an exact canonical symbol identity",
                 category="schema_mismatch",
             )
         if self.direction not in {"outgoing", "incoming"}:
@@ -118,6 +124,8 @@ class GraphNavigationResult:
     revision: str
     generation: str
     seed: str
+    target: str | None
+    target_reached: bool
     direction: GraphDirection
     depth_requested: int
     depth_examined: int
@@ -138,6 +146,7 @@ class GraphNavigationResult:
         return {
             "repository": self.repository, "revision": self.revision,
             "generation": self.generation, "seed": self.seed,
+            "target": self.target, "target_reached": self.target_reached,
             "direction": self.direction,
             "depth_requested": self.depth_requested,
             "depth_examined": self.depth_examined, "status": self.status,
@@ -238,6 +247,11 @@ def walk_graph(
                     limit=remaining,
                     timeout_seconds=max(0.05, deadline - time.monotonic()),
                 )
+                if len(page.edges) > remaining:
+                    raise KnowledgeSearchError(
+                        "graph adapter exceeded adjacency response budget",
+                        category="schema_mismatch",
+                    )
                 queried_nodes.add(current)
                 cached[current] = page
                 backend_queries += 1
@@ -256,7 +270,9 @@ def walk_graph(
                 if (edge.repository != repository or edge.revision != revision
                         or edge.resolution not in {"resolved", "exact-unique"}
                         or (request.direction == "outgoing" and edge.source_identity != current)
-                        or (request.direction == "incoming" and edge.target_identity != current)):
+                        or (request.direction == "incoming" and edge.target_identity != current)
+                        or (request.relation_types
+                            and edge.relation_kind not in request.relation_types)):
                     raise KnowledgeSearchError(
                         "graph adjacency conflicts with requested scope",
                         category="schema_mismatch",
@@ -417,11 +433,17 @@ def compose_graph_map(
         diagnostics.add("inconclusive_observations_present")
     if any(item.status != "supported" for item in coverage):
         diagnostics.add("extraction_coverage_partial")
+    target_reached = request.target is not None and any(
+        path.nodes[-1] == request.target for path in walk.paths
+    )
     status: Literal["success", "partial", "not_found"] = (
-        "partial" if diagnostics else "success" if walk.edges else "not_found"
+        "partial" if diagnostics else "success"
+        if (target_reached if request.target is not None else bool(walk.edges))
+        else "not_found"
     )
     result = GraphNavigationResult(
-        repository, revision, generation, request.seed, request.direction,
+        repository, revision, generation, request.seed, request.target,
+        target_reached, request.direction,
         request.depth, walk.depth_examined, status, tuple(entities), walk.edges,
         walk.paths, tuple(sorted(inconclusive.values(), key=lambda item: (
             item.source_identity, item.kind, item.target, item.resolution,

@@ -8,11 +8,12 @@ and are removed in ``finally``. Existing collections are never modified.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
+import resource
 import statistics
 import subprocess
 import time
-import tracemalloc
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -74,7 +75,6 @@ def run(workspace: Path, solr_url: str, scenarios: Path, repetitions: int) -> di
         store.indexing_fingerprint = runtime.fingerprint
         return store
 
-    tracemalloc.start()
     try:
         runtime = prepare_repository_index_runtime(
             workspace, repository=REPOSITORY, branch=None, revision=None,
@@ -88,6 +88,16 @@ def run(workspace: Path, solr_url: str, scenarios: Path, repetitions: int) -> di
             indexing_fingerprint=runtime.fingerprint,
         )
         projection_seconds = time.monotonic() - start
+        observations = tuple(relation for document in indexed.documents
+                             for relation in document.evidence.relations.semantic)
+        observed_kinds = Counter(relation.kind for relation in observations)
+        resolved_observations = sum(
+            relation.resolution in {"resolved", "exact-unique"}
+            and relation.target_identity is not None
+            for relation in observations
+        )
+        declarations = sum(len(document.evidence.declarations)
+                           for document in indexed.documents)
         exact = tuple(edge for edge in projection.edges
                       if edge.source_identity == seed and edge.relation_kind == truth["kind"])
         expected = tuple(edge for edge in exact
@@ -161,12 +171,17 @@ def run(workspace: Path, solr_url: str, scenarios: Path, repetitions: int) -> di
         graph_hits = sum(edge.id == expected[0].id for edge in graph_result.edges)
         if baseline_hits != 1 or graph_hits != 1:
             raise AssertionError("baseline or graph failed independent pinned ground truth")
-        _, peak = tracemalloc.get_traced_memory()
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
         return {
             "corpus": REPOSITORY, "revision": revision,
             "ground_truth": {"seed": seed, "target": truth["target_identity"],
                              "source_ref": truth["source_ref"], "line": truth["line"]},
             "canonical": {"documents": len(indexed.documents),
+                          "declarations": declarations,
+                          "semantic_observations": len(observations),
+                          "resolved_observations": resolved_observations,
+                          "inconclusive_observations": len(observations) - resolved_observations,
+                          "observation_kinds": dict(sorted(observed_kinds.items())),
                           "one_hop_observations": len(canonical_related),
                           "ground_truth_matches": canonical_matches},
             "projection": {"edges": len(projection.edges),
@@ -182,12 +197,14 @@ def run(workspace: Path, solr_url: str, scenarios: Path, repetitions: int) -> di
                               "backend_queries": graph_result.backend_queries,
                               "backend_qtime_ms": graph_result.backend_qtime_ms,
                               "paths": len(graph_result.paths),
+                              "inconclusive_in_map": len(graph_result.inconclusive_observations),
+                              "diagnostics": list(graph_result.diagnostics),
                               "response_bytes": len(json.dumps(graph_result.to_mapping()).encode()),
                               "latency": _latency(graph_times)},
             "cost": {"extraction_seconds": extraction_seconds,
                      "knowledge_write_seconds": knowledge_write_seconds,
                      "graph_publication_seconds": publication_seconds,
-                     "python_peak_bytes": peak},
+                     "process_peak_rss_bytes": peak},
             "isolation": {"knowledge_collection": knowledge_collection,
                           "graph_collection": graph_collection},
         }
@@ -201,7 +218,6 @@ def run(workspace: Path, solr_url: str, scenarios: Path, repetitions: int) -> di
         for collection in created:
             if collection in api.list_collections():
                 api.delete_collection(collection)
-        tracemalloc.stop()
 
 
 def main() -> None:
