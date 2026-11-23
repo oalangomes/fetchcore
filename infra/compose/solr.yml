@@ -13,6 +13,7 @@ services:
     volumes:
       - solrcloud-data:/var/solr
       - ../solr/configset:/fetchcore-configset:ro
+      - ../../src/fetchcore/operational/graph_configset:/fetchcore-graph-configset:ro
       - ../solr/start-cloud.sh:/fetchcore-start-cloud.sh:ro
     healthcheck:
       test:

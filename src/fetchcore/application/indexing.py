@@ -431,8 +431,40 @@ class SolrCloudOperationalIndex:
     def run(self, operation: str) -> dict[str, object]:
         if operation not in {
             "bootstrap", "status", "plan", "dry-run", "sync", "rebuild", "reconcile",
+            "graph-rebuild", "graph-status",
         }:
             raise ValueError("Unsupported SolrCloud indexing operation")
+        if operation in {"graph-rebuild", "graph-status"}:
+            from dataclasses import replace
+            from uuid import uuid4
+
+            from fetchcore.application.graph_publication import GraphPublicationService
+            from fetchcore.knowledge.graph_projection import project_graph
+
+            graph_settings = replace(
+                self.store.settings,
+                collection=self.store.settings.collection + "_graph",
+                configset="fetchcore-graph-v1",
+            )
+            publisher = GraphPublicationService(self.manager, graph_settings)
+            if operation == "graph-status":
+                return publisher.inspect(self.runtime.repository)
+            indexed = self.runtime.indexer.index(self.runtime.workspace)
+            projection = project_graph(
+                indexed.documents, generation="graph-" + uuid4().hex,
+                indexing_fingerprint=self.runtime.fingerprint,
+            )
+            published = publisher.publish(projection)
+            return {
+                "repository": indexed.repository,
+                "revision": indexed.revision,
+                "generation": projection.generation,
+                "graph_collection": published.active_collection,
+                "previous_graph_collection": published.previous_collection,
+                "edge_count": len(projection.edges),
+                "corpus_checksum": projection.corpus_checksum,
+                "graph_projection_fingerprint": projection.fingerprint,
+            }
         if operation == "reconcile":
             return self.manager.reconciliation_report(self.runtime.repository)
         if operation == "bootstrap":
@@ -599,8 +631,12 @@ class RepositoryIndexApplicationService:
         self.reconciliation = reconciliation or ReconciliationSettings()
 
     def run(self, operation: str, reference: str) -> dict[str, object]:
-        if operation not in {"plan", "status", "sync", "rebuild", "reconcile"}:
+        if operation not in {"plan", "status", "sync", "rebuild", "reconcile",
+                             "graph-rebuild", "graph-status"}:
             raise ValueError("Unsupported indexing operation")
+        if operation in {"graph-rebuild", "graph-status"} and self.backend != "solr":
+            raise KnowledgeSearchError("graph capability requires SolrCloud",
+                                       category="unsupported_capability")
         capabilities = indexing_capabilities(self.backend)
         if operation == "sync" and not capabilities.incremental:
             raise KnowledgeSearchError("Incremental indexing unavailable",
