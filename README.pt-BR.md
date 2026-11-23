@@ -3,7 +3,7 @@
 
 [English](README.md) | [Português (Brasil)](README.pt-BR.md)
 
-O FetchCore transforma repositórios de software em evidências técnicas pesquisáveis e tipadas, com proveniência da fonte. Ele adquire e indexa conhecimento dos repositórios e retorna candidatos de retrieval por meio de contratos independentes de backend. Os consumidores decidem se a evidência atende à tarefa e qual autoridade atribuir a ela.
+O FetchCore constrói automaticamente conhecimento técnico estruturado a partir de repositórios e permite compor mapas rastreáveis e navegáveis desse conhecimento para agentes e outros consumidores. As evidências preservam identidade e proveniência da fonte por meio de contratos independentes de backend. Os consumidores decidem se a evidência atende à tarefa e qual autoridade atribuir a ela.
 
 O FetchCore é responsável pela varredura de repositórios, extração, conhecimento canônico, projeção, contratos e adaptadores de retrieval, indexação incremental e interfaces CLI/MCP. Ele não é responsável por planejamento de agentes, conclusão de tarefas, aprovação ou autoridade de execução.
 
@@ -31,10 +31,10 @@ O [guia de introdução](docs/guides/getting-started.md) aborda contêineres e s
 
 ```text
 Repository sources → registry / indexer → canonical Repository Knowledge
-    → KnowledgePacks and typed relations → projection → rebuildable search/vector stores
+    → KnowledgePacks and typed relations → rebuildable search/vector/graph projections
     → backend-neutral retrieval → application service → CLI / MCP / SDK consumers
 ```
 
-O Repository Knowledge canônico mantém a identidade e a proveniência da fonte; os armazenamentos de backend são projeções substituíveis. Os adaptadores de retrieval atuais são local semantic, Solr, OpenSearch e Qdrant vector. O adaptador de embedding atual é Ollama. O retrieval oferece caminhos lexical, dense e hybrid quando o backend escolhido declara suporte; a indexação operacional pela CLI atualmente usa Solr. Projeção em grafo e busca federada continuam sendo direções futuras.
+O Repository Knowledge canônico mantém a identidade e a proveniência da fonte; os armazenamentos de backend são projeções substituíveis. Os adaptadores de retrieval atuais são local semantic, Solr, OpenSearch e Qdrant vector. O adaptador de embedding atual é Ollama. O retrieval oferece caminhos lexical, dense e hybrid quando o backend escolhido declara suporte; a indexação operacional pela CLI atualmente usa Solr. `find_symbol` e `get_related` 1-hop já existem. A GraphProjection v1 opcional usa SolrCloud para mapas de até três hops com relações resolvidas e limites explícitos; extração de fluxos de negócio completos e busca federada ainda não são capacidades gerais.
 
 O FetchCore está na versão `0.1.0.dev0`. Os contratos e a baseline são versionados, enquanto integrações públicas e capacidades ainda evoluem. Consulte a [política de releases](docs/release-policy.md) para o bootstrap inicial de `v0.0.1` e releases automatizadas posteriores. Comece pelo [índice da documentação](docs/pt-BR/README.md) para arquitetura, contratos, guias, benchmarks, decisões, migrações e registros históricos de extração.

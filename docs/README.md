@@ -8,6 +8,7 @@ Use this index to find the current contract. Historical extraction notes and ind
 | --- | --- |
 | Understand the product and its boundaries | [Architecture overview](architecture/overview.md) and [module boundaries](architecture/module-boundaries.md) |
 | Understand canonical knowledge and projections | [Repository Knowledge](architecture/repository-knowledge.md) and [projection](architecture/projection.md) |
+| Compose a bounded technical knowledge map | [GraphProjection v1](architecture/graph-projection-v1.md) and [CLI/MCP contract](reference/cli-mcp.md) |
 | Review typed API-contract evidence and format preflight | [API evidence v1](architecture/api-contract-evidence-v1.md) |
 | Implement safe OpenAPI/Swagger acquisition | [OpenAPI extraction](architecture/openapi-extraction.md) |
 | Implement safe Postman Collection 2.1 acquisition | [Postman extraction](architecture/postman-collection-extraction.md) |

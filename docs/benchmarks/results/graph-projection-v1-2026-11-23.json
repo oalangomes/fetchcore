@@ -1,0 +1,55 @@
+{
+  "baseline_one_hop": {
+    "ground_truth_matches": 1,
+    "latency": {
+      "p50_ms": 6157.943185000477,
+      "p95_ms": 6193.789081999967,
+      "p99_ms": 6193.789081999967
+    },
+    "returned": 1,
+    "status": "success"
+  },
+  "canonical": {
+    "documents": 5665,
+    "ground_truth_matches": 1,
+    "one_hop_observations": 7
+  },
+  "corpus": "oalangomes/fetchcore",
+  "cost": {
+    "extraction_seconds": 66.63689842900021,
+    "graph_publication_seconds": 73.66871445299967,
+    "knowledge_write_seconds": 199.44796365299953,
+    "python_peak_bytes": 282710891
+  },
+  "graph_one_hop": {
+    "backend_qtime_ms": 1,
+    "backend_queries": 1,
+    "ground_truth_matches": 1,
+    "latency": {
+      "p50_ms": 20041.9606989999,
+      "p95_ms": 20811.516808000306,
+      "p99_ms": 20811.516808000306
+    },
+    "paths": 1,
+    "response_bytes": 7848,
+    "returned": 1,
+    "status": "partial"
+  },
+  "ground_truth": {
+    "line": 98,
+    "seed": "symbol:v1:sha256:304bcc784f290a747892c8c562959b70ff8659dc5b2a0b65bdae543c9686e62d",
+    "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/repository_serving.py",
+    "target": "symbol:v1:sha256:8e8fbf6a69f87b00ded14870295ee93b800b86bfe0f4369e681315ecad876547"
+  },
+  "isolation": {
+    "graph_collection": "fcg-3c6a3168ea-db0fc0d8d05f",
+    "knowledge_collection": "fc30_bench_knowledge_a9b3246572_physical"
+  },
+  "projection": {
+    "build_seconds": 0.2715218810008082,
+    "edges": 227,
+    "seed_edges": 1,
+    "serialized_bytes": 256097
+  },
+  "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c"
+}

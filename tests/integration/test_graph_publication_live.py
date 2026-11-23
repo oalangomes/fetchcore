@@ -18,6 +18,8 @@ from fetchcore.adapters.retrieval.solr.cloud_lifecycle import (
 )
 from fetchcore.adapters.retrieval.solr.index_contract import IndexContractSolrIndexStore
 from fetchcore.application.graph_publication import GraphPublicationService
+from fetchcore.application.graph_navigation import NavigateGraphRequest
+from fetchcore.application.service import RepositoryBinding, RetrievalApplicationService
 from fetchcore.application.index_operations import prepare_repository_index_runtime
 from fetchcore.knowledge.graph_projection import project_graph
 from fetchcore.retrieval.contracts import KnowledgeSearchError
@@ -37,7 +39,13 @@ def test_graph_publication_pins_physical_knowledge_generation(tmp_path: Path) ->
     (tmp_path / "a.py").write_text(
         "from b import beta\ndef alpha():\n    beta()\n", encoding="utf-8",
     )
-    (tmp_path / "b.py").write_text("def beta():\n    return 1\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text(
+        "from c import gamma\ndef beta():\n    gamma()\n", encoding="utf-8",
+    )
+    (tmp_path / "c.py").write_text(
+        "from d import delta\ndef gamma():\n    delta()\n", encoding="utf-8",
+    )
+    (tmp_path / "d.py").write_text("def delta():\n    return 1\n", encoding="utf-8")
     for args in (("init",), ("config", "user.name", "Graph Test"),
                  ("config", "user.email", "graph@example.test"),
                  ("add", "."), ("commit", "-m", "fixture")):
@@ -85,6 +93,28 @@ def test_graph_publication_pins_physical_knowledge_generation(tmp_path: Path) ->
             assert session.store.load_all_edges(
                 graph_collection, indexed.repository, indexed.revision, projection.generation,
             ) == projection.edges
+
+        seed = next(edge.source_identity for edge in projection.edges
+                    if edge.relation_kind == "calls")
+        application = RetrievalApplicationService(
+            {indexed.repository: RepositoryBinding(
+                indexed.repository, tmp_path, "solr", revision=indexed.revision,
+                settings={"url": base, "collection": knowledge_alias,
+                          "deployment_mode": "solrcloud",
+                          "configset": "fetchcore-projection-v3"},
+            )},
+            navigation_store=lambda _binding: store_factory(knowledge_collection),
+            graph_publication=lambda _binding: publisher,
+        )
+        map_result = application.navigate_graph(NavigateGraphRequest(
+            seed, repository=indexed.repository, revision=indexed.revision,
+            relation_types=("calls",), depth=3,
+        ))
+        assert map_result.status in {"success", "partial"}
+        assert len(map_result.edges) == 3
+        assert len(map_result.entities) == 4
+        assert any(len(path.edge_ids) == 3 for path in map_result.paths)
+        assert map_result.backend_queries >= 1
 
         # A knowledge-only alias switch, even with identical content, revokes
         # the old graph binding. It does not affect lexical knowledge serving.

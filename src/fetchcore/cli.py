@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from collections.abc import Callable
-from typing import TypeVar
+from typing import TypeVar, cast
 
 import click
 import yaml
@@ -16,6 +16,7 @@ from fetchcore.application import (
     SearchRequest,
     SourceReadRequest,
     SourceReadResult,
+    NavigateGraphRequest,
     load_runtime_config,
 )
 from fetchcore.application.indexing import (
@@ -33,6 +34,7 @@ from fetchcore.application.runtime_inspection import (
 )
 from fetchcore.repository.registry import RepositoryRegistryError
 from fetchcore.application.navigation import FindSymbolRequest, GetRelatedRequest, NavigationResult
+from fetchcore.application.graph_navigation import GraphDirection, GraphNavigationResult
 
 _RetrievalResult = TypeVar("_RetrievalResult")
 
@@ -306,6 +308,58 @@ def get_related(
         )),
         lambda result: result.to_mapping(), _render_navigation,
     )
+
+
+@main.command("navigate-graph")
+@click.argument("seed")
+@click.option("--repo", "repository", required=True)
+@click.option("--revision")
+@click.option("--relation-type", "relation_types", multiple=True)
+@click.option("--direction", type=click.Choice(("outgoing", "incoming")), default="outgoing")
+@click.option("--depth", type=int, default=3)
+@click.option("--max-nodes", type=int, default=50)
+@click.option("--max-edges", type=int, default=100)
+@click.option("--max-paths", type=int, default=100)
+@click.option("--expansion-budget", type=int, default=100)
+@click.option("--timeout-seconds", type=float, default=10.0)
+@click.option("--max-output-bytes", type=int, default=100_000)
+@click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--cache-root", type=click.Path(path_type=Path, file_okay=False))
+@click.option("--allowed-root", multiple=True, type=click.Path(path_type=Path, file_okay=False))
+@click.option("--json", "as_json", is_flag=True)
+def navigate_graph(
+    seed: str, repository: str, revision: str | None, relation_types: tuple[str, ...],
+    direction: str, depth: int, max_nodes: int, max_edges: int, max_paths: int,
+    expansion_budget: int, timeout_seconds: float, max_output_bytes: int,
+    config_path: Path | None, cache_root: Path | None,
+    allowed_root: tuple[Path, ...], as_json: bool,
+) -> None:
+    """Compose a bounded structural knowledge map from one exact symbol."""
+
+    _run_repository_retrieval(
+        "navigate_graph", as_json,
+        lambda: RepositoryRetrievalApplicationService.from_sources(
+            config_path=config_path, cache_root=cache_root,
+            allowed_roots=allowed_root or None,
+        ).navigate_graph(NavigateGraphRequest(
+            seed=seed, repository=repository, revision=revision,
+            relation_types=relation_types, direction=cast(GraphDirection, direction), depth=depth,
+            max_nodes=max_nodes, max_edges=max_edges, max_paths=max_paths,
+            expansion_budget=expansion_budget, timeout_seconds=timeout_seconds,
+            max_output_bytes=max_output_bytes,
+        )),
+        lambda result: result.to_mapping(), _render_graph_navigation,
+    )
+
+
+def _render_graph_navigation(result: GraphNavigationResult) -> None:
+    click.echo(f"graph: status={result.status} repository={result.repository}")
+    click.echo(f"revision={result.revision} generation={result.generation}")
+    click.echo(f"entities={len(result.entities)} edges={len(result.edges)} paths={len(result.paths)}")
+    for diagnostic in result.diagnostics:
+        click.echo(f"diagnostic={diagnostic}")
+    for edge in result.edges:
+        click.echo(json.dumps(edge.to_mapping(), sort_keys=True))
 
 
 def _render_navigation(result: NavigationResult) -> None:
@@ -692,7 +746,7 @@ def _dispatch_index(ctx: click.Context, operation: str, reference: str | None,
                 raise RepositoryRegistryError(category, message) from exc
         _run_repo_operation(operation, as_json, execute)
         return
-    if operation in {"plan", "rebuild"}:
+    if operation in {"plan", "rebuild", "graph-rebuild", "graph-status"}:
         raise click.UsageError("A registered repository reference is required")
     if not options["repository"]:
         raise click.UsageError("Provide a registered repository or legacy --repository")
@@ -785,6 +839,24 @@ def index_plan(ctx: click.Context, repository: str, as_json: bool) -> None:
 def index_rebuild(ctx: click.Context, repository: str, as_json: bool) -> None:
     """Explicitly rebuild a registered repository through canonical indexing."""
     _dispatch_index(ctx, "rebuild", repository, as_json)
+
+
+@index_group.command("graph-rebuild")
+@click.argument("repository")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def index_graph_rebuild(ctx: click.Context, repository: str, as_json: bool) -> None:
+    """Explicitly rebuild the optional graph for the active knowledge snapshot."""
+    _dispatch_index(ctx, "graph-rebuild", repository, as_json)
+
+
+@index_group.command("graph-status")
+@click.argument("repository")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def index_graph_status(ctx: click.Context, repository: str, as_json: bool) -> None:
+    """Inspect graph compatibility without mutating any collection."""
+    _dispatch_index(ctx, "graph-status", repository, as_json)
 
 
 def _run_operation(

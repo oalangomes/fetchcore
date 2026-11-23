@@ -49,3 +49,33 @@ disposable SolrCloud, verifies the packaged schema, rejects a changed field
 type, and round-trips a three-edge fixture including two call sites between
 the same symbols. It requires `FETCHCORE_GRAPH_TEST_SOLR_URL` and a preloaded
 `fetchcore-graph-v1` configset; it is skipped otherwise.
+
+## Publication and serving
+
+`GraphPublicationService` stages a complete physical graph collection while
+holding the existing knowledge writer lock. Its versioned manifest binds the
+exact physical knowledge generation and snapshot identity. Only one graph
+alias changes at activation. The reader pins physical names, checks graph and
+knowledge aliases and manifest before and after reading, and rejects an absent,
+stale or incompatible graph. A knowledge-only sync leaves ordinary retrieval
+working and causes graph navigation to fail closed until an explicit graph
+rebuild. See [ADR-0007](../adr/ADR-0007-bounded-graph-projection-publication.md).
+
+`index graph-rebuild REPOSITORY` is the explicit full rebuild. It re-extracts
+canonical knowledge from the registered source and publishes only if its
+revision, corpus checksum and indexing fingerprint equal the active knowledge
+snapshot. `index graph-status REPOSITORY` is read-only. Staging failures retain
+the previous alias; unconfirmed activation and orphan locks require operator
+inspection. The publisher does not automatically delete retained generations.
+
+## Bounded knowledge map
+
+`navigate_graph` in the application boundary accepts an exact canonical symbol
+seed, direction, relation types, depth (one to three) and explicit budgets. It
+executes bounded exact adjacency queries, then checks each edge against
+canonical source and target documents. The response contains entities, edges,
+observation-specific paths, inconclusive observations, extraction coverage,
+consumed budgets, diagnostics and generation identity. SDK, CLI and MCP expose
+the same mapping; `get_related` remains the independent one-hop operation.
+The map is evidence of static source relations, not proof of runtime execution
+or consumer satisfaction.

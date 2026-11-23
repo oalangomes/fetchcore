@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fetchcore.application import RetrievalApplicationService, SearchRequest, SourceReadRequest
 from fetchcore.application.navigation import FindSymbolRequest, GetRelatedRequest
+from fetchcore.application.graph_navigation import GraphDirection, NavigateGraphRequest
 from fetchcore.application.runtime_config import load_runtime_config, service_from_runtime_config
 from fetchcore.retrieval.contracts import KnowledgeSearchError, SearchIntent
 
@@ -102,6 +103,33 @@ def create_mcp_server(service: RetrievalApplicationService) -> MCPServer:
             )).to_mapping()
         except KnowledgeSearchError as exc:
             raise ToolError(f"FetchCore related lookup failed: {exc.category}") from exc
+
+    @server.tool(name="navigate_graph")
+    def navigate_graph_tool(
+        seed: str,
+        repository: str,
+        revision: str | None = None,
+        relation_types: list[str] | None = None,
+        direction: str = "outgoing",
+        depth: int = 3,
+        max_nodes: int = 50,
+        max_edges: int = 100,
+        max_paths: int = 100,
+        expansion_budget: int = 100,
+        timeout_seconds: float = 10.0,
+        max_output_bytes: int = 100_000,
+    ) -> dict[str, object]:
+        """Return a bounded map of exact canonical relations and their provenance."""
+        try:
+            return service.navigate_graph(NavigateGraphRequest(
+                seed=seed, repository=repository, revision=revision,
+                relation_types=tuple(relation_types or ()), direction=cast(GraphDirection, direction),
+                depth=depth, max_nodes=max_nodes, max_edges=max_edges,
+                max_paths=max_paths, expansion_budget=expansion_budget,
+                timeout_seconds=timeout_seconds, max_output_bytes=max_output_bytes,
+            )).to_mapping()
+        except KnowledgeSearchError as exc:
+            raise ToolError(f"FetchCore graph navigation failed: {exc.category}") from exc
 
     @server.tool(name="get_source")
     def get_source_tool(

@@ -17,6 +17,9 @@
 | `fetchcore source <source-ref>` | Bounded, authorized source read from a search result reference. |
 | `fetchcore find-symbol <name> --repo <repo>` | Exact declaration lookup by name, qualified name or canonical identity. |
 | `fetchcore get-related <identity-or-source-ref> --repo <repo>` | Bounded outgoing structural observations with explicit coverage. |
+| `fetchcore index graph-rebuild <repo>` | Explicitly build and activate a full graph generation for the current knowledge snapshot. |
+| `fetchcore index graph-status <repo>` | Inspect graph readiness and retained generations without mutation. |
+| `fetchcore navigate-graph <canonical-symbol-id> --repo <repo>` | Compose a bounded map of resolved relations and evidence, up to three hops. |
 | `fetchcore index bootstrap` | Validate the Solr schema contract. |
 | `fetchcore index status` | Report snapshot compatibility and repository freshness. |
 | `fetchcore index dry-run` | Preview indexing changes without persistent writes. |
@@ -26,6 +29,7 @@
 | MCP `get_source` | Bounded authorized source read. |
 | MCP `find_symbol` | Exact canonical symbol lookup with extraction coverage. |
 | MCP `get_related` | Directed observed/resolved relationships, without graph inference. |
+| MCP `navigate_graph` | Optional bounded structural map from an exact canonical symbol seed. |
 
 All `repo` commands support `--json`; human and JSON output contain the same
 registration and materialization facts. Group options `--cache-root` and
@@ -110,7 +114,50 @@ reports unavailable cross-file resolution explicitly and does not return
 unresolved observations as if resolved. Incoming traversal requires a canonical
 symbol identity and includes only edges with a uniquely resolved target. Other
 languages and relation families retain their observed or unsupported status.
-Multi-hop graph queries remain unsupported.
+Multi-hop navigation is a separate optional GraphProjection capability; the
+existing `get-related` contract and results are unchanged.
+
+## Optional graph knowledge map
+
+After a compatible SolrCloud knowledge snapshot exists, explicitly run
+`fetchcore index graph-rebuild <repo>`. It derives the graph from canonical
+knowledge and publishes a separate generation. `graph-status` reports whether
+the active graph is still bound to the exact knowledge generation. A later
+knowledge-only sync makes graph navigation unavailable until another graph
+rebuild; lexical and one-hop retrieval remain available. Neither navigation
+nor status rebuilds an index. The graph configset is `fetchcore-graph-v1`.
+
+`navigate-graph` and MCP `navigate_graph` accept an exact
+`symbol:v1:sha256:<64 hex>` seed, `repository`, optional `revision`, direction,
+relation-type filters, `depth` (1–3), `max_nodes`, `max_edges`, `max_paths`,
+`expansion_budget`, `timeout_seconds` and `max_output_bytes`. The SDK request
+is `NavigateGraphRequest`; `RetrievalApplicationService.navigate_graph` returns
+`GraphNavigationResult`. Text names must first be resolved by `find_symbol`;
+ambiguous names are never selected silently. Each returned path names all of
+its individual edge IDs; every edge carries source and target provenance.
+The response also contains hydrated entities, inconclusive observations from
+the canonical corpus, extraction coverage, examined counts, consumed backend
+queries, diagnostics, and a `success`, `partial`, or `not_found` status.
+`fetchcore capabilities` advertises the declared `graph.bounded_navigation`
+flag for SolrCloud; `index graph-status` checks live readiness for a repository.
+
+```bash
+fetchcore index graph-status owner/repo --json
+fetchcore index graph-rebuild owner/repo --json
+fetchcore navigate-graph 'symbol:v1:sha256:<64-hex-digits>' --repo owner/repo \
+  --revision <indexed-revision> --relation-type calls --depth 3 \
+  --max-nodes 30 --max-edges 60 --max-paths 60 --expansion-budget 30 --json
+```
+
+The map is source-derived static evidence. A call edge does not prove runtime
+execution or a complete business flow. The extractor currently supplies
+declarations, imports and observed/resolved code relationships; endpoint,
+persistence and event-flow links are available only where canonical extraction
+provides exact evidence. An unsupported backend, absent graph, stale
+generation, changed schema or inconsistent source returns a typed error; it
+does not fall back to lexical search. Budget truncation and partial extraction
+are explicit. See [GraphProjection v1](../architecture/graph-projection-v1.md)
+for publication and recovery details.
 
 Example (after `fetchcore repo add .` and explicit `fetchcore index rebuild <repo>`):
 

@@ -244,6 +244,11 @@ class RuntimeInspectionService:
             "retrieval": retrieval,
             "indexing": indexing_values,
             "intent_translation": intent_translation,
+            "graph": {"bounded_navigation": (
+                self.config.backend == "solr"
+                and SolrSettings.from_mapping(self.config.backend_settings).deployment_mode
+                == "solrcloud"
+            )},
         }
 
     def doctor(self) -> DoctorReport:

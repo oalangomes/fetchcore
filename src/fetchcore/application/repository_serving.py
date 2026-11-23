@@ -19,6 +19,7 @@ from fetchcore.retrieval.contracts import KnowledgeSearchError, KnowledgeSearchR
 from .composition import BackendRegistry, EmbeddingProviderRegistry
 from .repositories import RepositoryApplicationService
 from .navigation import FindSymbolRequest, GetRelatedRequest, NavigationResult
+from .graph_navigation import NavigateGraphRequest, GraphNavigationResult
 from .runtime_config import (
     FetchCoreRuntimeConfig,
     load_runtime_config,
@@ -101,6 +102,13 @@ class RepositoryRetrievalApplicationService:
             registered, materialize=True, expected_revision=request.revision,
         ) as service:
             return service.get_related(replace(request, repository=registered.repository))
+
+    def navigate_graph(self, request: NavigateGraphRequest) -> GraphNavigationResult:
+        registered = self._navigation_repository(request.repository)
+        with self._retrieval_service(
+            registered, materialize=True, expected_revision=request.revision,
+        ) as service:
+            return service.navigate_graph(replace(request, repository=registered.repository))
 
     def _navigation_repository(self, reference: str | None) -> RegisteredRepository:
         if reference is None:
