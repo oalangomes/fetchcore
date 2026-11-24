@@ -121,98 +121,38 @@ Create an operator-owned YAML file using the
 `FETCHCORE_CONFIG` to its path, and run `fetchcore-mcp`. The MCP adapter
 delegates loading and composition to the application runtime boundary.
 
-## OPERATIONAL loopback Streamable HTTP
+## Docker Streamable HTTP: DEV, PROD, BENCHMARK
 
-The repository includes a single-binding OPERATIONAL MCP and Search Lab
-overlay for the existing OPERATIONAL Solr collection. The Lab API and MCP
-service load the same runtime file, so they share the repository, pinned
-revision, collection and hybrid retrieval configuration (BM25 + dense with
-RRF). Both use the configured Ollama embedding model. The Lab web UI
-reaches its API through the existing application boundary; MCP clients use the
-separate MCP endpoint. The overlay attaches to the existing
-`fetchcore-operational_default` network and does not start or recreate a
-backend. Workspace and runtime configuration mounts are read-only.
+Exactly three Compose projects are supported, each containing SolrCloud,
+API, the native FetchCore MCP v2 server and Search Lab:
 
-The default Ollama endpoint is `http://host.docker.internal:11434`; override it
-with `FETCHCORE_OPERATIONAL_OLLAMA_URL` when the embedding service uses another
-host-reachable URL. Ollama must already be running with `embeddinggemma` and
-768-dimensional vectors available. The overlay does not start Ollama or pull a
-model.
+| Environment | Compose file | MCP loopback |
+| --- | --- | --- |
+| DEV (`fetchcore-dev`) | `compose.dev.yml` | `http://127.0.0.1:18766/mcp` |
+| PROD (`fetchcore`) | `compose.yml` | `http://127.0.0.1:38766/mcp` |
+| BENCH (`fetchcore-benchmark`) | `compose.benchmark.yml` | `http://127.0.0.1:48766/mcp` |
 
-From the repository root, build and start the MCP service and Lab:
+The MCP adapter delegates to `RetrievalApplicationService` and provides
+`search`, `get_source`, `find_symbol`, `get_related` and opt-in
+`navigate_graph`. API and MCP communicate with their own SolrCloud service
+through Docker DNS `http://solr:8983/solr`.
 
-```bash
-docker compose -f infra/compose/operational-mcp.yml up -d --build mcp api lab
-```
+The productive runtime YAML and pinned source are operator-owned bind mounts
+required by `compose.yml`. These are not inferred from the moving developer
+checkout. `FETCHCORE_OPERATIONAL_RUNTIME_CONFIG` and
+`FETCHCORE_OPERATIONAL_SOURCE_PATH` must be explicitly set to verified
+absolute paths; aliases, revision, schema/fingerprints and embedding provider
+must match the active index. No implicit reindexing or runtime fallback occurs.
 
-The Lab is available at `http://127.0.0.1:38767`; its API and MCP process use
-the same configured application runtime. The MCP endpoint is
-`http://127.0.0.1:38766/mcp`. It exposes `search`, `get_source`, `find_symbol`
-and `get_related` through
-the native `fetchcore.serving.mcp` adapter.
-For the local OPERATIONAL Cloud service on port 28984, pin
-`FETCHCORE_OPERATIONAL_SOURCE_PATH` to a durable, clean repository clone at
-the published snapshot revision. The API and MCP mount it read-only at
-`/workspace`; the active development checkout can advance independently.
-Set `FETCHCORE_OPERATIONAL_RUNTIME_CONFIG` to the operator-owned serving YAML.
-If the embedding provider is unavailable, an explicitly configured lexical
-mode can serve the existing Solr snapshot after the reconciliation readiness
-checks pass. Dense and hybrid capability are then unavailable; the index and
-original hybrid configuration remain intact. See the [local transition report](../operations/local-solrcloud-only-2026-11-21.md)
-for the verified binding, smoke results and rollback.
-Use `docker compose -f infra/compose/operational-mcp.yml logs mcp` to inspect
-MCP startup failures and `docker compose -f infra/compose/operational-mcp.yml logs api lab`
-for Lab startup failures. Stop the stack with
-`docker compose -f infra/compose/operational-mcp.yml stop mcp api lab`. Before
-starting, verify that the workspace HEAD matches `runtime.revision` and that
-the configured collection snapshot is ready at the same revision.
+The earlier `infra/compose/operational-mcp.yml` is a compatibility alias of
+the **same** `fetchcore` Compose project, not a separate stack.
+The runtime reconciliation command now defaults to the root productive
+`compose.yml`. It still changes only API/MCP serving mounts after checking
+the selected source and snapshot; it does not rebuild Solr.
 
-### Reconcile after an OPERATIONAL index update
-
-After the index workflow succeeds, run explicit operator reconciliation on the
-host that owns the materialized workspace and Compose deployment. It reads the
-active Solr snapshot and verifies the workspace HEAD, schema, projection,
-indexing and embedding identities, and worktree currentness. A failed check
-leaves the serving binding unchanged. Host URLs below are used for validation;
-the generated serving config retains the container URLs.
-
-```bash
-export FETCHCORE_OPERATIONAL_RUNTIME_CONFIG="$HOME/.config/fetchcore/operational-mcp.runtime.yml"
-mkdir -p "$(dirname "$FETCHCORE_OPERATIONAL_RUNTIME_CONFIG")"
-PYTHONPATH=src python -m fetchcore.operational.reconcile \
-  --config infra/compose/operational-mcp.runtime.yml \
-  --workspace "$PWD" \
-  --solr-url http://127.0.0.1:38983/solr \
-  --ollama-url http://127.0.0.1:11434 \
-  --output "$FETCHCORE_OPERATIONAL_RUNTIME_CONFIG" \
-  --activate
-```
-
-Omit `--activate` for a read-only compatibility check. Keep
-`FETCHCORE_OPERATIONAL_RUNTIME_CONFIG` in the operator's Compose environment
-for later `docker compose up` commands. With `--activate`, the command first
-reads `docker compose config --format json` with the activation environment.
-Both `mcp` and `api` must bind the validated host workspace at the runtime's
-container workspace path and the generated runtime file at
-`/etc/fetchcore/operational-mcp.yml`, read-only. A different checkout, missing
-or overlapping mount, or runtime environment override is rejected as
-`serving_binding_mismatch` before any runtime file is written or container
-is recreated. Use `--compose-file` to select the deployment that mounts the
-authorized workspace when working with multiple checkouts.
-Overlap checks include `configs` and `secrets`, their default destinations,
-and normalized container paths. Mounts outside the workspace and runtime
-file remain permitted; malformed mount declarations are rejected.
-
-The command replaces only the
-operator-owned runtime file and force-recreates `mcp` and `api` with
-`--no-deps`, refreshing Docker Desktop/WSL file bind mounts. It does not
-recreate Solr, snapshots or the Lab web container. The Lab proxy uses Docker
-DNS with a one-second cache so it can follow the replacement API's address
-without a restart. Existing Lab images must be rebuilt once to adopt this
-proxy configuration. Schema, snapshot and connectivity failures retain their
-observed error categories; an unknown indexed revision is not evidence of a
-revision mismatch. A dirty worktree or unknown
-change coverage blocks activation. No fetch, checkout or reindex is performed.
+See [three-environment Compose and migration](../operations/docker-compose-three-environments.md)
+before starting or recreating the productive stack. Do not run
+`docker compose down -v` in DEV or PROD.
 
 ## Historical environment contract
 
