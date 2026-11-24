@@ -275,134 +275,62 @@ multi-repository federation (#42) nor dynamic Solr collection enumeration.
 The UI cannot change indexing policy or activate dense/hybrid on an
 unprepared index (#123).
 
-## Docker Compose: shared Search Lab
+## Docker Compose: three supported environments
 
-Start the selected DEV backend and then attach the app to its existing network:
-
-```bash
-python scripts/shared_infra.py up --environment dev --repository oalangomes/fetchcore --backend solr
-python scripts/shared_infra.py app --environment dev --repository oalangomes/fetchcore --backend solr
-```
-
-The app action does not start a backend or create a core, collection, alias or
-snapshot. It requires service readiness and joins the existing
-`fetchcore-shared_default` network. It passes `solr:8983/solr` to containers
-while host CLI commands use `127.0.0.1:18983/solr`. The app project is
-`fetchcore-lab`; repeat the command to apply app changes without adding a
-second backend container. Open `http://127.0.0.1:5173` for web/API and
-`http://127.0.0.1:8766/mcp` for Streamable HTTP MCP. Set
-`FETCHCORE_SOURCE_PATH` to an absolute path before `app` when mounting a
-different DEV repository. Set `--bench-repository` and `--bench-source-path`
-to authorize a different BENCH repository; the second path is mounted read-only.
-
-An existing operator-managed backend may be selected with `--shared-endpoints`.
-For app containers, also provide `--container-url` with a URL reachable from
-the app network; container `localhost` does not refer to the host. The selected
-resource still has to be created and indexed explicitly. The server-owned
-`FETCHCORE_EXPLORER_TARGETS` allowlist controls extra targets; the browser
-cannot supply endpoint URLs or add repository access.
-
-The interface labels API service health separately from on-demand retrieval
-readiness and indexing capability. An empty OPERATIONAL backend is reported as
-blocked for retrieval even if its service is healthy. OpenSearch/Qdrant
-operational indexing remains unavailable and fails explicitly (#123).
-
-DEV and BENCH select separate logical resources in the same web, API and MCP
-processes. OPERATIONAL uses an isolated persistent backend project. Stop only
-the app:
+The FetchCore Search Lab is the `lab` service **inside** each of the three
+canonical Compose projects. There is no independent Lab project.
 
 ```bash
-docker compose -p fetchcore-lab -f infra/compose/app.yml -f infra/compose/shared-app.yml stop
+# DEV: SolrCloud, API, MCP, Search Lab; no implicit indexing.
+docker compose -f compose.dev.yml up -d --build
+
+# Separate disposable BENCH (only when required).
+docker compose -f compose.benchmark.yml up -d --build
 ```
 
-The root `compose.yml` and `tools/explorer/compose.yaml` are legacy
-compatibility entry points. They still create the old `fetchcore` Solr instance
-on port 8983 and keep its volume. Hosted CI deliberately uses an ephemeral
-fixture Solr instead of a developer-host endpoint. Do not use `down -v` when
-preserving existing data.
+DEV: Search Lab `http://127.0.0.1:18767`, MCP
+`http://127.0.0.1:18766/mcp`, SolrCloud
+`http://127.0.0.1:18983/solr`.
 
-### MCP client setup
+BENCH: Search Lab `http://127.0.0.1:48767`, MCP
+`http://127.0.0.1:48766/mcp`, SolrCloud
+`http://127.0.0.1:48983/solr`.
 
-Point a Streamable HTTP MCP client to `http://127.0.0.1:8766/mcp`.
-The classic `fetchcore-mcp` stdio command remains available independently.
-Both call the same `RetrievalApplicationService`, never the backend directly.
-All exposed ports are loopback-only; this is **unauthenticated, developer-only**
-deployment, not a public API.
+PROD: Search Lab `http://127.0.0.1:38767`, MCP
+`http://127.0.0.1:38766/mcp`, SolrCloud
+`http://127.0.0.1:28984/solr`. The productive `compose.yml` must be adopted
+only via the [reviewed migration procedure](../../docs/operations/docker-compose-three-environments.md);
+it requires a verified pinned source and runtime YAML.
 
-## Run without Docker (Solr is the default backend)
+Within each project, API/MCP use `http://solr:8983/solr` by Docker DNS.
+The Search Lab does not create collections or snapshots automatically, and
+retrieval readiness may be unavailable before explicitly indexing DEV/BENCH.
+The classic `fetchcore-mcp` stdio command remains independent of containers.
 
-Requires Python 3.11+, Node.js 20+ and Docker for the optional managed Solr example.
-**Search Lab starts with Solr/BM25 lexical retrieval by default**, instead of `local-semantic`.
-The FetchCore SDK, CLI, MCP and normal `load_runtime_config()` defaults are unchanged.
-An explicit operator-selected backend in `FETCHCORE_BACKEND` or `FETCHCORE_CONFIG` takes precedence.
-Unavailable, empty or incompatible Solr collections fail explicitly: there is **no silent local fallback**.
+## Run Search Lab processes directly (optional, without another Docker stack)
 
-### First-time Solr setup
-
-From the repository root:
+For host-side API or UI development, reuse the existing DEV SolrCloud service
+instead of creating another container. Configure host-side API to use
+`http://127.0.0.1:18983/solr` and the explicit DEV index/alias.
+On this Windows/WSL Docker Desktop setup, published-port requests can exhibit
+~1 second overhead; performance benchmarks must instead run inside the
+`fetchcore-benchmark` network.
 
 ```bash
 python -m pip install -e .
 python -m pip install -r tools/explorer/api/requirements.txt
-
-source infra/images.lock
-scripts/ci/docker-pull.sh "$FETCHCORE_SOLR_IMAGE"
-docker run -d --name fetchcore-search-lab-solr \
-  -p 127.0.0.1:8983:8983 \
-  -v "$PWD/infra/solr/configset:/fetchcore-configset:ro" \
-  -v "$PWD/infra/solr/start-cloud.sh:/fetchcore-start-cloud.sh:ro" \
-  -e FETCHCORE_SOLR_COLLECTION=fetchcore-lab \
-  -e FETCHCORE_SOLR_CONFIGSET=fetchcore-projection-v3 \
-  -e FETCHCORE_SOLR_CREATE_COLLECTION=true \
-  "$FETCHCORE_SOLR_IMAGE" sh /fetchcore-start-cloud.sh
-```
-
-After Solr has started, bootstrap and index this repository (or point at a separately provisioned and indexed collection):
-
-```bash
-export FETCHCORE_INDEX_WORKSPACE="$PWD"
-export FETCHCORE_INDEX_REPOSITORY="oalangomes/fetchcore"
-export FETCHCORE_INDEX_BACKEND="solr"
-export FETCHCORE_INDEX_BACKEND_SETTINGS='{"url":"http://127.0.0.1:8983/solr","collection":"fetchcore-lab","projection_version":"3"}'
-
-fetchcore index bootstrap
-fetchcore index sync
-```
-
-### Start the Search Lab API
-
-Terminal 1 (from the repository root):
-
-```bash
 export FETCHCORE_WORKSPACE="$PWD"
-export FETCHCORE_REPOSITORY="oalangomes/fetchcore"
-export FETCHCORE_SOLR_URL="http://127.0.0.1:8983/solr"
-export FETCHCORE_SOLR_COLLECTION="fetchcore-lab"
-# FETCHCORE_BACKEND is intentionally unset: Search Lab selects Solr by default.
-
+export FETCHCORE_REPOSITORY=oalangomes/fetchcore
+export FETCHCORE_BACKEND=solr
+export FETCHCORE_SOLR_URL=http://127.0.0.1:18983/solr
+export FETCHCORE_SOLR_COLLECTION=fetchcore-dev
 python -m uvicorn tools.explorer.api.app:app --host 127.0.0.1 --port 8765
 ```
 
-Terminal 2:
-
-```bash
-cd tools/explorer/web
-npm install
-npm run dev
-```
-
-Open **http://127.0.0.1:5173**. Vite proxies `/api` to the loopback-only API.
-Starting the UI does not provision a collection, start Solr or trigger indexing. The Search Lab never reindexes on a query.
-
-To point the Explorer at an existing Solr, OpenSearch or Qdrant installation,
-use operator-owned `FETCHCORE_CONFIG` or an explicit `FETCHCORE_BACKEND`.
-Retrieval mode (lexical/dense/hybrid) remains controlled by the operator's retrieval configuration;
-the `discovery`/`targeted`/`repository_source` request mode is a separate concept.
-Solr lexical/BM25 works without an embedding provider; enable dense/hybrid only after the
-existing embedding, schema and projection requirements are satisfied.
-
-**Security:** bind both processes to loopback. There is no HTTP authentication or wildcard CORS.
-One authorized repository binding is used; the UI cannot select arbitrary repository workspaces or endpoints.
+Start the Vite UI separately from `tools/explorer/web` after
+`npm install` / `npm run dev`. No source/index mutation occurs.
+Solr lexical retrieval works without Ollama when explicitly configured and
+indexed; never silently fall back on a schema or snapshot mismatch.
 
 ## Test
 
