@@ -124,162 +124,6 @@ def test_run_passes_explicit_host_ollama_url_to_requested_command(monkeypatch):
     assert run.call_args.kwargs["env"]["FETCHCORE_OLLAMA_URL"] == endpoint
 
 
-def test_app_uses_existing_network_and_same_resource_without_starting_backend(monkeypatch):
-    run = Mock(return_value=subprocess.CompletedProcess([], 0, ""))
-    ready = Mock(return_value={"status": "ready"})
-    monkeypatch.setattr(infra.subprocess, "run", run)
-    monkeypatch.setattr(infra, "wait_ready", ready)
-    invoke(monkeypatch, "app", "--environment", "dev", "--repository", "a/b")
-    command = run.call_args.args[0]
-    assert command[-4:] == ["--no-deps", "api", "mcp", "web"]
-    assert command[command.index("-p") + 1] == "fetchcore-lab"
-    assert "shared-app.yml" in " ".join(command)
-    app_env = run.call_args.kwargs["env"]
-    assert app_env["FETCHCORE_INFRA_PROJECT"] == "fetchcore-shared"
-    assert app_env["FETCHCORE_CONTAINER_SOLR_URL"] == "http://solr:8983/solr"
-    assert app_env["FETCHCORE_SOLR_COLLECTION"].startswith("fc-dev-")
-    assert json.loads(app_env["FETCHCORE_CONTAINER_INDEX_BACKEND_SETTINGS"])["collection"] == app_env[
-        "FETCHCORE_SOLR_COLLECTION"
-    ]
-    bench = json.loads(app_env["FETCHCORE_EXPLORER_TARGETS"])[0]
-    assert bench["id"] == "bench"
-    assert bench["environment"] == "bench"
-    assert bench["repository"] == app_env["FETCHCORE_REPOSITORY"]
-    assert bench["backend_settings"]["collection"] != app_env["FETCHCORE_SOLR_COLLECTION"]
-    assert bench["backend_settings"]["url"] == app_env["FETCHCORE_CONTAINER_SOLR_URL"]
-    ready.assert_called_once()
-
-
-def test_one_lab_can_bind_another_bench_repository_and_backend(monkeypatch, tmp_path):
-    run = Mock(return_value=subprocess.CompletedProcess([], 0, ""))
-    ready = Mock(return_value={"status": "ready"})
-    monkeypatch.setattr(infra.subprocess, "run", run)
-    monkeypatch.setattr(infra, "wait_ready", ready)
-    invoke(monkeypatch, "app", "--environment", "dev", "--repository", "a/dev",
-           "--bench-repository", "b/Bench", "--bench-backend", "opensearch",
-           "--bench-source-path", str(tmp_path))
-    app_env = run.call_args.kwargs["env"]
-    bench = json.loads(app_env["FETCHCORE_EXPLORER_TARGETS"])[0]
-    assert bench["repository"] == "b/Bench"
-    assert bench["backend"] == "opensearch"
-    assert bench["backend_settings"]["index"].startswith("fc-bench-bench-")
-    assert app_env["FETCHCORE_BENCH_SOURCE_PATH"] == str(tmp_path)
-    assert ready.call_count == 2
-
-
-@pytest.mark.parametrize("environment", ["bench", "operational"])
-def test_app_refuses_per_environment_duplicate_projects(monkeypatch, environment):
-    run = Mock(side_effect=AssertionError("must not start duplicate Lab"))
-    monkeypatch.setattr(infra.subprocess, "run", run)
-    with pytest.raises(SystemExit):
-        invoke(monkeypatch, "app", "--environment", environment, "--repository", "a/b")
-    run.assert_not_called()
-
-
-def test_external_app_requires_container_reachable_endpoint(monkeypatch, tmp_path):
-    path = tmp_path / "external.json"
-    path.write_text(json.dumps({"solr": "http://127.0.0.1:8983/solr"}))
-    run = Mock(side_effect=AssertionError("must not start app"))
-    monkeypatch.setattr(infra.subprocess, "run", run)
-    monkeypatch.setattr(infra, "wait_ready", Mock(return_value={"status": "ready"}))
-    with pytest.raises(ValueError, match="container-url"):
-        invoke(monkeypatch, "app", "--environment", "dev", "--repository", "a/b",
-               "--shared-endpoints", str(path))
-    run.assert_not_called()
-
-
-def test_external_shared_app_rejects_isolated_container_port():
-    config = infra.route("bench", "a/b")
-    with pytest.raises(ValueError, match="isolated-service port"):
-        infra.container_routing(
-            config, selected_backend="solr", external={"solr"},
-            container_url="http://operational-host:38983/solr",
-        )
-
-
-@pytest.mark.parametrize("environment", ["dev", "operational", "bench"])
-def test_cleanup_refuses_shared_or_persistent_instances(monkeypatch, environment):
-    run = Mock()
-    monkeypatch.setattr(infra.subprocess, "run", run)
-    with pytest.raises(SystemExit):
-        invoke(monkeypatch, "cleanup", "--environment", environment, "--repository", "a/b")
-    run.assert_not_called()
-
-
-def test_performance_refuses_shared_services(monkeypatch):
-    with pytest.raises(SystemExit):
-        invoke(monkeypatch, "env", "--environment", "bench", "--repository", "a/b",
-               "--performance", "--exclusive-host")
-
-
-def test_cleanup_checks_all_ownership_before_deleting(monkeypatch):
-    run = Mock(side_effect=[
-        subprocess.CompletedProcess([], 0, "abc\ndef\n"),
-        subprocess.CompletedProcess([], 0, json.dumps([{"Config": {"Labels": {
-            "io.fetchcore.owner": infra.OWNER,
-            "com.docker.compose.project": "fetchcore-bench-dedicated",
-        }}}])),
-        subprocess.CompletedProcess([], 0, json.dumps([{"Config": {"Labels": {}}}])),
-    ])
-    monkeypatch.setattr(infra.subprocess, "run", run)
-    with pytest.raises(ValueError, match="unowned"):
-        invoke(monkeypatch, "cleanup", "--environment", "bench", "--repository", "a/b",
-               "--dedicated", "--confirm-project", "fetchcore-bench-dedicated")
-    assert all(call.args[0][1] != "rm" for call in run.call_args_list)
-
-
-def test_compose_has_no_implicit_resource_or_model_creation():
-    compose = yaml.safe_load((ROOT / "infra/compose/shared.yml").read_text())
-    assert compose["services"]["solr"]["command"] == ["sh", "/fetchcore-start-shared.sh"]
-    assert "profiles" not in compose["services"]["solr"]
-    assert compose["services"]["opensearch"]["profiles"] == ["adapter-tests"]
-    assert compose["services"]["qdrant"]["profiles"] == ["adapter-tests"]
-    assert compose["volumes"]["solrcloud-data"]["labels"]["io.fetchcore.owner"]
-    ollama = yaml.safe_load((ROOT / "infra/compose/ollama.yml").read_text())
-    assert "command" not in ollama["services"]["ollama"]
-    assert "shared.yml" not in (ROOT / "compose.yml").read_text()
-
-
-def test_operational_serving_can_bind_a_pinned_source_checkout():
-    overlay = (ROOT / "infra/compose/operational-mcp.yml").read_text()
-    assert overlay.count("${FETCHCORE_OPERATIONAL_SOURCE_PATH:-../..}:/workspace:ro") == 2
-
-
-def test_app_projects_keep_api_dns_private_and_reuse_external_infra_network():
-    overlay = yaml.safe_load((ROOT / "infra/compose/shared-app.yml").read_text())
-    assert overlay["services"]["web"]["networks"] == ["default"]
-    assert overlay["services"]["api"]["networks"] == ["default", "infra"]
-    assert overlay["services"]["mcp"]["networks"] == ["default", "infra"]
-    assert overlay["networks"]["infra"]["external"] is True
-
-
-def test_up_rejects_unowned_persistent_volume(monkeypatch):
-    run = Mock(side_effect=[
-        subprocess.CompletedProcess([], 0, ""),
-        subprocess.CompletedProcess([], 0, "fetchcore-operational_solr-data\n"),
-        subprocess.CompletedProcess([], 0, json.dumps([{"Labels": {}}])),
-    ])
-    monkeypatch.setattr(infra.subprocess, "run", run)
-    with pytest.raises(ValueError, match="unowned volume"):
-        invoke(monkeypatch, "up", "--environment", "operational", "--repository", "a/b")
-    assert all("up" not in call.args[0] for call in run.call_args_list)
-
-
-def test_cleanup_owned_containers_retains_volumes(monkeypatch):
-    run = Mock(side_effect=[
-        subprocess.CompletedProcess([], 0, "abc\n"),
-        subprocess.CompletedProcess([], 0, json.dumps([{"Config": {"Labels": {
-            "io.fetchcore.owner": infra.OWNER,
-            "com.docker.compose.project": "fetchcore-bench-dedicated",
-        }}}])),
-        subprocess.CompletedProcess([], 0),
-    ])
-    monkeypatch.setattr(infra.subprocess, "run", run)
-    invoke(monkeypatch, "cleanup", "--environment", "bench", "--repository", "a/b",
-           "--dedicated", "--confirm-project", "fetchcore-bench-dedicated")
-    assert run.call_args.args[0] == ["docker", "rm", "-f", "abc"]
-
-
 def test_shared_endpoint_reuse_preserves_resource_and_isolation(tmp_path):
     path = tmp_path / "endpoints.json"
     path.write_text(json.dumps({"solr": "http://localhost:8983/solr/",
@@ -311,74 +155,6 @@ def test_invalid_shared_endpoints_fail_closed(tmp_path, endpoints):
     path.write_text(json.dumps(endpoints))
     with pytest.raises(ValueError):
         infra.shared_endpoints(infra.route("dev", "a/b"), path)
-
-
-def test_up_never_adopts_external_service(monkeypatch, tmp_path):
-    path = tmp_path / "endpoints.json"
-    path.write_text(json.dumps({"solr": "http://localhost:8983/solr"}))
-    run = Mock()
-    monkeypatch.setattr(infra.subprocess, "run", run)
-    with pytest.raises(SystemExit):
-        invoke(monkeypatch, "up", "--environment", "dev", "--repository", "a/b",
-               "--shared-endpoints", str(path))
-    run.assert_not_called()
-
-
-def test_up_never_recreates_existing_containers(monkeypatch):
-    run = Mock(return_value=subprocess.CompletedProcess([], 0, ""))
-    monkeypatch.setattr(infra.subprocess, "run", run)
-    monkeypatch.setattr(infra, "wait_ready", Mock(return_value={"status": "ready"}))
-    invoke(monkeypatch, "up", "--environment", "operational", "--repository", "a/b")
-    assert run.call_args.args[0][-4:] == ["up", "-d", "--no-recreate", "solr"]
-
-
-def test_legacy_bench_solr_requires_explicit_container_replacement(monkeypatch):
-    def run_command(command, **kwargs):
-        if command[:2] == ["docker", "inspect"]:
-            detail = [{"Config": {"Labels": {"com.docker.compose.service": "solr"}},
-                       "Mounts": [{"Type": "volume", "Name":
-                                   "fetchcore-bench-dedicated_solr-data"}]}]
-            return subprocess.CompletedProcess(command, 0, json.dumps(detail))
-        return subprocess.CompletedProcess(command, 0, "")
-
-    run = Mock(side_effect=run_command)
-    monkeypatch.setattr(infra.subprocess, "run", run)
-    monkeypatch.setattr(infra, "owned_containers", Mock(return_value=["legacy-solr-id"]))
-    monkeypatch.setattr(infra, "validate_volumes", Mock())
-    monkeypatch.setattr(infra, "wait_ready", Mock(return_value={"status": "ready"}))
-    args = ("up", "--environment", "bench", "--repository", "a/b", "--dedicated")
-    with pytest.raises(RuntimeError, match="legacy BENCH Solr"):
-        invoke(monkeypatch, *args)
-    assert not any(call.args[0][:2] == ["docker", "compose"] for call in run.call_args_list)
-
-    invoke(monkeypatch, *args, "--replace-legacy-bench-solr")
-    assert run.call_args.args[0][-4:] == ["up", "-d", "--force-recreate", "solr"]
-
-
-def test_legacy_bench_replacement_flag_is_scoped(monkeypatch):
-    with pytest.raises(SystemExit):
-        invoke(monkeypatch, "up", "--environment", "dev", "--repository", "a/b",
-               "--replace-legacy-bench-solr")
-
-
-def test_up_starts_selected_backend_and_waits_for_readiness(monkeypatch):
-    run = Mock(return_value=subprocess.CompletedProcess([], 0, ""))
-    ready = Mock(return_value={"backend": "qdrant", "status": "ready"})
-    monkeypatch.setattr(infra.subprocess, "run", run)
-    monkeypatch.setattr(infra, "wait_ready", ready)
-    invoke(monkeypatch, "up", "--environment", "bench", "--repository", "a/b",
-           "--backend", "qdrant")
-    assert run.call_args.args[0][-4:] == ["up", "-d", "--no-recreate", "qdrant"]
-    ready.assert_called_once()
-
-
-def test_ollama_cannot_be_started_by_shared_infra(monkeypatch):
-    run = Mock()
-    monkeypatch.setattr(infra.subprocess, "run", run)
-    with pytest.raises(SystemExit):
-        invoke(monkeypatch, "up", "--environment", "operational", "--repository", "a/b",
-               "--backend", "ollama")
-    run.assert_not_called()
 
 
 def test_qdrant_prepare_requires_explicit_vector_dimensions(monkeypatch):
@@ -640,3 +416,13 @@ def test_qdrant_prepare_rejects_malformed_inventory_before_creation(monkeypatch)
     with pytest.raises(ValueError, match="invalid collection inventory"):
         infra._qdrant_resource(infra.route("bench", "a/b", "qdrant"), "a/b", True, 768)
     assert all(call.args[0] == "GET" for call in request.call_args_list)
+
+
+def test_legacy_mutating_compose_commands_are_retired(monkeypatch):
+    run = Mock(side_effect=AssertionError('must not create another Compose project'))
+    monkeypatch.setattr(infra.subprocess, 'run', run)
+    for action in ('up', 'app', 'cleanup'):
+        with pytest.raises(SystemExit) as rejected:
+            invoke(monkeypatch, action, '--environment', 'dev', '--repository', 'a/b')
+        assert rejected.value.code == 2
+    run.assert_not_called()
