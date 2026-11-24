@@ -84,59 +84,38 @@ docker run --rm -i \
 
 The image runs as a non-root user and treats the mounted repository as read-only.
 
-## Shared developer infrastructure and Search Lab
+## Docker development, operational and benchmark environments
 
-Start or reuse the DEV backend explicitly, then start the Search Lab on its
-existing network. No resource is prepared or indexed by either command.
+FetchCore has exactly three **supported** Docker Compose projects. Each has
+SolrCloud, API, MCP and Search Lab on a private project network:
 
-```bash
-python scripts/shared_infra.py up --environment dev --repository oalangomes/fetchcore --backend solr
-python scripts/shared_infra.py app --environment dev --repository oalangomes/fetchcore --backend solr
-```
+- `fetchcore-dev` (`compose.dev.yml`)
+- `fetchcore` operational (`compose.yml`)
+- `fetchcore-benchmark` (`compose.benchmark.yml`)
 
-Open `http://127.0.0.1:5173`. The API is proxied at `/api`, and MCP Streamable
-HTTP is at `http://127.0.0.1:8766/mcp`. The selected Solr backend is published at
-`http://127.0.0.1:18983/solr`; app containers use `solr:8983/solr` on the existing
-`fetchcore-shared_default` network. DEV and BENCH share the service but use
-different logical resources. Search Lab shows the authorized environment,
-backend, repository, resource and on-demand retrieval readiness. API health alone
-does not mean that an index snapshot exists.
+DEV and OPERATIONAL use their existing external SolrCloud volumes; BENCH is
+disposable. Starting the services does not create a collection, index a
+repository or change a snapshot. All internal retrieval uses
+`http://solr:8983/solr`, not a published Docker Desktop port.
 
-Inspect routing and readiness before writing:
+From the repository root:
 
 ```bash
-python scripts/shared_infra.py env --environment dev --repository oalangomes/fetchcore
-python scripts/shared_infra.py ready --environment dev --repository oalangomes/fetchcore --backend solr
-python scripts/shared_infra.py run --environment dev --repository oalangomes/fetchcore -- fetchcore readiness --json
+docker compose -f compose.dev.yml up -d --build
+# Search Lab: http://127.0.0.1:18767
+# MCP: http://127.0.0.1:18766/mcp
+# DEV Solr: http://127.0.0.1:18983/solr
 ```
 
-Prepare a Solr resource with `python -m fetchcore.operational.solr_runtime prepare`
-using the emitted URL, resource and repository. Explicit first creation uses
-`--provision-mode provision_if_missing --create-if-missing`; later checks use
-`--provision-mode reuse_only`.
-Indexing then requires an explicit `fetchcore index bootstrap`, registration,
-plan and sync. See [shared infrastructure](shared-development-infrastructure.md)
-and [repository indexing](repository-indexing.md) for the complete commands and
-fingerprint checks. The backend-neutral CLI, API, MCP and SDK use the same
-`FETCHCORE_*` binding when supplied explicitly.
+**Production requires a deliberate migration** from the historical Solr and
+MCP projects, an independently verified backup, and pinned
+`FETCHCORE_OPERATIONAL_SOURCE_PATH` and
+`FETCHCORE_OPERATIONAL_RUNTIME_CONFIG`. Do not execute `docker compose up`
+against PROD as a development default.
 
-The same Lab exposes an authorized BENCH target on a separate logical resource.
-Use `--bench-repository` and `--bench-source-path` when BENCH uses a different
-repository. A performance claim requires `--dedicated --performance
---exclusive-host` and the dedicated BENCH project. OPERATIONAL uses its own
-persistent project, volumes and `reuse_only` policy. Stop an app project without
-removing its backend data:
-
-```bash
-docker compose -p fetchcore-lab -f infra/compose/app.yml -f infra/compose/shared-app.yml stop
-```
-
-The root `compose.yml` and `tools/explorer/compose.yaml` remain legacy
-compatibility entry points for existing CI and deployments. They create a
-separate `fetchcore` Solr instance on port 8983; use them only when that
-isolated legacy stack is intended. `docker compose down` without `-v` preserves
-its named volumes. The shared infrastructure tool never deletes DEV or
-OPERATIONAL volumes.
+See the [three-project operational runbook](../operations/docker-compose-three-environments.md)
+for ports, volumes, commands and rollback; historical shared infrastructure
+instructions describe the previous topology and are not authorized start paths.
 
 ## Contributor loop
 
