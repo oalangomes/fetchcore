@@ -50,15 +50,9 @@ docker-smoke: docker-build
 	$(DOCKER) run --rm --entrypoint sh $(IMAGE) -c 'test "$$(id -u)" -ne 0 && command -v fetchcore-mcp >/dev/null && python -c "import fetchcore; import importlib.metadata; assert importlib.metadata.version(\"fetchcore\")"'
 
 compose-config:
-	$(PYTHON) scripts/shared_infra.py run --environment dev --repository oalangomes/fetchcore -- $(DOCKER) compose --env-file /dev/null -f infra/compose/shared.yml config --quiet
-	$(PYTHON) scripts/shared_infra.py run --environment dev --repository oalangomes/fetchcore -- $(DOCKER) compose --env-file /dev/null -f infra/compose/app.yml -f infra/compose/shared-app.yml config --quiet
-	$(DOCKER) compose config --quiet
-	$(DOCKER) compose --profile runtime --profile indexing config --quiet
-	$(DOCKER) compose -f tools/explorer/compose.yaml config --quiet
-	$(DOCKER) compose -f infra/compose/solr.yml config --quiet
-	$(DOCKER) compose -f infra/compose/opensearch.yml config --quiet
-	$(DOCKER) compose -f infra/compose/qdrant.yml config --quiet
-	FETCHCORE_BACKEND=opensearch $(DOCKER) compose -f infra/compose/app.yml -f infra/compose/opensearch.yml config --quiet
-	FETCHCORE_BACKEND=qdrant-vector $(DOCKER) compose -f infra/compose/app.yml -f infra/compose/qdrant.yml config --quiet
+	FETCHCORE_OPERATIONAL_SOURCE_PATH=./ FETCHCORE_OPERATIONAL_RUNTIME_CONFIG=./infra/compose/operational-mcp.runtime.yml $(DOCKER) compose -f compose.yml config --quiet
+	$(DOCKER) compose -f compose.dev.yml config --quiet
+	$(DOCKER) compose -f compose.benchmark.yml config --quiet
+	$(PYTHON) scripts/check_compose_fleet.py
 
 runtime-check: compose-config docker-smoke
