@@ -566,6 +566,15 @@ def main() -> None:
     parser.add_argument("--vector-dimensions", type=int,
                         help="Required when explicitly creating a Qdrant collection")
     args, command = parser.parse_known_args()
+    # Old up/app/cleanup paths created fetchcore-shared, fetchcore-lab and
+    # fetchcore-bench-dedicated. They are retired: only the three root Compose
+    # entrypoints may own local FetchCore infrastructure.
+    if args.action in {"up", "app", "cleanup"}:
+        parser.error(
+            "legacy Docker lifecycle is retired; use compose.dev.yml, "
+            "compose.yml or compose.benchmark.yml (see "
+            "docs/operations/docker-compose-three-environments.md)"
+        )
     if command[:1] == ["--"]:
         command = command[1:]
     if command and args.action != "run":
