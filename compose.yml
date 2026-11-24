@@ -1,6 +1,36 @@
-# Legacy Standalone entry point retained for CI and existing deployments.
-# SolrCloud DEV: scripts/shared_infra.py up, then scripts/shared_infra.py app.
+# Productive/operational FetchCore Compose project. Never run down -v.
 name: fetchcore
-include:
-  - ./infra/compose/app.yml
-  - ./infra/compose/solr-standalone.yml
+
+services:
+  solr:
+    extends: {file: infra/compose/fetchcore-stack.yml, service: solr}
+    ports: ["127.0.0.1:28984:8983"]
+
+  api:
+    extends: {file: infra/compose/fetchcore-stack.yml, service: api}
+    environment:
+      FETCHCORE_ENVIRONMENT: operational
+      FETCHCORE_CONFIG: /etc/fetchcore/operational-mcp.yml
+    volumes:
+      - ${FETCHCORE_OPERATIONAL_SOURCE_PATH:?set verified immutable operational source path}:/workspace:ro
+      - ${FETCHCORE_OPERATIONAL_RUNTIME_CONFIG:?set verified operator runtime file}:/etc/fetchcore/operational-mcp.yml:ro
+
+  mcp:
+    extends: {file: infra/compose/fetchcore-stack.yml, service: mcp}
+    environment:
+      FETCHCORE_ENVIRONMENT: operational
+      FETCHCORE_CONFIG: /etc/fetchcore/operational-mcp.yml
+    volumes:
+      - ${FETCHCORE_OPERATIONAL_SOURCE_PATH:?set verified immutable operational source path}:/workspace:ro
+      - ${FETCHCORE_OPERATIONAL_RUNTIME_CONFIG:?set verified operator runtime file}:/etc/fetchcore/operational-mcp.yml:ro
+    ports: ["127.0.0.1:38766:8766"]
+
+  lab:
+    extends: {file: infra/compose/fetchcore-stack.yml, service: lab}
+    ports: ["127.0.0.1:38767:8080"]
+
+volumes:
+  solrcloud-data:
+    # Reuse the productive data volume; no new empty volume on misconfiguration.
+    external: true
+    name: fetchcore-operational-cloud_solrcloud-data
