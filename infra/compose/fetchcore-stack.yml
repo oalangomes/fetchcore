@@ -55,10 +55,10 @@ services:
           | grep -E '"live_nodes"[[:space:]]*:[[:space:]]*\[[[:space:]]*"' >/dev/null
           && curl -fsS 'http://127.0.0.1:8983/solr/admin/configs?action=LIST&wt=json'
           | grep -F 'fetchcore-projection-v3' >/dev/null
-    interval: 10s
-    timeout: 5s
-    start_period: 90s
-    retries: 12
+      interval: 10s
+      timeout: 5s
+      start_period: 90s
+      retries: 12
     restart: unless-stopped
 
   api:
