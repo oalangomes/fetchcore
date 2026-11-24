@@ -4,17 +4,21 @@ name: fetchcore-benchmark
 services:
   solr:
     extends: {file: infra/compose/fetchcore-stack.yml, service: solr}
+    environment:
+      FETCHCORE_SOLR_COLLECTION: ${FETCHCORE_BENCHMARK_COLLECTION:-fetchcore-bench}
     ports: ["127.0.0.1:48983:8983"]
 
   api:
     extends: {file: infra/compose/fetchcore-stack.yml, service: api}
     environment:
       FETCHCORE_ENVIRONMENT: bench
+      FETCHCORE_SOLR_COLLECTION: ${FETCHCORE_BENCHMARK_COLLECTION:-fetchcore-bench}
 
   mcp:
     extends: {file: infra/compose/fetchcore-stack.yml, service: mcp}
     environment:
       FETCHCORE_ENVIRONMENT: bench
+      FETCHCORE_SOLR_COLLECTION: ${FETCHCORE_BENCHMARK_COLLECTION:-fetchcore-bench}
     ports: ["127.0.0.1:48766:8766"]
 
   lab:
