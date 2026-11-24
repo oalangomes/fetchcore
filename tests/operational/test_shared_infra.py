@@ -2,13 +2,11 @@
 import importlib.util
 import json
 from pathlib import Path
-import subprocess
 import sys
 from unittest.mock import Mock
 import xml.etree.ElementTree as ET
 
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("shared_infra", ROOT / "scripts/shared_infra.py")
