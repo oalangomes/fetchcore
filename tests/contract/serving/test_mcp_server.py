@@ -22,5 +22,5 @@ def test_mcp_server_registers_p0_tools(tmp_path: Path) -> None:
     tools = asyncio.run(server.list_tools())
 
     assert {tool.name for tool in tools} == {
-        "search", "get_source", "find_symbol", "get_related",
+        "search", "get_source", "find_symbol", "get_related", "navigate_graph",
     }

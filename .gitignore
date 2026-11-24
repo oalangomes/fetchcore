@@ -13,3 +13,5 @@ tools/explorer/web/dist/
 tools/explorer/web/test-results/
 dist/
 .codex/
+.coverage
+.coverage.*

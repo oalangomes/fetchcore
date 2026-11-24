@@ -8,6 +8,8 @@ create_collection=${FETCHCORE_SOLR_CREATE_COLLECTION:-true}
 zk_host=${ZK_HOST:-127.0.0.1:9983}
 configset_dir=/fetchcore-configset
 config_dir=$configset_dir/conf
+graph_configset_name=fetchcore-graph-v1
+graph_config_dir=/fetchcore-graph-configset/conf
 temporary_dir=$(mktemp -d)
 solr_pid=
 
@@ -82,6 +84,29 @@ solr zk downconfig -z "$zk_host" -n "$configset_name" -d "$downloaded_configset"
 if ! diff -ru "$config_dir" "$downloaded_configset/conf"; then
     echo "SolrCloud configset $configset_name differs from the pinned local config" >&2
     exit 1
+fi
+
+# The graph configset is optional for legacy disposable starts. The official
+# local Compose service mounts it and checks exact bytes before graph publishing.
+if [ -d "$graph_config_dir" ]; then
+    configsets=$(curl -fsS \
+        "$solr_url/admin/configs?action=LIST&omitHeader=true&wt=json")
+    if ! printf '%s' "$configsets" | grep -F "\"$graph_configset_name\"" >/dev/null; then
+        solr zk upconfig -z "$zk_host" -n "$graph_configset_name" \
+            -d /fetchcore-graph-configset
+        configsets=$(curl -fsS \
+            "$solr_url/admin/configs?action=LIST&omitHeader=true&wt=json")
+    fi
+    if ! printf '%s' "$configsets" | grep -F "\"$graph_configset_name\"" >/dev/null; then
+        echo "SolrCloud graph configset upload was not visible" >&2
+        exit 1
+    fi
+    graph_download="$temporary_dir/graph-configset"
+    solr zk downconfig -z "$zk_host" -n "$graph_configset_name" -d "$graph_download"
+    if ! diff -ru "$graph_config_dir" "$graph_download/conf"; then
+        echo "SolrCloud graph configset differs from the pinned local config" >&2
+        exit 1
+    fi
 fi
 
 if [ "$create_collection" = "true" ]; then

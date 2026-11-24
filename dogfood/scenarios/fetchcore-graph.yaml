@@ -1,0 +1,36 @@
+version: 1
+repository: oalangomes/fetchcore
+revision: fa94f4ee456710f348d05f16425c5b5a016c867c
+
+# Verified against the pinned source files, independently of graph traversal:
+# runHistory.test.ts:34 calls captureRun; runHistory.ts:168 calls parseValidatedIntent.
+# No third resolved call from parseValidatedIntent is claimed in this corpus.
+scenarios:
+  - id: real-run-history-test-to-intent-parser
+    seed: symbol:v1:sha256:72960600c1010a86978caf76fd1cf9b33906d88324b089c2d960e9e5bac53c53
+    target: symbol:v1:sha256:9696e800556120117bed374218ec273dcb5c4e0bf9a3c8864df0ad84dabeca3d
+    depth: 3
+    relation_types: [calls]
+    expected_path:
+      - source_identity: symbol:v1:sha256:72960600c1010a86978caf76fd1cf9b33906d88324b089c2d960e9e5bac53c53
+        target_identity: symbol:v1:sha256:838b85177af3aa01692ef5a199de153b0f7b9509bf39ab6c49bdc25b3df3e27b
+        source_ref: repository://oalangomes/fetchcore/tools/explorer/web/src/runHistory.test.ts
+        line: 34
+        kind: calls
+        target: captureRun
+      - source_identity: symbol:v1:sha256:838b85177af3aa01692ef5a199de153b0f7b9509bf39ab6c49bdc25b3df3e27b
+        target_identity: symbol:v1:sha256:9696e800556120117bed374218ec273dcb5c4e0bf9a3c8864df0ad84dabeca3d
+        source_ref: repository://oalangomes/fetchcore/tools/explorer/web/src/runHistory.ts
+        line: 168
+        kind: calls
+        target: parseValidatedIntent
+
+  - id: import-bound-unresolved-is-not-an-edge
+    seed: symbol:v1:sha256:4d296401c0c22d11661bed9ef6e197ddc2caf5c48ca9a129afb6732da4863209
+    relation_types: [calls]
+    expected_edges: []
+    inconclusive_observation:
+      source_ref: repository://oalangomes/fetchcore/src/fetchcore/application/navigation.py
+      line: 194
+      target: get_related
+      resolution: import_binding

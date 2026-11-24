@@ -10,5 +10,6 @@ ADRs preserve the reasons and trade-offs for durable decisions. Current behavior
 | [ADR-0004 — Versioned persisted identities and fail-closed compatibility](ADR-0004-versioned-persisted-identities.md) | Accepted |
 | [ADR-0005 — Developer Local installation and operational ownership](ADR-0005-developer-local-installation.md) | Accepted |
 | [ADR-0006 — Apache Solr as the official operational retrieval backend](ADR-0006-solr-official-backend.md) | Accepted |
+| [ADR-0007 — Bounded graph adjacency and paired generation publication](ADR-0007-bounded-graph-projection-publication.md) | Accepted |
 
 Do not create ADRs for tuning values, single class/file choices, one-off fixes, or benchmark results.

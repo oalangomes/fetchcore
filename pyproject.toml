@@ -50,6 +50,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "fetchcore.operational" = ["configset/conf/*.xml"]
+"fetchcore.operational.graph_configset" = ["conf/*.xml"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

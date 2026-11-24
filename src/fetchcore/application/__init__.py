@@ -38,3 +38,7 @@ from .navigation import (
     GetRelatedRequest as GetRelatedRequest,
     NavigationResult as NavigationResult,
 )
+from .graph_navigation import (
+    NavigateGraphRequest as NavigateGraphRequest,
+    GraphNavigationResult as GraphNavigationResult,
+)

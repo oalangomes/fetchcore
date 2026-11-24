@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 import hashlib
+import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from urllib.parse import unquote
 
 from fetchcore.retrieval import RetrievalConfig
@@ -16,6 +17,9 @@ from .navigation import (
     FindSymbolRequest, GetRelatedRequest, NavigationResult,
     RELATION_CAPABILITIES, RepositoryKnowledgeNavigationService,
     navigation_result, validate_navigation_request,
+)
+from .graph_navigation import (
+    GraphNavigationResult, NavigateGraphRequest, compose_graph_map, walk_graph,
 )
 from fetchcore.repository.navigation import NavigationDirection, RelatedEvidence, StructuralNavigationError, SymbolDefinition
 from fetchcore.repository.indexing import KnowledgeDocument
@@ -31,6 +35,9 @@ from fetchcore.retrieval.contracts import (
     SearchMode,
     SearchScope,
 )
+
+if TYPE_CHECKING:
+    from .graph_publication import GraphPublicationService
 
 
 MAX_SEARCH_LIMIT = 100
@@ -166,6 +173,7 @@ class RetrievalApplicationService:
         backends: BackendRegistry | None = None,
         limits: ServingLimits | None = None,
         navigation_store: Callable[[RepositoryBinding], OperationalIndexStore] | None = None,
+        graph_publication: Callable[[RepositoryBinding], GraphPublicationService] | None = None,
     ) -> None:
         if not bindings:
             raise ValueError("at least one repository binding is required")
@@ -176,6 +184,7 @@ class RetrievalApplicationService:
         self._backends = backends or BackendRegistry()
         self._limits = limits or ServingLimits()
         self._navigation_store = navigation_store
+        self._graph_publication = graph_publication
 
     @property
     def repositories(self) -> tuple[str, ...]:
@@ -238,6 +247,140 @@ class RetrievalApplicationService:
     def get_related(self, request: GetRelatedRequest) -> NavigationResult:
         """Read bounded directed observations by logical identity or source_ref."""
         return self._navigate(request)
+
+    def navigate_graph(self, request: NavigateGraphRequest) -> GraphNavigationResult:
+        """Compose a bounded knowledge map from one exact canonical seed."""
+
+        from .index_operations import prepare_repository_index_runtime
+        from fetchcore.adapters.retrieval.solr.backend import SolrIndexSnapshot
+
+        deadline = time.monotonic() + request.timeout_seconds
+
+        def remaining() -> float:
+            seconds = deadline - time.monotonic()
+            if seconds <= 0.05:
+                raise KnowledgeSearchError("graph navigation timed out", category="timeout")
+            return seconds
+
+        binding = self._binding(request.repository)
+        if binding.backend != "solr":
+            raise KnowledgeSearchError("graph capability is unavailable for this backend",
+                                       category="unsupported_capability")
+        if set(request.relation_types) - RELATION_CAPABILITIES.keys():
+            raise KnowledgeSearchError("graph relation type is unsupported",
+                                       category="unsupported_capability")
+        runtime = prepare_repository_index_runtime(
+            binding.workspace, repository=binding.repository, branch=None, revision=None,
+        )
+        store = self._navigation_store(binding) if self._navigation_store else self._default_navigation_store(binding)
+        snapshot = store.load_snapshot(binding.repository)
+        if getattr(snapshot, "indexing_fingerprint", None) != runtime.fingerprint:
+            raise KnowledgeSearchError("graph knowledge indexing contract is incompatible",
+                                       category="schema_mismatch")
+        for expected in (binding.revision, request.revision):
+            if expected is not None and expected != snapshot.revision:
+                raise KnowledgeSearchError("graph revision conflicts with materialized knowledge",
+                                           category="source_revision_mismatch")
+        summary = getattr(snapshot, "structural_coverage", None)
+        if not isinstance(summary, str):
+            raise KnowledgeSearchError("graph requires structural coverage metadata",
+                                       category="schema_mismatch")
+        seed_result = self.find_symbol(FindSymbolRequest(
+            request.seed, repository=binding.repository, revision=snapshot.revision,
+            limit=2,
+        ))
+        if not seed_result.results:
+            raise KnowledgeSearchError("graph seed is absent from the selected snapshot",
+                                       category="source_missing")
+        if len(seed_result.results) != 1:
+            raise KnowledgeSearchError("graph seed is ambiguous in the selected snapshot",
+                                       category="ambiguous_source")
+        seed = seed_result.results[0]
+        assert isinstance(seed, SymbolDefinition)
+        remaining()
+        publisher = (self._graph_publication(binding) if self._graph_publication
+                     else self._default_graph_publication(binding))
+        capabilities: tuple[StructuralCapability, ...] = tuple(dict.fromkeys(
+            RELATION_CAPABILITIES[kind] for kind in request.relation_types
+        )) if request.relation_types else (
+            "calls_observed", "references_observed", "tests_observed",
+            "imports", "inheritance", "cross_file_resolution",
+        )
+        coverage = tuple(structural_coverage_from_summary(summary, capability)
+                         for capability in capabilities)
+        with publisher.read_active(binding.repository, snapshot.revision,
+                                   cast(SolrIndexSnapshot, snapshot)) as session:
+            traversal_request = replace(request, timeout_seconds=remaining())
+            walk = walk_graph(
+                session.store, session.graph_collection, binding.repository,
+                snapshot.revision, session.manifest.generation, traversal_request,
+                allowed_paths=binding.repository_paths,
+            )
+            remaining()
+            identifiers = tuple(sorted({seed.document_id} | {
+                document_id for edge in walk.edges
+                for document_id in (edge.source_document_id, edge.target_document_id)
+            }))
+            hydrated: dict[str, KnowledgeDocument] = {}
+            for offset in range(0, len(identifiers), 64):
+                batch = identifiers[offset:offset + 64]
+                for document in store.load_structural_targets(
+                    binding.repository, snapshot.revision, batch,
+                ):
+                    hydrated[document.id] = _at_snapshot_revision(document, snapshot.revision)
+            if set(identifiers) != hydrated.keys():
+                raise KnowledgeSearchError("graph canonical hydration is incomplete",
+                                           category="snapshot_revision_mismatch")
+            if binding.knowledge_types and any(
+                doc.knowledge_type not in binding.knowledge_types for doc in hydrated.values()
+            ):
+                raise KnowledgeSearchError("graph edge crosses authorized knowledge types",
+                                           category="unauthorized_source")
+            if binding.repository_paths and any(
+                not any(doc.path == prefix or doc.path.startswith(prefix.rstrip("/") + "/")
+                        for prefix in binding.repository_paths)
+                for doc in hydrated.values()
+            ):
+                raise KnowledgeSearchError("graph edge crosses authorized source paths",
+                                           category="unauthorized_source")
+            result = compose_graph_map(
+                request, walk, tuple(hydrated.values()), repository=binding.repository,
+                revision=snapshot.revision, generation=session.manifest.generation,
+                coverage=coverage,
+            )
+            remaining()
+            current = store.load_snapshot(binding.repository)
+            if (current.revision != snapshot.revision
+                    or current.corpus_checksum != snapshot.corpus_checksum
+                    or getattr(current, "projection_fingerprint", None)
+                    != getattr(snapshot, "projection_fingerprint", None)):
+                raise KnowledgeSearchError("graph knowledge snapshot changed during navigation",
+                                           category="snapshot_revision_mismatch")
+        remaining()
+        return result
+
+    @staticmethod
+    def _default_graph_publication(binding: RepositoryBinding) -> GraphPublicationService:
+        from .indexing import SolrCloudOperationalIndex, build_index_context
+        from .graph_publication import GraphPublicationService
+        from fetchcore.adapters.retrieval.solr.backend import SolrSettings
+
+        settings = SolrSettings.from_mapping(binding.settings)
+        if settings.deployment_mode != "solrcloud":
+            raise KnowledgeSearchError("graph requires SolrCloud", category="unsupported_capability")
+        context = build_index_context(
+            workspace=binding.workspace, repository=binding.repository,
+            branch=None, revision=None, backend="solr", backend_settings=binding.settings,
+            retrieval=binding.retrieval,
+        )
+        if not isinstance(context.driver, SolrCloudOperationalIndex):
+            raise KnowledgeSearchError("graph generation manager is unavailable",
+                                       category="unsupported_capability")
+        return GraphPublicationService(
+            context.driver.manager,
+            replace(settings, collection=settings.collection + "_graph",
+                    configset="fetchcore-graph-v1"),
+        )
 
     def _navigate(self, request: FindSymbolRequest | GetRelatedRequest) -> NavigationResult:
         from .index_operations import prepare_repository_index_runtime

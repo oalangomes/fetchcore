@@ -1,0 +1,68 @@
+{
+  "baseline_one_hop": {
+    "ground_truth_matches": 1,
+    "latency": {
+      "p50_ms": 5720.076845999984,
+      "p95_ms": 6569.983685999887,
+      "p99_ms": 6569.983685999887
+    },
+    "returned": 1,
+    "status": "success"
+  },
+  "canonical": {
+    "declarations": 4551,
+    "documents": 5665,
+    "ground_truth_matches": 1,
+    "inconclusive_observations": 22,
+    "observation_kinds": {
+      "calls": 93,
+      "imports": 156
+    },
+    "one_hop_observations": 7,
+    "resolved_observations": 227,
+    "semantic_observations": 249
+  },
+  "corpus": "oalangomes/fetchcore",
+  "cost": {
+    "extraction_seconds": 8.598331938000001,
+    "graph_publication_seconds": 65.74867462700013,
+    "knowledge_write_seconds": 187.20927643099992,
+    "process_peak_rss_bytes": 363032576
+  },
+  "graph_one_hop": {
+    "backend_qtime_ms": 1,
+    "backend_queries": 1,
+    "diagnostics": [
+      "extraction_coverage_partial",
+      "inconclusive_observations_present"
+    ],
+    "ground_truth_matches": 1,
+    "inconclusive_in_map": 6,
+    "latency": {
+      "p50_ms": 20317.19696599998,
+      "p95_ms": 21532.240214000012,
+      "p99_ms": 21532.240214000012
+    },
+    "paths": 1,
+    "response_bytes": 7848,
+    "returned": 1,
+    "status": "partial"
+  },
+  "ground_truth": {
+    "line": 98,
+    "seed": "symbol:v1:sha256:304bcc784f290a747892c8c562959b70ff8659dc5b2a0b65bdae543c9686e62d",
+    "source_ref": "repository://oalangomes/fetchcore/src/fetchcore/application/repository_serving.py",
+    "target": "symbol:v1:sha256:8e8fbf6a69f87b00ded14870295ee93b800b86bfe0f4369e681315ecad876547"
+  },
+  "isolation": {
+    "graph_collection": "fcg-54454957b0-ec8805d2099d",
+    "knowledge_collection": "fc30_bench_knowledge_614430b175_physical"
+  },
+  "projection": {
+    "build_seconds": 0.053213143999983004,
+    "edges": 227,
+    "seed_edges": 1,
+    "serialized_bytes": 256097
+  },
+  "revision": "fa94f4ee456710f348d05f16425c5b5a016c867c"
+}

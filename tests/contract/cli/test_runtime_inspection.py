@@ -211,10 +211,22 @@ def test_capabilities_come_from_backend_and_indexing_declarations(tmp_path: Path
     assert capabilities["retrieval"]["hybrid"] == declared["hybrid"] is True
     assert capabilities["intent_translation"]["structured_anchors"] is False
     assert capabilities["indexing"] == {"incremental": True, "rebuild": True}
+    assert capabilities["graph"] == {"bounded_navigation": False}
     human = CliRunner().invoke(cli.main, ["capabilities", "--config", str(path)])
     assert human.exit_code == 0, human.output
     assert "retrieval.dense=true" in human.output
     assert "indexing.incremental=true" in human.output
+
+
+def test_graph_capability_is_declared_only_for_solrcloud(tmp_path: Path) -> None:
+    cloud = _config_file(
+        tmp_path,
+        "version: 1\nruntime:\n  backend: solr\n"
+        "backends:\n  solr:\n    deployment_mode: solrcloud\n",
+    )
+    result, payload = _invoke_json(["capabilities", "--config", str(cloud)])
+    assert result.exit_code == 0, result.output
+    assert payload["result"]["graph"] == {"bounded_navigation": True}
 
 
 def test_capabilities_unknown_backend_is_typed() -> None:

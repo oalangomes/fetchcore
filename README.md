@@ -26,7 +26,7 @@
 
 ---
 
-FetchCore turns source repositories into **searchable, typed, traceable technical evidence**. It acquires and indexes repository knowledge, preserves source identity and provenance, and retrieves candidates through stable, backend-neutral contracts.
+FetchCore automatically builds **structured technical knowledge** from source repositories. It makes that knowledge searchable and composes traceable, navigable knowledge maps for agents, developer tools and people. Source identity and provenance remain attached to the evidence through stable, backend-neutral contracts.
 
 **One repository knowledge boundary. Multiple retrieval backends. Any consumer.**
 
@@ -47,13 +47,16 @@ flowchart LR
     A["Git / local repositories"] --> B["Registry + RepositoryIndexer"]
     B --> C["Canonical Repository Knowledge"]
     C --> D["Projection v3"]
+    C --> I["GraphProjection v1"]
+    I --> J["Optional bounded knowledge map"]
+    J --> G
     D --> E["Lexical / vector stores"]
     E --> F["Backend-neutral retrieval"]
     F --> G["CLI / MCP / Python consumers"]
     B -. "Operations" .-> H["FetchCore CLI"]
 ```
 
-**Repository knowledge is canonical; search, vector and future graph indexes are replaceable projections.** Backend scores describe candidate ranking, not semantic authority.
+**Repository knowledge is canonical; search, vector and graph indexes are replaceable projections.** Graph navigation uses exact resolved relations, within explicit budgets and a compatible SolrCloud generation. Backend scores describe candidate ranking, not semantic authority.
 
 > **retrieval ≠ satisfaction ≠ authority**  
 > FetchCore acquires evidence. Consumers decide whether it satisfies their task and what to do with it.
@@ -120,9 +123,9 @@ Change the repository identity to the source you are authorized to serve. Connec
 | Retrieval | **Current, capability-dependent** | Lexical, dense and hybrid require a compatible backend and indexed/embedding state |
 | CLI | **Current** | `repo`, `index`, scoped `search`/`source`, `config`, `doctor`, `readiness`, `capabilities` |
 | MCP stdio | **Current** | `search` and `get_source` with an authorized repository binding |
-| Dedicated symbol tools | **Planned** | `find_symbol`, `get_related`; extracted relations are not the same as dedicated tools |
+| Dedicated symbol tools | **Current** | `find_symbol` and `get_related` 1-hop with canonical identity and coverage |
 | Federated multi-repository retrieval | **Planned** | Bounded routing and cross-repo fusion rather than implicit concatenation |
-| Graph expansion | **Planned, optional** | Bounded navigation from strong seeds; not a mandatory retrieval path |
+| Graph knowledge maps | **Current, optional SolrCloud** | `navigate_graph` composes up to three hops from an exact canonical seed; unavailable or stale graph fails explicitly |
 
 Backend indexes are rebuildable projections, not semantic authorities. **retrieval ≠ satisfaction ≠ authority**. The consumer retains task satisfaction, approvals and execution decisions.
 
