@@ -1,0 +1,26 @@
+# Disposable benchmark project; four standard services, no extra Compose projects.
+name: fetchcore-benchmark
+
+services:
+  solr:
+    extends: {file: infra/compose/fetchcore-stack.yml, service: solr}
+    ports: ["127.0.0.1:48983:8983"]
+
+  api:
+    extends: {file: infra/compose/fetchcore-stack.yml, service: api}
+    environment:
+      FETCHCORE_ENVIRONMENT: bench
+
+  mcp:
+    extends: {file: infra/compose/fetchcore-stack.yml, service: mcp}
+    environment:
+      FETCHCORE_ENVIRONMENT: bench
+    ports: ["127.0.0.1:48766:8766"]
+
+  lab:
+    extends: {file: infra/compose/fetchcore-stack.yml, service: lab}
+    ports: ["127.0.0.1:48767:8080"]
+
+volumes:
+  # This is the only auto-created Solr volume in the canonical fleet.
+  solrcloud-data: {}
