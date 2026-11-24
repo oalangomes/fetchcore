@@ -1,9 +1,9 @@
 # INTERNAL service definitions. Not a deployment entry point.
 # Supported deployments: ../../compose.yml, ../../compose.dev.yml, ../../compose.benchmark.yml.
-# Paths are resolved relative to the root Compose file.
+# Relative paths in this extended fragment resolve from infra/compose/.
 x-python-service: &python-service
   build:
-    context: .
+    context: ../..
     dockerfile: tools/explorer/docker/Dockerfile
     target: python-runtime
   environment:
@@ -19,7 +19,7 @@ x-python-service: &python-service
     PYTHONUNBUFFERED: "1"
   volumes:
     - type: bind
-      source: ${FETCHCORE_LOCAL_SOURCE_PATH:-.}
+      source: ${FETCHCORE_LOCAL_SOURCE_PATH:-../..}
       target: /workspace
       read_only: true
   extra_hosts:
@@ -44,9 +44,9 @@ services:
       ZK_HOST: ${FETCHCORE_SOLR_ZK_HOST:-}
     volumes:
       - solrcloud-data:/var/solr
-      - ./infra/solr/configset:/fetchcore-configset:ro
-      - ./src/fetchcore/operational/graph_configset:/fetchcore-graph-configset:ro
-      - ./infra/solr/start-cloud.sh:/fetchcore-start-cloud.sh:ro
+      - ../solr/configset:/fetchcore-configset:ro
+      - ../../src/fetchcore/operational/graph_configset:/fetchcore-graph-configset:ro
+      - ../solr/start-cloud.sh:/fetchcore-start-cloud.sh:ro
     healthcheck:
       test:
         - CMD-SHELL
@@ -96,7 +96,7 @@ services:
 
   lab:
     build:
-      context: .
+      context: ../..
       dockerfile: tools/explorer/docker/Dockerfile
       target: web-runtime
     depends_on:
