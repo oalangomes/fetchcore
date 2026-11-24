@@ -1,0 +1,28 @@
+# Developer-only FetchCore Compose project; never shares network or source binding with PROD.
+name: fetchcore-dev
+
+services:
+  solr:
+    extends: {file: infra/compose/fetchcore-stack.yml, service: solr}
+    ports: ["127.0.0.1:18983:8983"]
+
+  api:
+    extends: {file: infra/compose/fetchcore-stack.yml, service: api}
+    environment:
+      FETCHCORE_ENVIRONMENT: dev
+
+  mcp:
+    extends: {file: infra/compose/fetchcore-stack.yml, service: mcp}
+    environment:
+      FETCHCORE_ENVIRONMENT: dev
+    ports: ["127.0.0.1:18766:8766"]
+
+  lab:
+    extends: {file: infra/compose/fetchcore-stack.yml, service: lab}
+    ports: ["127.0.0.1:18767:8080"]
+
+volumes:
+  solrcloud-data:
+    # Adopt existing DEV SolrCloud data, not an empty duplicate.
+    external: true
+    name: fetchcore-shared_solrcloud-data
