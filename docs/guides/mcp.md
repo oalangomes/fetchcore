@@ -154,6 +154,29 @@ See [three-environment Compose and migration](../operations/docker-compose-three
 before starting or recreating the productive stack. Do not run
 `docker compose down -v` in DEV or PROD.
 
+### Reconcile after an OPERATIONAL index update
+
+After an approved productive index publication, validate the pinned source,
+active SolrCloud alias/snapshot, revision and fingerprints before activating
+a new API/MCP runtime binding. Source and serving configuration remain owned
+by the operator, not by Docker Compose. For a read-only preflight:
+
+```bash
+PYTHONPATH=src python -m fetchcore.operational.reconcile \
+  --config /absolute/path/to/current/operator/runtime.yml \
+  --workspace /absolute/path/to/pinned/clone \
+  --solr-url http://127.0.0.1:28984/solr \
+  --output /absolute/path/to/verified/new/runtime.yml
+```
+
+The command above does not activate or write the new runtime file. Once the
+compatible revision is verified and the operator approves a serving cutover,
+repeat with `--activate` and `--compose-file compose.yml`. The command
+validates source and runtime bind mounts and recreates **only** `api`/`mcp`
+in the existing `fetchcore` project. It does not recreate the Solr service
+or modify any index, graph, snapshot, alias or data volume. See the
+[operational runbook](../operations/docker-compose-three-environments.md).
+
 ## Historical environment contract
 
 - `FETCHCORE_MCP_WORKSPACE`
