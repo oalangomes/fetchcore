@@ -20,14 +20,18 @@ HEAD = "b" * 40
 
 
 def test_compose_rebinds_only_serving_file_mounts() -> None:
-    compose = yaml.safe_load(Path("infra/compose/operational-mcp.yml").read_text())
+    compose = yaml.safe_load(Path("compose.yml").read_text())
+    assert compose["name"] == "fetchcore"
+    assert set(compose["services"]) == {"solr", "api", "mcp", "lab"}
     mount = (
-        "${FETCHCORE_OPERATIONAL_RUNTIME_CONFIG:-./operational-mcp.runtime.yml}"
+        "${FETCHCORE_OPERATIONAL_RUNTIME_CONFIG:?set verified operator runtime file}"
         ":/etc/fetchcore/operational-mcp.yml:ro"
     )
-    assert mount in compose["services"]["mcp"]["volumes"]
-    assert mount in compose["services"]["api"]["volumes"]
-    assert "solr" not in compose["services"]
+    for service in ("mcp", "api"):
+        assert mount in compose["services"][service]["volumes"]
+        assert compose["services"][service]["environment"]["FETCHCORE_CONFIG"] == (
+            "/etc/fetchcore/operational-mcp.yml"
+        )
 
 
 def test_materialized_head_requires_git_root(tmp_path: Path) -> None:
