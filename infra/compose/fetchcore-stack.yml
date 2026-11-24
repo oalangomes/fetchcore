@@ -52,7 +52,7 @@ services:
         - CMD-SHELL
         - >-
           curl -fsS 'http://127.0.0.1:8983/solr/admin/collections?action=CLUSTERSTATUS&wt=json'
-          | grep -E '"live_nodes"[[:space:]]*:[[:space:]]*\\[[[:space:]]*"' >/dev/null
+          | grep -E '"live_nodes"[[:space:]]*:[[:space:]]*\[[[:space:]]*"' >/dev/null
           && curl -fsS 'http://127.0.0.1:8983/solr/admin/configs?action=LIST&wt=json'
           | grep -F 'fetchcore-projection-v3' >/dev/null
     interval: 10s
