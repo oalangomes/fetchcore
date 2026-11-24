@@ -246,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True,
                         help="Operator-owned runtime YAML outside the repository")
     parser.add_argument("--compose-file", type=Path,
-                        default=Path("infra/compose/operational-mcp.yml"))
+                        default=Path("compose.yml"))
     parser.add_argument("--activate", action="store_true",
                         help="Write binding and recreate only MCP/API serving containers")
     args = parser.parse_args(argv)
