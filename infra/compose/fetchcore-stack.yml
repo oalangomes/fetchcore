@@ -1,0 +1,112 @@
+# INTERNAL service definitions. Not a deployment entry point.
+# Supported deployments: ../../compose.yml, ../../compose.dev.yml, ../../compose.benchmark.yml.
+# Paths are resolved relative to the root Compose file.
+x-python-service: &python-service
+  build:
+    context: .
+    dockerfile: tools/explorer/docker/Dockerfile
+    target: python-runtime
+  environment:
+    FETCHCORE_BACKEND: solr
+    FETCHCORE_ENVIRONMENT: ${FETCHCORE_ENVIRONMENT:-dev}
+    FETCHCORE_REPOSITORY: ${FETCHCORE_REPOSITORY:-oalangomes/fetchcore}
+    FETCHCORE_WORKSPACE: /workspace
+    FETCHCORE_SOLR_URL: http://solr:8983/solr
+    FETCHCORE_SOLR_COLLECTION: ${FETCHCORE_SOLR_COLLECTION:-fetchcore}
+    FETCHCORE_SOLR_DEPLOYMENT_MODE: solrcloud
+    FETCHCORE_SOLR_CONFIGSET: fetchcore-projection-v3
+    FETCHCORE_OLLAMA_URL: ${FETCHCORE_OLLAMA_URL:-http://host.docker.internal:11434}
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONUNBUFFERED: "1"
+  volumes:
+    - type: bind
+      source: ${FETCHCORE_LOCAL_SOURCE_PATH:-.}
+      target: /workspace
+      read_only: true
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  user: "1000:1000"
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=16m,uid=1000,gid=1000
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  restart: unless-stopped
+
+services:
+  solr:
+    image: ${FETCHCORE_SOLR_IMAGE:-solr:9.10.1@sha256:5ac29f32d689cef9722ec3b9f2c612ed11dce35d9e279ac0f7bd554ad76aa8cb}
+    command: ["sh", "/fetchcore-start-cloud.sh"]
+    environment:
+      FETCHCORE_SOLR_COLLECTION: ${FETCHCORE_SOLR_COLLECTION:-fetchcore}
+      FETCHCORE_SOLR_CONFIGSET: fetchcore-projection-v3
+      # No implicit creation or indexing on startup; retain snapshot/alias authority.
+      FETCHCORE_SOLR_CREATE_COLLECTION: "false"
+      ZK_HOST: ${FETCHCORE_SOLR_ZK_HOST:-}
+    volumes:
+      - solrcloud-data:/var/solr
+      - ./infra/solr/configset:/fetchcore-configset:ro
+      - ./src/fetchcore/operational/graph_configset:/fetchcore-graph-configset:ro
+      - ./infra/solr/start-cloud.sh:/fetchcore-start-cloud.sh:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsS 'http://127.0.0.1:8983/solr/admin/collections?action=CLUSTERSTATUS&wt=json'
+          | grep -E '"live_nodes"[[:space:]]*:[[:space:]]*\\[[[:space:]]*"' >/dev/null
+          && curl -fsS 'http://127.0.0.1:8983/solr/admin/configs?action=LIST&wt=json'
+          | grep -F 'fetchcore-projection-v3' >/dev/null
+    interval: 10s
+    timeout: 5s
+    start_period: 90s
+    retries: 12
+    restart: unless-stopped
+
+  api:
+    <<: *python-service
+    command: ["python", "-m", "uvicorn", "tools.explorer.api.app:app", "--host", "0.0.0.0", "--port", "8765"]
+    expose: ["8765"]
+    depends_on:
+      solr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/config', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  mcp:
+    <<: *python-service
+    command:
+      - python
+      - -c
+      - >-
+        from fetchcore.serving.mcp import mcp;
+        mcp.run(transport="streamable-http", host="0.0.0.0", port=8766,
+        stateless_http=True, json_response=True)
+    depends_on:
+      solr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8766), timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  lab:
+    build:
+      context: .
+      dockerfile: tools/explorer/docker/Dockerfile
+      target: web-runtime
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+    restart: unless-stopped
