@@ -12,7 +12,6 @@ x-python-service: &python-service
     FETCHCORE_REPOSITORY: ${FETCHCORE_REPOSITORY:-oalangomes/fetchcore}
     FETCHCORE_WORKSPACE: /workspace
     FETCHCORE_SOLR_URL: http://solr:8983/solr
-    FETCHCORE_SOLR_COLLECTION: ${FETCHCORE_SOLR_COLLECTION:-fetchcore}
     FETCHCORE_SOLR_DEPLOYMENT_MODE: solrcloud
     FETCHCORE_SOLR_CONFIGSET: fetchcore-projection-v3
     FETCHCORE_OLLAMA_URL: ${FETCHCORE_OLLAMA_URL:-http://host.docker.internal:11434}
