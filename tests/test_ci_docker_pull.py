@@ -112,9 +112,14 @@ def test_container_inputs_are_immutable_and_match_dockerfile() -> None:
     ).read_text(encoding="utf-8")
     assert "solr-data:/var/solr" in standalone_compose
     assert "solr-precreate" in standalone_compose
-    assert "./infra/compose/solr-standalone.yml" in (
-        ROOT / "compose.yml"
-    ).read_text(encoding="utf-8")
+    stack = (ROOT / "infra/compose/fetchcore-stack.yml").read_text(encoding="utf-8")
+    assert values["FETCHCORE_SOLR_IMAGE"] in stack
+    assert "solrcloud-data:/var/solr" in stack
+    for filename in ("compose.yml", "compose.dev.yml", "compose.benchmark.yml"):
+        compose = (ROOT / filename).read_text(encoding="utf-8")
+        assert "infra/compose/fetchcore-stack.yml" in compose
+        assert "solr" in compose and "api" in compose
+        assert "mcp" in compose and "lab" in compose
     assert "../solr/start-cloud.sh:/fetchcore-start-cloud.sh:ro" in solr_compose
     assert values["FETCHCORE_SOLR_IMAGE"] in (
         ROOT / ".github" / "workflows" / "repository-index.yml"
